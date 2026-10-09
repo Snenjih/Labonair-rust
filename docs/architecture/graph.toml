@@ -1,0 +1,462 @@
+# Declarative architecture policy for Labonair.
+#
+# This file is the machine-readable companion to docs/architecture.md.
+# Keep it intentionally explicit: an internal dependency or ownership change
+# must update this manifest, the relevant audit, and its implementation task.
+
+version = 1
+status = "normative policy source"
+source_of_truth = "docs/architecture.md"
+generated_view = "docs/generated/architecture.md"
+
+[policy]
+composition_roots = ["labonair", "labonair-shell"]
+ui_kit = "labonair-ui-kit"
+active_queue = "tasks/rework/"
+acyclic = true
+
+# Transitional edges are deliberately listed with a removal condition.
+# They are not a permission to add new compatibility paths.
+[[transitional_edge]]
+from = "labonair-command-palette"
+to = "labonair-settings"
+status = "narrow-when-needed"
+removal_condition = "Replace implementation-level settings access when a concrete provider contract exists."
+
+[[transitional_edge]]
+from = "labonair-panel-explorer"
+to = "labonair-settings"
+status = "move-to-feature-contract"
+removal_condition = "Move Explorer behavior reads behind an Explorer-owned settings contract."
+
+[[transitional_edge]]
+from = "labonair-panel-scm"
+to = "labonair-editor"
+status = "move-to-feature-contract"
+removal_condition = "Replace direct editor view access with a typed editor capability contract."
+
+[[transitional_edge]]
+from = "labonair-panel-scm"
+to = "labonair-settings"
+status = "move-to-feature-contract"
+removal_condition = "Replace direct settings implementation reads with an SCM-owned settings contract."
+
+[[transitional_edge]]
+from = "labonair-workspace"
+to = "labonair-ai"
+status = "narrow-when-needed"
+removal_condition = "Move AI context and lifecycle details behind a typed AI bridge contract."
+
+[[transitional_edge]]
+from = "labonair-workspace"
+to = "labonair-settings"
+status = "narrow-when-needed"
+removal_condition = "Replace implementation-level global access with a narrow capability snapshot when a concrete boundary exists."
+
+[[transitional_edge]]
+from = "labonair-command-palette"
+to = "labonair-filesystem"
+status = "narrow-when-needed"
+removal_condition = "Replace direct history storage access only when a second consumer requires a typed provider."
+
+
+[[crate]]
+name = "labonair"
+owner = "application"
+role = "composition"
+layer = "application"
+
+[[crate]]
+name = "labonair-ai"
+owner = "ai"
+role = "capability"
+layer = "product"
+
+[[crate]]
+name = "labonair-background"
+owner = "backgrounds"
+role = "capability"
+layer = "product"
+
+[[crate]]
+name = "labonair-background-host"
+owner = "background"
+role = "contract"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-command-palette"
+owner = "command-palette"
+role = "capability"
+layer = "product"
+
+[[crate]]
+name = "labonair-command-palette-core"
+owner = "command-palette"
+role = "contract"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-command-palette-runtime"
+owner = "command-palette"
+role = "service"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-credentials"
+owner = "credentials"
+role = "capability"
+layer = "product"
+
+[[crate]]
+name = "labonair-editor"
+owner = "editor"
+role = "capability"
+layer = "product"
+
+[[crate]]
+name = "labonair-errors"
+owner = "platform"
+role = "contract"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-events"
+owner = "platform"
+role = "contract"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-explorer-host"
+owner = "explorer"
+role = "contract"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-filesystem"
+owner = "platform"
+role = "service"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-git"
+owner = "git"
+role = "capability"
+layer = "product"
+
+[[crate]]
+name = "labonair-git-transport"
+owner = "git"
+role = "integration"
+layer = "integration"
+
+[[crate]]
+name = "labonair-gpui-ext"
+owner = "ui"
+role = "foundation"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-hosts"
+owner = "hosts"
+role = "capability"
+layer = "product"
+
+[[crate]]
+name = "labonair-hosts-host"
+owner = "hosts"
+role = "contract"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-hosts-ui"
+owner = "hosts"
+role = "presentation"
+layer = "product"
+
+[[crate]]
+name = "labonair-keymap"
+owner = "keymap"
+role = "capability"
+layer = "product"
+
+[[crate]]
+name = "labonair-keymap-ui"
+owner = "keymap"
+role = "presentation"
+layer = "product"
+
+[[crate]]
+name = "labonair-mcp-core"
+owner = "mcp"
+role = "contract"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-mcp-server"
+owner = "mcp"
+role = "integration"
+layer = "integration"
+
+[[crate]]
+name = "labonair-notifications"
+owner = "notifications"
+role = "capability"
+layer = "product"
+
+[[crate]]
+name = "labonair-notifications-core"
+owner = "notifications"
+role = "contract"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-panel"
+owner = "panel"
+role = "contract"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-panel-explorer"
+owner = "explorer"
+role = "presentation"
+layer = "product"
+
+[[crate]]
+name = "labonair-panel-git-graph"
+owner = "git"
+role = "presentation"
+layer = "product"
+
+[[crate]]
+name = "labonair-panel-scm"
+owner = "git"
+role = "presentation"
+layer = "product"
+
+[[crate]]
+name = "labonair-panel-snippets"
+owner = "snippets"
+role = "presentation"
+layer = "product"
+
+[[crate]]
+name = "labonair-persistence"
+owner = "platform"
+role = "service"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-secrets"
+owner = "platform"
+role = "service"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-settings"
+owner = "settings"
+role = "capability"
+layer = "product"
+
+[[crate]]
+name = "labonair-settings-content"
+owner = "settings"
+role = "contract"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-settings-json"
+owner = "settings"
+role = "service"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-settings-macros"
+owner = "settings"
+role = "build-support"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-settings-ui"
+owner = "settings"
+role = "presentation"
+layer = "product"
+
+[[crate]]
+name = "labonair-sftp"
+owner = "sftp"
+role = "contract"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-sftp-ssh"
+owner = "sftp"
+role = "integration"
+layer = "integration"
+
+[[crate]]
+name = "labonair-shell"
+owner = "shell"
+role = "composition"
+layer = "application"
+
+[[crate]]
+name = "labonair-snippets"
+owner = "snippets"
+role = "capability"
+layer = "product"
+
+[[crate]]
+name = "labonair-snippets-host"
+owner = "snippets"
+role = "contract"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-snippets-ssh"
+owner = "snippets"
+role = "integration"
+layer = "integration"
+
+[[crate]]
+name = "labonair-ssh"
+owner = "ssh"
+role = "contract"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-ssh-transport"
+owner = "ssh"
+role = "integration"
+layer = "integration"
+
+[[crate]]
+name = "labonair-terminal"
+owner = "terminal"
+role = "capability"
+layer = "product"
+
+[[crate]]
+name = "labonair-terminal-integration"
+owner = "terminal"
+role = "contract"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-theme"
+owner = "theme"
+role = "capability"
+layer = "product"
+
+[[crate]]
+name = "labonair-theme-tokens"
+owner = "theme"
+role = "contract"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-theme-ui"
+owner = "theme"
+role = "presentation"
+layer = "product"
+
+[[crate]]
+name = "labonair-transfers"
+owner = "transfers"
+role = "capability"
+layer = "product"
+
+[[crate]]
+name = "labonair-transfers-ssh"
+owner = "transfers"
+role = "integration"
+layer = "integration"
+
+[[crate]]
+name = "labonair-transfers-ui"
+owner = "transfers"
+role = "presentation"
+layer = "product"
+
+[[crate]]
+name = "labonair-ui-kit"
+owner = "ui"
+role = "foundation"
+layer = "foundation"
+
+[[crate]]
+name = "labonair-updater"
+owner = "updater"
+role = "capability"
+layer = "product"
+
+[[crate]]
+name = "labonair-updater-ui"
+owner = "updater"
+role = "presentation"
+layer = "product"
+
+[[crate]]
+name = "labonair-workspace"
+owner = "workspace"
+role = "capability"
+layer = "product"
+
+[allowed_edges]
+"labonair" = ["labonair-shell", "labonair-terminal", "labonair-theme"]
+"labonair-ai" = ["labonair-filesystem"]
+"labonair-background" = ["labonair-background-host", "labonair-filesystem", "labonair-theme"]
+"labonair-background-host" = []
+"labonair-command-palette" = ["labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-filesystem", "labonair-keymap", "labonair-settings", "labonair-theme", "labonair-ui-kit"]
+"labonair-command-palette-core" = []
+"labonair-command-palette-runtime" = ["labonair-command-palette-core"]
+"labonair-credentials" = ["labonair-persistence", "labonair-secrets"]
+"labonair-editor" = ["labonair-command-palette-core"]
+"labonair-errors" = []
+"labonair-events" = []
+"labonair-explorer-host" = []
+"labonair-filesystem" = []
+"labonair-git" = ["labonair-command-palette-core"]
+"labonair-git-transport" = ["labonair-events", "labonair-git", "labonair-ssh-transport"]
+"labonair-gpui-ext" = []
+"labonair-hosts" = ["labonair-command-palette-core", "labonair-errors", "labonair-persistence", "labonair-secrets"]
+"labonair-hosts-host" = ["labonair-hosts"]
+"labonair-hosts-ui" = ["labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-credentials", "labonair-errors", "labonair-hosts", "labonair-hosts-host", "labonair-notifications", "labonair-persistence", "labonair-secrets", "labonair-snippets", "labonair-ssh", "labonair-theme", "labonair-ui-kit"]
+"labonair-keymap" = ["labonair-command-palette-core"]
+"labonair-keymap-ui" = ["labonair-command-palette-core", "labonair-keymap", "labonair-notifications", "labonair-theme", "labonair-ui-kit"]
+"labonair-mcp-core" = []
+"labonair-mcp-server" = ["labonair-errors", "labonair-events", "labonair-hosts", "labonair-mcp-core", "labonair-persistence", "labonair-secrets", "labonair-ssh-transport"]
+"labonair-notifications" = ["labonair-notifications-core", "labonair-panel", "labonair-theme", "labonair-ui-kit"]
+"labonair-notifications-core" = []
+"labonair-panel" = ["labonair-gpui-ext"]
+"labonair-panel-explorer" = ["labonair-explorer-host", "labonair-filesystem", "labonair-notifications", "labonair-panel", "labonair-settings", "labonair-theme", "labonair-ui-kit"]
+"labonair-panel-git-graph" = ["labonair-git", "labonair-notifications", "labonair-theme", "labonair-ui-kit"]
+"labonair-panel-scm" = ["labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-editor", "labonair-git", "labonair-notifications", "labonair-panel", "labonair-settings", "labonair-theme", "labonair-ui-kit"]
+"labonair-panel-snippets" = ["labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-hosts", "labonair-notifications", "labonair-panel", "labonair-persistence", "labonair-snippets", "labonair-snippets-host", "labonair-theme", "labonair-ui-kit"]
+"labonair-persistence" = []
+"labonair-secrets" = ["labonair-filesystem"]
+"labonair-settings" = ["labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-settings-content", "labonair-settings-json", "labonair-settings-macros"]
+"labonair-settings-content" = ["labonair-settings-macros"]
+"labonair-settings-json" = []
+"labonair-settings-macros" = []
+"labonair-settings-ui" = ["labonair-command-palette", "labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-filesystem", "labonair-gpui-ext", "labonair-notifications", "labonair-settings", "labonair-settings-content", "labonair-theme", "labonair-theme-ui", "labonair-ui-kit"]
+"labonair-sftp" = ["labonair-errors", "labonair-ssh"]
+"labonair-sftp-ssh" = ["labonair-errors", "labonair-events", "labonair-persistence", "labonair-secrets", "labonair-sftp", "labonair-ssh", "labonair-ssh-transport"]
+"labonair-shell" = ["labonair-background", "labonair-command-palette", "labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-editor", "labonair-events", "labonair-explorer-host", "labonair-filesystem", "labonair-git", "labonair-git-transport", "labonair-gpui-ext", "labonair-hosts", "labonair-hosts-host", "labonair-hosts-ui", "labonair-keymap", "labonair-mcp-core", "labonair-mcp-server", "labonair-notifications", "labonair-panel", "labonair-panel-explorer", "labonair-panel-git-graph", "labonair-panel-scm", "labonair-panel-snippets", "labonair-persistence", "labonair-secrets", "labonair-settings", "labonair-settings-ui", "labonair-sftp", "labonair-sftp-ssh", "labonair-snippets", "labonair-snippets-host", "labonair-snippets-ssh", "labonair-ssh", "labonair-ssh-transport", "labonair-terminal", "labonair-theme", "labonair-theme-ui", "labonair-transfers", "labonair-transfers-ssh", "labonair-transfers-ui", "labonair-ui-kit", "labonair-updater", "labonair-updater-ui", "labonair-workspace"]
+"labonair-snippets" = ["labonair-command-palette-core", "labonair-errors", "labonair-persistence"]
+"labonair-snippets-host" = []
+"labonair-snippets-ssh" = ["labonair-events", "labonair-snippets", "labonair-ssh-transport"]
+"labonair-ssh" = ["labonair-errors"]
+"labonair-ssh-transport" = ["labonair-errors", "labonair-events", "labonair-filesystem", "labonair-persistence", "labonair-secrets", "labonair-ssh", "labonair-terminal-integration"]
+"labonair-terminal" = ["labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-terminal-integration", "labonair-theme"]
+"labonair-terminal-integration" = []
+"labonair-theme" = ["labonair-command-palette-core", "labonair-theme-tokens"]
+"labonair-theme-tokens" = []
+"labonair-theme-ui" = ["labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-settings", "labonair-theme"]
+"labonair-transfers" = []
+"labonair-transfers-ssh" = ["labonair-events", "labonair-ssh-transport", "labonair-transfers"]
+"labonair-transfers-ui" = ["labonair-panel", "labonair-theme", "labonair-transfers", "labonair-ui-kit"]
+"labonair-ui-kit" = ["labonair-gpui-ext", "labonair-theme-tokens"]
+"labonair-updater" = ["labonair-filesystem"]
+"labonair-updater-ui" = ["labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-notifications", "labonair-panel", "labonair-theme", "labonair-ui-kit", "labonair-updater"]
+"labonair-workspace" = ["labonair-ai", "labonair-background-host", "labonair-command-palette", "labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-editor", "labonair-explorer-host", "labonair-filesystem", "labonair-git", "labonair-gpui-ext", "labonair-hosts", "labonair-hosts-host", "labonair-hosts-ui", "labonair-keymap", "labonair-keymap-ui", "labonair-mcp-core", "labonair-notifications", "labonair-panel", "labonair-panel-git-graph", "labonair-settings", "labonair-settings-json", "labonair-sftp", "labonair-ssh", "labonair-terminal", "labonair-theme", "labonair-transfers", "labonair-ui-kit"]

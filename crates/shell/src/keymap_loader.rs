@@ -101,10 +101,15 @@ mod tests {
         let registry = crate::commands::register_builtin_commands();
         let effective = effective_bindings(&registry);
         let map = display_map(&effective, &registry);
+        let expected_new_terminal = if cfg!(target_os = "macos") {
+            "cmd-t"
+        } else {
+            "ctrl-t"
+        };
         assert_eq!(
             map.by_command
                 .get(&labonair_command_palette::CommandId::NewTerminalTab),
-            Some(&Some("cmd-t".to_string()))
+            Some(&Some(expected_new_terminal.to_string()))
         );
     }
 }

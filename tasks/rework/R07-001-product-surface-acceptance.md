@@ -249,3 +249,44 @@ After these minimal changes:
 
 The complete native visual-state matrix remains the only known R07-001
 acceptance blocker. R09 remains planned and was not started.
+
+## Documentation reform baseline — 2026-10-09
+
+The repository knowledge infrastructure needed to make this acceptance
+auditable is now implemented and passes its canonical checks:
+
+- `python3 scripts/verify.py --scope knowledge` — passed; documentation,
+  agent routes, queue, architecture, capability coverage, command/surface/menu
+  catalogs, workflows, Settings, performance, release, evidence, and MCP
+  automation checks are green.
+- `python3 scripts/verify.py --scope rust` — passed; formatting, workspace
+  check, Clippy with `-D warnings`, unit/integration tests, and doc-tests are
+  green.
+- `scripts/check-crate-deps.sh` — passed: 57 workspace crates, 227 internal
+  edges, acyclic, with the Explorer transport edges removed behind the
+  injected host contract.
+
+The reform sources and generated views make the remaining acceptance state
+explicit, but they do not close the visual gate. The native macOS matrix,
+including Explorer, background, narrow, focused, loading, error, long-list,
+and overlay states, remains `Pending` until exact-binary/PID evidence is
+captured on the supported host.
+
+## Structured visual evidence baseline — 2026-10-09
+
+The native acceptance matrix now has a checked machine-readable companion:
+
+- `docs/testing/visual-evidence.toml` derives all 11 surface records and 63
+  exact state labels from `docs/product/surfaces.toml`;
+- `scripts/check_visual_evidence.py` rejects missing/extra states, unsupported
+  statuses, unsafe artifact paths, and verified captures without exact
+  binary/PID/date/artifact fields;
+- `docs/generated/visual-evidence.md` is the generated per-surface screenshot
+  index and prints the deterministic future artifact path for every pending
+  state;
+- `python3 scripts/verify.py --scope visual` is the dedicated freshness and
+  schema gate.
+
+The registry intentionally contains zero accepted captures in this Linux
+session. The native macOS matrix remains `Pending`; no source inspection,
+process-only launch, or historical path is promoted to visual evidence.

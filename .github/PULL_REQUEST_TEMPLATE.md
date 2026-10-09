@@ -24,6 +24,8 @@ Examples: feat(terminal): add split panes / fix(explorer): close button alignmen
 - [ ] `scripts/check-crate-deps.sh` clean when dependencies changed
 - [ ] `python3 scripts/check_documentation.py` clean when documentation or control metadata changed
 - [ ] `python3 scripts/check_rework_queue.py` clean when the active queue changed
+- [ ] `python3 scripts/verify.py --scope visual` clean when surfaces, layout, or visual evidence changed
+- [ ] `python3 scripts/verify.py --scope all` clean, or unavailable scopes are recorded below
 
 ## Screenshots / GIFs
 <!-- Required for any UI change. Use the native Rust bundle and record the

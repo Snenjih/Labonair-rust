@@ -10,7 +10,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 NORMATIVE_DOCS = (
     "docs/architecture.md",
+    "docs/architecture/composition-root.md",
+    "docs/architecture/dependency-rules.md",
+    "docs/architecture/layers.md",
+    "docs/architecture/runtime-lifecycle.md",
+    "docs/agents/routes-schema.md",
+    "docs/automation/grants.md",
+    "docs/automation/limits.md",
+    "docs/automation/overview.md",
+    "docs/automation/test-matrix.md",
     "docs/capabilities.md",
+    "docs/capabilities/schema.md",
     "docs/design-system.md",
     "docs/documentation-governance.md",
     "docs/feature-lifecycle.md",
@@ -20,6 +30,24 @@ NORMATIVE_DOCS = (
     "docs/settings-guidelines.md",
     "docs/settings-inventory.md",
     "docs/settings.md",
+    "docs/product/catalog-schema.md",
+    "docs/product/workflows.md",
+    "docs/performance/budgets.md",
+    "docs/performance/catalog-schema.md",
+    "docs/release/packaging.md",
+    "docs/release/platforms.md",
+    "docs/release/rollback.md",
+    "docs/release/support-policy.md",
+    "docs/release/checklist-schema.md",
+    "docs/security/remote-access.md",
+    "docs/security/secrets.md",
+    "docs/security/threat-model.md",
+    "docs/security/trust-boundaries.md",
+    "docs/settings/persistence.md",
+    "docs/settings/catalog-schema.md",
+    "docs/testing/evidence-model.md",
+    "docs/testing/visual-matrix.md",
+    "docs/testing/visual-evidence-schema.md",
     "docs/visual-verification.md",
     "docs/workspace-model.md",
 )
@@ -34,6 +62,22 @@ MARKDOWN_FILES = (
 )
 
 CONTROL_FILES = (".github", ".vscode")
+
+INDEXED_PATHS = (
+    "agents/routes.toml",
+    "architecture/graph.toml",
+    "capabilities/coverage.toml",
+    "product/commands.toml",
+    "product/surfaces.toml",
+    "product/menu.toml",
+    "product/workflows.toml",
+    "settings/catalog.toml",
+    "performance/budgets.toml",
+    "release/checklist.toml",
+    "automation/tools.toml",
+    "evidence/scorecard.toml",
+    "testing/visual-evidence.toml",
+)
 
 MARKDOWN_LINK = re.compile(r"!?\[[^\]]*\]\((<[^>]+>|[^)\s]+)(?:\s+[^)]*)?\)")
 STATUS = re.compile(r"^\*\*Status:\*\*\s+(.+)$", re.MULTILINE)
@@ -92,6 +136,15 @@ def check_links(errors: list[str]) -> None:
                 errors.append(f"{relative}: missing link target: {target}")
 
 
+def check_canonical_index(errors: list[str]) -> None:
+    index = (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
+    required = [relative.removeprefix("docs/") for relative in NORMATIVE_DOCS]
+    required.extend(INDEXED_PATHS)
+    for target in required:
+        if f"]({target})" not in index and f"](<{target}>)" not in index:
+            errors.append(f"docs/README.md does not index canonical document/source: {target}")
+
+
 def check_control_files(errors: list[str]) -> None:
     forbidden = (
         "pnpm",
@@ -120,6 +173,7 @@ def main() -> int:
     errors: list[str] = []
     check_normative_metadata(errors)
     check_links(errors)
+    check_canonical_index(errors)
     check_control_files(errors)
     if errors:
         print("documentation check failed:", file=sys.stderr)

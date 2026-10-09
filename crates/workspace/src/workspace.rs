@@ -143,8 +143,8 @@ use labonair_settings::content::general::StartupTab;
 use labonair_settings::content::terminal::CursorStyle as PrefCursorStyle;
 use labonair_settings::{ConnectionsSettings, GeneralSettings, Settings as _, TerminalSettings};
 use labonair_ui_kit::{
-    caret, context_menu, divider, h_stack, indicator, Axis, BlinkCursor, ButtonSize,
-    ButtonVariant, IconName, IndicatorSize, MenuItem, Palette, SubmenuHoverSource,
+    caret, context_menu, divider, h_stack, indicator, Axis, BlinkCursor, ButtonSize, ButtonVariant,
+    IconName, IndicatorSize, MenuItem, Palette, SubmenuHoverSource,
 };
 
 /// Interval for draining backend SSH events into the workspace.
@@ -6485,10 +6485,9 @@ impl Workspace {
                 .flex()
                 .items_center()
                 .text_sm()
-                .when(
-                    query.is_empty(),
-                    |d| d.text_color(c.muted).child("Search projects\u{2026}"),
-                )
+                .when(query.is_empty(), |d| {
+                    d.text_color(c.muted).child("Search projects\u{2026}")
+                })
                 .when(!query.is_empty(), |d| {
                     d.text_color(c.fg).child(SharedString::from(query.clone()))
                 })

@@ -4469,8 +4469,6 @@ dependencies = [
  "labonair-notifications",
  "labonair-panel",
  "labonair-settings",
- "labonair-sftp",
- "labonair-ssh",
  "labonair-theme",
  "labonair-ui-kit",
  "notify 6.1.1",

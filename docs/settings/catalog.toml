@@ -1,0 +1,131 @@
+version = 1
+content_source = "crates/settings-content/src/settings_content.rs"
+field_registry_source = "crates/settings-ui/src/schema.rs"
+areas_source = "crates/settings-content/src/areas.rs"
+inventory_source = "docs/settings-inventory.md"
+generated_view = "docs/generated/settings.md"
+
+[policy]
+values_only = true
+secret_values_in_settings = false
+management_surfaces = ["hosts", "themes", "icon themes", "keymap", "notifications", "transfers"]
+unknown_future_keys = "warn and preserve when safe"
+
+[[area]]
+id = "general"
+display_name = "General"
+target_module = "general"
+owner_module = "settings"
+canonical_crate = "labonair-settings"
+scopes = ["app", "project"]
+storage = "Layered JSONC settings files owned by labonair-settings."
+migration = "V1/V2 compatibility envelope; removed fields remain migration-only and unknown future keys warn."
+reload = "Live reload through SettingsStore observers; restart-only behavior is recorded by the consuming field."
+secret_classification = "non-secret"
+entry_point = "Settings window -> General"
+source_files = ["crates/settings-content/src/general.rs", "crates/settings-ui/src/schema.rs"]
+tests = ["crates/settings-content/src/settings_content.rs", "crates/settings/src"]
+evidence = ["docs/settings-inventory.md", "docs/settings/persistence.md"]
+status = "implemented"
+
+[[area]]
+id = "appearance"
+display_name = "Appearance"
+target_module = "appearance"
+owner_module = "settings"
+canonical_crate = "labonair-settings"
+scopes = ["app", "project"]
+storage = "Layered JSONC settings values; theme registries and previews remain theme-owned."
+migration = "Legacy background/theme presentation keys are classified and migrated to their owning capabilities."
+reload = "Theme/background consumers observe settings through typed owner bridges."
+secret_classification = "non-secret"
+entry_point = "Settings window -> Appearance"
+source_files = ["crates/settings-content/src/appearance.rs", "crates/settings-ui/src/schema.rs"]
+tests = ["crates/settings-content/src/settings_content.rs", "crates/theme/src"]
+evidence = ["docs/settings-inventory.md", "docs/capabilities.md"]
+status = "implemented"
+
+[[area]]
+id = "terminal"
+display_name = "Terminal"
+target_module = "terminal"
+owner_module = "settings"
+canonical_crate = "labonair-settings"
+scopes = ["app", "project"]
+storage = "Layered JSONC settings values; PTY/process state remains terminal/workspace-owned."
+migration = "Legacy WebView/composer/block fields remain compatibility input only and are not visible fields."
+reload = "Terminal settings are reapplied to active views through typed workspace/terminal adapters."
+secret_classification = "environment values are user-controlled input; credentials are not stored here"
+entry_point = "Settings window -> Terminal"
+source_files = ["crates/settings-content/src/terminal.rs", "crates/settings-ui/src/schema.rs"]
+tests = ["crates/settings-content/src/settings_content.rs", "crates/terminal/src", "crates/workspace/src/views/terminal.rs"]
+evidence = ["docs/settings-inventory.md", "docs/product/workflows.toml"]
+status = "implemented"
+
+[[area]]
+id = "editor"
+display_name = "Editor"
+target_module = "editor"
+owner_module = "settings"
+canonical_crate = "labonair-settings"
+scopes = ["app", "project"]
+storage = "Layered JSONC settings values; document state and language-service state remain editor-owned."
+migration = "Removed editor automation fields remain compatibility input only until their named removal policy permits deletion."
+reload = "Editor views observe supported typography, display, and Vim values through typed settings snapshots."
+secret_classification = "non-secret"
+entry_point = "Settings window -> Editor"
+source_files = ["crates/settings-content/src/editor.rs", "crates/settings-ui/src/schema.rs"]
+tests = ["crates/settings-content/src/settings_content.rs", "crates/editor/src", "crates/workspace/src/views/editor.rs"]
+evidence = ["docs/settings-inventory.md", "docs/product/workflows.toml"]
+status = "partial"
+
+[[area]]
+id = "file_manager"
+display_name = "File Manager"
+target_module = "file_manager"
+owner_module = "settings"
+canonical_crate = "labonair-settings"
+scopes = ["app", "project"]
+storage = "Layered JSONC browser values; Explorer, SCM, and SFTP behavior remain feature-owned."
+migration = "Legacy SFTP booleans migrate into ordered column values; transfer policy keys remain owner-migration input."
+reload = "Explorer/SCM/SFTP consumers observe supported values and reapply browser chrome live."
+secret_classification = "non-secret; paths and remote metadata are not credentials"
+entry_point = "Settings window -> File Manager"
+source_files = ["crates/settings-content/src/file_manager.rs", "crates/settings-ui/src/schema.rs"]
+tests = ["crates/settings-content/src/settings_content.rs", "crates/workspace/src/views/sftp.rs", "crates/panel-explorer/src"]
+evidence = ["docs/settings-inventory.md", "docs/security/remote-access.md"]
+status = "partial"
+
+[[area]]
+id = "workspace"
+display_name = "Workspace"
+target_module = "workspace"
+owner_module = "settings"
+canonical_crate = "labonair-settings"
+scopes = ["app", "project"]
+storage = "Layered JSONC value settings; layout/session state is persisted by labonair-workspace."
+migration = "Legacy sidebar/dock/session keys migrate to workspace-owned state and remain out of the Settings field UI."
+reload = "Supported palette and quit-policy values reload through typed consumers; layout restores through Workspace."
+secret_classification = "non-secret"
+entry_point = "Settings window -> Workspace"
+source_files = ["crates/settings-content/src/workspace.rs", "crates/settings-ui/src/schema.rs"]
+tests = ["crates/settings-content/src/settings_content.rs", "crates/workspace/src"]
+evidence = ["docs/settings-inventory.md", "docs/settings/persistence.md"]
+status = "partial"
+
+[[area]]
+id = "connections"
+display_name = "Connections"
+target_module = "connections"
+owner_module = "settings"
+canonical_crate = "labonair-settings"
+scopes = ["app"]
+storage = "Layered JSONC connection defaults; hosts and credentials are stored by their owning modules."
+migration = "Legacy connection defaults are retained only when they map to the typed fallback policy."
+reload = "New SSH/SFTP requests read the current typed fallback values."
+secret_classification = "non-secret defaults; credentials and private keys are never stored here"
+entry_point = "Settings window -> Connections"
+source_files = ["crates/settings-content/src/connections.rs", "crates/settings-ui/src/schema.rs"]
+tests = ["crates/settings-content/src/settings_content.rs", "crates/ssh-transport/src", "crates/sftp/src"]
+evidence = ["docs/settings-inventory.md", "docs/security/remote-access.md"]
+status = "implemented"

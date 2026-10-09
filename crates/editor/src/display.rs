@@ -258,11 +258,7 @@ impl DisplaySnapshot {
         let first_row = *self.line_starts.get(position.line)?;
         let display = self.row_for_visual(first_row)?;
         let (row, column) = match display.kind {
-            DisplayRowKind::Text {
-                start_column: _,
-                end_column: _,
-                ..
-            } => {
+            DisplayRowKind::Text { .. } => {
                 let width = self.config.wrap_columns.filter(|width| *width > 0);
                 let segment = width.map_or(0, |width| position.column / width);
                 let row = first_row + segment;

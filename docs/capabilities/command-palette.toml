@@ -1,0 +1,68 @@
+[capability]
+id = "command-palette"
+display_name = "Command Palette"
+owner_module = "command-palette"
+canonical_crate = "labonair-command-palette-core"
+sibling_crates = ["labonair-command-palette", "labonair-command-palette-runtime"]
+public_contract = [
+  "CommandId",
+  "CommandDescriptor",
+  "CommandProvider",
+  "SubmenuAction",
+  "PaletteActionHandlerRegistry",
+]
+canonical_entry_points = [
+  "Titlebar global menu -> Command Palette",
+  "Global command-palette action",
+]
+alternate_entry_points = ["Owner-contributed command and submenu rows"]
+commands = ["OpenCommandPalette"]
+default_keymap = ["cmd-p (platform adapter maps the native equivalent)"]
+registries = ["CommandProvider", "CommandHandlerRegistry", "PaletteActionHandlerRegistry"]
+events = ["SubmenuAction forwarded to the owner handler registry"]
+state_owner = "labonair-command-palette owns query, focus, selection, and recent-command UI state"
+persistence_owner = "labonair-command-palette owns recent-command persistence through the filesystem boundary"
+settings = ["No dedicated settings value is currently defined"]
+notifications = ["Provider or selection failures use the notification contract; no toast surface"]
+ui_kit_components = ["Palette", "ListItem", "keyboard/focus primitives"]
+automation_tools = ["none"]
+security_boundaries = ["Handlers remain owner-registered; the palette does not execute arbitrary feature state"]
+source_files = [
+  "crates/command-palette-core/src/lib.rs",
+  "crates/command-palette-core/src/command_provider.rs",
+  "crates/command-palette/src/command_palette.rs",
+  "crates/command-palette-runtime/src/lib.rs",
+]
+tests = [
+  "cargo test -p labonair-command-palette-core",
+  "cargo test -p labonair-command-palette-runtime",
+  "tasks/rework/R03-001-command-palette-provider-registry.md",
+]
+visual_states = [
+  "normal focused palette — Pending native capture",
+  "empty query/result state — Pending native capture",
+  "filtered results and dynamic submenu — Pending native capture",
+  "keyboard navigation and dismissal — Pending native capture",
+]
+performance_budget = "No numeric budget is declared; fuzzy matching must remain bounded to the provider snapshot and must not block GPUI."
+current_status = "partial"
+target_status = "regression-locked"
+known_limitations = [
+  "The native visual acceptance matrix is pending in the current Linux environment.",
+  "Capability descriptors do not yet cover every provider module.",
+]
+removal_condition = "none"
+last_verified = "2026-10-09"
+
+[evidence]
+contract = ["CommandId and CommandDescriptor are defined in crates/command-palette-core/src/lib.rs"]
+unit = ["Command provider and descriptor behavior are covered by crate tests and compile-time contracts"]
+integration = ["R03-001 records owner-provider registration and runtime routing"]
+command = ["OpenCommandPalette is owned by the command-palette module"]
+surface = ["Titlebar global menu and command-palette modal are the canonical surfaces"]
+persistence = ["Recent-command persistence is isolated in the command-palette implementation"]
+notification = ["Failure path is documented in docs/registries.md; no duplicate toast path"]
+visual = ["Pending: docs/audits/product-surface-acceptance.md command-palette cells"]
+security = ["Owner-registered typed actions prevent the palette from owning arbitrary feature execution"]
+performance = ["N/A: no declared numeric budget; foreground-thread rule remains mandatory"]
+regression = ["tasks/rework/R03-001-command-palette-provider-registry.md"]

@@ -9,6 +9,13 @@ status is based on the current source tree and registry/dependency checks; a
 visual status is not complete until the surface has been inspected in the
 native Rust application at the listed states.
 
+The checked machine-readable state and artifact index is
+[`../testing/visual-evidence.toml`](../testing/visual-evidence.toml), with the
+generated per-surface view at
+[`../generated/visual-evidence.md`](../generated/visual-evidence.md). This
+audit remains the current-state interpretation; it does not promote pending
+registry cells to verified evidence.
+
 ## Evidence vocabulary
 
 | Status | Meaning |

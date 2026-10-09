@@ -2223,29 +2223,33 @@ impl GitPanelView {
         });
         let view = cx.entity();
         window
-            .subscribe(&input, cx, move |input, ev: &InputEvent, window, cx| match ev {
-                InputEvent::PressEnter { secondary } => {
-                    if !*secondary {
-                        return;
+            .subscribe(
+                &input,
+                cx,
+                move |input, ev: &InputEvent, window, cx| match ev {
+                    InputEvent::PressEnter { secondary } => {
+                        if !*secondary {
+                            return;
+                        }
+                        let v = input.read(cx).value().to_string();
+                        let trimmed = v.strip_suffix('\n').unwrap_or(&v).to_string();
+                        view.update(cx, |this, cx| this.do_commit(trimmed, window, cx));
                     }
-                    let v = input.read(cx).value().to_string();
-                    let trimmed = v.strip_suffix('\n').unwrap_or(&v).to_string();
-                    view.update(cx, |this, cx| this.do_commit(trimmed, window, cx));
-                }
-                InputEvent::Focus => {
-                    view.update(cx, |this, cx| {
-                        this.commit_input_focused = true;
-                        cx.notify();
-                    });
-                }
-                InputEvent::Blur => {
-                    view.update(cx, |this, cx| {
-                        this.commit_input_focused = false;
-                        cx.notify();
-                    });
-                }
-                _ => {}
-            })
+                    InputEvent::Focus => {
+                        view.update(cx, |this, cx| {
+                            this.commit_input_focused = true;
+                            cx.notify();
+                        });
+                    }
+                    InputEvent::Blur => {
+                        view.update(cx, |this, cx| {
+                            this.commit_input_focused = false;
+                            cx.notify();
+                        });
+                    }
+                    _ => {}
+                },
+            )
             .detach();
         self.commit_input = Some(input);
     }

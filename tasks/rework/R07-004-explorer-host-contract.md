@@ -6,8 +6,9 @@
 
 > Structural migration landed ahead of formal activation (see
 > [Notes and follow-ups](#notes-and-follow-ups)). The direct
-> `panel-explorer → workspace` edge is removed, the `ExplorerHost` contract and
-> Workspace adapter are in place, and every code/dependency/test gate passes.
+> `panel-explorer → workspace`, `panel-explorer → ssh`, and
+> `panel-explorer → sftp` edges are removed, the `ExplorerHost` contract and
+> composition adapters are in place, and every code/dependency/test gate passes.
 > The task stays `Planned` (not `Done`) only because its native Explorer
 > visual-state evidence folds into the still-open R07-001 visual matrix.
 
@@ -32,9 +33,9 @@ than storing or calling a Workspace entity directly.
 
 ## Scope
 
-- In scope: `panel-explorer` host intents, shared drag/preview values, the
-  Workspace adapter, composition wiring, focused tests, and dependency
-  documentation.
+- In scope: `panel-explorer` host intents, remote-directory access, shared
+  drag/preview values, the Workspace and SFTP composition adapters, focused
+  tests, and dependency documentation.
 - Out of scope: Explorer feature redesign, filesystem API redesign, new
   panels, or changes to the user-visible Explorer workflow.
 
@@ -43,6 +44,10 @@ than storing or calling a Workspace entity directly.
 - Explorer owns file-tree state, selection, and Explorer commands.
 - Workspace owns tab/pane creation and decides how an Explorer intent is
   fulfilled.
+- Explorer consumes remote directory listings through the narrow
+  `RemoteExplorerService` contract owned by `labonair-explorer-host`.
+- The shell adapts the concrete SSH/SFTP services at composition; the panel
+  must not know transport session handles or backend error types.
 - A UI-free Explorer host contract owns only the intents required by the
   Explorer view. It must not expose `Entity<Workspace>` or Workspace-private
   state.
@@ -55,6 +60,8 @@ than storing or calling a Workspace entity directly.
 
 - Remove `panel-explorer → workspace` from Cargo metadata and the dependency
   verifier allow-list after every consumer is migrated.
+- Remove direct `panel-explorer → ssh` and `panel-explorer → sftp` edges; the
+  shell owns their adapter and injects only the Explorer remote contract.
 - Add only the narrow contract edge required by Explorer and its Workspace
   adapter.
 - Keep composition in `labonair-shell`; do not introduce a replacement
@@ -95,8 +102,13 @@ than storing or calling a Workspace entity directly.
       shims and the `labonair-workspace` dependency are gone.
 - [x] The host contract is UI-free, narrow, and owned by the Explorer boundary.
       `labonair-explorer-host` is a leaf crate (only `gpui`) that carries the
-      four intents plus the `DraggedPaths` / `is_previewable` values shared
-      with the terminal and preview views.
+      four intents, the `RemoteExplorerService` directory contract, and the
+      `DraggedPaths` / `is_previewable` values shared with the terminal and
+      preview views.
+- [x] The Explorer panel has no direct SSH or SFTP dependency. Remote directory
+      reads cross `ExplorerHost::remote_service`; the shell's
+      `SftpExplorerService` adapts `SftpSessionService` and
+      `SftpBrowserService` without leaking those types into the panel.
 - [x] Workspace fulfills the contract only through composition injection.
       `crates/shell/src/bootstrap.rs` builds the Workspace-backed `ExplorerHost`
       and re-notifies the panel on active-editor changes.
@@ -112,17 +124,18 @@ than storing or calling a Workspace entity directly.
 - [x] `cargo clippy --workspace --all-targets -- -D warnings` passes.
 - [x] `cargo test --workspace --no-fail-fast` passes.
 - [x] `scripts/check-crate-deps.sh` and `git diff --check` pass; the
-      `panel-explorer → workspace` allow-list entry is replaced by
-      `panel-explorer → explorer-host`.
+      `panel-explorer → workspace`, `panel-explorer → ssh`, and
+      `panel-explorer → sftp` edges are absent and only
+      `panel-explorer → explorer-host` remains for host integration.
 - [ ] The Explorer visual states are recorded with native evidence. Deferred
       into the R07-001 visual matrix.
 
 ## Removal condition
 
-This task is complete only when the direct `panel-explorer → workspace` edge
-is absent from source and metadata, the injected host contract is the sole
-integration path, and the focused plus full verification and visual checks
-pass.
+This task is complete only when the direct `panel-explorer → workspace`,
+`panel-explorer → ssh`, and `panel-explorer → sftp` edges are absent from source
+and metadata, the injected host contracts are the sole integration path, and
+the focused plus full verification and visual checks pass.
 
 ## Notes and follow-ups
 
@@ -133,11 +146,15 @@ verified early:
 
 - new crate `crates/explorer-host` (`labonair-explorer-host`): `ExplorerHost`
   (open-file / open-terminal / open-preview / active-file-path callbacks),
-  plus `DraggedPaths` / `shell_quote` / `quote_paths` / `is_previewable` /
-  `PREVIEW_EXTENSIONS` moved down from `labonair-workspace`;
+  the `RemoteExplorerService` directory contract, plus `DraggedPaths` /
+  `shell_quote` / `quote_paths` / `is_previewable` / `PREVIEW_EXTENSIONS`
+  moved down from `labonair-workspace`;
 - `labonair-panel-explorer`: dropped `labonair-workspace`; `ExplorerView` holds
-  an `ExplorerHost`; `on_workspace_changed` → public
-  `notify_active_file_changed` driven by the composition root;
+  an `ExplorerHost` and no longer imports `labonair-ssh` or `labonair-sftp`;
+  remote directory reads use the injected host service; `on_workspace_changed`
+  → public `notify_active_file_changed` driven by the composition root;
+- `crates/shell/src/explorer_service.rs`: adapts the concrete SFTP session and
+  browser services to the transport-neutral Explorer contract;
 - `labonair-workspace`: deleted `src/drag.rs`; `views/terminal.rs` and
   `views/preview.rs` re-import the shared values from `labonair-explorer-host`;
 - `crates/shell/src/bootstrap.rs`: constructs the Workspace-backed

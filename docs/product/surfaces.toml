@@ -1,0 +1,199 @@
+version = 1
+
+[[surface]]
+id = "shell.titlebar"
+display_name = "Titlebar"
+owner_module = "shell"
+canonical_crate = "labonair-shell"
+kind = "permanent-shell-zone"
+canonical_entry_points = ["Native window titlebar", "Global menu button"]
+alternate_entry_points = ["Tab strip and titlebar actions"]
+context = "global and active workspace"
+command_ids = ["OpenCommandPalette", "OpenSettings", "OpenHosts", "OpenProject", "OpenShortcuts", "ChangeAppTheme"]
+settings = ["appearance", "window and workspace titlebar values"]
+notifications = ["Delegates operation failures to the shared notification registry"]
+visual_states = ["normal", "focused tab", "multiple tabs", "narrow window", "zen mode"]
+source_files = ["crates/shell/src/titlebar.rs", "crates/shell/src/menu.rs"]
+tests = ["crates/shell/src/commands.rs", "crates/workspace/src/tabs.rs"]
+evidence = ["Pending: native titlebar capture matrix"]
+status = "partial"
+
+[[surface]]
+id = "shell.global-menu"
+display_name = "Global Menu"
+owner_module = "shell"
+canonical_crate = "labonair-shell"
+kind = "menu"
+canonical_entry_points = ["Titlebar global menu button"]
+alternate_entry_points = ["Command palette for command-discoverable actions"]
+context = "global"
+command_ids = ["NewTerminalTab", "NewEditorTab", "OpenProject", "OpenHosts", "OpenSettings", "OpenShortcuts", "ChangeAppTheme", "CheckForUpdates", "OpenCommandPalette"]
+settings = ["none — menu entries read typed capability state"]
+notifications = ["Command failures use owner notification paths"]
+visual_states = ["closed", "open", "disabled item", "submenu", "keyboard navigation"]
+source_files = ["crates/shell/src/menu.rs", "crates/shell/src/titlebar.rs"]
+tests = ["crates/shell/src/menu.rs", "crates/shell/src/commands.rs"]
+evidence = ["Pending: native global-menu capture matrix"]
+status = "partial"
+
+[[surface]]
+id = "workspace.active"
+display_name = "Active Workspace"
+owner_module = "workspace"
+canonical_crate = "labonair-workspace"
+kind = "workspace"
+canonical_entry_points = ["Active titlebar tab", "Workspace tab content"]
+alternate_entry_points = ["Standalone terminal and tool tabs"]
+context = "project, standalone, remote"
+command_ids = ["NewTerminalTab", "NewEditorTab", "CloseTab", "SplitRight", "SplitDown", "Find", "OpenFile", "FocusNextPane"]
+settings = ["workspace identity, layout, recent projects, focus and presentation values"]
+notifications = ["Workspace operation and transition failures use Notifications"]
+visual_states = ["home", "project workspace", "standalone", "empty pane", "loading", "error", "split panes"]
+source_files = ["crates/workspace/src/workspace.rs", "crates/workspace/src/tabs.rs", "crates/workspace/src/pane.rs"]
+tests = ["crates/workspace/src/workspace.rs", "crates/workspace/src/layout.rs"]
+evidence = ["Pending: native workspace state matrix"]
+status = "partial"
+
+[[surface]]
+id = "workspace.docks"
+display_name = "Registered Docks and Panels"
+owner_module = "workspace"
+canonical_crate = "labonair-workspace"
+kind = "docks"
+canonical_entry_points = ["Left/right/bottom dock controls", "Registered panel buttons"]
+alternate_entry_points = ["Command palette panel commands"]
+context = "active workspace"
+command_ids = ["ToggleSidebar", "OpenSnippetsPanel", "OpenGitGraph", "FocusSourceControl", "OpenHosts"]
+settings = ["dock position and visibility values owned by Workspace/Settings contracts"]
+notifications = ["Panel operation failures use Notifications"]
+visual_states = ["left dock", "right dock", "bottom dock", "empty dock", "focused panel", "narrow window"]
+source_files = ["crates/panel/src/dock.rs", "crates/panel/src/panel.rs", "crates/workspace/src/dock.rs"]
+tests = ["crates/panel/src/dock.rs", "crates/panel/src/panel.rs"]
+evidence = ["Pending: native dock/panel matrix"]
+status = "partial"
+
+[[surface]]
+id = "workspace.statusbar"
+display_name = "Statusbar"
+owner_module = "workspace"
+canonical_crate = "labonair-workspace"
+kind = "permanent-shell-zone"
+canonical_entry_points = ["Statusbar left controls", "Statusbar right information items"]
+alternate_entry_points = ["Status item context menu"]
+context = "active workspace and focused pane"
+command_ids = ["ShowStatusBarItem"]
+settings = ["statusbar visibility and item placement values"]
+notifications = ["Notifications is a registered right-side item; other failures use the shared registry"]
+visual_states = ["normal", "hidden item", "right-click menu", "narrow window", "unread notification badge"]
+source_files = ["crates/workspace/src/status_bar.rs", "crates/workspace/src/status_items.rs", "crates/panel/src/status.rs"]
+tests = ["crates/panel/src/status.rs", "crates/workspace/src/status_placements.rs"]
+evidence = ["Pending: native statusbar matrix"]
+status = "partial"
+
+[[surface]]
+id = "overlay.command-palette"
+display_name = "Command Palette"
+owner_module = "command-palette"
+canonical_crate = "labonair-command-palette-core"
+kind = "overlay"
+canonical_entry_points = ["Global command palette action", "Titlebar global menu"]
+alternate_entry_points = ["Owner-contributed dynamic submenus"]
+context = "global, home, terminal, editor, sftp, ssh-terminal"
+command_ids = ["OpenCommandPalette"]
+settings = ["No dedicated value owner"]
+notifications = ["Selection/provider failures use the shared registry"]
+visual_states = ["focused", "empty", "filtered", "submenu", "keyboard navigation", "dismissed"]
+source_files = ["crates/command-palette/src/palette.rs", "crates/command-palette/src/command_palette.rs"]
+tests = ["crates/command-palette/src/palette.rs", "crates/command-palette-core/src"]
+evidence = ["Pending: native command-palette matrix"]
+status = "partial"
+
+[[surface]]
+id = "workspace.dialogs"
+display_name = "Dialogs and Decision Overlays"
+owner_module = "workspace"
+canonical_crate = "labonair-workspace"
+kind = "overlay"
+canonical_entry_points = ["ModalLayer decision dialog", "Feature-owned confirmation dialog"]
+alternate_entry_points = ["Field validation in owning feature views"]
+context = "active window"
+command_ids = ["OpenProject", "OpenProjectSettings", "OpenSettingsJson"]
+settings = ["Feature-owned values only"]
+notifications = ["Operational failures use Notifications; decisions remain local dialogs"]
+visual_states = ["open", "focused input", "validation error", "confirm/cancel", "loading", "failure"]
+source_files = ["crates/workspace/src/modal_layer.rs", "crates/shell/src/modals.rs"]
+tests = ["crates/workspace/src/modal_layer.rs", "crates/settings-ui/src"]
+evidence = ["Pending: native dialog matrix"]
+status = "partial"
+
+[[surface]]
+id = "workspace.hosts-tab"
+display_name = "Hosts Management Tab"
+owner_module = "hosts"
+canonical_crate = "labonair-hosts"
+kind = "workspace-tab"
+canonical_entry_points = ["Global menu -> Hosts", "OpenHosts command"]
+alternate_entry_points = ["Command palette host submenu"]
+context = "project, standalone, remote"
+command_ids = ["OpenHosts", "NewSshConnection", "NewSftpTab", "ConnectSsh", "OpenSftp"]
+settings = ["none — Hosts owns host values and management UI"]
+notifications = ["Host persistence and connection failures use Notifications"]
+visual_states = ["host list", "empty", "host form", "validation error", "active tunnels", "loading"]
+source_files = ["crates/hosts-ui/src/hosts.rs", "crates/workspace/src/workspace.rs", "crates/hosts-host/src/lib.rs"]
+tests = ["crates/hosts/src/lib.rs", "crates/hosts-ui/src/command_provider.rs"]
+evidence = ["Pending: native Hosts matrix"]
+status = "partial"
+
+[[surface]]
+id = "statusbar.notifications"
+display_name = "Notification Dropdown"
+owner_module = "notifications"
+canonical_crate = "labonair-notifications-core"
+kind = "statusbar-item"
+canonical_entry_points = ["Statusbar notification bell"]
+alternate_entry_points = ["Feature publication through NotificationCenter"]
+context = "global statusbar"
+command_ids = ["none"]
+settings = ["none"]
+notifications = ["This is the sole global passive notification presentation surface"]
+visual_states = ["closed", "unread badge", "open list", "empty", "expanded details", "clear all"]
+source_files = ["crates/notifications/src/status_item.rs", "crates/notifications/src/notifications.rs", "crates/notifications-core/src/lib.rs"]
+tests = ["crates/notifications-core/src/lib.rs", "crates/notifications/src/notifications.rs"]
+evidence = ["Pending: native notification matrix"]
+status = "partial"
+
+[[surface]]
+id = "workspace.settings"
+display_name = "Settings Window"
+owner_module = "settings"
+canonical_crate = "labonair-settings"
+kind = "workspace-tool"
+canonical_entry_points = ["OpenSettings command", "Titlebar global menu"]
+alternate_entry_points = ["OpenSettingsJson command"]
+context = "global"
+command_ids = ["OpenSettings", "OpenSettingsJson", "OpenShortcuts"]
+settings = ["Settings values and scopes are owned by labonair-settings"]
+notifications = ["Schema and persistence failures use Notifications"]
+visual_states = ["normal", "scope navigation", "search/filter", "validation error", "save failure"]
+source_files = ["crates/settings-ui/src/window.rs", "crates/settings-ui/src/view.rs", "crates/settings/src"]
+tests = ["crates/settings/src", "crates/settings-ui/src"]
+evidence = ["Pending: native Settings matrix"]
+status = "partial"
+
+[[surface]]
+id = "workspace.standalone-terminal"
+display_name = "Standalone Terminal"
+owner_module = "terminal"
+canonical_crate = "labonair-terminal"
+kind = "standalone-tool"
+canonical_entry_points = ["NewTerminalTab command", "Standalone startup workflow"]
+alternate_entry_points = ["SSH terminal and SFTP transitions"]
+context = "standalone, terminal, ssh-terminal"
+command_ids = ["NewTerminalTab", "ClearTerminal", "NewSshTab", "NewQuickSsh"]
+settings = ["terminal values and keymap contexts"]
+notifications = ["Process/session failures use Notifications"]
+visual_states = ["ready", "loading", "empty", "process exit", "connection failure", "narrow window"]
+source_files = ["crates/workspace/src/views/terminal.rs", "crates/terminal/src", "crates/shell/src/bootstrap.rs"]
+tests = ["crates/terminal/src", "crates/workspace/src/views/terminal.rs"]
+evidence = ["Pending: native terminal matrix"]
+status = "partial"

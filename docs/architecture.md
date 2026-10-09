@@ -1,8 +1,8 @@
 # Labonair Architecture
 
 **Status:** Normative target architecture
-**Version:** 5
-**Related:** [`product.md`](product.md), [`capabilities.md`](capabilities.md), [`modules.md`](modules.md), [`registries.md`](registries.md), [`repository-layout.md`](repository-layout.md), [`feature-lifecycle.md`](feature-lifecycle.md)
+**Version:** 6
+**Related:** [`product.md`](product.md), [`capabilities.md`](capabilities.md), [`modules.md`](modules.md), [`registries.md`](registries.md), [`repository-layout.md`](repository-layout.md), [`feature-lifecycle.md`](feature-lifecycle.md), [`architecture/layers.md`](architecture/layers.md), [`architecture/composition-root.md`](architecture/composition-root.md), [`architecture/runtime-lifecycle.md`](architecture/runtime-lifecycle.md), [`architecture/dependency-rules.md`](architecture/dependency-rules.md)
 
 ## 1. Architecture objective
 
@@ -134,7 +134,7 @@ boundary.
 | Credentials | `labonair-credentials` | Credential metadata, secret references, and generated SSH key material. |
 | Transfers | `labonair-transfers` | Transfer queue, progress, cancellation, conflict resolution, and lifecycle history. The `labonair-transfers-ssh` integration sibling owns concrete SFTP execution. |
 | Git | `labonair-git` | Git contracts and source-control behavior; `labonair-git-transport` owns local/remote CLI execution and contract adapters, while sibling panel crates provide Git views. |
-| Explorer | `labonair-panel-explorer` | Local file navigation UI over filesystem contracts. |
+| Explorer | `labonair-panel-explorer` | Local file navigation UI over filesystem contracts and the injected `labonair-explorer-host::RemoteExplorerService` for SSH-backed roots. The panel does not depend directly on SSH or SFTP. |
 | Snippets | `labonair-snippets` | Snippet storage, execution contracts, and snippet behavior; sibling panel crate provides the view. |
 | AI | `labonair-ai` | Providers, sessions, context, tools, and future UI. MCP host contracts live in `labonair-mcp-core`; the concrete HTTP bridge lives in `labonair-mcp-server`. |
 
@@ -150,6 +150,11 @@ and the `labonair-sftp` service adapters; it receives SSH state and the raw
 event transport explicitly.
 Transfers remain a separate capability and are not part of the SFTP browser
 contract.
+
+The Explorer panel consumes remote directory listings through the
+`labonair-explorer-host::RemoteExplorerService` contract. The shell composition
+root adapts `labonair-sftp` and `labonair-ssh` services into that contract;
+`labonair-panel-explorer` must not import either transport capability directly.
 
 `labonair-events` is a foundation transport only. It replaces the former
 backend-local event primitive, while SSH, MCP, and Transfers translate raw

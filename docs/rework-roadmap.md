@@ -1,7 +1,7 @@
 # Labonair Architecture Rework Roadmap
 
 **Status:** Current implementation plan
-**Version:** 4
+**Version:** 5
 
 The rework is through the completed R06 backend-adapter eradication. The
 capability-owned registries and surfaces, shell/workspace identity, settings
@@ -27,6 +27,20 @@ the predecessor.
 - generate a migration matrix from current crates to target modules.
 
 **Exit:** the target graph and ownership of every current feature are documented.
+
+The Phase 0 documentation baseline is extended by the repository-level
+[`../docs-reform-plan.md`](../docs-reform-plan.md). Its implemented knowledge
+infrastructure includes the agent router, architecture manifest, capability
+coverage, product/workflow catalogs, evidence scorecard, Settings lifecycle,
+automation/security catalog, performance budgets, release checklist, and the
+canonical `scripts/verify.py` scopes. It is not a second implementation queue;
+the active queue remains `tasks/rework/`. Native R07 visual evidence and
+deeper per-capability evidence remain pending until the supported host can
+produce them.
+
+The remaining completion work is tracked as
+[`R07-006-documentation-knowledge-system.md`](../tasks/rework/R07-006-documentation-knowledge-system.md)
+after the native R07 acceptance dependencies; it is not a parallel queue.
 
 ## Phase 1 — Foundation contracts
 
@@ -212,9 +226,12 @@ dependency (B01 in
 [`audits/remaining-boundaries.md`](audits/remaining-boundaries.md)) is removed.
 `labonair-panel-explorer` now reaches the workspace only through the injected
 `labonair-explorer-host::ExplorerHost` contract, and the shared drag/preview
-value types live in the new leaf `labonair-explorer-host` crate. All code,
-dependency, and test gates pass; the native Explorer visual-state recording is
-the only remaining item and folds into the R07-001 visual matrix.
+value types live in the new leaf `labonair-explorer-host` crate. Its remote
+directory read also uses the host's transport-neutral `RemoteExplorerService`;
+the shell adapts the concrete SSH/SFTP services so the panel has no direct
+remote transport dependency. All code, dependency, and test gates pass; the
+native Explorer visual-state recording is the only remaining item and folds
+into the R07-001 visual matrix.
 
 The second boundary task,
 [`R07-005-background-presentation-boundary.md`](../tasks/rework/R07-005-background-presentation-boundary.md),
@@ -329,7 +346,7 @@ Status:
 
 | Finding | Task | State |
 |---|---|---|
-| P0.2 task/doc reconciliation | — | Done — R01-004/R03-002/R04-002/R05-001/R06-001 non-visual criteria ticked with evidence; residuals carry follow-up pointers; visual criteria delegated to R07-001 |
+| P0.2 task/doc reconciliation | — | Done — R01-004/R03-002/R04-002/R05-001/R06-001 non-visual criteria and the documentation-reform knowledge gates are evidenced; residuals carry follow-up pointers; visual criteria delegated to R07-001 |
 | P1.3 `panel-snippets → workspace` | R08-003 | Done — leaf `labonair-snippets-host::SnippetExecutionHost` |
 | P1.4 `transfers-ui → workspace` | R08-001 | Done — `TransferUiEvent::Completed` wired at composition |
 | P1.5 Theme policy in `settings-ui` | R08-005 | Done — new `labonair-theme-ui` sibling; `labonair-theme` keeps no settings dep |

@@ -1,0 +1,109 @@
+version = 1
+status_vocabulary = ["Verified", "Partial", "Pending", "N/A"]
+measurement_policy = "Record command, commit, host, build profile, input size, sample count, result, and artifact before changing a Pending item to Verified."
+generated_view = "docs/generated/performance.md"
+
+[[budget]]
+id = "startup.visible-window"
+area = "startup"
+owner = "application"
+unit = "milliseconds"
+target = "< 400 ms from native process start to visible window on supported macOS Apple Silicon release build"
+measurement = "Run the native bundle with the documented startup trace on a supported macOS host; record process-start and first-paint timestamps."
+environment = "macOS Apple Silicon release bundle"
+status = "Pending"
+evidence = ["docs/performance/budgets.md states the target; no supported-host first-paint artifact is present"]
+source_refs = ["docs/performance.md", "docs/visual-verification.md", "crates/app/src/main.rs"]
+limitation = "The current Linux session has no native window server or credible first-paint timing."
+next_action = "Capture a release-build startup trace and attach the artifact to the scorecard."
+last_verified = "2026-10-09"
+
+[[budget]]
+id = "startup.interactive-terminal"
+area = "startup"
+owner = "terminal"
+unit = "milliseconds"
+target = "< 700 ms from process start to an interactive local terminal"
+measurement = "Measure native startup through first PTY-ready event with a release bundle and one cold and five warm samples."
+environment = "Supported macOS host; release bundle"
+status = "Pending"
+evidence = ["Terminal lifecycle is documented; no native timing artifact is present"]
+source_refs = ["docs/product/workflows.toml", "crates/terminal/src", "crates/workspace/src/views/terminal.rs"]
+limitation = "PTY readiness and native event-loop timing cannot be measured credibly in this container."
+next_action = "Record cold/warm PTY-ready samples and variance on the supported host."
+last_verified = "2026-10-09"
+
+[[budget]]
+id = "memory.idle-rss"
+area = "memory"
+owner = "application"
+unit = "megabytes"
+target = "< 150 MB idle RSS with one tab"
+measurement = "Measure the exact release bundle after startup stabilization using the supported host process monitor; record peak and steady-state RSS."
+environment = "Supported macOS host; release bundle"
+status = "Pending"
+evidence = ["No reproducible native RSS artifact is present"]
+source_refs = ["docs/performance.md", "docs/perf-baseline.md"]
+limitation = "Container memory measurements would not represent the supported GPUI renderer path."
+next_action = "Capture a five-minute idle RSS sample with background activity disabled."
+last_verified = "2026-10-09"
+
+[[budget]]
+id = "terminal.output"
+area = "terminal"
+owner = "terminal"
+unit = "rendering responsiveness"
+target = "No visible hitch while rendering 200k lines with bounded scrollback"
+measurement = "Run the terminal workload through the release bundle, capture trace spans, and record dropped-frame or hitch evidence."
+environment = "Supported macOS host; native terminal"
+status = "Partial"
+evidence = ["Source-level bounded scrollback guards and opt-in perf tracing exist"]
+source_refs = ["docs/perf-baseline.md", "crates/terminal/src", "crates/workspace/src/views/terminal.rs"]
+limitation = "The workload has not been measured through a native graphical session."
+next_action = "Attach a workload trace and frame-time sample."
+last_verified = "2026-10-09"
+
+[[budget]]
+id = "lists.large-data"
+area = "lists"
+owner = "explorer"
+unit = "interactive responsiveness"
+target = "5k-row Explorer, SFTP, and Git views remain virtualized and responsive"
+measurement = "Use a deterministic 5k-entry fixture and measure first paint, scroll interaction, and refresh latency in the native bundle."
+environment = "Supported macOS host; native Explorer/SFTP/Git surfaces"
+status = "Pending"
+evidence = ["Surface and workflow contracts name long-list states; no native workload artifact is present"]
+source_refs = ["docs/product/surfaces.toml", "docs/product/workflows.toml", "crates/panel-explorer/src"]
+limitation = "Remote and native list workloads are not representable by a headless cargo test."
+next_action = "Add deterministic local fixture measurements, then remote-list measurements where supported."
+last_verified = "2026-10-09"
+
+[[budget]]
+id = "git.status-poll"
+area = "git"
+owner = "git"
+unit = "poll overlap"
+target = "At most one status refresh runs per configured interval"
+measurement = "Exercise repository refresh under repeated triggers and assert no overlapping refresh jobs in the trace/test fixture."
+environment = "Workspace integration test and supported native host"
+status = "Partial"
+evidence = ["Git workflow and async boundary are documented; runtime trace is not yet attached"]
+source_refs = ["docs/product/workflows.toml", "crates/git/src", "crates/panel-scm/src"]
+limitation = "The target is a behavioral guard, not a completed performance baseline."
+next_action = "Add an explicit refresh-overlap test or trace artifact when the Git polling workflow is finalized."
+last_verified = "2026-10-09"
+
+[[budget]]
+id = "ui.foreground-blocking"
+area = "ui"
+owner = "application"
+unit = "blocking operations"
+target = "No filesystem, process, network, or database I/O blocks the GPUI foreground thread"
+measurement = "Review async boundaries and run a native trace with representative startup, terminal, remote, settings, and workspace operations."
+environment = "Supported macOS host; debug review plus native trace"
+status = "Partial"
+evidence = ["Architecture rules require async work; source review and tests cover selected boundaries"]
+source_refs = ["docs/architecture/runtime-lifecycle.md", "docs/architecture/composition-root.md", "docs/performance.md"]
+limitation = "A complete native trace across all workflows is not yet attached."
+next_action = "Record a representative trace and convert confirmed paths to regression evidence."
+last_verified = "2026-10-09"

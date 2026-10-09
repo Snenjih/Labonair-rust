@@ -41,9 +41,9 @@ removal conditions.
 | `notifications-core` | UI-free notification registry and lifecycle | notifications module | New owner of retention, ordering, deduplication, read state, and structured metadata. |
 | `notifications` | GPUI notification adapter and statusbar dropdown | notifications module | Owns the statusbar notification item; shell only registers it. |
 | `panel` | Panel/status contracts | workspace foundation | Keep contracts-only. |
-| `explorer-host` | Explorer host contract plus the drag/preview value types shared with the terminal and preview views | explorer module | Leaf (only `gpui`); lets `panel-explorer` and `workspace` interoperate without either depending on the other (R07-004). |
+| `explorer-host` | Explorer host intents, remote-directory contract, and drag/preview value types shared with the terminal and preview views | explorer module | Leaf (only `gpui`); lets `panel-explorer` and `workspace` interoperate without either depending on the other and keeps SSH/SFTP adapters out of the panel (R07-004). |
 | `snippets-host` | Snippet execution-host contract (inject / run local / run SSH terminal / SSH-session lookup) | snippets module | Leaf (only `gpui`); lets `panel-snippets` run snippets without depending on `labonair-workspace` (R08-003). |
-| `panel-explorer` | Explorer panel | explorer module | Workspace dependency removed (R07-004): opens files/terminals/previews and reads the active file through the injected `labonair-explorer-host::ExplorerHost` contract. |
+| `panel-explorer` | Explorer panel | explorer module | Workspace, SSH, and SFTP dependencies removed (R07-004): opens files/terminals/previews, reads the active file, and loads remote directories through the injected `labonair-explorer-host` contracts. |
 | `panel-git-graph` | Git graph panel | git module | Consumes `labonair-git::GitGraphService`; the `labonair-git-transport` implementation is injected at composition. |
 | `panel-scm` | Source-control panel | git module | Consumes `labonair-git::GitService`; backend implementation is injected at composition. |
 | `panel-snippets` | Snippet panel and execution UI | snippets module | Receives `Database` and execution contracts; has no backend-facade dependency. R08-003: no `labonair-workspace` edge — runs snippets through the injected `labonair-snippets-host::SnippetExecutionHost`. |
@@ -118,7 +118,9 @@ edges; the dependency verifier rejects every unlisted edge.
   `labonair-explorer-host::ExplorerHost` contract; the shared `DraggedPaths` /
   `quote_paths` / `is_previewable` value types now live in the leaf
   `labonair-explorer-host` crate that both `panel-explorer` and `workspace`
-  consume.
+  consume. Its SSH-backed directory read also crosses the host's
+  `RemoteExplorerService`; the shell adapts the concrete SFTP/SSH services so
+  the panel has no direct remote transport dependency.
 - `hosts-ui` no longer depends on Settings or the backend facade; the shell
   composes one `HostManagerView`, injects its database, secret state, transport
   contracts, and the narrow MCP-revocation callback, then hands that entity to
@@ -313,7 +315,7 @@ families. These are not target dependencies; each has a removal condition:
 |---|---|---|
 | `workspace → background-host` | Workspace/Terminal render the background layer through the injected `BackgroundHost` contract; `labonair-shell` builds it from the concrete `BackgroundStore` at composition. | Retain by design (R07-005): `background-host` is a leaf contract crate that breaks the `workspace ↔ background` coupling, mirroring the Explorer host pattern. |
 | `workspace → ai`, `workspace → settings` | Workspace hosts the AI live bridge and consumes typed settings values for workspace-owned behavior. | Keep orchestration in Workspace; move AI context and any remaining direct implementation access behind narrow contracts. |
-| `panel-explorer → explorer-host`, `workspace → explorer-host` | Explorer's open-file/open-terminal/open-preview/active-file intents and the `DraggedPaths` / `is_previewable` value types shared with the terminal and preview views. | Retain by design (R07-004): `explorer-host` is a leaf contract crate that breaks the `panel-explorer ↔ workspace` coupling; the shell injects the Workspace-backed `ExplorerHost`. |
+| `panel-explorer → explorer-host`, `workspace → explorer-host` | Explorer's open-file/open-terminal/open-preview/active-file intents, SSH-backed directory reads, and the `DraggedPaths` / `is_previewable` value types shared with the terminal and preview views. | Retain by design (R07-004): `explorer-host` is a leaf contract crate that breaks the `panel-explorer ↔ workspace` coupling and hides concrete SSH/SFTP adapters; the shell injects the Workspace-backed `ExplorerHost`. |
 | `panel-snippets → snippets-host`, `shell → snippets-host` | The Snippets panel's terminal-inject / run-local / run-SSH-terminal / active-SSH-session intents. | Retain by design (R08-003): `snippets-host` is a leaf contract crate that breaks the `panel-snippets → workspace` coupling; the shell injects the Workspace-backed `SnippetExecutionHost`. |
 | `workspace → hosts-host`, `hosts-ui → hosts-host`, `shell → hosts-host` | Host catalog reads (ids / names / jump-host labels / picker rows) + connection-status and active-tunnel snapshot sinks. | Retain by design (R08-012): `hosts-host` is a leaf contract crate that breaks the `workspace → hosts-ui` coupling; the shell builds the `HostView` from the active `HostManagerView`. Do not widen it into a host-service facade. |
 | `ui-kit → theme-tokens`, `theme → theme-tokens` | The shared design-token layer + `UiTheme` contract. | Retain by design (R08-008): `theme-tokens` is a foundation leaf; `ui-kit` renders against it instead of the `labonair-theme` feature crate. |

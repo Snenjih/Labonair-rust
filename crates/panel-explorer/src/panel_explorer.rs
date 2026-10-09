@@ -52,8 +52,6 @@ use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, Debouncer};
 
 use labonair_filesystem::{mutate, tree};
-use labonair_sftp::{SftpBrowserService, SftpSessionService};
-use labonair_ssh::SshSessionId;
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
@@ -731,9 +729,6 @@ pub struct ExplorerView {
     /// The composition root wires it to the active workspace; this view never
     /// holds the workspace entity (R07-004).
     host: ExplorerHost,
-    /// Remote directory listing for SSH-connected roots (`TreeModel::remote_ssh_id`).
-    sftp_session: Arc<dyn SftpSessionService>,
-    sftp_browser: Arc<dyn SftpBrowserService>,
     tokio: TokioHandle,
     model: TreeModel,
     selection: Vec<PathBuf>,
@@ -785,8 +780,6 @@ impl ExplorerView {
     pub fn new(
         theme: Entity<ThemeStore>,
         host: ExplorerHost,
-        sftp_session: Arc<dyn SftpSessionService>,
-        sftp_browser: Arc<dyn SftpBrowserService>,
         tokio: TokioHandle,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -808,8 +801,6 @@ impl ExplorerView {
         Self {
             theme,
             host,
-            sftp_session,
-            sftp_browser,
             tokio,
             model: TreeModel::default(),
             selection: Vec::new(),
@@ -1086,18 +1077,10 @@ impl ExplorerView {
         let path_str = path.to_string_lossy().to_string();
 
         if let Some(ssh_id) = self.model.remote_ssh_id.clone() {
-            let session_service = self.sftp_session.clone();
-            let browser = self.sftp_browser.clone();
-            let jh = self.tokio.spawn(async move {
-                let handle = session_service
-                    .open(SshSessionId::new(ssh_id))
-                    .await
-                    .map_err(|e| e.to_string())?;
-                browser
-                    .read_dir(handle, path_str)
-                    .await
-                    .map_err(|e| e.to_string())
-            });
+            let remote = self.host.remote_service();
+            let jh = self
+                .tokio
+                .spawn(async move { remote.read_dir(ssh_id, path_str).await });
             cx.spawn(async move |view, cx| {
                 let result = jh.await.unwrap_or_else(|e| Err(e.to_string()));
                 let _ = view.update(cx, |this, cx| {

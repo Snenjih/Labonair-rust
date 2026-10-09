@@ -1,0 +1,99 @@
+version = 1
+status_vocabulary = ["Verified", "Conditional", "Pending", "N/A"]
+generated_view = "docs/generated/release.md"
+
+[[check]]
+id = "release.rust-gates"
+area = "build"
+owner = "repository"
+command = "python3 scripts/verify.py --scope rust"
+status = "Verified"
+evidence = ["Canonical fmt, check, clippy, and workspace-test commands are defined in scripts/verify.py."]
+source_refs = ["scripts/verify.py", "AGENTS.md"]
+limitation = "The native visual and packaging checks are separate from Rust gates."
+next_action = "Keep the Rust scope required for every release candidate."
+last_verified = "2026-10-09"
+
+[[check]]
+id = "release.macos-smoke"
+area = "smoke"
+owner = "release"
+command = "scripts/smoke-test.sh"
+status = "Conditional"
+evidence = ["Bundle structure, core smoke tests, and optional exact-bundle launch are implemented."]
+source_refs = ["scripts/smoke-test.sh", "docs/RELEASE.md"]
+limitation = "Requires macOS tooling and a native window session for the optional launch step."
+next_action = "Run the script on the supported macOS runner and retain the release log."
+last_verified = "2026-10-09"
+
+[[check]]
+id = "release.bundle-structure"
+area = "packaging"
+owner = "release"
+command = "scripts/package-macos.sh"
+status = "Conditional"
+evidence = ["The script assembles the native .app, lints Info.plist, includes the binary/icon, and emits updater artifacts."]
+source_refs = ["scripts/package-macos.sh", "docs/release/packaging.md"]
+limitation = "The current environment is Linux and cannot execute macOS packaging tools."
+next_action = "Run on macOS and archive the bundle validation output with the artifact digest."
+last_verified = "2026-10-09"
+
+[[check]]
+id = "release.signing"
+area = "signing"
+owner = "release"
+command = "LABONAIR_SIGN_IDENTITY=... scripts/package-macos.sh"
+status = "Conditional"
+evidence = ["Optional codesign and strict verification branches are present in the package script."]
+source_refs = ["scripts/package-macos.sh", "docs/release/packaging.md", "packaging/macos/Labonair.entitlements"]
+limitation = "Signing identity and Apple credentials are intentionally unavailable in the repository and current session."
+next_action = "Run with the protected release secrets and retain only public signature/verification results."
+last_verified = "2026-10-09"
+
+[[check]]
+id = "release.notarization"
+area = "signing"
+owner = "release"
+command = "LABONAIR_NOTARY_PROFILE=... scripts/package-macos.sh --dmg"
+status = "Conditional"
+evidence = ["Notary submission and stapling branches are documented and implemented."]
+source_refs = ["scripts/package-macos.sh", "docs/release/packaging.md"]
+limitation = "Notarization needs a configured keychain profile and supported macOS network access."
+next_action = "Perform a tagged release dry run with protected credentials and record the notarization result."
+last_verified = "2026-10-09"
+
+[[check]]
+id = "release.updater-artifact"
+area = "updates"
+owner = "updater"
+command = "scripts/package-macos.sh --dmg"
+status = "Conditional"
+evidence = ["The package script emits an app tarball and latest.json, and optionally signs the tarball with minisign."]
+source_refs = ["scripts/package-macos.sh", "crates/updater/src", "docs/release/rollback.md"]
+limitation = "A public release artifact and signature verification record are not present in this working tree."
+next_action = "Verify manifest URL, signature, and updater acceptance against a staged release."
+last_verified = "2026-10-09"
+
+[[check]]
+id = "release.rollback"
+area = "recovery"
+owner = "updater"
+command = "Manual staged-artifact rollback procedure"
+status = "Pending"
+evidence = ["Rollback and recovery contract exists; no staged rollback execution artifact is attached."]
+source_refs = ["docs/release/rollback.md", "crates/updater/src"]
+limitation = "Rollback requires two real signed versions and a supported host."
+next_action = "Exercise downgrade/recovery from a staged artifact without deleting user data."
+last_verified = "2026-10-09"
+
+[[check]]
+id = "release.support-handoff"
+area = "support"
+owner = "release"
+command = "Release handoff checklist"
+status = "Pending"
+evidence = ["Platform, packaging, support, and documentation contracts are indexed."]
+source_refs = ["docs/release/support-policy.md", "docs/release/platforms.md", "docs/README.md"]
+limitation = "No release-specific artifact handoff for the current commit exists."
+next_action = "Attach version, target, artifact digest, commit, known limitations, and recovery path per release."
+last_verified = "2026-10-09"

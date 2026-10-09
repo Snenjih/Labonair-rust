@@ -260,10 +260,7 @@ mod tests {
     #[test]
     fn terminal_cwd_prefers_live_pane_cwd_over_project_root() {
         assert_eq!(
-            resolve_terminal_cwd(
-                Some("/project/src".into()),
-                Some(PathBuf::from("/project")),
-            ),
+            resolve_terminal_cwd(Some("/project/src".into()), Some(PathBuf::from("/project")),),
             Some("/project/src".into())
         );
     }

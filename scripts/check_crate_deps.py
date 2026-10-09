@@ -1,482 +1,125 @@
 #!/usr/bin/env python3
+"""Validate dependency boundaries declared in the architecture manifest."""
+
+from __future__ import annotations
+
 import json
 import sys
 
-meta = json.load(sys.stdin)
+from architecture_model import load_manifest, manifest_graph
 
-# ---------------------------------------------------------------------------
-# ALLOW-LIST — workspace-internal deps permitted per crate.
-#
-# Derived from docs/architecture.md and the v2 migration inventory in
-# docs/audits/architecture-inventory.md. Entries marked transitional are
-# temporary compatibility edges. They remain explicit so a new edge still
-# fails the build and each transitional edge can be removed independently.
-# ---------------------------------------------------------------------------
-ALLOWED = {
-    # bin — depends on the shell + the engines it boots (rule 3 consumer side).
-    "labonair": {
-        "labonair-shell",
-        # Smoke tests exercise the terminal engine and theme conversion
-        # directly; these are dev-dependency edges, not runtime bootstrap
-        # ownership.
-        "labonair-terminal", "labonair-theme",
-    },
 
-    # Foundation ------------------------------------------------------------
-    # rule 6: leaf below ui-kit, only gpui / gpui-component.
-    "labonair-gpui-ext": set(),
-    # R08-008: the design-token layer (`Theme`, `RadiusScale`, `ThemeMetrics`,
-    # colour structs, `IconThemeContent`, the `UiTheme` contract). A leaf —
-    # only `gpui` / `serde` / `palette` (external). Sits below `ui-kit` so
-    # `ui-kit` can render against tokens without depending on the Themes
-    # *feature* crate.
-    "labonair-theme-tokens": set(),
-    # rule 5: only gpui, gpui-component, theme-tokens, gpui-ext — NOT the
-    # `labonair-theme` feature crate (R08-008).
-    "labonair-ui-kit": {"labonair-theme-tokens", "labonair-gpui-ext"},
-    # Theme metadata also contributes palette commands through the shared
-    # command contract; it does not depend on the palette UI. The token layer
-    # is `labonair-theme-tokens` (R08-008).
-    "labonair-theme": {"labonair-command-palette-core", "labonair-theme-tokens"},
-    # Background capability owns image persistence and GPUI rendering. It
-    # consumes only the filesystem platform service, theme, and its own
-    # presentation-contract leaf (B02: `LayerScope` + the injected
-    # `BackgroundHost` built by `host()`).
-    "labonair-background": {
-        "labonair-filesystem", "labonair-theme", "labonair-background-host",
-    },
-    # B02: narrow background presentation contract (`LayerScope` +
-    # `BackgroundHost`). A leaf — only `gpui` (external) — so `workspace` can
-    # render the background layer without depending on `labonair-background`'s
-    # image storage/import/decoding.
-    "labonair-background-host": set(),
-    # Update manifest/download/install capability; its GPUI presentation is a
-    # separate sibling and consumes this UI-free crate.
-    "labonair-updater": {"labonair-filesystem"},
-    "labonair-updater-ui": {
-        "labonair-theme", "labonair-ui-kit", "labonair-panel",
-        "labonair-notifications",
-        "labonair-updater", "labonair-command-palette-core",
-        "labonair-command-palette-runtime",
-    },
-    # Platform service — no GPUI or feature-crate deps. Feature crates may
-    # consume it directly; the backend edge is transitional during migration.
-    "labonair-filesystem": set(),
-    # UI-free SSH capability contracts; transport implementations remain in
-    # backend adapters.
-    "labonair-ssh": {"labonair-errors"},
-    # UI-free SFTP contracts may use opaque SSH session ids only.
-    "labonair-sftp": {"labonair-errors", "labonair-ssh"},
-    # Concrete SFTP session and contract adapters; transport details stay in
-    # this integration sibling rather than in the backend facade.
-    "labonair-sftp-ssh": {
-        "labonair-errors", "labonair-events", "labonair-persistence",
-        "labonair-secrets", "labonair-sftp", "labonair-ssh",
-        "labonair-ssh-transport",
-    },
-    # UI-free transfer lifecycle, event, and worker contracts.
-    "labonair-transfers": set(),
-    # Concrete SFTP transfer execution; this integration sibling keeps the
-    # russh worker out of both the backend facade and the UI-free contracts.
-    "labonair-transfers-ssh": {
-        "labonair-events", "labonair-ssh-transport", "labonair-transfers",
-    },
-    # Module-owned keymap runtime: default/user layer composition, context
-    # resolution, conflict detection, and the lossless file editor model, keyed
-    # on `CommandId`. GPUI publication remains in the palette/shell adapters.
-    "labonair-keymap": {
-        "labonair-command-palette-core",
-    },
-    # Keymap presentation is a real sibling boundary: it consumes the
-    # keymap-owned snapshot and shared UI/theme contracts, but owns no
-    # persistence, resolution, or feature execution. `labonair-workspace` hosts
-    # `KeymapManagementView` as a tab; `keymap-ui` never depends back.
-    "labonair-keymap-ui": {
-        "labonair-command-palette-core", "labonair-keymap",
-        "labonair-notifications",
-        "labonair-theme", "labonair-ui-kit",
-    },
-    "labonair-command-palette-core": set(),
-    "labonair-command-palette-runtime": {"labonair-command-palette-core"},
-    # R08-005: Theme application policy — reads the layered settings values and
-    # persists picker selections into `ThemeStore`, plus the palette
-    # preview/activate handler. Extracted from `settings-ui` so the Settings UI
-    # is values-only. `labonair-theme` itself keeps NO `labonair-settings`
-    # dependency; the settings->theme direction lives only here.
-    "labonair-theme-ui": {
-        "labonair-theme", "labonair-settings",
-        "labonair-command-palette-core", "labonair-command-palette-runtime",
-    },
-    # Platform service — secret storage and encryption, without GPUI or
-    # feature-module dependencies.
-    "labonair-secrets": {"labonair-filesystem"},
-    # UI-free notification lifecycle and metadata. This is the only owner of
-    # retention, ordering, deduplication, and read state.
-    "labonair-notifications-core": set(),
-    # UI-free MCP session/grant contracts. The bridge implementation remains
-    # an injected backend adapter while workspace consumes only this boundary.
-    "labonair-mcp-core": set(),
-    # Cross-cutting structured error contract. It contains no workspace
-    # dependencies and is shared by capability services during migration.
-    "labonair-errors": set(),
-    # UI-free adapter transport only. Product event vocabulary belongs to the
-    # owning capability contracts, not to this foundation crate.
-    "labonair-events": set(),
-    # Hosts owns domain models plus capability-local query code. Secret-bearing
-    # writes and MCP side effects remain transitional backend adapters.
-    "labonair-hosts": {
-        "labonair-errors", "labonair-persistence", "labonair-secrets",
-        "labonair-command-palette-core",
-    },
-    # Shared SQLite lifecycle only. Feature stores own their queries and
-    # domain models; this crate must remain UI- and backend-free.
-    "labonair-persistence": set(),
-    # UI-free Git value types and capability contracts. Implementations stay
-    # in backend adapters and are injected by the composition root.
-    "labonair-git": {"labonair-command-palette-core"},
-    # Credential capability: metadata, secret references, and key material.
-    "labonair-credentials": {
-        "labonair-persistence", "labonair-secrets",
-    },
-    # Snippet domain, SQLite store, and execution contracts. Transport
-    # implementations are injected by the composition root.
-    "labonair-snippets": {
-        "labonair-errors", "labonair-persistence",
-        "labonair-command-palette-core",
-    },
-    "labonair-notifications": {
-        "labonair-notifications-core",
-        "labonair-panel", "labonair-theme", "labonair-ui-kit",
-    },
-    "labonair-command-palette": {
-        "labonair-theme", "labonair-ui-kit",
-        "labonair-filesystem",
-        "labonair-keymap",
-        "labonair-command-palette-core",
-        "labonair-command-palette-runtime",
-        # transitional: palette settings reads move behind a provider contract
-        "labonair-settings",
-    },
-
-    # Settings track ------------------------------------------------------
-    # rule 7: settings-ui renders SettingsContent values and receives only
-    # narrow discovery services from the composition root.
-    # T19-004: the generated field grid + navigation is built directly off
-    # `labonair-settings-content::SettingsContent`/`areas::AREAS` and the
-    # layered `labonair-settings::SettingsStore` global — the old
-    # `PreferencesStore`/`GlobalPreferences` bridge stays for modules not yet
-    # migrated onto the `Settings` trait (see `store.rs`'s doc comment).
-    "labonair-settings-ui": {
-        "labonair-theme", "labonair-theme-ui", "labonair-ui-kit",
-        "labonair-gpui-ext",
-        "labonair-notifications", "labonair-command-palette",
-        "labonair-command-palette-core", "labonair-command-palette-runtime",
-        "labonair-settings", "labonair-settings-content", "labonair-filesystem",
-    },
-
-    # Workspace track --------------------------------------------------
-    # rule 1: contracts crate — NO workspace-track dep at all.
-    "labonair-panel": {"labonair-gpui-ext"},
-    # R07-004: narrow Explorer host contract plus the drag/preview value types
-    # shared by the Explorer panel and the terminal/preview views. A leaf —
-    # only `gpui` (external) — so both `panel-explorer` and `workspace` can
-    # depend on it without either depending on the other.
-    "labonair-explorer-host": set(),
-    # R08-003: narrow Snippet execution-host contract (inject / run local / run
-    # ssh terminal / ssh-session lookup). A leaf — only `gpui` — so
-    # `panel-snippets` and `workspace` can both depend on it without a cycle.
-    "labonair-snippets-host": set(),
-    # R08-012: narrow host-view contract (catalog reads + status/tunnel
-    # snapshot sinks). Deps `gpui` + `labonair-hosts` (for `HostPickerRow`);
-    # lets `panel`/`workspace` reach the Hosts UI without depending on it.
-    "labonair-hosts-host": {"labonair-hosts"},
-    # rule 3 + §8.4: workspace owns the tab-view entities, so it pulls
-    # panel-git-graph, keymap-ui (the Keymap tab hosts
-    # `labonair_keymap_ui::KeymapManagementView`), and hosts-ui (the Hosts tab
-    # hosts `labonair_hosts_ui::HostManagerView`, mirroring Keymap) — acyclic,
-    # none of them depends back on it.
-    # T19-002: ThemeSettings/TerminalSettings real consumers
-    # (workspace.rs::reduce_motion, views/terminal.rs opacity/copy-on-select/
-    # right-click-pastes) pull the typed settings store directly.
-    # T19-006: the code-editor view's settings.json schema-hover helper
-    # (`views/editor.rs::update_hover`) calls
-    # `labonair_settings_json::json_path_at_offset` directly to resolve the
-    # key path under the mouse — a leaf crate (`labonair-settings-json`),
-    # no cycle.
-    # Host-manager window→tab migration (supersedes R08-012's "no
-    # `labonair-hosts-ui` edge" rule): workspace now also holds
-    # `Entity<HostManagerView>` directly to render the `Hosts` tab body,
-    # alongside (not instead of) the narrow `labonair-hosts-host::HostView`
-    # contract, which still carries the host catalog / status / tunnel
-    # snapshots workspace needs independent of tab visibility.
-    "labonair-workspace": {
-        "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
-        "labonair-notifications", "labonair-command-palette",
-        "labonair-panel", "labonair-panel-git-graph",
-        "labonair-keymap-ui",
-        "labonair-hosts", "labonair-hosts-host", "labonair-hosts-ui",
-        "labonair-terminal", "labonair-editor",
-        "labonair-git",
-        "labonair-ai", "labonair-settings", "labonair-settings-json",
-        "labonair-filesystem", "labonair-explorer-host",
-        "labonair-ssh", "labonair-sftp", "labonair-transfers",
-        "labonair-background-host", "labonair-mcp-core",
-        "labonair-command-palette-core", "labonair-keymap",
-        "labonair-command-palette-runtime",
-    },
-    # rule 3: the only crate that knows every concrete panel type — it also
-    # touches the `labonair-panel` contracts crate to register them (T17-001).
-    # T19-008: shell also depends on `labonair-settings` directly — it owns
-    # the concrete `menu::` GPUI Actions, so it's the only crate that can
-    # turn a merged `keymap.json` into real `gpui::KeyBinding`s / watch the
-    # file live.
-    "labonair-shell": {
-        "labonair-theme", "labonair-theme-ui", "labonair-ui-kit",
-        "labonair-gpui-ext",
-        "labonair-notifications", "labonair-command-palette",
-        "labonair-command-palette-core",
-        "labonair-command-palette-runtime",
-        "labonair-keymap",
-        "labonair-workspace", "labonair-settings-ui", "labonair-panel",
-        "labonair-explorer-host", "labonair-snippets-host",
-        "labonair-hosts-host",
-        "labonair-panel-explorer", "labonair-panel-scm",
-        "labonair-panel-git-graph", "labonair-panel-snippets",
-        "labonair-terminal",
-        "labonair-events",
-        "labonair-settings", "labonair-filesystem", "labonair-ssh",
-        "labonair-ssh-transport",
-        "labonair-sftp", "labonair-sftp-ssh", "labonair-transfers",
-        "labonair-transfers-ui",
-        "labonair-transfers-ssh",
-        "labonair-background", "labonair-mcp-core", "labonair-mcp-server",
-        "labonair-persistence",
-        "labonair-updater",
-        "labonair-updater-ui",
-        # Provider metadata contracts are assembled here; feature behavior
-        # remains in the owning crates and is not implemented by this root.
-        "labonair-editor", "labonair-git", "labonair-git-transport",
-        "labonair-hosts", "labonair-snippets-ssh",
-        "labonair-hosts-ui", "labonair-snippets", "labonair-secrets",
-    },
-
-    # Transfer presentation — owns the statusbar dropdown, while lifecycle
-    # state and worker contracts remain in `labonair-transfers`.
-    # R08-001: no `labonair-workspace` edge — the view emits only the typed
-    # `TransferUiEvent::Completed` signal; the composition root routes it to
-    # the SFTP pane refresh.
-    "labonair-transfers-ui": {
-        "labonair-theme", "labonair-ui-kit", "labonair-panel",
-        "labonair-transfers",
-    },
-
-    # Panels — rule 2.
-    # Each panel crate depends on `labonair-panel` to `impl Panel` (T17-001);
-    # the contracts crate is a leaf (only gpui / gpui-ext), so no cycle.
-    # R07-004 / R08-003: neither explorer nor snippets depends on
-    # `labonair-workspace`; each reaches the workspace only through its
-    # injected narrow host contract (`labonair-explorer-host`,
-    # `labonair-snippets-host`).
-    "labonair-panel-explorer": {
-        "labonair-theme", "labonair-ui-kit", "labonair-panel",
-        "labonair-notifications", "labonair-explorer-host",
-        # transitional: settings reads move behind a feature settings contract
-        "labonair-settings",
-        "labonair-filesystem",
-    },
-    "labonair-panel-scm": {
-        "labonair-theme", "labonair-ui-kit", "labonair-panel",
-        "labonair-notifications", "labonair-git",
-        # transitional: editor and settings contracts are extracted in Phase 7
-        "labonair-editor", "labonair-settings",
-        # owner contribution for the dynamic palette branch action
-        "labonair-command-palette-core", "labonair-command-palette-runtime",
-    },
-    "labonair-panel-git-graph": {
-        "labonair-theme", "labonair-ui-kit", "labonair-panel",
-        "labonair-notifications", "labonair-git",
-    },
-    "labonair-panel-snippets": {
-        "labonair-theme", "labonair-ui-kit", "labonair-panel",
-        "labonair-notifications", "labonair-hosts", "labonair-snippets",
-        "labonair-snippets-host",
-        "labonair-persistence",
-        # owner contribution for the dynamic palette snippet action
-        "labonair-command-palette-core", "labonair-command-palette-runtime",
-    },
-    # Host access — rule 9: not a panel crate; no workspace / shell / panel*.
-    # [deviation] also pulls notifications for user-visible feedback.
-    # Host definitions stay in the Hosts-owned store; Settings is deliberately
-    # absent so the management surface cannot create a second write path.
-    "labonair-hosts-ui": {
-        "labonair-theme", "labonair-ui-kit", "labonair-notifications",
-        "labonair-hosts", "labonair-hosts-host", "labonair-credentials",
-        "labonair-persistence",
-        "labonair-secrets", "labonair-snippets", "labonair-ssh",
-        "labonair-errors", "labonair-command-palette-core",
-        "labonair-command-palette-runtime",
-    },
-
-    # Engines — rule 4: no UI dep.
-    # [deviation] labonair-terminal pulls labonair-theme (leaf token crate)
-    # for its ANSI palette; shell-integration payloads stay in a UI-free
-    # protocol crate shared with the remote SSH adapter.
-    "labonair-terminal-integration": set(),
-    "labonair-terminal": {
-        "labonair-theme", "labonair-command-palette-core",
-        "labonair-command-palette-runtime",
-        "labonair-terminal-integration",
-    },
-    # Concrete russh/platform implementation of the SSH capability. The
-    # contract crate remains UI-free and transport-independent.
-    "labonair-ssh-transport": {
-        "labonair-errors", "labonair-events", "labonair-filesystem",
-        "labonair-persistence", "labonair-secrets", "labonair-ssh",
-        "labonair-terminal-integration",
-    },
-    # Concrete local/remote Git CLI execution and Git contract adapters.
-    "labonair-git-transport": {
-        "labonair-events", "labonair-git", "labonair-ssh-transport",
-    },
-    # Concrete SSH execution adapter for the UI-free snippets contracts.
-    "labonair-snippets-ssh": {
-        "labonair-events", "labonair-snippets", "labonair-ssh-transport",
-    },
-    # Concrete MCP HTTP server, grants, event adapters, and PTY bridge.
-    "labonair-mcp-server": {
-        "labonair-errors", "labonair-events", "labonair-hosts",
-        "labonair-mcp-core", "labonair-persistence", "labonair-secrets",
-        "labonair-ssh-transport",
-    },
-    "labonair-editor": {
-        "labonair-command-palette-core",
-    },
-    "labonair-ai": {"labonair-filesystem"},
-
-    # Settings track (T19-001) — pure data model, no GPUI/UI/backend deps.
-    "labonair-settings-content": {"labonair-settings-macros"},
-    "labonair-settings-macros": set(),
-    # Settings track (T19-005) — surgical `settings.json` text edits via a
-    # real `tree-sitter-json` syntax tree. A leaf: only `tree-sitter`/
-    # `tree-sitter-json`/`serde_json` (external), no workspace deps.
-    "labonair-settings-json": set(),
-    # Settings track (T19-002) — the layered SettingsStore. Depends on the
-    # pure data model + its own derive-macro crate; `gpui` is used (Store as
-    # a Global + App/AsyncApp access) but that's an external dep, not a
-    # workspace edge, so it doesn't show up here. No UI crate, no backend.
-    # T19-005 added `labonair-settings-json` for the surgical write path;
-    # T19-006 reuses it (`find_value_range`/`json_path_at_offset`) for
-    # schema-validation error positions.
-    "labonair-settings": {
-        "labonair-settings-content", "labonair-settings-macros",
-        "labonair-settings-json",
-        "labonair-command-palette-core", "labonair-command-palette-runtime",
-    },
-}
-
-# UI crates the UI-free engines (ai/editor) must not reach, even transitively.
+# UI-free engines must not reach these crates, even transitively.
 UI_CRATES = {
     "labonair-gpui-ext", "labonair-ui-kit", "labonair-theme",
-    "labonair-background",
-    "labonair-notifications", "labonair-command-palette",
-    "labonair-workspace", "labonair-shell", "labonair-settings-ui",
-    "labonair-keymap-ui",
-    "labonair-hosts-ui", "labonair-panel", "labonair-panel-explorer",
-    "labonair-panel-scm", "labonair-panel-git-graph",
-    "labonair-panel-snippets",
+    "labonair-background", "labonair-notifications",
+    "labonair-command-palette", "labonair-workspace", "labonair-shell",
+    "labonair-settings-ui", "labonair-keymap-ui", "labonair-hosts-ui",
+    "labonair-panel", "labonair-panel-explorer", "labonair-panel-scm",
+    "labonair-panel-git-graph", "labonair-panel-snippets",
 }
 PANEL_CRATES = {
     "labonair-panel-explorer", "labonair-panel-scm",
     "labonair-panel-git-graph", "labonair-panel-snippets",
 }
 
+
+meta = json.load(sys.stdin)
+manifest = load_manifest()
+allowed = manifest_graph(manifest)
+
 # ---------------------------------------------------------------------------
-# Build the workspace-internal adjacency from `cargo metadata`.
+# Build the workspace-internal adjacency from cargo metadata.
 # ---------------------------------------------------------------------------
 ws_members = set()
 graph = {}
-for pkg in meta["packages"]:
-    name = pkg["name"]
+for package in meta["packages"]:
+    name = package["name"]
     if not name.startswith("labonair"):
         continue
     ws_members.add(name)
-    deps = sorted({
-        d["name"] for d in pkg["dependencies"]
-        if d["name"].startswith("labonair") and d["name"] != name
-    })
-    graph[name] = deps
+    graph[name] = {
+        dependency["name"]
+        for dependency in package["dependencies"]
+        if dependency["name"].startswith("labonair")
+        and dependency["name"] != name
+    }
 
 errors = []
 
-# Every workspace member must have an ALLOWED entry (keeps the list honest).
+# Every workspace member must have an explicit manifest entry.
 for name in sorted(ws_members):
-    if name not in ALLOWED:
+    if name not in allowed:
         errors.append(
-            f"{name}: no ALLOW-LIST entry in scripts/check-crate-deps.sh — "
-            f"add one citing the docs/architecture.md §3 rule it follows."
+            f"{name}: no architecture manifest entry — add the owner, role, "
+            "layer, and allowed edges in docs/architecture/graph.toml."
         )
 
-# 1. Per-crate allow-list check.
-for name, deps in sorted(graph.items()):
-    allowed = ALLOWED.get(name, set())
-    for dep in deps:
-        if dep not in allowed:
-            errors.append(
-                f"{name} depends on {dep} — forbidden by docs/architecture.md "
-                f"§3. Allowed workspace deps for {name}: "
-                f"{sorted(allowed) or '(none)'}."
-            )
+# 1. Per-crate manifest check.
+for name, dependencies in sorted(graph.items()):
+    declared = allowed.get(name, set())
+    for dependency in sorted(dependencies - declared):
+        errors.append(
+            f"{name} depends on {dependency} — forbidden by the architecture "
+            f"manifest. Allowed workspace deps: {sorted(declared) or '(none)'}. "
+        )
+    for dependency in sorted(declared - dependencies):
+        errors.append(
+            f"{name} declares {dependency} in the architecture manifest, but "
+            "cargo metadata does not contain that edge."
+        )
+
 
 # Transitive reachability (memoised DFS over the workspace subgraph).
 _reach_cache = {}
-def reaches(src):
-    if src in _reach_cache:
-        return _reach_cache[src]
+
+
+def reaches(source):
+    if source in _reach_cache:
+        return _reach_cache[source]
     seen = set()
-    stack = list(graph.get(src, []))
+    stack = list(graph.get(source, []))
     while stack:
-        n = stack.pop()
-        if n in seen:
+        name = stack.pop()
+        if name in seen:
             continue
-        seen.add(n)
-        stack.extend(graph.get(n, []))
-    _reach_cache[src] = seen
+        seen.add(name)
+        stack.extend(graph.get(name, []))
+    _reach_cache[source] = seen
     return seen
 
-# 2. Acyclicity (rule 8) — a crate must not reach itself.
+
+# 2. Acyclicity — a crate must not reach itself.
 for name in sorted(graph):
     if name in reaches(name):
         errors.append(
-            f"{name} is part of a dependency cycle — docs/architecture.md §3 "
-            f"rule 8 requires an acyclic crate graph."
+            f"{name} is part of a dependency cycle — the architecture policy "
+            "requires an acyclic crate graph."
         )
 
 # 3. Transitive must-not-reach invariants.
-#    Panel crates may transitively reach labonair-panel-git-graph *via*
-#    labonair-workspace (§8.4: workspace owns that tab-view entity, acyclic) —
-#    that indirection is sanctioned. What is forbidden: a *direct* panel→panel
-#    edge (API coupling, rule 2) and reaching labonair-shell by any path
-#    (§3 warning: a panel must not, via workspace, land back at shell).
+# Panel crates may reach panel-git-graph through workspace because Workspace
+# owns that tab-view entity. Direct panel-to-panel coupling remains forbidden,
+# and no panel may reach the shell.
 for name in sorted(PANEL_CRATES & ws_members):
     if "labonair-shell" in reaches(name):
         errors.append(
-            f"{name} transitively reaches labonair-shell — forbidden by "
-            f"docs/architecture.md §3 rule 2 / warning."
+            f"{name} transitively reaches labonair-shell — panels must not "
+            "depend on the composition root."
         )
-    direct_panels = (PANEL_CRATES & set(graph.get(name, []))) - {name}
+    direct_panels = (PANEL_CRATES & graph.get(name, set())) - {name}
     if direct_panels:
         errors.append(
             f"{name} directly depends on another panel crate "
-            f"{sorted(direct_panels)} — forbidden by docs/architecture.md §3 "
-            f"rule 2 (panel crates never depend on each other)."
+            f"{sorted(direct_panels)} — panel crates must remain independent."
         )
 
 if "labonair-panel" in ws_members:
     bad = {"labonair-workspace", "labonair-shell"} & reaches("labonair-panel")
     if bad:
         errors.append(
-            f"labonair-panel transitively reaches {sorted(bad)} — forbidden by "
-            f"docs/architecture.md §3 rule 1 (contracts crate breaks the cycle)."
+            f"labonair-panel transitively reaches {sorted(bad)} — the panel "
+            "contract crate must remain below the composition and workspace roots."
         )
 
 for engine in ("labonair-ai", "labonair-editor"):
@@ -486,38 +129,32 @@ for engine in ("labonair-ai", "labonair-editor"):
     if bad:
         errors.append(
             f"{engine} transitively reaches UI crate(s) {sorted(bad)} — "
-            f"forbidden by docs/architecture.md §3 rule 4."
+            "UI-free engines must not depend on presentation crates."
         )
 
 if "labonair-ui-kit" in ws_members:
     forbidden_for_ui_kit = {
         "labonair-workspace", "labonair-shell", "labonair-notifications",
         "labonair-command-palette", "labonair-settings-ui",
-        "labonair-hosts-ui",
-        # R08-008: the Themes *feature* crate — `ui-kit` reads tokens through
-        # the `labonair-theme-tokens` foundation leaf, never `labonair-theme`.
-        "labonair-theme",
+        "labonair-hosts-ui", "labonair-theme",
     } | PANEL_CRATES
     bad = forbidden_for_ui_kit & reaches("labonair-ui-kit")
     if bad:
         errors.append(
-            f"labonair-ui-kit transitively reaches {sorted(bad)} — forbidden "
-            f"by docs/architecture.md §3 rule 5."
+            f"labonair-ui-kit transitively reaches {sorted(bad)} — the UI kit "
+            "must remain below product modules."
         )
 
 if errors:
-    print("crate dependency check FAILED:\n", file=sys.stderr)
-    for e in errors:
-        print(f"  ✗ {e}", file=sys.stderr)
-    print(
-        f"\n{len(errors)} violation(s). See docs/architecture.md §3.",
-        file=sys.stderr,
-    )
+    print("crate dependency check FAILED:", file=sys.stderr)
+    for error in errors:
+        print(f"  ✗ {error}", file=sys.stderr)
+    print(f"\n{len(errors)} violation(s). See docs/architecture/graph.toml.", file=sys.stderr)
     sys.exit(1)
 
 print(
     f"crate dependency check OK — {len(graph)} workspace crates, "
-    f"{sum(len(v) for v in graph.values())} internal edges, acyclic, "
-    f"no untracked boundary violations. Transitional edges remain documented "
-    f"in docs/audits/architecture-inventory.md."
+    f"{sum(len(dependencies) for dependencies in graph.values())} internal edges, "
+    "acyclic, no untracked boundary violations. Transitional edges remain "
+    "documented in docs/audits/architecture-inventory.md."
 )

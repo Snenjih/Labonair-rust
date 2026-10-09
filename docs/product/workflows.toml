@@ -1,0 +1,290 @@
+version = 1
+
+[[workflow]]
+id = "application-startup-shutdown"
+display_name = "Application startup and shutdown"
+owner_module = "application"
+canonical_crate = "labonair"
+preconditions = ["Native binary is launched with supported platform dependencies."]
+entry_point = "Process startup"
+state_transitions = ["construct services", "register owner contributions", "open initial window", "flush and release on shutdown"]
+commands = ["none"]
+persistence = ["Settings, workspace/session, and window state load/save through their owners."]
+notifications = ["Startup/service failures use structured diagnostics without blocking the GPUI thread."]
+failure_modes = ["Missing database, service initialization failure, window creation failure, interrupted shutdown"]
+security_boundary = "Composition root injects contracts; secrets are never logged."
+tests = ["crates/app/src/main.rs", "scripts/smoke-test.sh"]
+visual_evidence = ["Pending: native first-paint and shutdown capture"]
+status = "partial"
+next_action = "Record native startup/interactive timing and recovery evidence."
+
+[[workflow]]
+id = "project-workspace-transition"
+display_name = "Project workspace creation and transition"
+owner_module = "workspace"
+canonical_crate = "labonair-workspace"
+preconditions = ["A project root is selected or an existing workspace is active."]
+entry_point = "OpenProject / project picker"
+state_transitions = ["Empty -> Project", "Standalone -> Project", "Project -> Standalone", "persist identity"]
+commands = ["OpenProject", "ReturnToStandalone", "OpenProjectSettings"]
+persistence = ["Workspace identity, layout, and recent project state."]
+notifications = ["Invalid/inaccessible roots use the notification registry."]
+failure_modes = ["Missing root, denied path, stale session, failed restore"]
+security_boundary = "Filesystem roots are validated by filesystem/path contracts."
+tests = ["crates/workspace/src/workspace.rs", "crates/workspace/src/recent_projects.rs"]
+visual_evidence = ["Pending: Empty/Standalone/Project native states"]
+status = "partial"
+next_action = "Link R07 surface evidence and workflow screenshots after native capture."
+
+[[workflow]]
+id = "standalone-terminal"
+display_name = "Standalone terminal use"
+owner_module = "terminal"
+canonical_crate = "labonair-terminal"
+preconditions = ["Application is running; no project is required."]
+entry_point = "NewTerminalTab / standalone startup"
+state_transitions = ["create PTY", "ready", "running", "exit/restart", "close"]
+commands = ["NewTerminalTab", "ClearTerminal"]
+persistence = ["Session/scrollback policy is owned by terminal/workspace contracts."]
+notifications = ["Process/session failures use Notifications."]
+failure_modes = ["PTY spawn failure, process exit, output interruption, cancellation"]
+security_boundary = "Visible local terminal; AI/MCP access requires a separate grant."
+tests = ["crates/terminal/src", "crates/workspace/src/views/terminal.rs"]
+visual_evidence = ["Pending: ready, loading, process-exit, and error states"]
+status = "partial"
+next_action = "Add measured startup/output performance evidence."
+
+[[workflow]]
+id = "ssh-host-connection"
+display_name = "SSH host connection"
+owner_module = "hosts"
+canonical_crate = "labonair-hosts"
+preconditions = ["Saved host exists or quick connection data is valid."]
+entry_point = "Hosts tab or Hosts command-palette submenu"
+state_transitions = ["select host", "authenticate", "trust/reject", "connect", "reconnect/disconnect"]
+commands = ["OpenHosts", "ConnectSsh", "NewSshTab", "NewSshConnection", "NewQuickSsh"]
+persistence = ["Host metadata in Hosts store; credentials in Credentials/Secrets."]
+notifications = ["Authentication, trust, timeout, and disconnect failures publish structured notifications."]
+failure_modes = ["Unknown host, blocked agent access, missing credential, trust rejection, timeout"]
+security_boundary = "Host policy and SSH transport contracts; no raw credentials in UI/catalog."
+tests = ["crates/hosts/src/lib.rs", "crates/ssh-transport/src", "docs/security/remote-access.md"]
+visual_evidence = ["Pending: host list, connection progress, trust/error states"]
+status = "partial"
+next_action = "Add explicit allowed/denied remote integration evidence."
+
+[[workflow]]
+id = "sftp-browsing-and-transfer"
+display_name = "SFTP browsing and transfer"
+owner_module = "sftp"
+canonical_crate = "labonair-sftp"
+preconditions = ["An authenticated SFTP session is available."]
+entry_point = "OpenSftp / host SFTP action"
+state_transitions = ["connect", "read directory", "navigate/search", "start transfer", "progress/cancel/complete"]
+commands = ["OpenSftp", "NewSftpTab"]
+persistence = ["SFTP view/session and transfer lifecycle use their owning boundaries."]
+notifications = ["Remote listing and transfer failures use Notifications; progress uses Transfers UI."]
+failure_modes = ["Authentication, permission, stale directory, cancellation, remote disconnect"]
+security_boundary = "Typed SFTP contract and host/session policy; no panel transport dependency."
+tests = ["crates/sftp/src", "crates/transfers/src", "crates/workspace/src/views/sftp.rs"]
+visual_evidence = ["Pending: empty, loading, error, list, transfer-progress states"]
+status = "partial"
+next_action = "Add descriptor and remote visual/performance evidence."
+
+[[workflow]]
+id = "editor-file-lifecycle"
+display_name = "Editor file lifecycle"
+owner_module = "editor"
+canonical_crate = "labonair-editor"
+preconditions = ["A readable file is opened or a new editor document is created."]
+entry_point = "OpenFile / editor tab"
+state_transitions = ["open", "edit", "dirty", "save", "conflict/read-only", "close"]
+commands = ["OpenFile", "Save", "EditorFormatDocument", "EditorShowDiagnostics"]
+persistence = ["Editor-owned document persistence and settings values; no shell save policy."]
+notifications = ["Read/write/format failures use Notifications; conflict decisions use dialogs."]
+failure_modes = ["Unreadable file, read-only target, write failure, external conflict, language-server failure"]
+security_boundary = "Filesystem/path policy and explicit user save action."
+tests = ["crates/editor/src", "crates/workspace/src/views/editor.rs"]
+visual_evidence = ["Pending: focused, dirty, conflict, diagnostics, and error states"]
+status = "partial"
+next_action = "Add complete editor descriptor during the R09 sequence."
+
+[[workflow]]
+id = "git-source-control"
+display_name = "Git/source-control workflow"
+owner_module = "git"
+canonical_crate = "labonair-git"
+preconditions = ["Workspace root contains a repository or the user opens a repository view."]
+entry_point = "Source Control panel / palette"
+state_transitions = ["discover repository", "refresh status", "inspect diff", "switch branch", "recover failure"]
+commands = ["GitSwitchBranch", "EditorNextGitChange", "EditorPreviousGitChange", "EditorOpenProjectDiff"]
+persistence = ["Repository state is external; panel/view settings remain owner-scoped."]
+notifications = ["Git process and remote failures use structured notifications."
+]
+failure_modes = ["No repository, command failure, conflict, remote failure, stale status"]
+security_boundary = "Local/remote Git execution through typed integration adapters."
+tests = ["crates/git/src", "crates/panel-scm/src", "crates/panel-git-graph/src"]
+visual_evidence = ["Pending: clean, changed, branch, diff, and empty states"]
+status = "partial"
+next_action = "Add Git performance baseline and visual artifacts."
+
+[[workflow]]
+id = "explorer-files"
+display_name = "Explorer files workflow"
+owner_module = "explorer"
+canonical_crate = "labonair-panel-explorer"
+preconditions = ["A local or injected remote directory service is available."]
+entry_point = "Explorer dock panel"
+state_transitions = ["load", "expand/navigate", "select", "open/preview/terminal", "refresh/error"]
+commands = ["OpenFile", "NewTerminalTab"]
+persistence = ["Explorer settings values and view-local state; remote service is injected."
+]
+notifications = ["Directory and operation failures use Notifications."
+]
+failure_modes = ["Missing root, permission error, stale async result, remote disconnect"]
+security_boundary = "Filesystem/path safety and RemoteExplorerService contract."
+tests = ["crates/panel-explorer/src/panel_explorer.rs", "crates/explorer-host/src/lib.rs"]
+visual_evidence = ["Pending: normal, empty, loading, error, narrow, and remote states"]
+status = "partial"
+next_action = "Complete R07 native acceptance evidence."
+
+[[workflow]]
+id = "themes-and-icon-themes"
+display_name = "Themes and icon themes"
+owner_module = "theme"
+canonical_crate = "labonair-theme"
+preconditions = ["Built-in theme/icon catalogs are registered."]
+entry_point = "Global menu -> Themes/Icon Themes -> palette submenu"
+state_transitions = ["discover", "preview", "activate", "persist", "recover invalid selection"]
+commands = ["ChangeAppTheme", "ChangeIconTheme", "ChangeColorMode", "ChangeEditorTheme"]
+persistence = ["ThemeStore and typed settings values owned by theme/theme-ui."
+]
+notifications = ["Invalid selection/persistence failures use Notifications; preview is quiet."
+]
+failure_modes = ["Invalid catalog entry, persistence failure, incompatible theme data"]
+security_boundary = "Built-in catalogs only until an explicit import/download workflow is accepted."
+tests = ["crates/theme/src/command_provider.rs", "crates/theme/src/store.rs"]
+visual_evidence = ["Pending: theme picker, preview, and active theme states"]
+status = "partial"
+next_action = "Add theme descriptor and visual catalog evidence."
+
+[[workflow]]
+id = "settings-and-reload"
+display_name = "Settings editing and reload"
+owner_module = "settings"
+canonical_crate = "labonair-settings"
+preconditions = ["Settings schema and layered stores are available."]
+entry_point = "Settings window"
+state_transitions = ["load", "edit", "validate", "save", "watch/reload", "migrate/ignore unknown"]
+commands = ["OpenSettings", "OpenSettingsJson"]
+persistence = ["Layered settings store and surgical JSONC writer."
+]
+notifications = ["Parse/schema/write diagnostics use Notifications."
+]
+failure_modes = ["Malformed JSONC, invalid value, permission/write failure, migration mismatch"]
+security_boundary = "Values-only settings boundary; secrets remain in Secrets/Credentials."
+tests = ["crates/settings/src", "crates/settings-ui/src"]
+visual_evidence = ["Pending: settings navigation, validation, and error states"]
+status = "partial"
+next_action = "Add machine-readable setting descriptors and data-lifecycle evidence."
+
+[[workflow]]
+id = "keymap-editing"
+display_name = "Keymap editing and conflict handling"
+owner_module = "keymap"
+canonical_crate = "labonair-keymap"
+preconditions = ["Default command descriptors and user keymap file are loadable."]
+entry_point = "Global menu -> Keymap / keymap tab"
+state_transitions = ["load", "filter", "record keystroke", "detect conflict", "save/reset", "reload externally"]
+commands = ["OpenShortcuts", "OpenKeymapJson"]
+persistence = ["User keymap file with lossless document edits and watcher reload."
+]
+notifications = ["Malformed file, conflict, and save diagnostics use Notifications/in-tab diagnostics as specified."
+]
+failure_modes = ["Malformed file, unknown command, conflict, write failure, external change"]
+security_boundary = "Keymap file is user-owned configuration; no secret data."
+tests = ["crates/keymap/src", "crates/shell/src/keymap_loader.rs"]
+visual_evidence = ["Pending: keymap tab, conflict, popover, and diagnostics states"]
+status = "partial"
+next_action = "Add keymap descriptor and native evidence."
+
+[[workflow]]
+id = "command-palette-discovery"
+display_name = "Command palette discovery and execution"
+owner_module = "command-palette"
+canonical_crate = "labonair-command-palette-core"
+preconditions = ["Owner command providers and runtime handlers are registered."]
+entry_point = "Global command palette action"
+state_transitions = ["open", "query/filter", "select", "submenu", "execute/dismiss"]
+commands = ["OpenCommandPalette"]
+persistence = ["Recent-command history remains palette-owned where enabled."
+]
+notifications = ["Provider/selection failures use the shared notification path."
+]
+failure_modes = ["Empty result, stale provider snapshot, missing handler, execution failure"]
+security_boundary = "Typed owner handlers; palette does not own arbitrary feature state."
+tests = ["crates/command-palette-core/src", "crates/command-palette/src"]
+visual_evidence = ["Pending: focused, empty, filtered, submenu, and keyboard states"]
+status = "partial"
+next_action = "Complete native palette evidence and expand per-command availability where needed."
+
+[[workflow]]
+id = "notification-lifecycle"
+display_name = "Notification creation, deduplication, and presentation"
+owner_module = "notifications"
+canonical_crate = "labonair-notifications-core"
+preconditions = ["A feature has a user-visible message or operation result."]
+entry_point = "Feature publication / statusbar notification dropdown"
+state_transitions = ["draft", "publish/dedupe", "unread", "read/expand", "dismiss/clear"]
+commands = ["none"]
+persistence = ["In-memory retained registry, max 100; no history file."
+]
+notifications = ["The registry is the single global passive-message path."
+]
+failure_modes = ["Duplicate burst, stale action identifier, statusbar unavailable"]
+security_boundary = "Records contain structured text and IDs, never closures or secrets."
+tests = ["crates/notifications-core/src/lib.rs", "crates/notifications/src/notifications.rs"]
+visual_evidence = ["Pending: badge, open, empty, detail, and clear states"]
+status = "partial"
+next_action = "Complete native notification visual evidence; defer actionable flow until needed."
+
+[[workflow]]
+id = "mcp-agent-session"
+display_name = "MCP/AI session and grant lifecycle"
+owner_module = "mcp"
+canonical_crate = "labonair-mcp-core"
+preconditions = ["Bridge is enabled, authenticated, and a user grant exists."
+]
+entry_point = "Agent MCP client -> list_sessions/open_tab"
+state_transitions = ["authenticate", "grant", "list", "act", "activity", "revoke/expire"]
+commands = ["none"]
+persistence = ["MCP preferences and host policy; grants remain runtime state."
+]
+notifications = ["MCP activity/server/grant-expiry events use typed events and configured notification behavior."
+]
+failure_modes = ["Invalid token, missing grant, blocked host, missing credential, timeout, closed session"]
+security_boundary = "Loopback bearer bridge, explicit tab grant, host block flag, secret boundary, visible terminal."
+tests = ["crates/mcp-core/src/lib.rs", "crates/mcp-server/src/server.rs", "docs/automation/test-matrix.md"]
+visual_evidence = ["Pending: native agent-access grant/revoke states"]
+status = "partial"
+next_action = "Complete negative end-to-end tool tests and native grant-surface evidence."
+
+[[workflow]]
+id = "error-cancellation-recovery"
+display_name = "Error, cancellation, retry, and recovery"
+owner_module = "application"
+canonical_crate = "labonair"
+preconditions = ["Any feature operation can fail or be cancelled."
+]
+entry_point = "Owning feature action or notification detail"
+state_transitions = ["start", "progress", "failure/cancel", "notify", "retry/recover"]
+commands = ["none"]
+persistence = ["Owner-specific rollback/recovery; no generic error store."
+]
+notifications = ["Passive failures use Notifications; decisions use owner dialogs."
+]
+failure_modes = ["I/O, process, network, parse, permission, stale session, cancellation"]
+security_boundary = "Errors redact secrets and preserve owner boundaries."
+tests = ["docs/testing/evidence-model.md", "docs/registries.md"]
+visual_evidence = ["Pending: representative error/loading/recovery captures per surface"]
+status = "partial"
+next_action = "Link each capability descriptor to concrete failure/recovery evidence."

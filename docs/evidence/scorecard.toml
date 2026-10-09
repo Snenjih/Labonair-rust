@@ -1,0 +1,194 @@
+version = 1
+status_vocabulary = ["Verified", "Partial", "Pending", "N/A"]
+
+[[item]]
+id = "architecture.graph"
+area = "architecture and ownership"
+target = "All workspace crates and internal edges are represented by one checked manifest."
+owner = "architecture"
+status = "Verified"
+evidence = ["python3 scripts/verify.py --scope architecture", "57 crates and 227 internal edges"]
+source_refs = ["docs/architecture/graph.toml", "scripts/check_architecture.py", "docs/generated/architecture.md"]
+last_verified = "2026-10-09"
+limitation = "Manifest records current direct edges; deeper symbol ownership still relies on audits."
+next_action = "Keep the manifest synchronized whenever a boundary task changes Cargo dependencies."
+
+[[item]]
+id = "architecture.boundaries"
+area = "architecture and ownership"
+target = "Feature crates use typed contracts and do not bypass the composition boundary."
+owner = "architecture"
+status = "Partial"
+evidence = ["scripts/check-crate-deps.sh passes", "Explorer no longer directly depends on SSH/SFTP"]
+source_refs = ["scripts/check_crate_deps.py", "docs/audits/remaining-boundaries.md", "tasks/rework/R07-004-explorer-host-contract.md"]
+last_verified = "2026-10-09"
+limitation = "Named transitional workspace/settings/feature edges remain and require later narrowing."
+next_action = "Process only the earliest eligible boundary task after R07 acceptance."
+
+[[item]]
+id = "agents.routing"
+area = "documentation and agent onboarding"
+target = "An agent can route a request to owner, task, documents, and gates in five minutes."
+owner = "repository"
+status = "Verified"
+evidence = ["docs/agents/README.md", "docs/agents/change-matrix.md", "docs/agents/finish-gates.md"]
+source_refs = ["AGENTS.md", "docs/agents/README.md", "docs/README.md"]
+last_verified = "2026-10-09"
+limitation = "Prompt guidance is repository-local; external agent configuration is not controlled here."
+next_action = "Use the handoff template on every subsequent implementation task and refine only from evidence."
+
+[[item]]
+id = "documentation.links-and-metadata"
+area = "documentation freshness"
+target = "Normative metadata and local Markdown links remain valid."
+owner = "repository"
+status = "Verified"
+evidence = ["python3 scripts/verify.py --scope docs"]
+source_refs = ["scripts/check_documentation.py", "docs/documentation-governance.md"]
+last_verified = "2026-10-09"
+limitation = "Orphan detection and semantic claim drift are not yet exhaustive."
+next_action = "Keep canonical-index and generator checks required; add semantic claim checks only when they can be deterministic."
+
+[[item]]
+id = "capabilities.pilot"
+area = "capability completeness"
+target = "Command Palette, Hosts, and Notifications have structured owner and evidence descriptors."
+owner = "capability owners"
+status = "Partial"
+evidence = ["python3 scripts/verify.py --scope capabilities", "3 descriptors validated"]
+source_refs = ["docs/capabilities/schema.md", "docs/capabilities/command-palette.toml", "docs/capabilities/hosts.toml", "docs/capabilities/notifications.toml"]
+last_verified = "2026-10-09"
+limitation = "The remaining capabilities still use the top-level matrix and task records only."
+next_action = "Expand descriptors in owner/task order; keep coverage.toml as the explicit migration record until then."
+
+[[item]]
+id = "workflows.catalog"
+area = "workflow completeness"
+target = "End-to-end workflows connect entry points to state, persistence, notifications, failures, security, tests, and visual evidence."
+owner = "capability owners"
+status = "Partial"
+evidence = ["python3 scripts/verify.py --scope workflows", "15 workflow records validate and generate successfully"]
+source_refs = ["docs/product/workflows.toml", "docs/product/workflows.md", "docs/generated/workflows.md"]
+last_verified = "2026-10-09"
+limitation = "The current workflows are deliberately partial until native visual and supported-host recovery evidence is attached."
+next_action = "Attach completed evidence per workflow as R07 and later capability tasks produce it."
+
+[[item]]
+id = "commands.catalog"
+area = "commands and keymap"
+target = "Every stable CommandId is assigned to an owner and evidence decision."
+owner = "command owners"
+status = "Verified"
+evidence = ["python3 scripts/verify.py --scope surfaces", "101 CommandId variants cataloged exactly once"]
+source_refs = ["docs/product/commands.toml", "crates/command-palette-core/src/lib.rs", "docs/generated/commands.md"]
+last_verified = "2026-10-09"
+limitation = "Group-level records will become per-command descriptors if individual availability diverges."
+next_action = "Add per-command metadata only when a group no longer accurately describes all IDs."
+
+[[item]]
+id = "surfaces.catalog"
+area = "menu and product surfaces"
+target = "Permanent shell zones and major overlays have stable owners, entry points, and visual states."
+owner = "surface owners"
+status = "Partial"
+evidence = ["11 surface records and 5 menu branches validate", "Generated surface/menu views are fresh"]
+source_refs = ["docs/product/surfaces.toml", "docs/product/menu.toml", "docs/generated/surfaces.md", "docs/generated/menu.md"]
+last_verified = "2026-10-09"
+limitation = "Native visual artifacts are pending in the current environment."
+next_action = "Complete the R07 native matrix and link artifact paths per surface state."
+
+[[item]]
+id = "settings.persistence"
+area = "settings and persistence"
+target = "Settings contain values only and every persisted feature has an owner and lifecycle."
+owner = "settings and capability owners"
+status = "Partial"
+evidence = ["Normative Settings and inventory documents", "Architecture dependency checks"]
+source_refs = ["docs/settings/catalog.toml", "docs/settings/catalog-schema.md", "docs/settings-inventory.md", "docs/generated/settings.md"]
+last_verified = "2026-10-09"
+limitation = "The area catalog and native 101-field registry are checked; field-specific migration evidence remains uneven."
+next_action = "Keep the 7-area/101-field catalog synchronized and add field-specific migration evidence as owners change values."
+
+[[item]]
+id = "remote.safety"
+area = "remote access and safety"
+target = "SSH/SFTP/host behavior stays behind typed contracts with secret and agent-access boundaries."
+owner = "hosts, ssh, sftp"
+status = "Partial"
+evidence = ["ExplorerService contract", "Host block_agent_access field", "SSH/SFTP boundary audits"]
+source_refs = ["crates/explorer-host/src/lib.rs", "crates/hosts/src/lib.rs", "docs/audits/remaining-boundaries.md"]
+last_verified = "2026-10-09"
+limitation = "Remote negative-test and MCP grant matrices remain to be cataloged."
+next_action = "Create the automation/security catalog with explicit denial and path tests."
+
+[[item]]
+id = "notifications.single-surface"
+area = "notifications and background work"
+target = "All passive user-visible messages use one retained notification registry and statusbar surface."
+owner = "notifications"
+status = "Partial"
+evidence = ["Notification registry and statusbar adapter tests", "R01-009 migration record"]
+source_refs = ["crates/notifications-core/src/lib.rs", "crates/notifications/src/status_item.rs", "docs/capabilities/notifications.toml"]
+last_verified = "2026-10-09"
+limitation = "Native placement evidence is pending; actionable notification workflow remains deferred."
+next_action = "Complete visual matrix and add an actionable workflow only with a concrete owner/use case."
+
+[[item]]
+id = "rust.gates"
+area = "build and regression"
+target = "Formatting, check, clippy, and workspace tests pass under the canonical verifier."
+owner = "repository"
+status = "Verified"
+evidence = ["python3 scripts/verify.py --scope rust"]
+source_refs = ["scripts/verify.py", "AGENTS.md"]
+last_verified = "2026-10-09"
+limitation = "Rust gates do not replace native visual, platform, security, or release evidence."
+next_action = "Keep full Rust gates mandatory for every code change."
+
+[[item]]
+id = "visual.r07"
+area = "visual verification"
+target = "The native R07 product-surface matrix covers required states with exact binary/PID evidence."
+owner = "R07 acceptance"
+status = "Pending"
+evidence = ["python3 scripts/verify.py --scope visual", "11 surface indexes and 63 catalog states validate", "Existing audit matrix records pending cells and the native capture blocker"]
+source_refs = ["tasks/rework/R07-001-product-surface-acceptance.md", "docs/audits/product-surface-acceptance.md", "docs/visual-verification.md", "docs/testing/visual-evidence.toml", "docs/testing/visual-evidence-schema.md", "scripts/check_visual_evidence.py", "docs/generated/visual-evidence.md"]
+last_verified = "2026-10-09"
+limitation = "This Linux session has no native macOS window or Screen Recording access."
+next_action = "Run the documented capture protocol on the supported native macOS environment."
+
+[[item]]
+id = "security.automation"
+area = "MCP and automation security"
+target = "Tools, grants, paths, limits, secret redaction, and negative tests are discoverable."
+owner = "mcp and security"
+status = "Partial"
+evidence = ["python3 scripts/verify.py --scope automation", "Six MCP tools have grant, limit, secret, positive-test, and negative-test records"]
+source_refs = ["crates/mcp-core/src", "crates/mcp-server/src", "docs/automation/tools.toml", "docs/security/threat-model.md", "docs/generated/tools.md"]
+last_verified = "2026-10-09"
+limitation = "The catalog and denial decisions are present; supported-host end-to-end denial execution is still pending."
+next_action = "Run the negative grant, blocked-host, timeout, and secret/path checks on the supported integration environment."
+
+[[item]]
+id = "performance.baselines"
+area = "performance"
+target = "Capabilities with meaningful budgets have reproducible baselines and limits."
+owner = "capability owners"
+status = "Pending"
+evidence = ["python3 scripts/verify.py --scope performance", "Seven budgets have reproducible measurement procedures and explicit status"]
+source_refs = ["docs/performance/budgets.toml", "docs/performance/catalog-schema.md", "docs/generated/performance.md", "docs/perf-baseline.md"]
+last_verified = "2026-10-09"
+limitation = "Native startup, memory, frame-time, and long-list artifacts are unavailable in the current Linux session."
+next_action = "Run the documented workloads on supported macOS and attach release-build traces and variance."
+
+[[item]]
+id = "release.native"
+area = "release and recovery"
+target = "Supported native builds have packaging, smoke, signing, rollback, and support evidence."
+owner = "release"
+status = "Pending"
+evidence = ["python3 scripts/verify.py --scope release", "Eight package/signing/updater/rollback/support checks are cataloged"]
+source_refs = ["docs/release/checklist.toml", "docs/release/checklist-schema.md", "docs/generated/release.md", ".github/workflows/release.yml"]
+last_verified = "2026-10-09"
+limitation = "macOS packaging, signing, notarization, staged rollback, and support handoff still require release-host artifacts."
+next_action = "Run the release checklist on a tagged macOS candidate and attach public artifact digests and recovery results."

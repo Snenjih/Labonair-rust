@@ -1,7 +1,7 @@
 # Repository Layout
 
 **Status:** Normative
-**Version:** 1
+**Version:** 2
 
 This document defines where product code, contracts, documentation, and
 migration work belong. It is a structural rule, not a description of every
@@ -21,6 +21,18 @@ Labonair-rust/
 │   ├── <capability>-integration/ # optional platform/protocol boundary
 │   └── foundation crates       # reusable contracts and infrastructure
 ├── docs/                       # normative contracts, ADRs, audits, reports
+│   ├── agents/                 # agent orientation, routes, templates, gates
+│   ├── architecture/           # decomposed architecture contracts + graph source
+│   ├── product/                # command, surface, and menu catalog sources
+│   ├── testing/                # evidence and visual verification contracts
+│   ├── evidence/               # structured scorecard source
+│   ├── automation/             # MCP tools, grants, limits, test matrix
+│   ├── security/               # threat, secret, trust, remote contracts
+│   ├── settings/               # settings lifecycle + catalog source
+│   ├── performance/            # budgets + measurement catalog
+│   ├── release/                # packaging, rollback, support + checklist
+│   ├── generated/              # checked-in readable projections; never hand-edit
+│   └── capabilities/            # capability-specific contracts and inventories
 ├── ideas/                      # non-normative proposals only
 ├── tasks/rework/               # active migration queue
 ├── tasks/archive/              # historical task records
@@ -93,6 +105,14 @@ a sibling boundary is justified.
 ## Documentation placement
 
 - `docs/*.md`: current normative contracts and implementation roadmap.
+- `docs/architecture/`: decomposed architecture contracts and the machine-
+  readable dependency/ownership policy.
+- `docs/agents/`: agent onboarding, structured request routes, change routing,
+  task, handoff, and finish gate guidance.
+- `docs/generated/`: deterministic projections generated from canonical sources;
+  update the generator or source, never the projection directly.
+- `docs/capabilities/`: capability-specific detail that is indexed by the
+  capability matrix and must not redefine ownership elsewhere.
 - `docs/adr/`: accepted architectural decisions and their consequences.
 - `docs/audits/`: evidence about the current, unfinished tree.
 - `docs/reports/`: research and comparisons; never the source of authority.
@@ -101,6 +121,9 @@ a sibling boundary is justified.
   ADR.
 - `tasks/rework/`: the only active implementation queue for the architecture
   rework.
+- `docs-reform-plan.md`: the repository-level goal and phased implementation
+  plan for the documentation/agent knowledge system. It is not a second task
+  queue.
 
 When a document changes an ownership or dependency rule, update the relevant
 normative contract, capability matrix, migration task, and inventory in the

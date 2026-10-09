@@ -1,0 +1,94 @@
+version = 1
+guide = "docs/agents/README.md"
+matrix = "docs/agents/change-matrix.md"
+generated_view = "docs/generated/agent-index.md"
+
+[[route]]
+id = "capability"
+display_name = "Capability or migration"
+request_kinds = ["new capability", "capability migration", "feature extraction"]
+first_reads = ["docs/capabilities.md", "docs/modules.md", "docs/feature-lifecycle.md"]
+canonical_sources = ["docs/capabilities.md", "docs/capabilities/schema.md", "docs/product/workflows.md", "docs/agents/task-template.md"]
+required_scopes = ["capabilities", "workflows", "surfaces", "knowledge", "rust"]
+evidence_decision = "Owner, contract, entry point, state, persistence, notifications, tests, and visual/security status must be explicit."
+
+[[route]]
+id = "boundary"
+display_name = "Boundary or dependency migration"
+request_kinds = ["crate boundary", "dependency edge", "adapter migration"]
+first_reads = ["docs/architecture.md", "docs/architecture/dependency-rules.md", "docs/audits/remaining-boundaries.md"]
+canonical_sources = ["docs/architecture/graph.toml", "docs/repository-layout.md", "docs/feature-lifecycle.md", "docs/agents/task-template.md"]
+required_scopes = ["architecture", "queue", "knowledge", "rust"]
+evidence_decision = "Every new or removed edge has an owner, reason, contract, consumer, and removal condition."
+
+[[route]]
+id = "command"
+display_name = "Command or keymap"
+request_kinds = ["command", "keymap", "palette action"]
+first_reads = ["docs/registries.md", "docs/product/catalog-schema.md", "docs/capabilities.md"]
+canonical_sources = ["docs/product/commands.toml", "docs/product/menu.toml", "docs/product/surfaces.toml"]
+required_scopes = ["surfaces", "knowledge", "rust"]
+evidence_decision = "A stable command ID, owner, availability, entry point, failure path, test, and visual decision are required."
+
+[[route]]
+id = "surface"
+display_name = "Menu, panel, dock, status item, or layout"
+request_kinds = ["menu", "palette", "panel", "dock", "status item", "layout", "UI"]
+first_reads = ["docs/product.md", "docs/registries.md", "docs/design-system.md", "docs/visual-verification.md"]
+canonical_sources = ["docs/product/surfaces.toml", "docs/product/menu.toml", "docs/testing/visual-matrix.md", "docs/testing/visual-evidence.toml"]
+required_scopes = ["surfaces", "visual", "evidence", "knowledge", "rust"]
+evidence_decision = "Native exact-binary evidence covers every applicable normal, narrow, focused, empty, loading, error, long-list, and overlay state."
+
+[[route]]
+id = "settings"
+display_name = "Settings or persistence"
+request_kinds = ["setting", "settings UI", "persistence", "migration", "schema"]
+first_reads = ["docs/settings.md", "docs/settings-inventory.md", "docs/settings/persistence.md"]
+canonical_sources = ["docs/settings/catalog.toml", "docs/settings/catalog-schema.md", "docs/settings-inventory.md"]
+required_scopes = ["settings", "knowledge", "rust"]
+evidence_decision = "Scope, default, consumer, storage, migration, reload, malformed input, unknown-key, and secret behavior are recorded."
+
+[[route]]
+id = "remote"
+display_name = "SSH, SFTP, transfer, or host access"
+request_kinds = ["SSH", "SFTP", "remote", "transfer", "host", "credential"]
+first_reads = ["docs/capabilities.md", "docs/security/remote-access.md", "docs/security/secrets.md", "docs/automation/grants.md"]
+canonical_sources = ["docs/architecture/graph.toml", "docs/automation/tools.toml", "docs/security/threat-model.md"]
+required_scopes = ["architecture", "automation", "knowledge", "rust"]
+evidence_decision = "Allowed and denied paths, grants, host policy, timeout, cancellation, path safety, and secret redaction are both covered."
+
+[[route]]
+id = "automation"
+display_name = "MCP, AI, or agent automation"
+request_kinds = ["MCP", "AI", "agent tool", "automation", "bridge"]
+first_reads = ["docs/automation/overview.md", "docs/automation/tools.toml", "docs/security/trust-boundaries.md"]
+canonical_sources = ["docs/automation/grants.md", "docs/automation/limits.md", "docs/automation/test-matrix.md", "docs/security/threat-model.md"]
+required_scopes = ["automation", "knowledge", "rust"]
+evidence_decision = "Tool owner, grant, limits, side effects, confirmation, failure, audit, positive tests, and negative tests are required."
+
+[[route]]
+id = "performance"
+display_name = "Performance or responsiveness"
+request_kinds = ["performance", "latency", "memory", "frame time", "benchmark"]
+first_reads = ["docs/performance.md", "docs/performance/budgets.md", "docs/perf-baseline.md"]
+canonical_sources = ["docs/performance/budgets.toml", "docs/performance/catalog-schema.md", "docs/perf-baseline.md"]
+required_scopes = ["performance", "evidence", "knowledge"]
+evidence_decision = "Target, method, host, input size, baseline, variance, artifact, limitation, and next action are recorded."
+
+[[route]]
+id = "release"
+display_name = "Release, packaging, or recovery"
+request_kinds = ["release", "packaging", "signing", "notarization", "rollback", "support"]
+first_reads = ["docs/RELEASE.md", "docs/release/README.md", "docs/release/platforms.md"]
+canonical_sources = ["docs/release/checklist.toml", "docs/release/checklist-schema.md", ".github/workflows/release.yml"]
+required_scopes = ["release", "knowledge"]
+evidence_decision = "Build, smoke, artifact, signing, updater, rollback, platform, and support status are explicit; secrets are never recorded."
+
+[[route]]
+id = "documentation"
+display_name = "Documentation or repository control"
+request_kinds = ["documentation", "agent instructions", "repository layout", "CI verifier", "generated docs"]
+first_reads = ["docs/documentation-governance.md", "docs/README.md", "docs/agents/README.md"]
+canonical_sources = ["docs/documentation-governance.md", "docs/repository-layout.md", "docs/agents/routes.toml", "scripts/verify.py"]
+required_scopes = ["docs", "knowledge"]
+evidence_decision = "Authority, metadata, local links, canonical index, source references, generated freshness, and unrelated-change preservation are checked."

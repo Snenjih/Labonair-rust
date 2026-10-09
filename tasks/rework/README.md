@@ -30,25 +30,26 @@ The active sequence is:
 21. `R07-003-settings-legacy-warning-disposition.md` — Done
 22. `R07-004-explorer-host-contract.md` — Planned (structural migration landed early; visual evidence folds into R07-001)
 23. `R07-005-background-presentation-boundary.md` — Planned (structural migration landed early; visual evidence folds into R07-001)
-24. `R08-001-transfers-ui-workspace-decoupling.md` — Done
-25. `R08-002-remove-no-op-command-affordances.md` — Done
-26. `R08-003-panel-snippets-workspace-decoupling.md` — Done
-27. `R08-004-popover-trigger-bounds-anchoring.md` — Done
-28. `R08-005-theme-management-out-of-settings-ui.md` — Done
-29. `R08-006-appcomposition-accessors.md` — Done
-30. `R08-007-remove-legacy-shortcutid-model.md` — Done
-31. `R08-008-ui-kit-theme-token-extraction.md` — Done
-32. `R08-009-remove-notification-callback-adapter.md` — Done
-33. `R08-010-actionable-notifications.md` — Planned (no current consumer)
-34. `R08-011-defer-dormant-theme-import.md` — Done
-35. `R08-012-workspace-hosts-ui-decoupling.md` — Done
-36. `R09-001-editor-e0-text-model-contract.md` — Planned
-37. `R09-002-editor-e1-file-lifecycle.md` — Planned
-38. `R09-003-editor-e2-editing-and-splits.md` — Planned
-39. `R09-004-editor-e3-display-search-navigation.md` — Planned
-40. `R09-005-editor-e4-local-language-services.md` — Planned
-41. `R09-006-editor-e5-git-gutter-review-bridge.md` — Planned
-42. `R09-007-editor-e6-persistence-polish-and-p2.md` — Planned
+24. `R07-006-documentation-knowledge-system.md` — Planned (blocked behind R07 acceptance)
+25. `R08-001-transfers-ui-workspace-decoupling.md` — Done
+26. `R08-002-remove-no-op-command-affordances.md` — Done
+27. `R08-003-panel-snippets-workspace-decoupling.md` — Done
+28. `R08-004-popover-trigger-bounds-anchoring.md` — Done
+29. `R08-005-theme-management-out-of-settings-ui.md` — Done
+30. `R08-006-appcomposition-accessors.md` — Done
+31. `R08-007-remove-legacy-shortcutid-model.md` — Done
+32. `R08-008-ui-kit-theme-token-extraction.md` — Done
+33. `R08-009-remove-notification-callback-adapter.md` — Done
+34. `R08-010-actionable-notifications.md` — Planned (no current consumer)
+35. `R08-011-defer-dormant-theme-import.md` — Done
+36. `R08-012-workspace-hosts-ui-decoupling.md` — Done
+37. `R09-001-editor-e0-text-model-contract.md` — Planned
+38. `R09-002-editor-e1-file-lifecycle.md` — Planned
+39. `R09-003-editor-e2-editing-and-splits.md` — Planned
+40. `R09-004-editor-e3-display-search-navigation.md` — Planned
+41. `R09-005-editor-e4-local-language-services.md` — Planned
+42. `R09-006-editor-e5-git-gutter-review-bridge.md` — Planned
+43. `R09-007-editor-e6-persistence-polish-and-p2.md` — Planned
 
 Phases 0–6 are complete. R02-001 is the first bounded Phase 2 shell task and
 also connects the already-established theme registry to its intended palette
@@ -71,6 +72,12 @@ R07-005 is the follow-up for boundary B02. Its structural migration (the
 edge, the `BackgroundHost` adapter, and all code/dependency/test gates) has
 also landed early, for the same reason and with the same `Planned` status
 pending the R07-001 visual matrix.
+
+R07-006 is the bounded follow-up for the repository knowledge system described
+in [`../../docs-reform-plan.md`](../../docs-reform-plan.md). Its foundation
+artifacts are already present, but the task remains Planned until R07 native
+acceptance permits the remaining descriptor and evidence work. It is not a
+parallel active queue and must not be started before the earlier R07 tasks.
 
 Only the earliest task whose dependencies are complete may be started.
 

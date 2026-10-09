@@ -1,7 +1,7 @@
 # Documentation Governance
 
 **Status:** Normative
-**Version:** 1
+**Version:** 2
 
 This document defines where project knowledge belongs and how documentation
 changes are kept consistent. It complements the product, architecture, and
@@ -13,6 +13,19 @@ feature-lifecycle contracts; it does not replace them.
 |---|---|---|---|
 | `AGENTS.md` | engineering instructions | binding | Repository-wide implementation constraints and verification gates. |
 | `docs/*.md` | normative contract | binding | Current product, architecture, module, registry, design, settings, workspace, and lifecycle rules. |
+| `docs/architecture/*.md` | decomposed normative contract | binding | Layer, composition, lifecycle, and dependency rules used by agents and reviewers. |
+| `docs/architecture/graph.toml` | machine-readable policy source | binding | Exact crate ownership, layer, and internal dependency policy checked against Cargo metadata. |
+| `docs/generated/` | generated projection | derived | Human-readable views generated from canonical policy sources; never edit directly. Every view carries a deterministic source fingerprint. |
+| `docs/agents/` | agent operating guide | binding workflow | Orientation, structured request routing, change routing, task templates, handoffs, anti-patterns, and finish gates. |
+| `docs/product/` | product catalog source | binding | Structured command, surface, and menu ownership/evidence records. |
+| `docs/testing/` | testing/evidence contract | binding | Evidence classes, visual matrix, and verification interpretation. |
+| `docs/testing/visual-evidence.toml` | structured visual evidence source | binding data | Per-surface state status, deterministic artifact naming, and native capture records. |
+| `docs/evidence/` | structured evidence source | binding data | Scorecard records with status, references, limitations, and next actions. |
+| `docs/automation/` | automation contract | binding | MCP tools, grants, limits, and positive/negative test decisions. |
+| `docs/security/` | security contract | binding | Threat model, trust boundaries, secret handling, and remote-access rules. |
+| `docs/settings/` | settings lifecycle contract | binding | Persistence, migration, value ownership, and the machine-readable area catalog. |
+| `docs/performance/` | performance contract | binding | Budgets, measurement interpretation, and the machine-readable budget catalog. |
+| `docs/release/` | release operations contract | binding | Platform, packaging, rollback, support policy, and the machine-readable release checklist. |
 | `docs/adr/` | accepted decision | binding for its decision | Records a deliberate architectural decision, its rationale, and consequences. |
 | `docs/audits/` | current-state evidence | descriptive | Records what the source tree currently proves, including partial migrations and blockers. |
 | `docs/reports/` | research and comparison | advisory | Preserves investigations and source comparisons; it cannot change the target. |
@@ -33,6 +46,9 @@ map of those authorities:
 
 - product identity and scope → `docs/product.md`;
 - runtime layers and crate boundaries → `docs/architecture.md`;
+- machine-readable ownership and dependency policy → `docs/architecture/graph.toml`;
+- decomposed layer, composition, lifecycle, and dependency rules →
+  `docs/architecture/`;
 - capability ownership and dispositions → `docs/capabilities.md`;
 - module and crate rules → `docs/modules.md`;
 - registry contracts → `docs/registries.md`;
@@ -44,6 +60,16 @@ map of those authorities:
 - workspace identity and workflows → `docs/workspace-model.md`;
 - ordered implementation work → `docs/rework-roadmap.md` and
   `tasks/rework/`.
+- agent onboarding and change routing → `docs/agents/README.md`;
+- architecture projection → `docs/generated/architecture.md` (derived only).
+- command/surface/menu ownership → `docs/product/`;
+- evidence and visual interpretation → `docs/testing/` and `docs/evidence/`;
+- deterministic screenshot indexes → `docs/testing/visual-evidence.toml` and `docs/generated/visual-evidence.md`;
+- automation tools and grants → `docs/automation/`;
+- security and remote access → `docs/security/`;
+- settings data lifecycle → `docs/settings/`;
+- performance budgets → `docs/performance/`;
+- release operations → `docs/release/`.
 
 Do not create a second document that independently defines the same rule. Add
 detail to the canonical document or link to it from a supporting audit or
@@ -66,6 +92,10 @@ Before changing code or product behavior:
    `python3 scripts/check_documentation.py`; it validates normative metadata,
    current local Markdown links, and stale predecessor markers in automation
    configuration.
+
+Architecture source or Cargo dependency changes additionally require
+`python3 scripts/verify.py --scope architecture`; regenerate derived views
+with their generator and include the resulting diff in the review.
 
 For a new feature, the active task must state its user workflow, entry point,
 owner, contracts, registry contributions, settings, persistence, notification

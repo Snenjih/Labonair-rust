@@ -1,0 +1,47 @@
+version = 1
+surface_id = "shell.global-menu"
+
+[[menu]]
+id = "global.file"
+label = "File"
+owner_module = "shell"
+canonical_surface = "shell.global-menu"
+command_ids = ["NewTerminalTab", "NewEditorTab", "OpenFile", "OpenProject", "ReturnToStandalone", "Save", "OpenSettings", "OpenCommandPalette"]
+availability = "Depends on application/workspace context and command-specific availability."
+evidence = ["Pending: native global menu capture"]
+
+[[menu]]
+id = "global.view"
+label = "View"
+owner_module = "shell"
+canonical_surface = "shell.global-menu"
+command_ids = ["ToggleSidebar", "ToggleFullScreen", "ToggleZenMode", "ChangeAppTheme", "ChangeIconTheme", "ChangeColorMode", "ChangeEditorTheme", "ShowStatusBarItem"]
+availability = "View and appearance commands are available when their owner registries are composed."
+evidence = ["Pending: native View menu capture"]
+
+[[menu]]
+id = "global.connections"
+label = "Connections"
+owner_module = "hosts"
+canonical_surface = "shell.global-menu"
+command_ids = ["OpenHosts", "ConnectSsh", "OpenSftp", "NewSshTab", "NewSftpTab", "NewSshConnection", "NewQuickSsh"]
+availability = "Host/session commands require the corresponding host catalog or quick-connection context."
+evidence = ["Pending: native Connections menu capture"]
+
+[[menu]]
+id = "global.editor"
+label = "Editor"
+owner_module = "editor"
+canonical_surface = "shell.global-menu"
+command_ids = ["GoToSymbol", "Save", "EditorFormatDocument", "EditorShowDiagnostics", "EditorCodeAction", "EditorTriggerCompletion"]
+availability = "Editor commands are enabled only with a focused editor document and supporting language service."
+evidence = ["Pending: native Editor menu capture"]
+
+[[menu]]
+id = "global.source-control"
+label = "Source Control"
+owner_module = "git"
+canonical_surface = "shell.global-menu"
+command_ids = ["GitSwitchBranch", "EditorNextGitChange", "EditorPreviousGitChange", "EditorOpenProjectDiff"]
+availability = "Requires a repository and the relevant Git context."
+evidence = ["Pending: native Source Control menu capture"]

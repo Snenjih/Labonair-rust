@@ -8,6 +8,8 @@ target rule for a claim that the current tree already satisfies it.
 
 The current product and engineering contracts are in [`docs/README.md`](docs/README.md). Read the relevant normative documents before changing architecture, product behavior, module boundaries, settings, registries, or UI. The canonical repository placement is [`docs/repository-layout.md`](docs/repository-layout.md), and the required boundary-first change workflow is [`docs/feature-lifecycle.md`](docs/feature-lifecycle.md).
 
+For the shortest safe agent path, read [`docs/agents/README.md`](docs/agents/README.md) and use its change matrix, pre-change contract, finish gates, and handoff template. The complete reform goal is recorded in [`docs-reform-plan.md`](docs-reform-plan.md); it is a plan, not a replacement authority.
+
 ## Product direction
 
 Labonair is a fast, keyboard-first Dev-Op workspace for local and remote work. Terminal, editor, SSH, SFTP, Git, transfers, themes, keymap, notifications, and AI are independent feature modules. The product supports both project workspaces and standalone tool use.
@@ -68,6 +70,8 @@ Notifications are shown in the statusbar notification dropdown. There is no toas
 
 ## Feature workflow
 
+Before editing, classify the request with [`docs/agents/change-matrix.md`](docs/agents/change-matrix.md), record the required change contract from [`docs/agents/task-template.md`](docs/agents/task-template.md), and identify the canonical owner. After editing, follow [`docs/agents/finish-gates.md`](docs/agents/finish-gates.md) and use [`docs/agents/handoff-template.md`](docs/agents/handoff-template.md) for the result.
+
 Before implementation, identify the owning module, canonical user entry point, public contract, events, registry contributions, settings, persistence, and UI-kit components. Then create or update a task from [`docs/rework-roadmap.md`](docs/rework-roadmap.md).
 
 During implementation, keep feature logic inside its owner, route user messages through the notification center, and avoid shell-wide conditionals.
@@ -102,6 +106,17 @@ UI and layout changes also require a visual check. Dependency changes require th
 Documentation or repository-control changes require
 `python3 scripts/check_documentation.py`. Changes to the active architecture
 queue also require `python3 scripts/check_rework_queue.py`.
+
+The canonical local verification entry point is:
+
+```text
+python3 scripts/verify.py --scope all
+```
+
+Use a narrower scope while iterating (`docs`, `queue`, `architecture`,
+`knowledge`, `agents`, `capabilities`, `surfaces`, `workflows`, `settings`,
+`performance`, `visual`, `evidence`, `automation`, `release`, or `rust`), but never
+report a change as complete while a required scope remains unrun or failed.
 
 ## Repository continuity
 

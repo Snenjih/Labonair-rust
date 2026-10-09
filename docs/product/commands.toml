@@ -1,0 +1,234 @@
+version = 1
+source_of_truth = "crates/command-palette-core/src/lib.rs::CommandId"
+
+[[group]]
+id = "workspace-layout"
+owner_module = "workspace"
+canonical_crate = "labonair-workspace"
+menu_path = "Workspace / Layout"
+context = "workspace, home, terminal, editor, sftp"
+availability = "Depends on active workspace, focused pane, and available tab/view type."
+default_keymap = ["Owner defaults and user keymap are resolved by labonair-keymap."]
+palette_visibility = "Visible when the command context permits it."
+execution_handler = "labonair-workspace command provider and typed workspace dispatch"
+success_behavior = "Update workspace tabs, panes, or identity and refresh the affected view."
+failure_behavior = "Return a typed result; operational failures publish through Notifications."
+notification_behavior = "No passive notification for successful layout changes; failures use the notification registry."
+undo_redo = "Not applicable for shell layout commands unless the owner explicitly adds a history entry."
+tests = ["crates/workspace/src/command_provider.rs", "crates/workspace/src/workspace.rs"]
+visual_evidence = ["Pending: native surface matrix for titlebar, tabs, panes, and focused states."]
+source_files = ["crates/workspace/src/command_provider.rs", "crates/workspace/src/workspace.rs", "crates/shell/src/menu.rs"]
+ids = [
+  "NewEditorTab", "DuplicateTab", "CloseOtherTabs", "SplitRight", "SplitDown",
+  "ClosePane", "CloseTab", "NextTab", "PrevTab", "SwitchTab", "Find",
+  "OpenFile", "ToggleSidebar", "ToggleFullScreen", "OpenSnippetsPanel",
+  "OpenGitGraph", "FocusSourceControl", "OpenProject", "ReturnToStandalone",
+  "OpenProjectSettings", "ToggleZenModeHeader", "ToggleZenModeStatusbar",
+  "ToggleZenMode", "NewPreviewTab", "FocusNextPane", "SelectTab1", "SelectTab2",
+  "SelectTab3", "SelectTab4", "SelectTab5", "SelectTab6", "SelectTab7",
+  "SelectTab8", "SelectTab9", "DebugCyclePanelDock", "DebugToggleDockZoom",
+  "OpenComponentGallery", "ShowStatusBarItem",
+]
+
+[[group]]
+id = "terminal"
+owner_module = "terminal"
+canonical_crate = "labonair-terminal"
+menu_path = "Terminal"
+context = "terminal, ssh-terminal"
+availability = "Requires a terminal-capable active pane or a terminal creation context."
+default_keymap = ["Resolved from terminal-owned defaults and user keymap."]
+palette_visibility = "Visible in terminal contexts and the global palette where applicable."
+execution_handler = "labonair-terminal handler through the command runtime"
+success_behavior = "Creates or updates terminal state and schedules I/O asynchronously."
+failure_behavior = "Typed terminal/session error with notification publication when user-visible."
+notification_behavior = "Connection and process failures use Notifications; no toast path."
+undo_redo = "Not applicable."
+tests = ["crates/terminal/src", "crates/workspace/src/command_provider.rs"]
+visual_evidence = ["Pending: terminal normal, empty, loading, and error states."]
+source_files = ["crates/terminal/src", "crates/workspace/src/command_provider.rs"]
+ids = ["NewTerminalTab", "ClearTerminal"]
+
+[[group]]
+id = "keymap"
+owner_module = "keymap"
+canonical_crate = "labonair-keymap"
+menu_path = "Settings / Keymap"
+context = "global"
+availability = "Available in the application shell and keymap management tab."
+default_keymap = ["OpenShortcuts has owner/platform defaults; user bindings are layered by labonair-keymap."]
+palette_visibility = "Visible from the global menu and command palette."
+execution_handler = "labonair-keymap and shell platform adapter"
+success_behavior = "Open or update the keymap management surface."
+failure_behavior = "Malformed or unwritable keymap data becomes a structured notification."
+notification_behavior = "Diagnostics and save failures use Notifications."
+undo_redo = "Editor-local keymap document editing may expose its own bounded undo behavior."
+tests = ["crates/keymap/src", "crates/shell/src/keymap_loader.rs"]
+visual_evidence = ["Pending: keymap tab, conflict, and diagnostics states."]
+source_files = ["crates/keymap/src", "crates/shell/src/keymap_loader.rs", "crates/shell/src/menu.rs"]
+ids = ["OpenShortcuts", "OpenKeymapJson"]
+
+[[group]]
+id = "settings"
+owner_module = "settings"
+canonical_crate = "labonair-settings"
+menu_path = "Settings"
+context = "global"
+availability = "Available from the titlebar global menu and settings surface."
+default_keymap = ["Resolved through the settings/keymap owner contracts."]
+palette_visibility = "Visible when the Settings surface is available."
+execution_handler = "labonair-settings-ui and shell composition adapter"
+success_behavior = "Open the value-only Settings surface or settings JSON editor."
+failure_behavior = "Schema, parse, or persistence failure uses structured notification details."
+notification_behavior = "Settings diagnostics publish through Notifications; no duplicate banner/toast."
+undo_redo = "Settings edits follow the editor/document behavior where applicable."
+tests = ["crates/settings/src", "crates/settings-ui/src"]
+visual_evidence = ["Pending: settings normal, scope, validation, and error states."]
+source_files = ["crates/settings/src", "crates/settings-ui/src/command_provider.rs", "crates/shell/src/menu.rs"]
+ids = ["OpenSettings", "OpenSettingsJson"]
+
+[[group]]
+id = "updater"
+owner_module = "updater"
+canonical_crate = "labonair-updater"
+menu_path = "Help / Updates"
+context = "global"
+availability = "Available when update checks are supported by the platform and configuration."
+default_keymap = ["none"]
+palette_visibility = "Visible when the updater contribution is registered."
+execution_handler = "labonair-updater-ui through the update service contract"
+success_behavior = "Report available/current update state in the updater surface."
+failure_behavior = "Network or package failure is a structured notification with details."
+notification_behavior = "Update progress/failure uses the notification registry and updater surface."
+undo_redo = "Not applicable."
+tests = ["crates/updater/src", "crates/updater-ui/src"]
+visual_evidence = ["Pending: updater status and error states."]
+source_files = ["crates/updater/src", "crates/updater-ui/src"]
+ids = ["CheckForUpdates"]
+
+[[group]]
+id = "hosts"
+owner_module = "hosts"
+canonical_crate = "labonair-hosts"
+menu_path = "Connections / Hosts"
+context = "global, workspace, terminal, sftp"
+availability = "Requires the composed Hosts manager and a valid host/session context for connection actions."
+default_keymap = ["none declared; discoverable through menu and palette"]
+palette_visibility = "OpenHosts and connection actions are visible through the Hosts submenu."
+execution_handler = "labonair-hosts-ui provider and typed HostOpenRequest"
+success_behavior = "Open Hosts management or create an SSH/SFTP workflow."
+failure_behavior = "Connection, validation, migration, and persistence failures include structured details."
+notification_behavior = "Failures publish through Notifications; no local passive duplicate."
+undo_redo = "Host document edits may use bounded form state; connection actions are not undoable."
+tests = ["crates/hosts/src", "crates/hosts-ui/src/command_provider.rs"]
+visual_evidence = ["Pending: Hosts tab, host form, empty state, and palette submenu."]
+source_files = ["crates/hosts/src/command_provider.rs", "crates/hosts-ui/src/command_provider.rs", "crates/shell/src/menu.rs"]
+ids = ["OpenHosts", "ConnectSsh", "OpenSftp", "NewSshTab", "NewSftpTab", "NewSshConnection", "NewQuickSsh"]
+
+[[group]]
+id = "theme"
+owner_module = "theme"
+canonical_crate = "labonair-theme"
+menu_path = "View / Appearance"
+context = "global"
+availability = "Available when the theme registries and stores are composed."
+default_keymap = ["none"]
+palette_visibility = "Visible as owner-contributed theme submenus."
+execution_handler = "labonair-theme and theme-ui owner handlers"
+success_behavior = "Apply a reversible theme, icon theme, color mode, or editor theme selection."
+failure_behavior = "Invalid selection or persistence failure is a structured notification."
+notification_behavior = "Diagnostics use Notifications; preview changes do not emit passive messages."
+undo_redo = "Selection is reversible through the theme picker; no document undo entry."
+tests = ["crates/theme/src/command_provider.rs", "crates/theme/src/store.rs"]
+visual_evidence = ["Pending: theme picker, icon picker, color mode, and editor theme states."]
+source_files = ["crates/theme/src/command_provider.rs", "crates/theme-ui/src", "crates/shell/src/menu.rs"]
+ids = ["ChangeAppTheme", "ChangeIconTheme", "ChangeColorMode", "ChangeEditorTheme"]
+
+[[group]]
+id = "snippets"
+owner_module = "snippets"
+canonical_crate = "labonair-snippets"
+menu_path = "Tools / Snippets"
+context = "workspace, terminal, ssh-terminal"
+availability = "Requires a snippet catalog and a runnable local or remote session."
+default_keymap = ["none"]
+palette_visibility = "Visible from the owner-contributed Snippets submenu."
+execution_handler = "labonair-snippets-host and injected local/SSH execution contracts"
+success_behavior = "Run the selected snippet in the requested execution context."
+failure_behavior = "Missing host/session or execution failure is a structured notification."
+notification_behavior = "Execution failures use Notifications; no duplicate panel banner."
+undo_redo = "Not applicable to process execution."
+tests = ["crates/snippets/src", "crates/panel-snippets/src"]
+visual_evidence = ["Pending: snippet list, empty, and execution-failure states."]
+source_files = ["crates/snippets/src/command_provider.rs", "crates/panel-snippets/src"]
+ids = ["RunSnippet"]
+
+[[group]]
+id = "git"
+owner_module = "git"
+canonical_crate = "labonair-git"
+menu_path = "Source Control"
+context = "workspace, editor"
+availability = "Requires a repository and the relevant branch/change context."
+default_keymap = ["Resolved from Git/editor owner defaults and user keymap."]
+palette_visibility = "Visible in Git and editor contexts where applicable."
+execution_handler = "labonair-git-transport and owner panel/editor bridges"
+success_behavior = "Update repository state, branch selection, or diff view."
+failure_behavior = "Git process, repository, or remote failure is structured and actionable."
+notification_behavior = "Operational failures use Notifications; decisions may use local dialogs."
+undo_redo = "Git mutations follow the Git operation's own safety/confirmation semantics."
+tests = ["crates/git/src", "crates/panel-scm/src", "crates/workspace/src/editor_git_bridge.rs"]
+visual_evidence = ["Pending: source-control, branch, diff, and empty repository states."]
+source_files = ["crates/git/src", "crates/panel-scm/src", "crates/panel-git-graph/src"]
+ids = ["GitSwitchBranch", "EditorNextGitChange", "EditorPreviousGitChange", "EditorOpenProjectDiff"]
+
+[[group]]
+id = "editor"
+owner_module = "editor"
+canonical_crate = "labonair-editor"
+menu_path = "Editor"
+context = "editor"
+availability = "Requires a focused editor document and the relevant language/document capability."
+default_keymap = ["Editor-owned defaults are resolved through labonair-keymap."]
+palette_visibility = "Visible in the editor command context."
+execution_handler = "labonair-editor command provider and Workspace editor bridge"
+success_behavior = "Mutate editor document/view state or request a language-service operation."
+failure_behavior = "Read-only, language-server, formatting, or document failures include structured details."
+notification_behavior = "Operational failures use Notifications; editor decisions may use dialogs."
+undo_redo = "Document edits use the editor's undo/redo model; navigation is not undoable."
+tests = ["crates/editor/src", "crates/workspace/src/views/editor.rs"]
+visual_evidence = ["Pending: editor focused, diagnostics, completion, selection, and failure states."]
+source_files = ["crates/editor/src/command_provider.rs", "crates/workspace/src/views/editor.rs", "crates/shell/src/menu.rs"]
+ids = [
+  "GoToSymbol", "ToggleEditorWordWrap", "ToggleLineNumbers", "ToggleCursorBlink",
+  "ToggleVimMode", "Save", "EditorAddCursor", "EditorSelectNextOccurrence",
+  "EditorSelectAllOccurrences", "EditorExpandSelection", "EditorShrinkSelection",
+  "EditorDuplicateLines", "EditorMoveLines", "EditorIndent", "EditorOutdent",
+  "EditorToggleComment", "EditorTranspose", "EditorSplitRight", "EditorSplitDown",
+  "EditorFocusNextGroup", "EditorFocusPreviousGroup", "EditorCloseGroup",
+  "EditorCloseOtherGroups", "EditorTriggerCompletion", "EditorGoToDefinition",
+  "EditorGoToDeclaration", "EditorGoToReferences", "EditorGoToImplementation",
+  "EditorPeekDefinition", "EditorRenameSymbol", "EditorCodeAction",
+  "EditorFormatDocument", "EditorFormatSelection", "EditorOrganizeImports",
+  "EditorRestartLanguageServer", "EditorStopLanguageServer", "EditorShowDiagnostics",
+  "EditorNextDiagnostic", "EditorPreviousDiagnostic",
+]
+
+[[group]]
+id = "command-palette"
+owner_module = "command-palette"
+canonical_crate = "labonair-command-palette-core"
+menu_path = "Global / Command Palette"
+context = "global"
+availability = "Available whenever the command palette modal can be presented."
+default_keymap = ["cmd-p (native platform equivalent through the keymap adapter)"]
+palette_visibility = "The action that opens the palette is always discoverable from the titlebar global menu."
+execution_handler = "labonair-command-palette handler registry"
+success_behavior = "Open or close the command-palette modal and focus its query field."
+failure_behavior = "Presentation failure is returned to the shell composition boundary."
+notification_behavior = "No passive success notification; failures use the shared notification path."
+undo_redo = "Not applicable."
+tests = ["crates/command-palette-core/src", "crates/command-palette/src"]
+visual_evidence = ["Pending: palette focused, empty, filtered, submenu, and keyboard states."]
+source_files = ["crates/command-palette-core/src/command_provider.rs", "crates/command-palette/src/command_provider.rs"]
+ids = ["OpenCommandPalette"]

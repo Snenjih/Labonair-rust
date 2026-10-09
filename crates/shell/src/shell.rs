@@ -20,6 +20,7 @@ pub mod assets;
 pub mod bootstrap;
 pub mod commands;
 pub mod composition;
+mod explorer_service;
 #[cfg(any(debug_assertions, feature = "gallery"))]
 pub mod gallery;
 pub mod keymap_loader;

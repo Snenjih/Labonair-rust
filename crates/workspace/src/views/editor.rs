@@ -5347,8 +5347,7 @@ impl Render for EditorView {
         // Caret + current-line band use the same display map as mouse mapping.
         self.editor_focused = self.focus_handle.is_focused(window);
         let caret_point = display.position_to_display(cursor);
-        let show_caret =
-            !self.prefs.cursor_blink() || !self.editor_focused || self.cursor_blink_on;
+        let show_caret = !self.prefs.cursor_blink() || !self.editor_focused || self.cursor_blink_on;
         let caret = show_caret
             .then_some(caret_point)
             .flatten()
@@ -5359,15 +5358,13 @@ impl Render for EditorView {
                     EditorCursorStyle::Underline => {
                         ((line_h - 2.0).max(0.0), char_w.max(2.0), 2.0, accent)
                     }
-                    EditorCursorStyle::Block => {
-                        (0.0, char_w.max(2.0), line_h, accent.opacity(0.6))
-                    }
+                    EditorCursorStyle::Block => (0.0, char_w.max(2.0), line_h, accent.opacity(0.6)),
                 };
                 div()
                     .absolute()
-                    .top(px(
-                        (visual_row.saturating_sub(first_visual) as f32) * line_h + top,
-                    ))
+                    .top(px((visual_row.saturating_sub(first_visual) as f32)
+                        * line_h
+                        + top))
                     .left(px(column as f32 * char_w))
                     .w(px(width))
                     .h(px(height))

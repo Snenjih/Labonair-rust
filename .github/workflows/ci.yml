@@ -14,8 +14,8 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
-  crate-deps:
-    name: Crate dependency rules (docs/architecture.md §3)
+  knowledge:
+    name: Repository knowledge and architecture contracts
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -24,21 +24,18 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Check crate dependency graph
-        run: scripts/check-crate-deps.sh
+      - name: Check repository knowledge contracts
+        run: python3 scripts/verify.py --scope knowledge
 
-  documentation:
-    name: Documentation authority and links
+  visual:
+    name: Visual evidence registry
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check documentation governance
-        run: python3 scripts/check_documentation.py
-
-      - name: Check active rework queue
-        run: python3 scripts/check_rework_queue.py
+      - name: Check deterministic visual evidence index
+        run: python3 scripts/verify.py --scope visual
 
   macos:
     name: macOS (fmt · check · clippy · test)
@@ -55,17 +52,8 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
 
-      - name: Format check
-        run: cargo fmt --all --check
-
-      - name: Check
-        run: cargo check --workspace --all-targets
-
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Test
-        run: cargo test --workspace
+      - name: Run canonical Rust verification scope
+        run: python3 scripts/verify.py --scope rust
 
   linux:
     name: Linux (check only, informational)

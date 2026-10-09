@@ -1,0 +1,59 @@
+[capability]
+id = "notifications"
+display_name = "Notifications"
+owner_module = "notifications"
+canonical_crate = "labonair-notifications-core"
+sibling_crates = ["labonair-notifications"]
+public_contract = ["NotificationKind", "NotificationDraft", "NotificationRecord", "NotificationRegistry"]
+canonical_entry_points = ["Statusbar notification item -> retained notification dropdown"]
+alternate_entry_points = ["Feature-owned publication through NotificationCenter/NotificationRegistry"]
+commands = ["none — notifications are a statusbar surface, not a second command registry"]
+default_keymap = ["none"]
+registries = ["NotificationRegistry", "StatusItem registration"]
+events = ["NotificationDraft publication and typed notification action identifiers"]
+state_owner = "labonair-notifications-core owns retention, ordering, deduplication, read state, and metadata; labonair-notifications owns GPUI adapter state"
+persistence_owner = "none — notifications are in-memory retained records capped at 100 items"
+settings = ["none"]
+notifications = ["All feature user-visible passive messages enter the single notification registry; no toast system"]
+ui_kit_components = ["icon_toggle_button", "ListItem", "Palette", "empty_state", "button_no_hover"]
+automation_tools = ["none"]
+security_boundaries = ["Notification records store structured text and stable action IDs, never UI closures or secrets"]
+source_files = [
+  "crates/notifications-core/src/lib.rs",
+  "crates/notifications/src/notifications.rs",
+  "crates/notifications/src/status_item.rs",
+]
+tests = [
+  "cargo test -p labonair-notifications-core",
+  "cargo test -p labonair-notifications",
+  "tasks/rework/R01-008-notification-surface-owner.md",
+  "tasks/rework/R01-009-inline-error-notification-adoption.md",
+]
+visual_states = [
+  "closed statusbar item with unread badge — Pending native capture",
+  "open dropdown with retained rows — Pending native capture",
+  "empty notification dropdown — Pending native capture",
+  "expanded details and clear-all action — Pending native capture",
+]
+performance_budget = "Registry retains at most 100 items and suppresses equivalent newest records within a 2-second dedupe window; no UI latency budget is declared."
+current_status = "partial"
+target_status = "regression-locked"
+known_limitations = [
+  "The native visual acceptance matrix is pending in the current Linux environment.",
+  "Actionable notification production remains explicitly deferred until a concrete workflow needs it.",
+]
+removal_condition = "none"
+last_verified = "2026-10-09"
+
+[evidence]
+contract = ["NotificationDraft and NotificationRegistry are defined in crates/notifications-core/src/lib.rs"]
+unit = ["Retention, ordering, deduplication, read state, and dismissal tests are in notifications-core"]
+integration = ["The GPUI NotificationCenter adapter delegates lifecycle to notifications-core"]
+command = ["N/A: statusbar notification dropdown is not a command surface"]
+surface = ["NotificationsStatusItem owns the canonical statusbar dropdown"]
+persistence = ["N/A: notification history is intentionally in-memory"]
+notification = ["R01-009 records adoption across Explorer, SFTP, Git, Hosts, SSH, editor, and project diff failures"]
+visual = ["Pending: docs/audits/product-surface-acceptance.md notification cells"]
+security = ["No closures or feature state are stored in notification records"]
+performance = ["100-item cap and 2-second dedupe are enforced by NotificationRegistry"]
+regression = ["tasks/rework/R01-008-notification-surface-owner.md and R01-009-inline-error-notification-adoption.md"]

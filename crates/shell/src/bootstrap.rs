@@ -696,9 +696,13 @@ pub(crate) fn bootstrap(
     // Explorer no longer holds the workspace entity (R07-004): it opens files,
     // terminals and previews through this narrow host contract, and the
     // observer below re-notifies it when the active editor changes.
+    let explorer_remote = Arc::new(crate::explorer_service::SftpExplorerService::new(
+        sftp_session_service.clone(),
+        sftp_browser_service.clone(),
+    ));
     let explorer_host = {
         let ws = workspace.clone();
-        labonair_explorer_host::ExplorerHost::new(
+        labonair_explorer_host::ExplorerHost::with_remote_service(
             {
                 let ws = ws.clone();
                 move |path, peek, window, cx| {
@@ -718,18 +722,10 @@ pub(crate) fn bootstrap(
                 }
             },
             move |cx| ws.read(cx).active_file_path(cx),
+            explorer_remote,
         )
     };
-    let explorer = cx.new(|cx| {
-        ExplorerView::new(
-            theme.clone(),
-            explorer_host,
-            sftp_session_service.clone(),
-            sftp_browser_service.clone(),
-            tokio.clone(),
-            cx,
-        )
-    });
+    let explorer = cx.new(|cx| ExplorerView::new(theme.clone(), explorer_host, tokio.clone(), cx));
 
     // Project identity is authoritative; standalone falls back to the active
     // terminal's cwd and then $HOME. When the active tab is a connected SSH

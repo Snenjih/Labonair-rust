@@ -1,0 +1,67 @@
+version = 1
+surface_source = "docs/product/surfaces.toml"
+matrix_source = "docs/testing/visual-matrix.md"
+artifact_root = "artifacts/visual"
+artifact_name_pattern = "{surface_id}--{state_slug}--{viewport}--{platform}--{commit}.png"
+native_binary_rule = "Capture only a layer-0 window owned by the exact native Rust executable and PID."
+capture_helper = "scripts/screenshot.sh"
+default_platform = "macos"
+default_viewport = "standard"
+environment_status = "Pending"
+environment_blocker = "Current verification runs on Linux without a native macOS window or Screen Recording access."
+last_verified = "2026-10-09"
+
+[[surface]]
+id = "shell.titlebar"
+state_status = { normal = "Pending", "focused tab" = "Pending", "multiple tabs" = "Pending", "narrow window" = "Pending", "zen mode" = "Pending" }
+next_action = "Capture the titlebar and tab states with the exact native bundle."
+
+[[surface]]
+id = "shell.global-menu"
+state_status = { closed = "Pending", open = "Pending", "disabled item" = "Pending", submenu = "Pending", "keyboard navigation" = "Pending" }
+next_action = "Capture open, disabled, submenu, and keyboard-navigation states from the native global menu."
+
+[[surface]]
+id = "workspace.active"
+state_status = { home = "Pending", "project workspace" = "Pending", standalone = "Pending", "empty pane" = "Pending", loading = "Pending", error = "Pending", "split panes" = "Pending" }
+next_action = "Capture home, project, standalone, empty, loading, error, and split-pane states."
+
+[[surface]]
+id = "workspace.docks"
+state_status = { "left dock" = "Pending", "right dock" = "Pending", "bottom dock" = "Pending", "empty dock" = "Pending", "focused panel" = "Pending", "narrow window" = "Pending" }
+next_action = "Capture dock placement, empty, focus, and constrained-layout states."
+
+[[surface]]
+id = "workspace.statusbar"
+state_status = { normal = "Pending", "hidden item" = "Pending", "right-click menu" = "Pending", "narrow window" = "Pending", "unread notification badge" = "Pending" }
+next_action = "Capture statusbar placement, context menu, narrow, and unread-badge states."
+
+[[surface]]
+id = "overlay.command-palette"
+state_status = { focused = "Pending", empty = "Pending", filtered = "Pending", submenu = "Pending", "keyboard navigation" = "Pending", dismissed = "Pending" }
+next_action = "Capture focused, empty, filtered, submenu, keyboard, and dismissal behavior."
+
+[[surface]]
+id = "workspace.dialogs"
+state_status = { open = "Pending", "focused input" = "Pending", "validation error" = "Pending", "confirm/cancel" = "Pending", loading = "Pending", failure = "Pending" }
+next_action = "Capture dialog focus, validation, confirmation, loading, and failure states."
+
+[[surface]]
+id = "workspace.hosts-tab"
+state_status = { "host list" = "Pending", empty = "Pending", "host form" = "Pending", "validation error" = "Pending", "active tunnels" = "Pending", loading = "Pending" }
+next_action = "Capture host-list, empty, form, validation, tunnel, and loading states without real credentials."
+
+[[surface]]
+id = "statusbar.notifications"
+state_status = { closed = "Pending", "unread badge" = "Pending", "open list" = "Pending", empty = "Pending", "expanded details" = "Pending", "clear all" = "Pending" }
+next_action = "Capture the sole passive notification surface with safe fixture messages."
+
+[[surface]]
+id = "workspace.settings"
+state_status = { normal = "Pending", "scope navigation" = "Pending", "search/filter" = "Pending", "validation error" = "Pending", "save failure" = "Pending" }
+next_action = "Capture settings navigation, filtering, validation, and write-failure states with fixture data."
+
+[[surface]]
+id = "workspace.standalone-terminal"
+state_status = { ready = "Pending", loading = "Pending", empty = "Pending", "process exit" = "Pending", "connection failure" = "Pending", "narrow window" = "Pending" }
+next_action = "Capture local terminal readiness, process exit, failure, and narrow-layout states."

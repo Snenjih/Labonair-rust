@@ -18,6 +18,8 @@
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
+use std::{future::Future, pin::Pin};
 
 use gpui::{App, Window};
 
@@ -25,6 +27,48 @@ type OpenFileFn = Rc<dyn Fn(String, bool, &mut Window, &mut App)>;
 type OpenTerminalFn = Rc<dyn Fn(String, &mut Window, &mut App)>;
 type OpenPreviewFn = Rc<dyn Fn(String, &mut Window, &mut App)>;
 type ActiveFilePathFn = Rc<dyn Fn(&App) -> Option<String>>;
+
+/// A future returned by the Explorer's remote-directory contract.
+pub type RemoteExplorerFuture<T> =
+    Pin<Box<dyn Future<Output = Result<T, String>> + Send + 'static>>;
+
+/// Transport-neutral metadata needed to render a remote Explorer directory.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RemoteExplorerEntry {
+    pub name: String,
+    pub path: String,
+    pub size: u64,
+    pub modified_at: i64,
+    pub is_dir: bool,
+    pub is_symlink: bool,
+    pub symlink_target: Option<String>,
+    pub permissions: String,
+}
+
+/// The only remote filesystem operation required by the Explorer panel.
+///
+/// Concrete SSH/SFTP services are composed by `labonair-shell` and injected
+/// through this contract. The Explorer does not know the transport, session
+/// handle type, authentication model, or backend error type.
+pub trait RemoteExplorerService: Send + Sync {
+    fn read_dir(
+        &self,
+        session_id: String,
+        path: String,
+    ) -> RemoteExplorerFuture<Vec<RemoteExplorerEntry>>;
+}
+
+struct DisconnectedRemoteExplorer;
+
+impl RemoteExplorerService for DisconnectedRemoteExplorer {
+    fn read_dir(
+        &self,
+        _session_id: String,
+        _path: String,
+    ) -> RemoteExplorerFuture<Vec<RemoteExplorerEntry>> {
+        Box::pin(async { Err("The remote Explorer service is unavailable.".to_string()) })
+    }
+}
 
 /// Narrow composition contract between the Explorer panel and its host.
 ///
@@ -36,6 +80,7 @@ pub struct ExplorerHost {
     open_terminal_in: OpenTerminalFn,
     open_preview: OpenPreviewFn,
     active_file_path: ActiveFilePathFn,
+    remote: Arc<dyn RemoteExplorerService>,
 }
 
 impl ExplorerHost {
@@ -47,11 +92,30 @@ impl ExplorerHost {
         open_preview: impl Fn(String, &mut Window, &mut App) + 'static,
         active_file_path: impl Fn(&App) -> Option<String> + 'static,
     ) -> Self {
+        Self::with_remote_service(
+            open_file,
+            open_terminal_in,
+            open_preview,
+            active_file_path,
+            Arc::new(DisconnectedRemoteExplorer),
+        )
+    }
+
+    /// Build a host with the concrete remote-directory adapter supplied by
+    /// the composition root.
+    pub fn with_remote_service(
+        open_file: impl Fn(String, bool, &mut Window, &mut App) + 'static,
+        open_terminal_in: impl Fn(String, &mut Window, &mut App) + 'static,
+        open_preview: impl Fn(String, &mut Window, &mut App) + 'static,
+        active_file_path: impl Fn(&App) -> Option<String> + 'static,
+        remote: Arc<dyn RemoteExplorerService>,
+    ) -> Self {
         Self {
             open_file: Rc::new(open_file),
             open_terminal_in: Rc::new(open_terminal_in),
             open_preview: Rc::new(open_preview),
             active_file_path: Rc::new(active_file_path),
+            remote,
         }
     }
 
@@ -81,6 +145,11 @@ impl ExplorerHost {
     /// auto-reveal.
     pub fn active_file_path(&self, cx: &App) -> Option<String> {
         (self.active_file_path)(cx)
+    }
+
+    /// Return the injected remote-directory service for an SSH-backed root.
+    pub fn remote_service(&self) -> Arc<dyn RemoteExplorerService> {
+        self.remote.clone()
     }
 }
 
