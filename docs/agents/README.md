@@ -129,6 +129,7 @@ python3 scripts/verify.py --scope visual
 python3 scripts/verify.py --scope evidence
 python3 scripts/verify.py --scope automation
 python3 scripts/verify.py --scope release
+python3 scripts/verify.py --scope reform
 python3 scripts/verify.py --scope knowledge
 python3 scripts/verify.py --scope rust
 python3 scripts/verify.py --scope all

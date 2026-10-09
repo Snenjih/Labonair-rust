@@ -50,12 +50,14 @@ NORMATIVE_DOCS = (
     "docs/testing/visual-evidence-schema.md",
     "docs/visual-verification.md",
     "docs/workspace-model.md",
+    "docs/reform/README.md",
 )
 
 MARKDOWN_FILES = (
     "AGENTS.md",
     "CLAUDE.md",
     "README.md",
+    "docs-reform-plan.md",
     "docs",
     "ideas",
     "tasks/rework",
@@ -77,6 +79,7 @@ INDEXED_PATHS = (
     "automation/tools.toml",
     "evidence/scorecard.toml",
     "testing/visual-evidence.toml",
+    "reform/requirements.toml",
 )
 
 MARKDOWN_LINK = re.compile(r"!?\[[^\]]*\]\((<[^>]+>|[^)\s]+)(?:\s+[^)]*)?\)")

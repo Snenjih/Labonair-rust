@@ -65,6 +65,10 @@ SCOPES: dict[str, tuple[tuple[str, ...], ...]] = {
         ("python3", "scripts/check_automation.py"),
         ("python3", "scripts/gen_automation.py", "--check"),
     ),
+    "reform": (
+        ("python3", "scripts/check_reform_coverage.py"),
+        ("python3", "scripts/gen_reform_coverage.py", "--check"),
+    ),
     "rust": (
         ("cargo", "fmt", "--all", "--", "--check"),
         ("cargo", "check", "--workspace", "--all-targets"),
@@ -86,6 +90,7 @@ SCOPES["knowledge"] = (
     *SCOPES["visual"],
     *SCOPES["evidence"],
     *SCOPES["automation"],
+    *SCOPES["reform"],
 )
 
 
@@ -106,7 +111,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--scope",
-        choices=("docs", "agents", "queue", "architecture", "capabilities", "surfaces", "workflows", "settings", "performance", "release", "visual", "evidence", "automation", "knowledge", "rust", "all"),
+        choices=("docs", "agents", "queue", "architecture", "capabilities", "surfaces", "workflows", "settings", "performance", "release", "visual", "evidence", "automation", "reform", "knowledge", "rust", "all"),
         default="all",
         help="verification scope to run (default: all)",
     )

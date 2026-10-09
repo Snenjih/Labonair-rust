@@ -167,6 +167,8 @@ tree:
   `Pending` until supported-host captures exist.
 - a 15-workflow end-to-end catalog connecting entry points, state,
   persistence, notifications, failures, security, tests, and visual evidence.
+- a definition-of-done traceability catalog covering all 17 reform requirements
+  with source references, status, limitations, and bounded queue tasks.
 
 The current environment cannot provide the native macOS visual captures
 required by R07. Those cells remain `Pending` in the acceptance matrix rather
@@ -270,6 +272,14 @@ The system should have four layers:
    performance baselines, security results, corpus results, and release checks.
 4. **Verification tooling** — local scripts and CI jobs that check both the
    source contracts and generated outputs.
+
+The definition-of-done requirements themselves are tracked in the structured
+source [`docs/reform/requirements.toml`](docs/reform/requirements.toml) and
+the generated projection
+[`docs/generated/reform-coverage.md`](docs/generated/reform-coverage.md). This
+traceability layer does not replace the evidence scorecard or active task
+queue; it ensures that every reform claim has a current status, source
+references, a limitation, and a bounded next task.
 
 ## 6. Target documentation layout
 

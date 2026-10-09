@@ -1,0 +1,206 @@
+version = 1
+status_vocabulary = ["Verified", "Partial", "Pending", "N/A"]
+
+[[requirement]]
+id = "dod.agent-route"
+plan_section = "16.1"
+requirement = "AGENTS.md provides a short deterministic entry path."
+owner = "repository"
+status = "Verified"
+evidence = ["python3 scripts/verify.py --scope agents", "10 structured request routes validate"]
+source_refs = ["AGENTS.md", "docs/agents/README.md", "docs/agents/routes.toml", "docs/generated/agent-index.md"]
+last_verified = "2026-10-09"
+limitation = "The route is repository-local; an external agent runtime can still impose its own prompt behavior."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
+
+[[requirement]]
+id = "dod.canonical-index"
+plan_section = "16.2"
+requirement = "docs/README.md indexes every canonical documentation area."
+owner = "repository documentation"
+status = "Verified"
+evidence = ["python3 scripts/verify.py --scope docs", "41 normative documents and all structured sources are index-checked"]
+source_refs = ["docs/README.md", "scripts/check_documentation.py", "docs/documentation-governance.md"]
+last_verified = "2026-10-09"
+limitation = "Semantic orphan and claim-drift detection remains intentionally limited to deterministic checks."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
+
+[[requirement]]
+id = "dod.capability-ownership"
+plan_section = "16.3"
+requirement = "Every capability has exactly one owner and one canonical crate."
+owner = "capability registry and architecture policy"
+status = "Verified"
+evidence = ["21 capability rows validate against owners and crates", "57-crate architecture manifest is acyclic"]
+source_refs = ["docs/capabilities.md", "docs/capabilities/coverage.toml", "docs/architecture/graph.toml", "scripts/check_capability_coverage.py", "scripts/check_architecture.py"]
+last_verified = "2026-10-09"
+limitation = "The registry proves unique declared ownership; deeper symbol-level ownership still relies on targeted audits."
+next_task = "tasks/rework/R07-007-transitional-edge-review.md"
+
+[[requirement]]
+id = "dod.capability-descriptors"
+plan_section = "16.4"
+requirement = "Every capability has a structured descriptor or an explicit tracked migration."
+owner = "capability owners"
+status = "Partial"
+evidence = ["3 full pilot descriptors validate", "21 matrix rows have explicit coverage records and bounded next tasks"]
+source_refs = ["docs/capabilities/schema.md", "docs/capabilities/coverage.toml", "scripts/check_capabilities.py", "scripts/check_capability_coverage.py", "docs/generated/capability-coverage.md"]
+last_verified = "2026-10-09"
+limitation = "The remaining rows are deliberately matrix-tracked until R07 acceptance permits descriptor expansion."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
+
+[[requirement]]
+id = "dod.architecture-graph"
+plan_section = "16.5"
+requirement = "Architecture layers and dependency edges are checked from a declarative source."
+owner = "architecture"
+status = "Verified"
+evidence = ["python3 scripts/verify.py --scope architecture", "57 crates and 227 internal edges validate without cycles"]
+source_refs = ["docs/architecture/graph.toml", "scripts/check_architecture.py", "scripts/check_crate_deps.py", "docs/generated/architecture.md"]
+last_verified = "2026-10-09"
+limitation = "The manifest models crate edges; symbol-level facade and ownership drift still need bounded audits."
+next_task = "tasks/rework/R07-007-transitional-edge-review.md"
+
+[[requirement]]
+id = "dod.visible-action-contract"
+plan_section = "16.6"
+requirement = "Every visible action has an owner and command or surface decision."
+owner = "product surface owners"
+status = "Verified"
+evidence = ["101 stable CommandId variants, 11 surfaces, and 5 menu branches validate"]
+source_refs = ["docs/product/commands.toml", "docs/product/surfaces.toml", "docs/product/menu.toml", "scripts/check_product_catalog.py", "docs/generated/commands.md"]
+last_verified = "2026-10-09"
+limitation = "Per-command availability metadata remains grouped where all IDs share one owner and evidence decision."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
+
+[[requirement]]
+id = "dod.menu-surface-checks"
+plan_section = "16.7"
+requirement = "Menu and surface catalogs are generated or mechanically checked."
+owner = "product surface owners"
+status = "Verified"
+evidence = ["python3 scripts/verify.py --scope surfaces", "Generated menu and surface views are fresh"]
+source_refs = ["docs/product/catalog-schema.md", "docs/product/menu.toml", "docs/product/surfaces.toml", "scripts/gen_product_catalog.py", "docs/generated/menu.md"]
+last_verified = "2026-10-09"
+limitation = "Native visual state completion remains a separate evidence requirement."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
+
+[[requirement]]
+id = "dod.settings-persistence"
+plan_section = "16.8"
+requirement = "Settings and persistence ownership are explicit."
+owner = "settings and capability owners"
+status = "Partial"
+evidence = ["7 settings areas and 101 registered UI fields validate", "Settings persistence and migration contracts are indexed"]
+source_refs = ["docs/settings/catalog.toml", "docs/settings/catalog-schema.md", "docs/settings/persistence.md", "docs/settings-inventory.md", "scripts/check_settings.py"]
+last_verified = "2026-10-09"
+limitation = "The catalog is complete for the current registry; field-specific migration evidence remains uneven."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
+
+[[requirement]]
+id = "dod.automation-security"
+plan_section = "16.9"
+requirement = "Automation and MCP tools document grants, limits, and negative tests."
+owner = "MCP and security"
+status = "Partial"
+evidence = ["6 tools have grant, limit, secret, positive-test, and negative-test decisions", "python3 scripts/verify.py --scope automation"]
+source_refs = ["docs/automation/tools.toml", "docs/automation/grants.md", "docs/automation/limits.md", "docs/automation/test-matrix.md", "docs/security/threat-model.md", "scripts/check_automation.py"]
+last_verified = "2026-10-09"
+limitation = "The denial matrix is documented and checked; supported-host end-to-end denial execution is still pending."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
+
+[[requirement]]
+id = "dod.status-separation"
+plan_section = "16.10"
+requirement = "Target, current, and evidence status are separate."
+owner = "repository documentation"
+status = "Verified"
+evidence = ["Capability, workflow, scorecard, visual, performance, and release schemas carry separate status fields or evidence states"]
+source_refs = ["docs/capabilities/schema.md", "docs/product/workflows.md", "docs/testing/evidence-model.md", "docs/evidence/scorecard.toml", "docs-reform-plan.md"]
+last_verified = "2026-10-09"
+limitation = "Semantic claims that are not represented in a structured source still require human review."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
+
+[[requirement]]
+id = "dod.workflow-evidence"
+plan_section = "16.11"
+requirement = "Every completed workflow links contract, integration, visual, security, performance, or not-applicable evidence."
+owner = "capability owners"
+status = "Partial"
+evidence = ["15 workflow records validate contracts, tests, security, and visual references", "Every record has a bounded next task"]
+source_refs = ["docs/product/workflows.toml", "docs/product/workflows.md", "docs/generated/workflows.md", "scripts/check_workflows.py"]
+last_verified = "2026-10-09"
+limitation = "Current workflows are partial until native visual and supported-host recovery evidence is attached."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
+
+[[requirement]]
+id = "dod.generated-freshness"
+plan_section = "16.12"
+requirement = "Generated documentation is checked for freshness."
+owner = "repository tooling"
+status = "Verified"
+evidence = ["All generated views pass their check-only generators in the knowledge scope"]
+source_refs = ["scripts/verify.py", "scripts/gen_architecture.py", "scripts/gen_capability_coverage.py", "scripts/gen_product_catalog.py", "scripts/gen_workflows.py", "docs/documentation-governance.md"]
+last_verified = "2026-10-09"
+limitation = "Freshness is deterministic; it does not prove that an owner updated source data for a new semantic claim."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
+
+[[requirement]]
+id = "dod.canonical-verifier"
+plan_section = "16.13"
+requirement = "One local command reproduces the CI verification path."
+owner = "repository tooling"
+status = "Verified"
+evidence = ["python3 scripts/verify.py --scope all passes", "CI knowledge, visual, and macOS Rust jobs call repository verifiers"]
+source_refs = ["scripts/verify.py", ".github/workflows/ci.yml", "docs/agents/finish-gates.md", "docs-reform-plan.md"]
+last_verified = "2026-10-09"
+limitation = "Credential-dependent and native capture evidence remains conditional by platform and host access."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
+
+[[requirement]]
+id = "dod.ci-gates"
+plan_section = "16.14"
+requirement = "All required CI gates are green, with conditional platform evidence stated explicitly."
+owner = "CI and release"
+status = "Partial"
+evidence = ["Local all-scope verifier passes", "CI defines knowledge, visual-registry, macOS Rust, and release workflows"]
+source_refs = [".github/workflows/ci.yml", ".github/workflows/release.yml", "docs/release/platforms.md", "docs/release/checklist.toml"]
+last_verified = "2026-10-09"
+limitation = "Native visual, signing, notarization, and supported-host security artifacts are not available in this Linux session."
+next_task = "tasks/rework/R07-001-product-surface-acceptance.md"
+
+[[requirement]]
+id = "dod.queue-order"
+plan_section = "16.15"
+requirement = "The active rework queue remains ordered and has no bypassed dependency."
+owner = "rework queue"
+status = "Verified"
+evidence = ["python3 scripts/check_rework_queue.py", "45 tasks validate with R07-001 as the only active task"]
+source_refs = ["tasks/rework/README.md", "scripts/check_rework_queue.py", "docs/rework-roadmap.md"]
+last_verified = "2026-10-09"
+limitation = "Planned tasks remain intentionally incomplete and cannot be treated as implementation evidence."
+next_task = "tasks/rework/R07-001-product-surface-acceptance.md"
+
+[[requirement]]
+id = "dod.compatibility-removal"
+plan_section = "16.16"
+requirement = "No obsolete compatibility path remains without a removal condition."
+owner = "architecture"
+status = "Verified"
+evidence = ["7 transitional edges require a removal condition, removal task, trigger, and bounded review interval"]
+source_refs = ["docs/architecture/graph.toml", "scripts/check_architecture.py", "docs/architecture/dependency-rules.md", "tasks/rework/R07-007-transitional-edge-review.md"]
+last_verified = "2026-10-09"
+limitation = "The policy records and reviews retained edges; removal itself depends on a real consumer and the ordered queue."
+next_task = "tasks/rework/R07-007-transitional-edge-review.md"
+
+[[requirement]]
+id = "dod.no-duplicate-surface"
+plan_section = "16.17"
+requirement = "No duplicate shell-wide feature table or parallel product surface has been introduced."
+owner = "shell and feature owners"
+status = "Verified"
+evidence = ["Architecture and product-catalog checks reject duplicate registries, orphan surfaces, and shell-owned feature state"]
+source_refs = ["docs/architecture/dependency-rules.md", "docs/product/catalog-schema.md", "scripts/check_architecture.py", "scripts/check_product_catalog.py", "docs/registries.md"]
+last_verified = "2026-10-09"
+limitation = "Static source-backed checks cannot prove the absence of every semantically duplicated interaction without review."
+next_task = "tasks/rework/R07-007-transitional-edge-review.md"

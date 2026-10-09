@@ -21,6 +21,7 @@ feature-lifecycle contracts; it does not replace them.
 | `docs/testing/` | testing/evidence contract | binding | Evidence classes, visual matrix, and verification interpretation. |
 | `docs/testing/visual-evidence.toml` | structured visual evidence source | binding data | Per-surface state status, deterministic artifact naming, and native capture records. |
 | `docs/evidence/` | structured evidence source | binding data | Scorecard records with status, references, limitations, and next actions. |
+| `docs/reform/` | reform traceability source | binding data | Definition-of-done records with status, source evidence, limitations, and bounded next tasks. |
 | `docs/automation/` | automation contract | binding | MCP tools, grants, limits, and positive/negative test decisions. |
 | `docs/security/` | security contract | binding | Threat model, trust boundaries, secret handling, and remote-access rules. |
 | `docs/settings/` | settings lifecycle contract | binding | Persistence, migration, value ownership, and the machine-readable area catalog. |
@@ -64,6 +65,8 @@ map of those authorities:
 - architecture projection → `docs/generated/architecture.md` (derived only).
 - command/surface/menu ownership → `docs/product/`;
 - evidence and visual interpretation → `docs/testing/` and `docs/evidence/`;
+- reform definition-of-done traceability → `docs/reform/requirements.toml` and
+  `docs/generated/reform-coverage.md`;
 - deterministic screenshot indexes → `docs/testing/visual-evidence.toml` and `docs/generated/visual-evidence.md`;
 - automation tools and grants → `docs/automation/`;
 - security and remote access → `docs/security/`;

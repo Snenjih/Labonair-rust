@@ -92,6 +92,10 @@ the migration is complete.
   per-surface state and native-capture source.
 - [`evidence/scorecard.toml`](evidence/scorecard.toml) — structured product
   evidence source.
+- [`reform/README.md`](reform/README.md) — definition-of-done traceability
+  contract for the documentation reform.
+- [`reform/requirements.toml`](reform/requirements.toml) — structured reform
+  requirement, evidence, limitation, and next-task source.
 - [`audits/product-surface-acceptance.md`](audits/product-surface-acceptance.md)
   — R07 evidence matrix for ownership and required visual states.
 - [`rework-roadmap.md`](rework-roadmap.md) — the current implementation sequence.
@@ -130,6 +134,8 @@ Normative documents are written in English because they are also engineering con
   not edit directly.
 - [`generated/visual-evidence.md`](generated/visual-evidence.md) — generated
   per-surface screenshot index; do not edit directly.
+- [`generated/reform-coverage.md`](generated/reform-coverage.md) — generated
+  definition-of-done traceability view; do not edit directly.
 - [`agents/README.md`](agents/README.md) — five-minute agent orientation,
   change routing, pre-change contract, and completion handoff.
 - [`agents/change-matrix.md`](agents/change-matrix.md) — change type to

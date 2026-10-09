@@ -52,6 +52,11 @@ Capability descriptors, command/surface catalogs, and scorecard records must
 keep generated views fresh and must record missing visual, security, or
 performance evidence explicitly.
 
+Changes to the reform plan or its traceability source must also pass
+`python3 scripts/verify.py --scope reform`; the generated reform-coverage view
+must remain fresh and every definition-of-done record must name a bounded next
+task.
+
 ## Rust changes
 
 Run the focused package tests first, then the full required gates:
