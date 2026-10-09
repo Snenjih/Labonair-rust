@@ -93,12 +93,13 @@ for the supported workflow.
 ## Progress
 
 `labonair-theme` owns the typed color/icon registries, catalog adapters, and
-transactional preview state. The application path exposes only the embedded
-deterministic catalog: Settings no longer scans theme directories, the palette
-receives built-in color and icon choices directly from the Theme provider, and
-shell startup no longer installs theme directory watchers. File loaders remain
-isolated extension adapters for a future product decision and are not part of
-the supported workflow.
+transactional preview state. The application path exposes embedded,
+deterministic catalogs: the icon catalog contains Labonair and Material Icon
+Theme, with both SVG sets bundled in the shell asset source. Settings no longer
+scans theme directories, the palette receives built-in color and icon choices
+directly from the Theme provider, and shell startup no longer installs theme
+directory watchers. File loaders remain isolated extension adapters for a
+future product decision and are not part of the supported workflow.
 
 R04-001 is complete. The user confirmed the native visual state; focused and
 full repository verification gates pass.

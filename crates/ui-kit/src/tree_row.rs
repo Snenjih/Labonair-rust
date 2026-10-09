@@ -63,6 +63,8 @@ pub struct TreeRow {
     icon: Option<IconName>,
     /// Icon-theme asset path for the leading glyph; wins over `icon` when set.
     icon_path: Option<SharedString>,
+    /// Render an icon-theme SVG as a full-color image instead of a monochrome mask.
+    color_icon: bool,
     /// Icon-theme asset path for the disclosure chevron; wins over `chevron`.
     chevron_path: Option<SharedString>,
     label: SharedString,
@@ -97,6 +99,7 @@ pub fn tree_row(id: impl Into<ElementId>, c: Palette, label: impl Into<SharedStr
         chevron: None,
         icon: None,
         icon_path: None,
+        color_icon: false,
         chevron_path: None,
         label: label.into(),
         tooltip: None,
@@ -144,6 +147,12 @@ impl TreeRow {
     /// against the active icon theme.
     pub fn icon_path(mut self, path: Option<SharedString>) -> Self {
         self.icon_path = path;
+        self
+    }
+
+    /// Preserve colors embedded in the leading icon-theme SVG.
+    pub fn color_icon(mut self, color_icon: bool) -> Self {
+        self.color_icon = color_icon;
         self
     }
 
@@ -358,13 +367,17 @@ impl IntoElement for TreeRow {
         row = row.child(chevron_slot);
 
         if let Some(p) = self.icon_path {
-            row = row.child(
+            let icon = if self.color_icon {
+                gpui::img(p).size(px(14.0)).flex_none().into_any_element()
+            } else {
                 gpui::svg()
                     .path(p)
                     .size(px(14.0))
                     .flex_none()
-                    .text_color(c.muted),
-            );
+                    .text_color(c.muted)
+                    .into_any_element()
+            };
+            row = row.child(icon);
         } else if let Some(icon) = self.icon {
             row = row.child(icon.svg(c.muted).size(px(14.0)));
         }

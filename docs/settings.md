@@ -117,6 +117,11 @@ The native Settings window has one dense tree rail and one content surface:
   sit in the header of the right content pane, above its scrolling page;
 - the content surface keeps at least 400 logical pixels for field descriptions
   and controls, with 24 pixels of content inset;
+- generated field rows span the available content width. Labels and
+  descriptions wrap in a flexible leading column; value controls and reset
+  actions share a right-aligned trailing column. Each row's divider spans the
+  content width and follows the row's full wrapped height, with vertical
+  padding separating it from the next setting;
 - the navigation search is inset below the native titlebar controls, while the
   right content header begins at the top of the content pane;
 - the header exposes an explicit `User` / `Project` scope selector when a

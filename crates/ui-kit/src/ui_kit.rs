@@ -53,6 +53,7 @@ mod context_menu;
 mod density;
 mod disclosure;
 mod divider;
+mod empty_state;
 mod icon;
 mod indicator;
 mod kbd;
@@ -82,6 +83,7 @@ pub use context_menu::{context_menu, popover_menu, MenuClick, MenuItem, SubmenuH
 pub use density::Density;
 pub use disclosure::disclosure;
 pub use divider::{divider, Axis};
+pub use empty_state::empty_state;
 pub use icon::{
     chevron_icon_path, file_icon_path, folder_icon_path, icon_for_path, svg_path, IconName,
 };
@@ -112,11 +114,11 @@ pub use gpui_component::{badge::Badge, switch::Switch, tooltip::Tooltip};
 pub mod prelude {
     pub use crate::ActiveThemeExt;
     pub use crate::{
-        banner, button, checkbox, chevron_icon_path, context_menu, disclosure, divider, fade_in,
-        file_icon_path, folder_icon_path, h_stack, icon_for_path, icon_toggle_button, indicator,
-        kbd, kbd_row, keybinding_hint, list_header, list_separator, number_field, popover,
-        popover_menu, segmented_control, select_popover, select_trigger, selected_label, svg_path,
-        toggle_base, tree_row, v_stack,
+        banner, button, checkbox, chevron_icon_path, context_menu, disclosure, divider,
+        empty_state, fade_in, file_icon_path, folder_icon_path, h_stack, icon_for_path,
+        icon_toggle_button, indicator, kbd, kbd_row, keybinding_hint, list_header, list_separator,
+        number_field, popover, popover_menu, segmented_control, select_popover, select_trigger,
+        selected_label, svg_path, toggle_base, tree_row, v_stack,
     };
     pub use crate::{
         Axis, Badge, Banner, ButtonSize, ButtonVariant, Checkbox, Density, IconName, IndicatorSize,

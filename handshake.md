@@ -5,6 +5,39 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
+## Current Session: 2026-10-07 (Notifications dropdown placement and empty state)
+
+The Notifications statusbar dropdown uses the shared UI-kit popover at the
+same 300 px width as the other statusbar dropdown. The shared popover dismisses
+from its card bounds so clicks inside the dropdown do not close it and outside
+clicks work from a small statusbar trigger. The dropdown shows a centered empty
+state using the shared UI-kit `empty_state` primitive.
+
+Verification: `cargo check --workspace --all-targets`,
+`cargo clippy --workspace --all-targets -- -D warnings`,
+`python3 scripts/check_documentation.py`, scoped `rustfmt --check`, and
+`git diff --check` pass; `cargo run -p labonair` also compiled and started.
+Visual review remains pending: CUA returned no available apps and this session
+does not expose `getApp`, so I could not capture the running native window.
+
+## Current Session: 2026-10-07 (Settings field alignment and spacing)
+
+User-directed Settings layout fix: generated setting rows now span the full
+content width; value controls and reset actions share a right-aligned trailing
+cluster; row dividers span the content width and follow the full wrapped row
+height. Reset moved from beside the label to the trailing action cluster. The
+Settings layout contract is recorded in `docs/settings.md`.
+
+Verification: `cargo check -p labonair-settings-ui`,
+`python3 scripts/check_documentation.py`, `git diff --check`, and the
+file-scoped `rustfmt --check` pass. `cargo run -p labonair` compiled and
+started the native application. The workspace `cargo fmt --all -- --check`
+reports formatting differences in unrelated files; `generic.rs` was formatted
+directly. Native visual review is still pending: CUA reports no available apps,
+and process enumeration fails because the system process-list service is
+unavailable. No screenshot was captured or accepted; keep the Settings visual
+acceptance cells pending.
+
 ## Current Session: 2026-09-25 (Titlebar Spaces trigger hover styling)
 
 User-directed UI polish: the Titlebar Spaces trigger no longer renders its

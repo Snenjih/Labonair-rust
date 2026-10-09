@@ -102,7 +102,7 @@ that belong here.
 
 ## Empty workspace
 
-An empty workspace is valid. The shell must not create a fallback terminal merely to fill space. The empty state offers only a small set of discoverable actions, such as opening a terminal or invoking the command palette.
+An empty workspace is valid and remains a blank surface; the shell must not create a fallback terminal merely to fill space. Workspace actions remain available through their existing keyboard bindings and command entry points.
 
 ## Remote contexts
 

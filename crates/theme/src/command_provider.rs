@@ -171,7 +171,13 @@ mod tests {
     fn icon_theme_choices_are_static_and_builtin_only() {
         assert_eq!(
             icon_theme_choices(),
-            vec![("default".to_string(), "Labonair".to_string())]
+            vec![
+                ("default".to_string(), "Labonair".to_string()),
+                (
+                    crate::MATERIAL_ICON_THEME_ID.to_string(),
+                    "Material Icon Theme".to_string()
+                )
+            ]
         );
     }
 }

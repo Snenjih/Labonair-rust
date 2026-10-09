@@ -492,6 +492,8 @@ impl SettingsView {
         let row = div()
             .id(SharedString::from(format!("field-row-{json_path}")))
             .flex()
+            .w_full()
+            .min_w_0()
             .items_center()
             .justify_between()
             .gap(c.space(24.0))
@@ -507,41 +509,16 @@ impl SettingsView {
                 .child(SharedString::from(field.meta.title)),
         );
         if non_default {
-            title_row = title_row
-                .child(
-                    div()
-                        .px_1()
-                        .rounded_sm()
-                        .text_size(px(9.0))
-                        .text_color(c.muted)
-                        .border_1()
-                        .border_color(c.border)
-                        .child(origin.label()),
-                )
-                .child(
-                    // Icon-only, muted (no accent/"yellow", no "reset"
-                    // text) — a quiet affordance beside the origin badge.
-                    button(
-                        SharedString::from(format!("reset-{json_path}")),
-                        *c,
-                        ButtonVariant::Ghost,
-                        ButtonSize::IconXs,
-                    )
-                    .tab_index(0)
-                    .focus(|style| style.border_1().border_color(c.ring))
-                    .child(IconName::Refresh.svg(c.muted).size(px(12.0)))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        this.reset_field(json_path, cx);
-                    }))
-                    .on_key_down(cx.listener(
-                        move |this, event: &KeyDownEvent, _w, cx| {
-                            if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                                this.reset_field(json_path, cx);
-                                cx.stop_propagation();
-                            }
-                        },
-                    )),
-                );
+            title_row = title_row.child(
+                div()
+                    .px_1()
+                    .rounded_sm()
+                    .text_size(px(9.0))
+                    .text_color(c.muted)
+                    .border_1()
+                    .border_color(c.border)
+                    .child(origin.label()),
+            );
         }
 
         let mut info = v_stack()
@@ -564,8 +541,36 @@ impl SettingsView {
                     .child(hint),
             );
         }
+
+        let mut actions = h_stack().items_center().gap(c.space(8.0)).child(control);
+        if non_default {
+            actions = actions.child(
+                // Keep reset beside the value control in the trailing action
+                // cluster, so all field actions share the same right edge.
+                button(
+                    SharedString::from(format!("reset-{json_path}")),
+                    *c,
+                    ButtonVariant::Ghost,
+                    ButtonSize::IconXs,
+                )
+                .tab_index(0)
+                .focus(|style| style.border_1().border_color(c.ring))
+                .child(IconName::Refresh.svg(c.muted).size(px(12.0)))
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    this.reset_field(json_path, cx);
+                }))
+                .on_key_down(cx.listener(
+                    move |this, event: &KeyDownEvent, _w, cx| {
+                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                            this.reset_field(json_path, cx);
+                            cx.stop_propagation();
+                        }
+                    },
+                )),
+            );
+        }
         row.child(info)
-            .child(div().flex_shrink_0().child(control))
+            .child(div().ml_auto().flex_shrink_0().child(actions))
             .into_any_element()
     }
 

@@ -20,6 +20,7 @@ last.md
 
 # Agent-local (memory lives in ~/.claude/projects/.../memory/)
 .claude/
+temp/
 
 # reference-src/ is the frozen in-repo reference copy and IS tracked.
 # This fork is standalone — no external symlink to any other Labonair repo.

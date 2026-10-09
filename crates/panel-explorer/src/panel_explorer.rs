@@ -25,8 +25,7 @@
 //!   is embedded directly in this entity via `notify-debouncer-mini` (300 ms
 //!   debounce, non-recursive, watch-set synced to the loaded directories)
 //!   instead of going through the backend event bus.
-//! * File-type icons are a small glyph map, not the full material-icon-theme
-//!   port.
+//! * File and folder icons come from the active built-in icon theme.
 
 // Crate root (T16-008): this file is the `labonair-panel-explorer` lib root.
 // The `theme` shim keeps the pre-split `crate::…` paths resolving against its
@@ -1813,9 +1812,13 @@ impl Render for ExplorerView {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| root.to_string_lossy().to_string());
 
-        let root_icon = {
+        let (root_icon, color_icons) = {
             let theme = self.theme.read(cx);
-            icon_for_path(theme.icon_theme(), &root_name, true, false)
+            let icon_theme = theme.icon_theme();
+            (
+                icon_for_path(icon_theme, &root_name, true, false),
+                icon_theme.color_icons,
+            )
         };
         // Phase 3.1 / T-responsive-toolbar: when the panel is wide enough the
         // New File / New Folder / Refresh / hidden-files actions render as
@@ -1841,7 +1844,16 @@ impl Render for ExplorerView {
                     .gap_1()
                     .text_xs()
                     .text_color(c.fg)
-                    .child(svg_path(root_icon, c.muted).size(px(15.0)))
+                    .child(if color_icons {
+                        gpui::img(root_icon)
+                            .size(px(15.0))
+                            .flex_none()
+                            .into_any_element()
+                    } else {
+                        svg_path(root_icon, c.muted)
+                            .size(px(15.0))
+                            .into_any_element()
+                    })
                     .child(
                         div()
                             .overflow_hidden()
@@ -2807,12 +2819,13 @@ fn explorer_row_element(
             git,
             diag: _diag,
         } => {
-            let (glyph, chevron) = {
+            let (glyph, chevron, color_icons) = {
                 let store = view.read(cx).theme.read(cx);
                 let it = store.icon_theme();
                 (
                     icon_for_path(it, name, *is_dir, *expanded),
                     is_dir.then(|| chevron_icon_path(it, *expanded)),
+                    it.color_icons,
                 )
             };
 
@@ -2865,6 +2878,7 @@ fn explorer_row_element(
                 .indent_guides(indent_guides)
                 .chevron_path(chevron)
                 .icon_path(Some(glyph))
+                .color_icon(color_icons)
                 .tooltip(SharedString::from(path.to_string_lossy().to_string()))
                 .state(TreeRowState {
                     selected: *selected && !drop_target,

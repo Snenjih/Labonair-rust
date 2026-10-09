@@ -33,7 +33,9 @@ pub mod contrast {
 }
 
 pub use fonts::{embedded_fonts, list_system_fonts};
-pub use icon_theme::{IconThemeMeta, IconThemeNotFoundError, IconThemeRegistry};
+pub use icon_theme::{
+    IconThemeMeta, IconThemeNotFoundError, IconThemeRegistry, MATERIAL_ICON_THEME_ID,
+};
 pub use import::{ThemeFile, ThemeFileConversion, ThemeFileVariant, COLOR_TOKENS};
 pub use prefs::{EditorThemeId, ThemePreference};
 pub use registry::{

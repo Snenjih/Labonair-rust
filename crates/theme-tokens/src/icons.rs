@@ -35,6 +35,10 @@ pub struct IconThemeContent {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
+    /// Preserve colors embedded in the theme's SVG assets instead of tinting
+    /// them with the Explorer's muted foreground color.
+    #[serde(default)]
+    pub color_icons: bool,
     /// Whole-file-name → icon key (checked first, case-insensitive).
     #[serde(default)]
     pub file_stems: BTreeMap<String, String>,
@@ -148,6 +152,7 @@ impl Default for IconThemeContent {
         Self {
             name: BUILTIN_ICON_THEME_NAME.to_string(),
             author: Some(BUILTIN_ICON_THEME_NAME.to_string()),
+            color_icons: false,
             file_stems: DEFAULT_FILE_STEMS
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))

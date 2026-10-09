@@ -1,22 +1,19 @@
 //! Icon themes (T20-006, Zed-parity model — `docs/architecture.md` §8.19).
 //!
-//! A **swappable file/folder glyph mapping**, transcribed 1:1 from Zed
-//! (`zed-refrence/zed/crates/theme/src/icon_theme.rs` +
-//! `zed-refrence/zed/crates/file_icons`). Two levels of indirection, exactly
-//! like Zed:
+//! A **swappable file/folder glyph mapping** with two levels of indirection:
 //!
 //! 1. `file_stems` / `file_suffixes` map a file name or extension to an
 //!    **icon key** (`"rust"`, `"typescript"`, …);
 //! 2. `file_icons` maps an icon key to an **asset path**
-//!    (`"icons/file_icons/rust.svg"`) — a vendored copy of Zed's per-language
-//!    SVG set under `crates/shell/assets/icons/file_icons/`.
+//!    (`"icons/file_icons/rust.svg"`) in the bundled SVG catalog.
 //!
 //! `directory` / `chevron` (+ optional `named_directory_icons`) are direct
 //! asset paths. The built-in "Labonair" theme is generated from the
 //! [`DEFAULT_FILE_STEMS`] / [`DEFAULT_FILE_SUFFIXES`] / [`DEFAULT_FILE_ICONS`]
 //! tables (themselves a transcription of Zed's `"Zed (Default)"`), embedded as
-//! `assets/icon_themes/labonair.json`, and joined at runtime by any valid
-//! `*.json` in `<config_dir>/labonair/icon_themes/`.
+//! `assets/icon_themes/labonair.json`. The built-in Material Icon Theme uses
+//! its complete bundled mapping and SVG set. The user-file loader remains an
+//! unwired extension adapter.
 //!
 //! # JSON format ([`IconThemeContent`])
 //!
@@ -57,14 +54,21 @@ pub use labonair_theme_tokens::{
     BUILTIN_ICON_THEME_NAME, DEFAULT_FILE_ICONS, DEFAULT_FILE_STEMS, DEFAULT_FILE_SUFFIXES,
 };
 
-/// The embedded built-in icon theme. Regenerate after editing the tables below
-/// with `REGEN_BUILTIN_ICON_THEME=1 cargo test -p labonair-theme builtin_icon`.
+/// The embedded built-in Labonair icon theme. Regenerate after editing the
+/// tables below with `REGEN_BUILTIN_ICON_THEME=1 cargo test -p labonair-theme builtin_icon`.
 pub const BUILTIN_ICON_THEME_JSON: &str = include_str!("../assets/icon_themes/labonair.json");
+
+/// Stable ID of the second embedded icon theme.
+pub const MATERIAL_ICON_THEME_ID: &str = "material-icon-theme";
+
+/// The embedded Material Icon Theme catalog and path mappings.
+pub const MATERIAL_ICON_THEME_JSON: &str =
+    include_str!("../assets/icon_themes/material-icon-theme.json");
 
 /// Metadata for one selectable icon theme.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IconThemeMeta {
-    /// File stem for user themes, [`BUILTIN_ICON_THEME_ID`] for the built-in.
+    /// Stable registry ID. Built-in IDs are constants in this module.
     pub id: String,
     /// Display name.
     pub name: String,
@@ -89,7 +93,7 @@ struct RegisteredIconTheme {
     builtin: bool,
 }
 
-/// The embedded built-in icon theme. Optional file loading remains available
+/// The embedded built-in icon themes. Optional file loading remains available
 /// as a future extension adapter, but the current product catalog is static.
 pub struct IconThemeRegistry {
     themes: Vec<RegisteredIconTheme>,
@@ -102,20 +106,29 @@ impl Default for IconThemeRegistry {
 }
 
 impl IconThemeRegistry {
-    /// A registry holding only the embedded built-in theme. A broken embedded
+    /// A registry holding the embedded built-in themes. A broken Labonair
     /// asset falls back to [`IconThemeContent::default`].
     pub fn builtin() -> Self {
-        let content = IconThemeContent::from_json(BUILTIN_ICON_THEME_JSON).unwrap_or_else(|e| {
+        let labonair = IconThemeContent::from_json(BUILTIN_ICON_THEME_JSON).unwrap_or_else(|e| {
             eprintln!("labonair-theme: embedded icon theme is invalid ({e}); using tables");
             IconThemeContent::default()
         });
-        Self {
-            themes: vec![RegisteredIconTheme {
-                id: BUILTIN_ICON_THEME_ID.to_string(),
+        let mut themes = vec![RegisteredIconTheme {
+            id: BUILTIN_ICON_THEME_ID.to_string(),
+            content: labonair,
+            builtin: true,
+        }];
+        match IconThemeContent::from_json(MATERIAL_ICON_THEME_JSON) {
+            Ok(content) => themes.push(RegisteredIconTheme {
+                id: MATERIAL_ICON_THEME_ID.to_string(),
                 content,
                 builtin: true,
-            }],
+            }),
+            Err(e) => eprintln!(
+                "labonair-theme: embedded Material Icon Theme is invalid ({e}); skipping it"
+            ),
         }
+        Self { themes }
     }
 
     /// Replace the non-built-in themes with everything valid in `dir`.
@@ -123,7 +136,7 @@ impl IconThemeRegistry {
     /// This is an extension adapter, not part of the current static catalog.
     /// Accepts both a bare [`IconThemeContent`] and a Zed-style *family*
     /// (`{ "name", "author", "themes": [ … ] }`). Malformed / unreadable files
-    /// are skipped and returned as warnings; the built-in theme always remains.
+    /// are skipped and returned as warnings; the built-in themes always remain.
     pub fn load_user_icon_themes(&mut self, dir: &std::path::Path) -> Vec<String> {
         self.themes.retain(|t| t.builtin);
         let mut warnings = Vec::new();
@@ -143,7 +156,11 @@ impl IconThemeRegistry {
             else {
                 continue;
             };
-            if stem == BUILTIN_ICON_THEME_ID {
+            if self
+                .themes
+                .iter()
+                .any(|theme| theme.builtin && theme.id.eq_ignore_ascii_case(&stem))
+            {
                 continue;
             }
             let raw = match std::fs::read_to_string(&path) {

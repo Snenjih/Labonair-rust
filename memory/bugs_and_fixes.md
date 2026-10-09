@@ -4,6 +4,26 @@ Older entries preserve the state of the code when each issue was recorded.
 When an API was later renamed or removed, the current implementation and
 normative documentation take precedence over the historical symbol name.
 
+## 2026-10-07 — Terminal startup resized against the whole window and overlaid backgrounds
+
+**Symptom:** opening a terminal caused a startup redraw burst and could make
+the terminal and other app surfaces look as if they were flickering or
+corrupted. Before the terminal canvas had measured its own bounds,
+`TerminalView::render` used `window.viewport_size()`, which includes the shell
+chrome. It therefore resized the newly spawned 80×24 PTY to an oversized grid
+and resized it again immediately after the first paint.
+
+**Fix:** keep the initial 80×24 grid until the terminal canvas reports its
+actual bounds, then perform the single required resize. Also place the app and
+terminal background image layers before their content; they had been appended
+after it and were composited over the UI on every redraw.
+
+**First-terminal path issue:** switching to a Space with no tabs left the
+global active tab pointing at the previous Space. The first terminal then
+picked up that old terminal's live cwd before its shell returned to `~`.
+`Workspace::apply_space_switch` now clears the active tab when the destination
+has none, and cwd/render lookups ignore tabs outside the active Space.
+
 ## 2026-09-23 — Context-menu submenus must place from measured panel bounds
 
 **Symptom:** the `+` menu's SSH/SFTP flyout could be rendered on top of its

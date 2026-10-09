@@ -370,16 +370,18 @@ impl Render for TerminalView {
 
         self.cell_size = (cell_w, cell_h);
 
-        // Fit the grid to this view's content area (falling back to the whole
-        // window before the first paint has measured it) and inform the
-        // engine/PTY.
-        let viewport = self.measured.unwrap_or_else(|| window.viewport_size());
-        let (cols, rows) = grid_size(
-            f32::from(viewport.width),
-            f32::from(viewport.height),
-            cell_w,
-            cell_h,
-        );
+        // Wait for this view's first measured bounds before resizing. The
+        // window viewport includes the shell chrome and is larger than the
+        // terminal surface, so using it here would resize the PTY twice while
+        // the shell is starting.
+        let (cols, rows) = self.measured.map_or(self.grid, |viewport| {
+            grid_size(
+                f32::from(viewport.width),
+                f32::from(viewport.height),
+                cell_w,
+                cell_h,
+            )
+        });
         if (cols, rows) != self.grid {
             self.grid = (cols, rows);
             let _ = self.handle.resize(TermDimensions {
@@ -693,11 +695,11 @@ impl Render for TerminalView {
                 let text = format!("{} ", quote_paths(&d.paths));
                 this.send_input(text.as_bytes());
             }))
+            .children(background_layer)
             .children(run_elements)
             .children(search_elements)
             .children(selection_elements)
             .children(cursor_element)
-            .children(background_layer)
             .when_some(exited, |el, code| {
                 el.child(
                     div()

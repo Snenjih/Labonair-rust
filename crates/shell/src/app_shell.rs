@@ -218,7 +218,8 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::act_zoom_window));
         let root = crate::commands::attach_action_handlers(root, can_split, has_split, cx);
 
-        root.child(self.titlebar.clone())
+        root.children(background_layer)
+            .child(self.titlebar.clone())
             .child(
                 div()
                     .flex_1()
@@ -227,7 +228,6 @@ impl Render for AppShell {
                     .child(self.workspace.clone()),
             )
             .when(show_statusbar, |d| d.child(self.status_bar.clone()))
-            .children(background_layer)
             // Notifications use the statusbar dropdown and must not create a
             // separate notification overlay.
             .child(self.modal_layer.clone())

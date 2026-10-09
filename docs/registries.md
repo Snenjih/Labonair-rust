@@ -154,9 +154,14 @@ definition. Preview is transactional: navigation applies a temporary preview,
 while confirmation persists the selected ID. The global menu exposes both
 surfaces through the command palette; neither is a Settings management page.
 
-Initial themes are built in. Downloading and extensions are deferred until a
-concrete workflow and owner exist; they are not part of the initial registry
-contract.
+Initial themes are built in. The icon-theme catalog includes Labonair
+(`default`) and Material Icon Theme (`material-icon-theme`); their definitions
+and SVGs are bundled with the application and selected through the same
+preview/commit flow. Icon themes may preserve color data embedded in their SVG
+assets; monochrome themes continue to use the Explorer foreground tint.
+Downloading and user-authored theme extensions are
+deferred until a concrete workflow and owner exist; they are not part of the
+registry contract.
 
 ## Panel and status-item registries
 

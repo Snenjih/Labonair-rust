@@ -178,14 +178,17 @@ impl StatusItem for NotificationsStatusItem {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .px_3()
-                    .py_2()
+                    .px_4()
+                    .py_3()
                     .border_b_1()
                     .border_color(border)
-                    .text_xs()
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_color(fg)
-                    .child("Notifications")
+                    .child(
+                        div()
+                            .text_size(px(16.0))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(fg)
+                            .child("Notifications"),
+                    )
                     .child(
                         labonair_ui_kit::button_no_hover(
                             "bar-notif-clear",
@@ -194,6 +197,7 @@ impl StatusItem for NotificationsStatusItem {
                             ButtonSize::Xs,
                         )
                         .text_color(muted)
+                        .text_size(px(13.0))
                         .hover(|style| style.text_color(fg))
                         .child("Clear all")
                         .on_click(cx.listener(
@@ -205,7 +209,12 @@ impl StatusItem for NotificationsStatusItem {
                         )),
                     ),
             )
-            .child(
+            .child(if snapshots.is_empty() {
+                labonair_ui_kit::empty_state("No notifications", palette)
+                    .h(px(120.0))
+                    .text_size(px(16.0))
+                    .into_any_element()
+            } else {
                 div()
                     .id("bar-notifications-list")
                     .max_h(px(360.0))
@@ -256,8 +265,9 @@ impl StatusItem for NotificationsStatusItem {
                         .extra(move |row| row.border_b_1().border_color(border))
                         .child(message);
                         row
-                    })),
-            )
+                    }))
+                    .into_any_element()
+            })
             .into_any_element();
 
         div()

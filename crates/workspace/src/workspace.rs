@@ -722,8 +722,14 @@ impl Workspace {
             // later `switch_space` away and back lands on the right tab
             // without a separate save step (T20-008 Spaces).
             let active_space = this.spaces.read(cx).active_id();
+            let active_tab = this
+                .tabs
+                .read(cx)
+                .get(ev.0)
+                .filter(|tab| tab.space_id == active_space)
+                .map(|tab| tab.id);
             this.spaces.update(cx, |s, _| {
-                s.record_last_active_tab(active_space, Some(ev.0));
+                s.record_last_active_tab(active_space, active_tab);
             });
         })
         .detach();
@@ -1457,6 +1463,8 @@ impl Workspace {
             });
         if let Some(id) = next_tab {
             self.tabs.update(cx, |s, cx| s.set_active(id, cx));
+        } else {
+            self.tabs.update(cx, |s, cx| s.clear_active(cx));
         }
         cx.notify();
     }
@@ -2908,7 +2916,8 @@ impl Workspace {
 
     fn active_ws_tab(&self, cx: &App) -> Option<u64> {
         let tab = self.tabs.read(cx).active()?;
-        (tab.kind == TabKind::Workspace).then_some(tab.id)
+        (tab.space_id == self.spaces.read(cx).active_id() && tab.kind == TabKind::Workspace)
+            .then_some(tab.id)
     }
 
     fn active_layout<'a>(&'a self, cx: &App) -> Option<&'a WorkspaceLayout> {
@@ -5603,7 +5612,13 @@ impl Workspace {
     }
 
     fn render_content(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let active = self.tabs.read(cx).active().cloned();
+        let active_space = self.spaces.read(cx).active_id();
+        let active = self
+            .tabs
+            .read(cx)
+            .active()
+            .filter(|tab| tab.space_id == active_space)
+            .cloned();
         let Some(active) = active else {
             return self.render_empty_surface(cx).into_any_element();
         };
@@ -5825,73 +5840,15 @@ impl Workspace {
             )))
     }
 
-    /// The empty-workspace surface, shown when no tabs are open (T17-009).
-    /// Deliberately minimal — the styled version plus the `＋▾` menu and
-    /// file-drop land in T18-001. Double-click opens a local terminal so the
-    /// area is not a dead end.
-    /// The surface shown when zero tabs are open (T17-009 gates it; T18-001
-    /// gives it its final look). A small wordmark over a column of
-    /// keyboard-shortcut hints. Double-click anywhere → new local terminal;
-    /// drop files → one editor tab each. No own state — pure `Workspace` read.
+    /// The empty-workspace surface, shown when no tabs are open. Double-click
+    /// opens a local terminal; dropping files opens an editor tab for each.
     fn render_empty_surface(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme.read(cx);
-        let (bg, fg, muted, border) = (
-            theme.background(),
-            theme.foreground(),
-            theme.muted_foreground(),
-            theme.border(),
-        );
-
-        let hint = move |keys: &'static str, label: &'static str| {
-            div()
-                .flex()
-                .items_center()
-                .gap_3()
-                .child(
-                    div()
-                        .min_w(px(56.0))
-                        .flex()
-                        .justify_center()
-                        .px_2()
-                        .py_0p5()
-                        .rounded_sm()
-                        .border_1()
-                        .border_color(border)
-                        .text_color(muted)
-                        .text_xs()
-                        .child(keys),
-                )
-                .child(div().text_sm().text_color(muted).child(label))
-        };
-        let context_label = match self.state(cx).identity() {
-            context::WorkspaceIdentity::Standalone => "Standalone workspace".to_string(),
-            context::WorkspaceIdentity::Project { root } => {
-                format!("Project \u{00b7} {}", root.display())
-            }
-        };
+        let bg = self.theme.read(cx).background();
 
         div()
             .id("empty-workspace")
             .size_full()
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .gap_4()
             .bg(bg)
-            .child(div().text_sm().text_color(fg).child("Labonair"))
-            .child(div().text_xs().text_color(muted).child(context_label))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(hint("\u{2318}T", "New Terminal"))
-                    .child(hint("\u{2318}E", "Editor"))
-                    .child(hint("\u{2318}P", "Commands"))
-                    .child(hint("\u{2318},", "Settings"))
-                    .child(hint("\u{2318}\u{21e7}N", "Hosts")),
-            )
             .on_click(cx.listener(|this, ev: &ClickEvent, window, cx| {
                 if ev.click_count() >= 2 {
                     this.new_terminal_tab(window, cx);

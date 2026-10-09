@@ -3,12 +3,13 @@
 //!
 //! The vendored icon set (`crates/shell/assets/icons/`) is a verbatim copy of
 //! Zed's Lucide-derived UI glyphs (`assets/icons/*.svg`, ISC — see
-//! `assets/icons/LICENSES`) plus Zed's per-language file/folder glyphs
-//! (`assets/icons/file_icons/*.svg`) and a small `+ Labonair addition` set for
-//! glyphs Zed has no equivalent for. `labonair_ui_kit::IconName` names the UI
-//! set; `labonair_theme::icon_theme` maps file names to the `file_icons/`
-//! paths. The whole tree is embedded with `rust-embed` so the list never has
-//! to be maintained by hand.
+//! `assets/icons/LICENSES`), Zed's per-language file/folder glyphs
+//! (`assets/icons/file_icons/*.svg`), the Material Icon Theme SVG set under
+//! `assets/icons/material_icon_theme/`, and a small `+ Labonair addition` set
+//! for glyphs Zed has no equivalent for. `labonair_ui_kit::IconName` names the
+//! UI set; `labonair_theme::icon_theme` maps file names to the bundled
+//! file-icon assets. The whole tree is embedded with `rust-embed` so the list
+//! never has to be maintained by hand.
 
 use std::borrow::Cow;
 
@@ -17,11 +18,12 @@ use rust_embed::RustEmbed;
 
 /// Every file under `crates/shell/assets/`, embedded at compile time. Keys are
 /// relative to that directory (e.g. `icons/file_code.svg`,
-/// `icons/file_icons/rust.svg`).
+/// `icons/file_icons/rust.svg`, `icons/material_icon_theme/rust.svg`).
 #[derive(RustEmbed)]
 #[folder = "assets/"]
 #[include = "icons/*"]
 #[include = "icons/file_icons/*"]
+#[include = "icons/material_icon_theme/*"]
 pub struct EmbeddedAssets;
 
 /// Serves the bundled assets to GPUI's `svg()`/`img()` elements and to
@@ -57,6 +59,13 @@ mod tests {
             .filter(|p| p.starts_with("icons/"))
             .count();
         assert!(n > 350, "expected the full vendored icon set, got {n}");
+        let material_svg_count = EmbeddedAssets::iter()
+            .filter(|p| p.starts_with("icons/material_icon_theme/") && p.ends_with(".svg"))
+            .count();
+        assert!(
+            material_svg_count >= 1192,
+            "expected the complete Material Icon Theme SVG set, got {material_svg_count}"
+        );
         assert!(Assets.load("icons/file_code.svg").unwrap().is_some());
         assert!(Assets.load("icons/file_icons/rust.svg").unwrap().is_some());
     }
@@ -75,8 +84,8 @@ mod tests {
         }
     }
 
-    /// No dangling UI SVG: every `icons/*.svg` (excluding the `file_icons/`
-    /// theme set and the `LICENSES` file) maps back to an `IconName` variant.
+    /// No dangling UI SVG: every top-level `icons/*.svg` maps back to an
+    /// `IconName` variant; nested icon-theme assets are excluded.
     #[test]
     fn no_dangling_ui_icon() {
         for p in EmbeddedAssets::iter() {
@@ -85,7 +94,7 @@ mod tests {
                 continue;
             };
             if name.contains('/') {
-                continue; // file_icons/*
+                continue; // nested file/folder icon-theme assets
             }
             let stem = name.trim_end_matches(".svg");
             assert!(
@@ -95,21 +104,31 @@ mod tests {
         }
     }
 
-    /// Every file-icon path referenced by the built-in icon theme resolves to a
-    /// bundled SVG.
+    /// Every file-icon path referenced by each built-in icon theme resolves to
+    /// a bundled SVG.
     #[test]
     fn builtin_icon_theme_paths_all_resolve() {
-        let t = labonair_theme::IconThemeContent::default();
-        let mut paths: Vec<&str> = t.file_icons.values().map(|d| d.path.as_str()).collect();
-        paths.push(t.directory.collapsed.as_str());
-        paths.push(t.directory.expanded.as_str());
-        paths.push(t.chevron.collapsed.as_str());
-        paths.push(t.chevron.expanded.as_str());
-        for p in paths {
-            assert!(
-                Assets.load(p).unwrap().is_some(),
-                "built-in icon theme references a missing asset: {p}"
+        let registry = labonair_theme::IconThemeRegistry::builtin();
+        for meta in registry.list() {
+            let theme = registry.get(&meta.id).unwrap();
+            let mut paths: Vec<&str> = theme.file_icons.values().map(|d| d.path.as_str()).collect();
+            paths.push(theme.directory.collapsed.as_str());
+            paths.push(theme.directory.expanded.as_str());
+            paths.push(theme.chevron.collapsed.as_str());
+            paths.push(theme.chevron.expanded.as_str());
+            paths.extend(
+                theme
+                    .named_directory_icons
+                    .values()
+                    .flat_map(|icons| [icons.collapsed.as_str(), icons.expanded.as_str()]),
             );
+            for path in paths {
+                assert!(
+                    Assets.load(path).unwrap().is_some(),
+                    "built-in icon theme {} references a missing asset: {path}",
+                    meta.name
+                );
+            }
         }
     }
 }

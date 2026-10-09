@@ -305,6 +305,16 @@ impl TabStore {
         cx.notify();
     }
 
+    /// Clear the active tab when the current Space has no tabs of its own.
+    pub fn clear_active(&mut self, cx: &mut Context<Self>) {
+        if self.active_id == 0 {
+            return;
+        }
+        self.active_id = 0;
+        cx.emit(ActiveTabChanged(0));
+        cx.notify();
+    }
+
     /// Activate the next / previous tab within the active tab's own Space,
     /// wrapping around. Scoped to one space so cycling never silently jumps
     /// you into a different project's Explorer/Git root (T20-008 Spaces).
@@ -593,6 +603,27 @@ mod tests {
                 assert_eq!(removed.len(), 2);
                 assert!(s.is_empty());
                 assert!(s.active().is_none());
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn empty_space_does_not_keep_the_previous_space_active(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                let previous = s.open_workspace(1, Some("/previous".into()), cx);
+                s.set_current_space(42);
+                s.clear_active(cx);
+
+                assert_eq!(s.active_id(), 0);
+                assert!(s.active().is_none());
+
+                let first = s.open_workspace(2, None, cx);
+                let tab = s.get(first).expect("new terminal tab exists");
+                assert_eq!(tab.space_id, 42);
+                assert_ne!(tab.id, previous);
+                assert_eq!(s.active_id(), first);
             });
         });
     }
