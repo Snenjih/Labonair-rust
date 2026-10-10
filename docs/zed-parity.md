@@ -292,6 +292,12 @@ records global and secondary-window bindings, Workspace dirty-item and
 active-call preparation, session handling, and Labonair's OS-close/tab/pane
 routes; key dispatch, prompt and cancellation states, final-window policy,
 session restore, and paired interaction evidence remain pending. The
+independent
+[`Workspace path-copy action crosswalk`](parity/action-classification-workspace-path-copy.md)
+records absolute and worktree-relative clipboard values, per-panel selection
+cardinality, path style, and Labonair's Explorer-only menu route; platform
+dispatch, multiline order, Outline/Git routes, clipboard behavior, and paired
+interaction evidence remain pending. The
 separate
 [`Workspace New File action crosswalk`](parity/action-classification-workspace-new-file.md)
 records the untitled-document action contexts, unsaved-buffer Settings, and

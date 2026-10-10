@@ -2355,6 +2355,96 @@ family after this slice passes its documentation gates.
 - Next safe task: continue R07-000 with the next unclassified default-map
   action family and reconcile the remaining action catalog.
 
+## Pre-change contract — classify Workspace path-copy actions
+
+Request: Independently classify copying absolute and project-relative paths
+from the pinned OutlinePanel, ProjectPanel, and Git ChangesList contexts,
+including selection cardinality, path formatting, and current Labonair routes.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `CopyPath` and `CopyRelativePath` under their stable action IDs.
+Out of scope: Copying file contents or names, OS reveal/open actions, SFTP's
+separate path-copy menu, path editing, implementation, R07-001/R09, and
+runtime or visual acceptance claims.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, Workspace action ownership, Explorer and
+Git selected-entry contracts, project/worktree path styles, and clipboard
+behavior.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns the
+shared path-copy action intent and key routes. Explorer and SCM/Git owners
+provide the selected eligible path or paths; no new registry is required.
+Canonical user entry point: macOS uses `Cmd+Alt+C` and `Cmd+Alt+Shift+C` in
+OutlinePanel when not editing, ProjectPanel, and GitPanel ChangesList outside
+branch/repository selectors. Linux binds Copy Path to `Alt+Insert` or
+`Ctrl+Alt+C` in GitPanel ChangesList; Copy Relative Path uses `Alt+Shift+Insert`
+or `Alt+Ctrl+Shift+C` in OutlinePanel, ProjectPanel, and GitPanel ChangesList.
+Windows binds Copy Path to `Shift+Alt+C` in GitPanel ChangesList; Copy
+Relative Path uses `Ctrl+Shift+Alt+C` in OutlinePanel and `Ctrl+K`
+`Ctrl+Shift+C` in ProjectPanel and GitPanel ChangesList. Each panel also offers
+the corresponding context-menu item. Labonair exposes these actions from the
+Explorer row context menu, without the same keyboard action IDs or Git/Outline
+routes.
+Public typed contract: Copy the selected path to the system clipboard without
+mutating the filesystem. Absolute copy returns the selected entry's absolute
+path; relative copy returns its path relative to the containing project or
+worktree, rendered with the project path style. A ProjectPanel multi-selection
+copies one path per line; OutlinePanel and Git ChangesList use their eligible
+selected entry. An absent or ineligible path leaves the clipboard unchanged or
+propagates to the next handler. Verify selection order and path formatting for
+all owners and platforms.
+Events and registry contributions: Keep the shared Workspace action names and
+panel-owned selection behavior; add no clipboard registry or duplicate
+global action table.
+Settings and persistence: No settings or persisted state. The result replaces
+the system clipboard contents only after an eligible selection is resolved.
+Notifications and failure: No notification is expected. Missing selection,
+unsupported row type, or unavailable path must not write a stale or partial
+clipboard value.
+Security: This is a user-initiated disclosure of a path to the operating
+system clipboard. Do not log copied paths or add automatic copying.
+UI-kit: Reuse shared context-menu components; add no local menu styling.
+Focused inspection: Trace single and multiple selections, directories,
+worktree roots, platform path separators, multi-root projects, remote roots,
+OutlinePanel editing and non-filesystem rows, Git selectors/changes rows, and
+the clipboard result after an ineligible selection.
+Visual evidence: Pending paired macOS checks for Explorer, OutlinePanel, and
+Git context menus, keyboard contexts, multi-selection, and clipboard readback.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, and exact binding-context/selection/path/route audit.
+Documentation updates: Two action rows, a Workspace path-copy packet,
+app.windows or project-explorer/Git crosswalks as applicable, parity index,
+normative parity scope if needed, and this task's progress record.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Native macOS dispatch and paired captures are
+unavailable here.
+Next safe task: Continue R07-000 with the next unclassified default-map action
+family after this slice passes its documentation gates.
+
+## Progress record — 2026-10-10 — Workspace path-copy action classification
+
+- Added [`../../docs/parity/action-classification-workspace-path-copy.md`](../../docs/parity/action-classification-workspace-path-copy.md)
+  for `CopyPath` and `CopyRelativePath`, recording absolute versus
+  worktree-relative output, project path style, panel-specific selection
+  cardinality, and empty/unsupported selection behavior.
+- Recorded the exact platform binding contexts, including Outline's
+  not-editing condition and Git branch/repository selector exclusions. Mapped
+  Labonair's Explorer row menu and distinguished its separate SFTP path menu;
+  Git ChangesList and Outline routes remain missing.
+- Updated two action rows, the Explorer and Git feature crosswalks, command/
+  keymap counts, parity index, normative parity scope, and this task's
+  pre-change/progress records. The focused ID/context/clipboard audit passed.
+- Passed `python3 scripts/check_documentation.py` (43 normative documents,
+  183 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active), and
+  `git diff --check`.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, and tests. They remain R07-000 exit gates. Native keyboard
+  dispatch, clipboard text/order/path style, failure behavior, and paired
+  macOS captures remain open. Same-session analysis is independent
+  redevelopment, not separated-room clean-room work. R07-001 and R09 remain
+  unstarted.
+- Next safe task: continue R07-000 with the next unclassified default-map
+  action family and reconcile the remaining action catalog.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified
