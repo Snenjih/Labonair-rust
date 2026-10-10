@@ -401,6 +401,12 @@ and force-with-lease workflows. Labonair lacks selected remotes and
 rebase; its confirmed Force Push calls ordinary push and Publish does
 not set upstream. Runtime and paired macOS acceptance remain open. The
 independent
+[`Git branch selection and rename action crosswalk`](parity/action-classification-git-branch-selection.md)
+records the shared GitPicker Branches destination for Switch and
+CheckoutBranch and the RenameBranch argument mismatch. Labonair has
+separate dropdown and palette workflows; native focus, checkout
+safety, rename argument handling, and paired macOS acceptance remain
+open. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

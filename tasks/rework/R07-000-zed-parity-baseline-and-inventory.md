@@ -4821,3 +4821,67 @@ Next safe task: Classify and document Git remote synchronization, then continue 
 - Rust gates, remote runtime checks, and paired visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
 - Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+## Pre-change contract — Git branch selection and rename actions
+
+```text
+Request: Independently classify the pinned branch-selection and branch-rename actions and compare their Workspace picker/modal routes with Labonair.
+Request type: R07-000 requirements inventory; documentation only.
+In scope: Three related registered-unbound actions (CheckoutBranch, Switch, RenameBranch); branch picker behavior and branch selection; RenameBranch's optional branch argument; current/remote branch handling; Labonair dropdown, typed branch operations, and custom palette route.
+Out of scope: Worktree lifecycle, branch deletion/force deletion, remote management, Git tags, implementing actions or modals, adding key bindings/settings, runtime or visual parity claims, and R09 work.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Git capability (`labonair-git`); Git transport (`labonair-git-transport`); Source Control sibling (`labonair-panel-scm`); Workspace modal/action hosting; command palette contribution.
+
+Owner module: Git owns branch repository operations and Source Control state; Workspace hosts the pinned branch modal and actions; command palette hosts the existing Labonair switch-branch contribution.
+Canonical capability crate: `labonair-git`.
+Sibling crates: `labonair-git-transport` and `labonair-panel-scm`; Workspace and command palette are consumers.
+Canonical user entry point: Pinned GitPicker modal on the Branches tab from Switch/CheckoutBranch actions; its BranchList is also embedded as GitPanel and CommitModal popovers. Labonair uses the Source Control branch dropdown and its own Switch Branch palette action.
+Alternate entry points: Pinned commit modal branch selector and branch picker typed-query create path; Labonair branch-row click/rename controls and new-branch form.
+Public typed contract: Labonair Git trait exposes checkout_branch(path, branch, session_id), create_branch(path, name, from_ref, checkout, session_id), and rename_branch(path, old_name, new_name, session_id). Do not alter contracts in this inventory slice.
+Events: Existing repository status refresh and Workspace modal dismissal only; no event changes proposed.
+Registry contributions: Classify the three registered-unbound Git actions; add no action, command, binding, or palette registration.
+Allowed dependency changes: None.
+Removal condition for temporary code: None; documentation only.
+
+State owner: Git owns branch refs/current HEAD; Source Control owns dropdown/filter/inline edit state; Workspace owns branch picker and rename modal state.
+Persistence owner: Branch refs and upstream associations are repository-owned. Picker query, modal input, and selection are transient.
+Settings and scope: None introduced; record existing branch selection/create behavior only.
+Migration impact: None in this slice. Future parity work should expose typed branch-picker and targeted rename routes through their canonical owners, not shell-wide callbacks.
+Commands: CheckoutBranch, Switch, RenameBranch.
+Default keymap: All three are registered without default key bindings; record their palette/action reachability and context-specific picker/modal entry points.
+Notifications: Branch checkout/create/rename failures remain Git operation errors routed through the owning notification/error surface.
+UI-kit components: Labonair branch dropdown, filter, rename field, and create controls use `labonair-ui-kit`; future branch picker/modal surfaces must use shared controls.
+User workflow: Open the GitPicker Branches tab through Switch or CheckoutBranch, filter and select an existing branch, optionally create from a base; invoke RenameBranch to edit and confirm the current branch name; cancel either interaction without changing refs.
+Failure/cancellation/retry behavior: Record no repository, detached/no current branch, current branch selection, invalid/nonexistent branch, dirty worktree checkout protection, rename collision/invalid name, action argument behavior, picker/modal cancellation, error presentation, and refresh after success.
+Security boundary: Preserve Git's worktree/index protections during checkout; do not force discard local edits; restrict remote branches and action-supplied names to the owning Git contract's validation.
+Performance budget: No runtime change; branch list and Git operations remain asynchronous/virtualized for large repositories.
+
+Implementation order: Requirements packet only. Future work must define typed branch picker/rename action contracts, implement Git/transport behavior, adapt Source Control and Workspace/palette consumers, then add any accepted default bindings. Preserve acyclic crate dependencies.
+Focused unit tests: Not applicable to this documentation-only change.
+Contract/integration tests: No tests changed or run.
+Persistence/migration tests: Not applicable; Git branch refs remain repository-owned.
+Command/surface tests: Not applicable; no runtime change.
+Visual states: GitPicker Branches modal and embedded branch popovers, local/remote/current rows, filtering, create form, rename modal/input, disabled/current branch, no repository, loading, checkout/rename error, cancellation, and narrow layout remain native acceptance requirements.
+Security/negative tests: Not applicable to this documentation-only change; verify dirty-worktree protection, branch-name validation, argument handling, and no accidental branch deletion.
+Performance measurement: Not applicable; no runtime change.
+Workspace gates: Diff check, documentation checker, docs verification scope, queue check, and focused action/schema/local-route audit.
+Documentation updates: New Git branch-selection/rename packet, three unbound rows, packet index, Git capability crosswalk, normative parity summary, and this task record.
+Current status: Pending focused action-schema and Labonair reachability audit.
+Target status: Static branch action requirements classified; native interactions, safe checkout behavior, and paired macOS acceptance remain open.
+Evidence links: Pinned branch picker handlers and selection modal; RenameBranch schema/Workspace registration; Labonair Git trait, transport adapter, branch dropdown, and palette registration.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Canonical modal/action entry points, ignored RenameBranch argument, targeted rename semantics, branch picker workflow, dirty checkout recovery, and paired captures.
+Failed/unavailable gates: Rust, native runtime, and visual gates remain R07-000 exit gates.
+Next safe task: Classify and document Git branch selection and rename, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify Git branch selection and rename actions
+
+- Added [`action-classification-git-branch-selection.md`](../../docs/parity/action-classification-git-branch-selection.md) for three registered-unbound actions: CheckoutBranch, Switch, and RenameBranch.
+- Updated the three unbound action rows, parity packet index/count, Git capability crosswalk, normative parity summary, and this task record. All native action/capture states remain Pending.
+- Focused source audit confirmed Switch and CheckoutBranch both open the GitPicker Branches tab; the picker can filter/select branches and create from a base. RenameBranch's schema has an optional branch argument, but Workspace registration ignores it and opens the current branch rename modal. The separate GitPanel/CommitModal popovers and GitPicker modal remain distinct surfaces.
+- Compared Labonair's typed checkout/create/rename methods, Source Control dropdown, inline local-branch rename, and `source-control` SwitchBranch(name) palette handler. These offer partial workflows through distinct entry points; no matching pinned action dispatch or GitPicker modal exists.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative documents and 205 Markdown files), `python3 scripts/verify.py --scope docs`, and `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active). The focused ID/cross-reference audit passed for all three registered-unbound actions.
+- Rust gates, native checkout/rename behavior, and paired visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
+- Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.

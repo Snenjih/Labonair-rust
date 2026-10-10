@@ -29,7 +29,8 @@ source-side research. It records current evidence without claiming parity.
   staging actions (plus two related registered-unbound section actions), five
   Git restore/discard actions, six Git commit-lifecycle actions (plus three
   related registered-unbound actions), five Git remote-sync actions (plus two
-  related registered-unbound actions), one Editor Go to Line action,
+  related registered-unbound actions), three Git branch selection/rename
+  actions, one Editor Go to Line action,
   one File Finder action, two Workspace Open/OpenFiles actions, one Workspace
   New Window action,
   one Workspace Add Folder to
@@ -105,6 +106,9 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-git-remote-sync.md`](action-classification-git-remote-sync.md) —
   independently stated fetch, pull/rebase, push/publish, force-with-lease,
   remote selection, upstream state, and current transport/UI mismatches.
+- [`action-classification-git-branch-selection.md`](action-classification-git-branch-selection.md) —
+  independently stated branch picker actions, branch selection/create,
+  rename argument behavior, and current Labonair dropdown/palette routes.
 - [`action-classification-workspace-open.md`](action-classification-workspace-open.md) —
   independently stated intent, Workspace/Editor ownership, distinct general
   Open and platform Open Files routes, related Settings targets, and runtime
