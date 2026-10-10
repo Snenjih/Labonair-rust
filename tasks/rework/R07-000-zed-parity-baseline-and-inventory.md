@@ -4020,6 +4020,113 @@ continue R07-000; do not begin R07-001 or R09.
 - Next safe task: Continue classifying the remaining R07-000 action/workflow
   inventory; do not begin R07-001 or R09.
 
+## Pre-change contract — classify Settings entry actions
+
+Request: Classify the bound Open Settings and Open Settings File actions and
+their related menu-only Open Project Settings, Open Project Settings File,
+and Open Default Settings routes.
+Request type: Settings-surface entry and action ownership inventory; no
+runtime change or new Settings value.
+In scope: `ACT-MACOS-zed-OpenSettings`,
+`ACT-MACOS-zed-OpenSettingsFile`, their platform/context defaults, and the
+three related registered-unbound settings menu actions; distinguish the
+Settings UI, user JSON, project Settings UI/file, and bundled defaults routes.
+Out of scope: Settings field definitions and category/layout acceptance
+already tracked in the Settings requirements/crosswalk; changing Settings,
+Editor, keymap, menu, or persistence code; Open Keymap actions; R07-001/R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned action/keymap inventories, Settings surface and value
+ownership contracts, Workspace file-open contract, Settings crosswalk, and
+current local command providers/window entry.
+Owner module: Settings owns Settings UI and values; Workspace owns opening a
+settings JSON document as an Editor item and project-file association; Keymap
+owns the bound shortcuts. Native menus are composed by the app root and do
+not own Settings state.
+Canonical capability crates: `labonair-settings-ui` owns the Settings window;
+`labonair-settings` owns typed values and persistence; `labonair-workspace`
+opens user/project Settings JSON files. The default-settings reference has no
+Labonair route. No new crate is assigned.
+Canonical user entry points: App/Settings menu and Workspace welcome entry
+for Open Settings; App > Settings > Open Settings File; App > Settings > Open
+Project Settings, Open Project Settings File, and Open Default Settings.
+Bound shortcuts are `cmd-,`/`ctrl-,` for Open Settings outside
+`SettingsWindow`, and `cmd-alt-,`/`ctrl-alt-,` globally for Open Settings
+File.
+Public typed contracts: Open Settings takes no arguments and opens or focuses
+the Settings UI. Open Settings File takes no arguments and opens the user
+Settings JSON in a Workspace editor document, creating the initial file when
+needed. Open Project Settings targets the active project's visible root in
+the Settings UI. Open Project Settings File opens that project's JSON
+document. Open Default Settings opens the bundled baseline document, distinct
+from editable user/project Settings.
+State and persistence: No action stores state. Settings values persist via
+Settings; user/project JSON files retain their respective scopes. Settings
+window visibility is transient. Bundled defaults are not the user's editable
+file. The local Settings window exposes user/project scope, and its JSON
+button opens the corresponding file in the main Workspace.
+Events and registry contributions: No new event or registry. The Settings
+owner contributes the Settings command; Keymap supplies platform defaults;
+Workspace opens JSON items through its existing Editor route.
+Settings: No field/value additions. Preserve the distinction between
+`OpenSettingsFile` (user JSON), project Settings UI, project JSON, and
+bundled defaults.
+Notifications and failure: UI opening should focus an existing Settings
+window where appropriate. File-creation/open failures use the Settings or
+Workspace error path; do not create duplicate toasts or menus.
+UI-kit: Settings UI uses shared Settings/UI-kit controls; JSON files use the
+Workspace Editor. Native menu entries remain platform menu actions.
+Allowed dependency changes: None. Compatibility code: none; do not add
+parallel Settings JSON routes or duplicate Settings management surfaces.
+Focused verification: Compare all five action/registry rows, keymap contexts,
+menu and Welcome entries, pinned target selection and bundled-file behavior,
+local Settings window/command/JSON-button routes, user/project scope, and
+missing bindings/menu items. Do not conflate the JSON editor with the Settings
+UI or project settings with default settings.
+Visual evidence: Pending paired macOS Settings menu/window captures, existing
+Settings window refocus, user/project scope, Settings JSON document opening,
+bundled defaults read-only state, and no-project/error states. Record OS,
+window count/focus, project roots, file target, and Settings scope.
+Workspace gates: Diff check, documentation checker, docs verification scope,
+queue check, and focused action/owner/target/local-route audit. Rust gates
+remain R07-000 exit gates; no implementation change is planned.
+Documentation updates: Two bound action rows; three registered-unbound
+settings menu rows; Settings entry packet, action counts/index, Settings
+crosswalk, normative parity note, and this task contract/progress record.
+Security impact: N/A; no runtime file access changes. User/project settings
+scope remains explicit. Performance impact: N/A; no runtime change.
+Known limitations: Same-session research and independent requirements are
+redevelopment, not separated-room clean-room work. Native menu dispatch,
+Settings window focus, current JSON actions, read-only defaults, and paired
+macOS behavior remain unverified.
+Next safe task: Complete this bounded Settings-entry classification, then
+continue R07-000; do not begin R07-001 or R09.
+
+## Progress — classify Settings entry actions
+
+- Classified the two bound Settings actions and three related menu-only routes
+  in [`action-classification-settings-entry.md`](../../docs/parity/action-classification-settings-entry.md).
+  The packet distinguishes the Settings UI, user Settings JSON, project
+  Settings UI, project JSON, and bundled default document, and records each
+  current Labonair route and gap.
+- Updated the bound and registered-unbound action ledgers, parity packet index,
+  feature crosswalk, and normative Zed parity summary. Added this task contract
+  and progress record before implementation work.
+- Focused static audit matched the pinned macOS, Linux, and Windows keymap
+  defaults and Settings menu entries, then checked local Settings commands,
+  native menu routes, and Workspace JSON open routes. Key dispatch, native
+  window focus, bundled-document behavior, and paired visual acceptance remain
+  unverified.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py`
+  (43 normative documents and 196 Markdown files),
+  `python3 scripts/verify.py --scope docs`, and
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest
+  active). Rust gates were not run for this documentation-only slice and remain
+  R07-000 exit gates.
+- Same-session source research and independent requirements are redevelopment,
+  not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin
+  R07-001 or R09.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

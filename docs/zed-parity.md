@@ -345,6 +345,12 @@ records the Workspace-bound manager action, its menu and Welcome routes,
 category/extension focus variants, active-pane page reuse, and missing
 Labonair Extensions owner/crate/view. Marketplace implementation remains
 deferred; dispatch and catalog behavior are unverified. The independent
+[`Settings entry action crosswalk`](parity/action-classification-settings-entry.md)
+records the Settings UI, editable user/project JSON documents, and bundled
+default document as separate targets, plus the Settings menu routes and the
+additional Welcome and shortcut routes. Labonair's project Settings UI route,
+default document route, and shortcut/menu coverage remain incomplete; native
+dispatch, file behavior, and paired Settings acceptance are pending. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The
