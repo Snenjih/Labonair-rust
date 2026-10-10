@@ -397,23 +397,26 @@ options, modal/action routes, and last-commit undo are missing; runtime and
 paired macOS evidence remain open. The independent
 [`Git remote synchronization action crosswalk`](parity/action-classification-git-remote-sync.md)
 records fetch-all/selected-remote, pull/rebase, upstream push/publish,
-and force-with-lease workflows. Labonair lacks selected remotes and
-rebase; its confirmed Force Push calls ordinary push and Publish does
-not set upstream. Runtime and paired macOS acceptance remain open. The
+force-with-lease, and provider-backed pull-request URL workflows. Labonair
+lacks selected remotes, rebase, and a hosting-provider/pull-request URL route;
+its confirmed Force Push calls ordinary push and Publish does not set upstream.
+Runtime and paired macOS acceptance remain open. The
 independent
 [`Git branch selection and rename action crosswalk`](parity/action-classification-git-branch-selection.md)
 records the shared GitPicker Branches destination for Switch and
-CheckoutBranch and the RenameBranch argument mismatch. Labonair has
-separate dropdown and palette workflows; native focus, checkout
-safety, rename argument handling, and paired macOS acceptance remain
-open. The independent
+CheckoutBranch, the RenameBranch argument mismatch, and CopyBranchName's
+current-branch clipboard route. Labonair has separate dropdown and palette
+workflows but no branch-name clipboard route; native focus, checkout safety,
+rename argument handling, clipboard effects, and paired macOS acceptance
+remain open. The independent
 [`Git diff and review action crosswalk`](parity/action-classification-git-diff-review.md)
 records configured HEAD/default-branch diffs, selected-ref comparison,
 staged/unstaged and per-file views, diff-base persistence, and branch-to-Agent
-review dispatch. Labonair has WorkingTree/Commit ProjectDiff display routes,
+review dispatch, and the `LeaderAndFollower` declaration for which no handler
+or description was found. Labonair has WorkingTree/Commit ProjectDiff display routes,
 but no diff-base or comparison-ref contract, split staged/unstaged sources, or
-branch-review route; native diff states and paired macOS acceptance remain
-open. The independent
+branch-review route. Its `LeaderAndFollower` intent remains unresolved; native
+diff states and paired macOS acceptance remain open. The independent
 [`Git file history and navigation action crosswalk`](parity/action-classification-git-file-history.md)
 records blame/settings, modified-file bulk open, path-scoped history, ref-based
 CommitView, current-file navigation, and provider-backed file permalinks.

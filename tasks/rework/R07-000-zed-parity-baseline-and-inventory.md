@@ -5121,3 +5121,62 @@ Next safe task: Classify and document Git repository and remote management actio
 - Rust gates, native clone/init/project selection, remote action dispatch, and paired visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
 - Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+## Pre-change contract — Git branch copy, pull request, and unresolved diff action
+
+```text
+Request: Classify the remaining Git CopyBranchName, CreatePullRequest, and LeaderAndFollower action IDs against the pinned source and Labonair routes; append evidence to the existing branch-selection, remote-sync, and diff/review packets.
+Request type: R07-000 requirements inventory; documentation only.
+In scope: Three registered-unbound action IDs; CopyBranchName Workspace registration and active GitPanel branch-to-clipboard handler; CreatePullRequest registration guard, current-branch/upstream/hosting-provider URL path; LeaderAndFollower action declaration and absence of a discovered handler/description; local Labonair route search; action catalog rows, existing packet counts, parity packet index, Git capability crosswalk, normative parity summary, and this task record.
+Out of scope: Implementing clipboard, hosting-provider, pull-request, or collaboration behavior; inferring an intended meaning for LeaderAndFollower; adding action bindings; changing Git APIs, settings, persistence, notifications, registries, dependencies, or UI; runtime/visual parity claims; and R07-001/R09 work.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Git capability (labonair-git); Source Control/GitPanel; Workspace action composition; Git hosting provider registry in the pinned source; Agent/ProjectDiff action declaration evidence.
+
+Owner module: Git owns branch and remote state. Workspace owns the pinned action registration and clipboard/URL integrations. The registry entry with no description or handler remains unassigned pending additional source evidence.
+Canonical capability crate: Labonair Git capability is `labonair-git`, with Source Control in `labonair-panel-scm`; Workspace integration is `labonair-workspace`. No local hosting-provider owner or pull-request route was found.
+Canonical user entry point: CopyBranchName is registered in Workspace and reads the active GitPanel's active repository/current branch; CreatePullRequest is registered only for writable non-collaborative projects and is dispatched by a GitPanel menu route. LeaderAndFollower is declared in the Git action list beside diff/review actions, but no handler, documentation, or user behavior was found.
+Alternate entry points: No additional Labonair equivalent routes were found. Existing local branch selection, remote synchronization, and ProjectDiff surfaces are distinct behavior and must not be treated as parity for these actions.
+Public typed contract: No local branch-name clipboard action, hosting-provider registry/PR URL builder, or LeaderAndFollower contract was found. Do not alter contracts in this inventory slice.
+Events: No local events proposed. Pinned CreatePullRequest opens the generated URL externally; no local event contract is proposed.
+Registry contributions: No new registry or binding. Update the existing unbound catalog rows and preserve the LeaderAndFollower entry as behavior-unresolved.
+Settings and scope: No Settings effect or setting change identified.
+Persistence: CopyBranchName writes only the current branch string to the OS clipboard. CreatePullRequest reads the current branch's tracked upstream and remote URLs; it does not create or persist a server-side pull request in the inspected handler. No app-owned persistence change is proposed.
+Migration impact: None in this slice. Any later implementation must first establish a Git-owned typed hosting-provider/PR URL contract and the correct canonical user route.
+Commands: `git::CopyBranchName`, `git::CreatePullRequest`, and `git::LeaderAndFollower`.
+Default keymap: All three are registered without default bindings in the catalog. Preserve their unbound status; verify native invocation separately.
+Notifications: Pinned CreatePullRequest routes missing repository/branch/remote/provider/build-url errors through GitPanel's error toast. Labonair messages must use the statusbar Notifications owner. CopyBranchName silently returns without a GitPanel/current branch in the inspected handler.
+UI-kit components: No visual edits or new controls. Future user-facing controls must use labonair-ui-kit.
+User workflow: Copy the active repository's current branch name; for a tracked branch and supported host, construct and open a pull-request URL using the upstream branch and remote provider. Record LeaderAndFollower as unresolved because its name/declaration alone does not establish a workflow.
+Failure/cancellation/retry behavior: Preserve evidence for missing panel/repository/current branch; writable/collaboration registration guard; missing tracked upstream, missing remote, unsupported URL/provider, URL construction failure, external URL opening; and the absence of any LeaderAndFollower handler. Runtime outcomes remain unverified.
+Security boundary: Do not expose credentials embedded in remote URLs in logs or user-visible errors. Use provider parsing and external URL opening; no new network or credential behavior is proposed.
+Performance budget: No runtime change. Clipboard and URL integration behavior is only documented.
+
+Implementation order: Requirements packet addenda only. Keep each action with its existing workflow packet: branch name copy with branch selection, pull-request URL with remote sync, unresolved declaration with diff/review.
+Focused unit tests: Not applicable to this documentation-only change.
+Contract/integration tests: No tests changed or run.
+Persistence/migration tests: Not applicable; clipboard and externally opened URL outcomes remain runtime acceptance items.
+Command/surface tests: Not applicable; no runtime change.
+Visual states: No visual edits. Native clipboard, GitPanel menu, missing-provider error, external-browser handoff, and action discovery remain acceptance requirements.
+Security/negative tests: Not applicable to this documentation-only change; future PR-provider work must verify credential redaction and URL safety.
+Performance measurement: Not applicable; no runtime change.
+Workspace gates: Diff check, documentation checker, docs verification scope, queue check, affected action-table shape/count check, and focused pinned handler/local route/cross-reference audit.
+Documentation updates: Three registered-unbound action rows; branch selection, remote-sync, and diff/review packets; parity index; Git feature crosswalk; normative parity summary; and this task record.
+Current status: Pending focused action registration/handler and local route audit.
+Target status: Static clipboard and pull-request URL routes classified and LeaderAndFollower marked unresolved; native dispatch and paired macOS acceptance remain open.
+Evidence links: Pinned GitUI copy registration/handler; CreatePullRequest registration/menu dispatch/GitPanel provider URL handler; ProjectDiff Git action declaration; action evidence catalog; Labonair Git, Source Control, Workspace, Agent, and hosting-provider route searches.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Static source inspection does not establish native action discovery, clipboard/browser effects, provider outcomes, or paired visual behavior.
+Remaining migration edges: Clipboard route; typed provider/PR URL support and user entry point; unresolved LeaderAndFollower intent/handler; action dispatch, error notifications, and paired captures.
+Failed/unavailable gates: Rust, native runtime, and visual gates remain R07-000 exit gates.
+Next safe task: Complete this Git action-classification addendum, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify Git branch clipboard, pull request, and unresolved diff action
+
+- Classified `git::CopyBranchName` as the active GitPanel repository's current branch string copied to the OS clipboard; missing GitPanel/current branch returns without an effect. Labonair has no equivalent branch-name clipboard route.
+- Classified `git::CreatePullRequest` as a writable, non-collaborative Workspace action. GitPanel requires the current branch's tracked upstream, resolves the provider remote URL from the tracked remote name with origin/upstream fallbacks, builds a URL, and opens it externally; local source search found no matching Labonair provider or route.
+- Recorded `git::LeaderAndFollower` as an unresolved Git action declaration: no source description, handler, or user-facing behavior was found. No intent is inferred from its name.
+- Updated the three registered-unbound action rows, branch/remote/diff packets, parity packet counts, Git capability crosswalk, normative parity summary, and this task record.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative documents and 209 Markdown files), `python3 scripts/verify.py --scope docs`, and `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active). The focused action ID, cross-reference, pending-state, and packet-count audit passed.
+- Rust gates, native action/clipboard/browser behavior, provider outcomes, LeaderAndFollower intent, and paired visual acceptance were not run for this documentation-only slice and remain R07-000 exit gates.
+- Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.

@@ -28,9 +28,9 @@ source-side research. It records current evidence without claiming parity.
   actions (plus six related registered-unbound stash actions), eight Git
   staging actions (plus two related registered-unbound section actions), five
   Git restore/discard actions, six Git commit-lifecycle actions (plus three
-  related registered-unbound actions), five Git remote-sync actions (plus two
-  related registered-unbound actions), three Git branch selection/rename
-  actions, two Git diff/review actions (plus eight related registered-unbound
+  related registered-unbound actions), five Git remote-sync actions (plus three
+  related registered-unbound actions), four Git branch selection/rename/copy
+  actions, two Git diff/review actions (plus nine related registered-unbound
   actions), two Git file/history actions (plus six related registered-unbound
   actions), three Git add/ignore registered-unbound actions, five Git
   repository/remote-management registered-unbound actions, one Editor Go to
