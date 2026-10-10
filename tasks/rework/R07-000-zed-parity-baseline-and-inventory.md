@@ -636,6 +636,20 @@ the shared UI kit and Settings owner. Native visual evidence remains pending.
   initial workspace, not the Snippets form, so this change's rendered and
   editing states remain visually unverified. CUA still exposes no apps.
 
+## Progress record — 2026-10-10 — Git Graph branch prompt input
+
+- Replaced the simulated character buffer in Git Graph's “Create Branch Here”
+  prompt with a native UI-kit `InputState` editor and the shared text-field
+  frame. The Git Graph owner still validates the submitted name and performs
+  the branch operation; Enter submits through the owner key handler and Escape
+  dismisses the prompt.
+- Focused verification passed: Git Graph (10 tests), package Clippy with
+  warnings denied, `cargo check -p labonair`, formatting, and `git diff
+  --check`. The native UI surface reports no available apps, so the changed
+  prompt could not be captured; its rendered parity remains pending. The
+  documentation checker still reports the 21 existing links into the removed
+  `reference-src/` tree; the active rework queue check passes.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

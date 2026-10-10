@@ -43,8 +43,8 @@ use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{
-    button, caret, context_menu, keybinding_hint, BlinkCursor, ButtonSize, ButtonVariant, IconName,
-    ListItem, MenuItem, Palette,
+    button, context_menu, keybinding_hint, text_field, text_field_surface, text_input, ButtonSize,
+    ButtonVariant, IconName, InputEvent, InputState, ListItem, MenuItem, Palette, TextFieldState,
 };
 
 // ── geometry ───────────────────────────────────────────────────────────────
@@ -488,14 +488,10 @@ pub struct GitGraphView {
     detail_numstat: Option<Vec<FileStat>>,
     /// Open commit right-click menu: `(commit row index, cursor anchor)`.
     commit_menu: Option<(usize, Point<Pixels>)>,
-    /// In-progress "Create Branch Here…" prompt: `(commit row index, buffer)`.
-    branch_prompt: Option<(usize, String)>,
-    branch_prompt_focus: FocusHandle,
-    blink: Entity<BlinkCursor>,
-    _blink_obs: Subscription,
-    blink_focus_wired: bool,
-    _blink_focus_subs: Vec<Subscription>,
+    /// In-progress "Create Branch Here…" prompt: `(commit row index, native input)`.
+    branch_prompt: Option<(usize, Entity<InputState>)>,
     branch_prompt_focused: bool,
+    _branch_prompt_input_subscription: Option<Subscription>,
 }
 
 impl GitGraphView {
@@ -523,8 +519,6 @@ impl GitGraphView {
         })
         .detach();
 
-        let blink = cx.new(|_| BlinkCursor::new());
-        let _blink_obs = cx.observe(&blink, |_, _, cx| cx.notify());
         Self {
             git,
             tokio,
@@ -547,12 +541,8 @@ impl GitGraphView {
             detail_numstat: None,
             commit_menu: None,
             branch_prompt: None,
-            branch_prompt_focus: cx.focus_handle(),
-            blink,
-            _blink_obs,
-            blink_focus_wired: false,
-            _blink_focus_subs: Vec::new(),
             branch_prompt_focused: false,
+            _branch_prompt_input_subscription: None,
         }
     }
 
@@ -1382,6 +1372,45 @@ impl GitGraphView {
         );
     }
 
+    fn open_branch_prompt(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let input = cx.new(|cx| text_field(window, cx).placeholder("Branch name"));
+        let subscription =
+            cx.subscribe(&input, |this, _input, event: &InputEvent, cx| match event {
+                InputEvent::Focus => {
+                    this.branch_prompt_focused = true;
+                    cx.notify();
+                }
+                InputEvent::Blur => {
+                    this.branch_prompt_focused = false;
+                    cx.notify();
+                }
+                _ => {}
+            });
+        self.branch_prompt = Some((idx, input.clone()));
+        self._branch_prompt_input_subscription = Some(subscription);
+        input.update(cx, |state, cx| state.focus(window, cx));
+        cx.notify();
+    }
+
+    fn close_branch_prompt(&mut self, window: &mut Window) {
+        self.branch_prompt = None;
+        self._branch_prompt_input_subscription = None;
+        self.branch_prompt_focused = false;
+        window.focus(&self.focus);
+    }
+
+    fn submit_branch_prompt(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((idx, input)) = self.branch_prompt.take() else {
+            return;
+        };
+        let name = input.read(cx).value().to_string();
+        self._branch_prompt_input_subscription = None;
+        self.branch_prompt_focused = false;
+        window.focus(&self.focus);
+        self.create_branch_at(idx, name, cx);
+        cx.notify();
+    }
+
     fn render_commit_menu(&self, _c: Colors, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let (idx, pos) = self.commit_menu?;
         let commit = self.commits.get(idx)?;
@@ -1424,9 +1453,7 @@ impl GitGraphView {
                     move |_, w, cx| {
                         v.update(cx, |this, cx| {
                             this.commit_menu = None;
-                            this.branch_prompt = Some((idx, String::new()));
-                            w.focus(&this.branch_prompt_focus);
-                            cx.notify();
+                            this.open_branch_prompt(idx, w, cx);
                         })
                     }
                 }),
@@ -1480,7 +1507,7 @@ impl GitGraphView {
     }
 
     fn render_branch_prompt(&self, c: Colors, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        let (_, buf) = self.branch_prompt.as_ref()?;
+        let (_, input) = self.branch_prompt.as_ref()?;
         Some(
             div()
                 .absolute()
@@ -1491,25 +1518,18 @@ impl GitGraphView {
                 .bg(crate::theme::modal_scrim())
                 .on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(|this, _: &MouseDownEvent, _w, cx| {
-                        this.branch_prompt = None;
+                    cx.listener(|this, _: &MouseDownEvent, window, cx| {
+                        this.close_branch_prompt(window);
                         cx.notify();
                     }),
                 )
                 .child(
                     div()
-                        .track_focus(&self.branch_prompt_focus)
                         .key_context("GitGraphBranchPrompt")
                         .on_key_down(cx.listener(Self::on_branch_prompt_key))
                         .on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(|this, _: &MouseDownEvent, window, cx| {
-                                // Explicit re-focus, not just `stop_propagation` — GPUI's
-                                // automatic focus-on-click for `track_focus` and this
-                                // listener share the same mouse-down dispatch pass, and
-                                // `stop_propagation` aborts it before the automatic
-                                // focus transfer runs, silently killing click-to-refocus.
-                                window.focus(&this.branch_prompt_focus);
+                            cx.listener(|_, _: &MouseDownEvent, _window, cx| {
                                 cx.stop_propagation();
                             }),
                         )
@@ -1528,23 +1548,16 @@ impl GitGraphView {
                                 .text_color(c.fg)
                                 .child("Create branch at this commit"),
                         )
-                        .child(
-                            div()
-                                .px_2()
-                                .py_1()
-                                .rounded_sm()
-                                .border_1()
-                                .border_color(c.accent)
-                                .text_size(px(12.0))
-                                .text_color(c.fg)
-                                .flex()
-                                .items_center()
-                                .child(SharedString::from(buf.clone()))
-                                .when(
-                                    self.branch_prompt_focused && self.blink.read(cx).visible(),
-                                    |d| d.child(caret(c.fg, 12.0)),
-                                ),
-                        )
+                        .child(text_field_surface(
+                            "git-graph-branch-name",
+                            c.palette,
+                            if self.branch_prompt_focused {
+                                TextFieldState::Focused
+                            } else {
+                                TextFieldState::Normal
+                            },
+                            text_input(input, c.palette),
+                        ))
                         .child(
                             div()
                                 .flex()
@@ -1561,68 +1574,27 @@ impl GitGraphView {
     fn on_branch_prompt_key(
         &mut self,
         ev: &KeyDownEvent,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some((idx, buf)) = self.branch_prompt.as_mut() else {
+        if self.branch_prompt.is_none() {
             return;
-        };
-        let idx = *idx;
-        match ev.keystroke.key.as_str() {
-            "enter" => {
-                let name = buf.clone();
-                self.branch_prompt = None;
-                self.create_branch_at(idx, name, cx);
-            }
-            "escape" => {
-                self.branch_prompt = None;
-                cx.notify();
-            }
-            "backspace" => {
-                buf.pop();
-                self.blink.update(cx, |b, cx| b.pause(cx));
-                cx.notify();
-            }
-            _ => {
-                if let Some(ch) = ev
-                    .keystroke
-                    .key_char
-                    .as_ref()
-                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
-                {
-                    buf.push_str(ch);
-                    self.blink.update(cx, |b, cx| b.pause(cx));
-                    cx.notify();
-                }
-            }
         }
+        match ev.keystroke.key.as_str() {
+            "escape" => self.close_branch_prompt(window),
+            "enter" => self.submit_branch_prompt(window, cx),
+            _ => return,
+        }
+        cx.notify();
+        cx.stop_propagation();
     }
 }
 
 impl Render for GitGraphView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let _span =
             tracing::trace_span!(target: "labonair::perf", "render", view = "git_graph_panel")
                 .entered();
-        if !self.blink_focus_wired {
-            self.blink_focus_wired = true;
-            self._blink_focus_subs.push(cx.on_focus(
-                &self.branch_prompt_focus.clone(),
-                window,
-                |this, _w, cx| {
-                    this.branch_prompt_focused = true;
-                    this.blink.update(cx, |b, cx| b.start(cx));
-                },
-            ));
-            self._blink_focus_subs.push(cx.on_blur(
-                &self.branch_prompt_focus.clone(),
-                window,
-                |this, _w, cx| {
-                    this.branch_prompt_focused = false;
-                    this.blink.update(cx, |b, cx| b.stop(cx));
-                },
-            ));
-        }
         let c = self.colors(cx);
         div()
             .track_focus(&self.focus)
