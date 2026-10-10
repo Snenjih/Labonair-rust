@@ -47,6 +47,7 @@ source-side research. It records current evidence without claiming parity.
   one Terminal panel toggle and one registered-unbound Terminal panel focus
   action, five registered-unbound Terminal actions (rename, two half-page
   scroll declarations, search-test declaration, and select-all declaration),
+  four registered-unbound TextFinder actions (four macOS-specific and four shared Linux/Windows override entries),
   19 Outline/OutlinePanel actions (six
   default-macOS-bound IDs and 13 registered-unbound panel actions; six of the
   latter occur in seven Vim/Helix entries), one Editor Go to
@@ -69,6 +70,10 @@ source-side research. It records current evidence without claiming parity.
   independently stated user goals, static Labonair owner routes, code coverage,
   and runtime/evidence gaps for 23 default-macOS Search-family actions. No
   action is marked runtime-observed.
+- [`action-classification-text-finder-unbound.md`](action-classification-text-finder-unbound.md) —
+  four registered-unbound TextFinder actions with eight macOS and shared
+  Linux/Windows profile entries; classifies grouped-result folding, modal to
+  tab transfer, query persistence, and the selection-only seed-setting override.
 - [`action-classification-pane.md`](action-classification-pane.md) —
   independently stated user goals, Workspace/Editor owner boundaries, current
   tab/pane routes, and evidence gaps for 22 default-macOS Pane actions. The

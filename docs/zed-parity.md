@@ -266,6 +266,14 @@ through deprecated-alias metadata. The independent
 catalog intent and maps static Labonair owner routes for 23 default-macOS
 Search-family actions. Pinned runtime dispatch, native Labonair interaction,
 and paired visual acceptance remain open for that slice. The independent
+[`TextFinder group and handoff action crosswalk`](parity/action-classification-text-finder-unbound.md)
+classifies four registered-unbound action IDs and all eight macOS/shared
+Linux/Windows profile entries. It records selected result-group folding,
+all-or-none collapse toggling, asynchronous modal-to-tab result transfer, and
+TextFinder's explicit selection-only override of the generic query-seed setting.
+Labonair has Editor code-folds and inline project SearchOverlay results, but no
+matching grouped-result picker or tab conversion. Native dispatch, setting
+scope, and paired visual acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and

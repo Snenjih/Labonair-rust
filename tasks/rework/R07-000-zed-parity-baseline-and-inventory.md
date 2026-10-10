@@ -5996,3 +5996,67 @@ Next safe task: Continue R07-000 action/workflow classification; do not begin R0
 - No Rust build, tests, native action discovery/dispatch, persistence round trips, or visual check was run for this documentation-only slice. Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
 ```
+
+## Pre-change contract — registered-unbound TextFinder actions
+
+~~~text
+Request: Classify the four Linux-registered TextFinder actions without default-map bindings: ToProjectSearch, Fold, Unfold, and ToggleFoldAll; record their macOS and shared Linux/Windows profile overrides, pinned modal/result behavior, query-seed setting, and Labonair search/folding owner routes.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: Four stable action IDs and eight profile override entries; TextFinder and TextFinderDelegate callbacks; per-project query/options persistence; SET-search-files-seed-search-query-from-cursor; the existing Search action packet; Labonair SearchOverlay, Editor project search, code-fold state, and tab/session snapshots; action/keymap and Settings requirement rows; packet index, Search & Files and commands.keymap crosswalks, normative parity summary, and this task.
+Out of scope: Implementing TextFinder, ProjectSearch, folding actions, keybindings, settings, persistence, registries, UI, or a new results tab; modifying SearchOverlay/Editor behavior; claiming native dispatch or visual parity; beginning R07-001 or R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned search/src/text_finder.rs, text_finder/delegate.rs/render.rs, ProjectSearchView, default and platform-specific profile maps, SeedQuerySetting and its default; Labonair Editor/SearchOverlay/search contracts, Workspace session persistence, settings catalog and action/profile inventory.
+
+Owner module: Pinned Search owns TextFinder query/result groups and grouped collapse state; Workspace hosts the modal and owns the pane/tab transition. Locally Editor owns query, project match and document-fold state; Workspace hosts SearchOverlay and adapts project search.
+Canonical capability crate: Pinned search; local labonair-editor for query/result/folding state and labonair-workspace for SearchOverlay/workspace integration. There is no local TextFinder crate or grouped TextFinder picker.
+Sibling crates: Pinned picker, project, workspace, settings; local no new crate or dependency.
+Canonical user entry point: The separate text_finder::Toggle action opens the modal. While TextFinder is active, its picker action menu exposes Open as Tab, and the four classified actions operate on the selected/current search-result groups or move results into a ProjectSearch tab.
+Alternate entry points: The macOS-specific override layer binds ToProjectSearch, Fold, Unfold, and ToggleFoldAll; a shared Linux/Windows override layer binds the same actions. All four use TextFinder / nested Picker contexts. The ToProjectSearch chord overlaps text_finder::Toggle's opening chord in a different context. No default platform-map binding exists for these four IDs.
+Public typed contract: ToProjectSearch transfers current query/options/results and an active search stream into a focused ProjectSearch item without rerunning the search. Fold and Unfold collapse or expand the file group containing the selected match/header; other selected entries are a no-op. ToggleFoldAll collapses every result-file group when none are collapsed, and expands all groups if any are collapsed.
+Events: ToProjectSearch dismisses the modal and adds/focuses the ProjectSearch item after its state is adopted. Group fold actions mutate only TextFinder picker state. No Labonair event or API change is proposed.
+Registry contributions: Preserve all four stable Linux action IDs and all eight profile keymap rows/contexts. Keep the separate default-bound Toggle action distinct; do not add local action or palette registration.
+State owner: TextFinderDelegate owns query, matches, selected row, and collapsed project paths; Editor owns project query/results and document folds.
+Persistence owner: Pinned TextFinderDb stores last query and search option bits per persisted Workspace when the finder is dismissed. Result-group collapse and active selection are transient. Labonair retains the last SearchOverlay query only in process memory; its Editor code-fold ranges are stored in Editor session state, unrelated to TextFinder result groups.
+Settings: SET-search-files-seed-search-query-from-cursor defaults to always for its consumers, but TextFinder explicitly passes SeedQuerySetting::Selection, overriding the global choice and ignoring a bare cursor word. TextFinder is not a consumer of this setting. Labonair has no matching setting; its Editor-only search seed also uses a non-empty selection and has no cursor-word fallback. Update the Search & Files crosswalk to record this exception; do not change the setting catalog or consumer list.
+Commands and keymap: Preserve macOS alt-cmd-f, alt-cmd-[, alt-cmd-], cmd-shift-enter, and shared Linux/Windows ctrl-alt-f, ctrl-{, ctrl-}, ctrl-shift-enter under TextFinder || (TextFinder > Picker > Editor) || (TextFinder > Picker > menu). These are four actions in each platform override layer, eight records total. Leave key sequences and contexts unchanged.
+Notifications: No new notification route. Project search failure/cancellation retains its Search/Editor owner.
+UI-kit components: No UI edit. Pinned TextFinder composes Picker; Labonair SearchOverlay already uses UI-kit inputs, buttons, and list rows. No local grouped result-picker component exists.
+User workflow: Search project files, group matches by file, fold/unfold a selected file's results or all result groups, and convert ongoing modal results into a focused tab without restarting the search.
+Failure/cancellation/retry behavior: Cover absent query/results, selected match versus header versus separator, partial-fold ToggleFoldAll behavior, active asynchronous stream during conversion, superseded/cancelled search, and Workspace/modal dismissal. Native key dispatch and result selection remain acceptance.
+Security boundary: Preserve project-root filtering and safe result open behavior; moving results between views must not widen project access. No boundary change.
+Performance budget: Search and result transfer remain asynchronous; this documentation slice adds no runtime work.
+Removal condition for compatibility code: None; no compatibility path is introduced.
+
+Implementation order: Trace the four handlers and delegate collapse semantics, modal/tab transition and persistence; verify all eight profile entries and context overlap; inspect seed-query Settings usage and Labonair search/fold owner contracts; update the four action rows, overlay references, Settings requirement, independent packet and indexes/crosswalks; run documentation and repository-control gates.
+Focused tests: Not applicable to this documentation-only change; do not add or run tests.
+Contract/integration tests: No runtime contract changed. Modal-to-tab result transfer, grouped selection/collapse, cancellation, and stale stream behavior remain native acceptance cases.
+Persistence/migration tests: No test changes. Record per-Workspace query/options restore and the distinct local session/process-memory state; do not claim format equivalence.
+Command/surface tests: Verify TextFinder active contexts, the same-chord Toggle/ToProjectSearch precedence, all profile-specific shortcuts, picker menu entry, and fold state transitions.
+Visual states: No UI edit. Paired macOS evidence remains required for modal, grouped rows, collapsed/expanded results, and modal-to-tab transition.
+Security/negative tests: Later acceptance verifies out-of-project hits cannot be opened and dismissed/cancelled search cannot leave stale selection or result state.
+Performance measurement: Not applicable.
+Workspace gates: Diff check; docs, agents, knowledge, Settings, and queue; focused four-ID/eight-binding and owner-route audit.
+Documentation updates: Four registered-unbound action rows, their eight keymap overlay references, Search & Files query-seed crosswalk note, TextFinder classification packet, parity packet index, commands.keymap and Search & Files crosswalks, normative parity summary, and this task record.
+Current status: Pinned handlers, overlay entries, explicit query-seed override, and local search/fold owner routes audited. Pre-change contract recorded; packet and documentation gates pending.
+Target status: Distinguish grouped TextFinder results and tab transfer from Editor folding and SearchOverlay project results; preserve every platform override and query-seed effect. Native dispatch and paired macOS acceptance remain open.
+Evidence links: Pinned search/src/text_finder.rs, text_finder/delegate.rs, text_finder/render.rs, ProjectSearchView, default and specific override maps, seed query setting; Labonair search classification, SearchOverlay, Editor view/search state, Workspace session, settings requirements.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Source was inspected; tests and native dispatch were not run.
+Remaining migration edges: No local grouped TextFinder modal/results tab transition or grouped-result folding. Local project SearchOverlay, Editor code folds, and selection seeding are related but separate workflows; seed-setting parity and exact native override precedence remain open.
+Failed/unavailable gates: Rust build, tests, native profile selection/dispatch, persistence round trips, and paired visual evidence are outside this documentation-only slice and remain R07-000 exit gates.
+Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+~~~
+
+## Progress — classify registered-unbound TextFinder actions
+
+~~~text
+- Added [action-classification-text-finder-unbound.md](../../docs/parity/action-classification-text-finder-unbound.md) for four registered-unbound TextFinder actions: ToProjectSearch, Fold, Unfold, and ToggleFoldAll.
+- Preserved all eight profile entries and exact contexts: macOS alt-cmd-f / alt-cmd-[ / alt-cmd-] / cmd-shift-enter; shared Linux/Windows ctrl-alt-f / ctrl-{ / ctrl-} / ctrl-shift-enter. The ToProjectSearch chord overlaps the separate default-bound TextFinder Toggle in a different context; native precedence remains unobserved.
+- Classified selected file-group fold/unfold behavior, ToggleFoldAll's all-or-none behavior from partial state, and ToProjectSearch's asynchronous query/options/results/stream transfer into a focused ProjectSearch tab without rerunning.
+- Confirmed TextFinder explicitly requests SeedQuerySetting::Selection, so the generic seed_search_query_from_cursor setting does not control it and remains absent from its consumer list. Added a Search & Files crosswalk note. Labonair uses selection-only Editor seeding and process-local last-query state; it has no TextFinder result groups or modal-to-tab transition.
+- Linked all eight profile override rows to the semantic packet, updated four action rows, parity packet index, commands.keymap and Search & Files crosswalks, normative summary, and the existing Search packet's reverse-transition row.
+- Focused audit confirmed each of the four action IDs appears once, each of the two profile override registers has exactly four corresponding rows, all eight keys match pinned JSON and preserve TextFinder context, and the setting consumer list remains unchanged.
+- Passed git diff --check; docs (43 normative documents and 225 Markdown files); agents (10 request routes); knowledge; Settings (7 areas and 101 registered UI fields); and active queue verification (46 tasks; R07-000 remains earliest active).
+- No Rust build, tests, native profile/key dispatch, Workspace persistence round trip, or visual check was run for this documentation-only slice. Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Native profile loading/precedence, group selection and collapse dispatch, in-progress stream handoff, query-seed setting scope on its actual consumers, and paired macOS evidence remain open.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+~~~
