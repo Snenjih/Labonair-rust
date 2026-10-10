@@ -2168,6 +2168,95 @@ Next safe task: Continue R07-000 with the next unclassified action family.
 - Next safe task: continue R07-000 with the next unclassified Workspace action
   family and reconcile the remaining action catalog.
 
+## Pre-change contract — classify Workspace bulk item and pane closing
+
+Request: Independently classify the close-all and close-inactive item/pane
+actions, including pinned-item preservation, save intent, partial cancellation,
+and Labonair's current Space-scoped tab-close routes.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `CloseAllItemsAndPanes` and `CloseInactiveTabsAndPanes` under their
+stable action requirement IDs.
+Out of scope: Pane-local close actions already covered by the Pane packet,
+window/tab close and quit behavior, adding commands or bindings, implementation,
+R07-001/R09, and runtime or visual acceptance claims.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, action-classification-pane.md,
+workspace-model.md, Workspace pane lifecycle, item save/close contracts, and
+Labonair's universal tabs and Space model.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns
+cross-pane close selection and pane removal. Each view owner retains its
+content state and save/close contract; Editor owns buffer dirty state.
+Canonical user entry point: Pinned Pane-context actions use macOS
+`Cmd+K Cmd+W` for closing all items and panes and `Ctrl+Alt+Cmd+W` for closing
+inactive tabs and panes. Linux uses `Ctrl+K Ctrl+W` and
+`Alt+Ctrl+Shift+W`; Windows uses `Ctrl+K Ctrl+W` and
+`Ctrl+Shift+Alt+W`, respectively. Labonair currently offers Space-scoped tab
+context-menu close routes and a `Close Other Tabs` palette command.
+Public typed contract: `CloseAllItemsAndPanes` closes unpinned items in every
+center pane; `CloseInactiveTabsAndPanes` retains the active item in the active
+center pane while closing other unpinned items in all center panes. Both
+preserve pinned items. Their optional `save_intent` defaults to `Close`. The
+inactive action applies that argument to other panes, while its active-pane
+retained-item path delegates with the default close intent. Empty panes are
+removed where possible, while the final center pane remains. No new event,
+registry, or API is required for this inventory slice.
+Events and registry contributions: Workspace remains the cross-pane action
+owner; do not add a shell close table or duplicate view ownership.
+Settings and persistence: No setting or schema change. Item removal and
+empty-pane cleanup change Workspace layout; determine save/reload and restore
+behavior through acceptance rather than assuming an automatic reopen history.
+Notifications and failure: Dirty items follow each view's save/close flow.
+Record group and per-item cancellation, save errors, partial completion across
+panes, and focus/layout outcomes; the operation is not assumed atomic. No
+notification is expected for ordinary cancellation or close.
+UI-kit: Reuse the existing shared tab, pane, dialog, and menu components; add
+no local bulk-close controls in this inventory slice.
+Focused inspection: Trace each action's candidate items, pinned filtering,
+active item and pane retention, default and explicit save intent, dirty-group
+prompts, per-item errors/cancellation, pane removal, focus, and layout restore.
+Compare Labonair's current Space-scoped tab routes, preview tabs, dirty Editor
+confirmation, and pending-close cancellation.
+Visual evidence: Pending paired macOS keyboard/mouse checks for clean and dirty
+items, pinned items, multiple panes, save/discard/cancel/error outcomes, and
+the final-pane boundary.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, and exact ID/argument/pinned-state/current-route audit.
+Documentation updates: Two action rows, an independently worded bulk-close
+packet, Workspace tabs/command crosswalks, parity index, normative parity
+scope if needed, and this task's progress record.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Native macOS dispatch and paired visual
+acceptance are unavailable here.
+Next safe task: Continue R07-000 with the next unclassified default-map action
+family after this slice passes its documentation gates.
+
+## Progress record — 2026-10-10 — Workspace bulk close action classification
+
+- Added [`../../docs/parity/action-classification-workspace-bulk-close.md`](../../docs/parity/action-classification-workspace-bulk-close.md)
+  for `CloseAllItemsAndPanes` and `CloseInactiveTabsAndPanes`, including
+  cross-pane selection, pinned-item retention, default and explicit save
+  intent, partial cancellation, and the final-center-pane boundary.
+- Distinguished these Workspace actions from Pane-local close actions and
+  Labonair's Space-scoped universal-tab commands. Recorded that Labonair's
+  preview-tab state does not implement pinned pane items and that its pending
+  close queue has different cancellation behavior.
+- Updated the two stable action rows, Workspace tabs and command/keymap
+  crosswalks, parity index, normative parity scope, and this task's
+  pre-change/progress records. The focused ID, route, save-intent, and
+  cancellation audit passed.
+- Passed `python3 scripts/check_documentation.py` (43 normative documents,
+  181 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active), and
+  `git diff --check`.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, and tests. They remain R07-000 exit gates. Native key dispatch,
+  dirty-item prompt/cancellation outcomes, focus, layout restore, and paired
+  macOS captures remain open. Same-session analysis is independent
+  redevelopment, not separated-room clean-room work. R07-001 and R09 remain
+  unstarted.
+- Next safe task: continue R07-000 with the next unclassified default-map
+  action family and reconcile the remaining action catalog.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

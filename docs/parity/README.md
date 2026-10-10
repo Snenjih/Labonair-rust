@@ -21,8 +21,8 @@ source-side research. It records current evidence without claiming parity.
   actions, one Workspace New Window action, one Workspace New File action,
   one Workspace New Terminal action, one Workspace Open With System action,
   six Workspace dock-sizing actions, five Workspace dock visibility actions,
-  two Workspace major-region focus actions, and nine Workspace pane
-  activation/swap actions;
+  two Workspace major-region focus actions, nine Workspace pane
+  activation/swap actions, and two Workspace bulk item/pane close actions;
   pinned dispatch and native interaction acceptance remain open for those and
   all other actions.
 - [`action-classification-search.md`](action-classification-search.md) —
@@ -78,6 +78,10 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-workspace-pane-activation-swap.md`](action-classification-workspace-pane-activation-swap.md) —
   independently stated zero-based pane activation, directional pane/dock
   focus, adjacent-pane swaps, and Labonair's tab-number shortcut conflict.
+- [`action-classification-workspace-bulk-close.md`](action-classification-workspace-bulk-close.md) —
+  independently stated cross-pane close-all and close-inactive behavior,
+  pinned-item retention, save intent, partial cancellation, and Labonair's
+  Space-scoped tab close routes.
 - [`keymap-overlay-requirements.md`](keymap-overlay-requirements.md) — stable
   IDs for 1,402 bindings across seven macOS base-profile overlays, conditional
   Vim/Helix bindings, and macOS-specific overrides. Profile behavior, action

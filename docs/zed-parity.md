@@ -321,6 +321,13 @@ records zero-based pane indices, the missing-index clone attempt, directional
 focus into panes/docks, adjacent center-pane swaps, and Labonair's tab-number
 shortcut collision; geometry, focus, topology restore, and native key behavior
 remain pending.
+The independent
+[`Workspace bulk item/pane close action crosswalk`](parity/action-classification-workspace-bulk-close.md)
+records cross-pane close-all and close-inactive behavior, pinned-item retention,
+save-intent and partial-cancellation semantics, and Labonair's distinct
+Space-scoped universal-tab routes; save prompts, continuation after
+cancellation, focus, layout restore, dispatch, and paired interaction evidence
+remain pending.
 All other action
 semantics and owner routes, profile selection/reload, user overrides, and
 macOS/Linux/Windows
