@@ -4885,3 +4885,62 @@ Next safe task: Classify and document Git branch selection and rename, then cont
 - Rust gates, native checkout/rename behavior, and paired visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
 - Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+## Pre-change contract — Git diff and review actions
+
+```text
+Request: Independently classify pinned Git diff-base, staged/unstaged, branch-comparison, file-diff, and branch-review actions against Labonair's current typed diff routes.
+Request type: R07-000 requirements inventory; documentation only.
+In scope: Two bound actions (Diff, ReviewDiff); eight related registered-unbound actions (DiffBranch, DiffHead, ToggleDiffBase, CompareWithBranch, ViewUncommittedChanges, ViewUnstagedChanges, ViewStagedChanges, OpenFileDiff); git.diff_base and its default; branch selection/comparison; ProjectDiff, StagedDiff, UnstagedDiff, SoloDiffView, and Agent branch-review dispatch; current Labonair ProjectDiff request/source and Source Control routes.
+Out of scope: Implementing comparison/review actions or new diff providers, generic file history/ViewFile/ViewCommit, hunk staging/restore already classified in sibling packets, changing diff settings or keymaps, runtime/visual parity claims, and R09 work.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Git capability (labonair-git); Git transport (labonair-git-transport); Source Control sibling (labonair-panel-scm); Workspace diff-item hosting; Agent owner as branch-review consumer.
+
+Owner module: Git owns Git change discovery, comparison inputs, and review-diff production; Workspace hosts diff items and actions; Agent consumes a branch diff to open a review thread.
+Canonical capability crate: labonair-git for repository and comparison semantics; labonair-panel-scm is the Git-owned Source Control adapter. The existing typed display request is in labonair-panel; Workspace composes the item.
+Canonical user entry point: Pinned git::Diff from Editor/GitPanel contexts, plus registered Git actions exposed through action discovery. The pinned ReviewDiff route is available from the branch-diff item; CompareWithBranch opens branch selection. Labonair's current entry is the Source Control changed-file row into its workspace ProjectDiff item.
+Alternate entry points: Pinned DiffBranch action/alias, DiffHead, ToggleDiffBase, ViewUncommittedChanges, ViewUnstagedChanges, ViewStagedChanges, and editor-scoped OpenFileDiff; current Labonair history selection opens a commit-source ProjectDiff.
+Public typed contract: Labonair ProjectDiffRequest carries repository root, session ID, DiffSource (WorkingTree or Commit { hash, subject }), changed-file metadata, selected path, and mode. No local typed DiffBase, merge-base comparison, or ReviewBranchDiff contract was found. Do not alter contracts in this inventory slice.
+Events: Existing repository refresh and Workspace item activation only; no event changes proposed.
+Registry contributions: No new registry or contribution. Record pinned Workspace/Git action routes and the existing Git-owned diff item only.
+Settings and scope: Existing git.diff_base has HEAD/default-branch values and default HEAD. Pinned ToggleDiffBase changes the persisted Git setting between those values. Labonair has no corresponding diff-base setting/action found; this packet does not introduce one.
+Persistence: Diff-base choice is user settings-file state in the pinned behavior; displayed diff item identity/state follows Workspace item serialization. Labonair diff requests are transient Workspace items and current WorkingTree/Commit sources; no persistent comparison base.
+Migration impact: None in this slice. Future comparison work must define the canonical typed diff producer contract and Git owner behavior before adapting Workspace/Agent consumers; do not add shell callbacks or infer Git actions from paths.
+Commands: Diff, ReviewDiff, DiffBranch, DiffHead, ToggleDiffBase, CompareWithBranch, ViewUncommittedChanges, ViewUnstagedChanges, ViewStagedChanges, OpenFileDiff.
+Default keymap: Diff has Editor and GitPanel bindings; ReviewDiff has an Editor binding. The eight related actions are registered without default bindings. Preserve exact platform/context rows in the packet/action catalog.
+Notifications: Diff/branch lookup and asynchronous review-diff failures use pinned error notification paths. Missing active repository or missing branch-diff Agent panel can return without opening the requested surface; runtime behavior is unobserved.
+UI-kit components: No UI changes in this slice. Future Labonair diff/review surfaces must compose shared labonair-ui-kit controls.
+User workflow: Open working changes against HEAD or the configured default branch; explicitly show HEAD changes; toggle and persist the comparison base; compare against a selected branch; open all, unstaged, or staged changes; open the active file's Git diff; and send a branch diff to a new Agent review thread.
+Failure/cancellation/retry behavior: Record no active repository/default branch, branch-picker cancellation, non-merge diff base for ReviewDiff, missing Agent panel, diff-load failure, item reuse/activation, persisted setting write/reload, and recovery without losing Workspace state.
+Security boundary: Branch names and diff content remain repository-derived and typed; review content is passed to the Agent as a GitDiff resource. No new trust, permission, or secret boundary is introduced.
+Performance budget: No runtime change. Future branch/file comparisons must remain asynchronous and handle large repositories/diffs without blocking the GPUI foreground thread.
+
+Implementation order: Requirements packet only. Future work must establish the typed diff-source/comparison contract, implement canonical Git branch-base semantics, adapt Workspace and Agent consumers, then connect action entry points and setting persistence.
+Focused unit tests: Not applicable to this documentation-only change.
+Contract/integration tests: No tests changed or run.
+Persistence/migration tests: Not applicable; document pinned git.diff_base persistence and leave local parity unverified.
+Command/surface tests: Not applicable; no runtime change.
+Visual states: Working-tree, default-branch, selected-branch, staged, unstaged, single-file diff, review action/thread, loading, empty, no repository/default branch, failed diff, branch-picker cancellation, no Agent panel, settings toggle/reload, and narrow layout remain native acceptance requirements.
+Security/negative tests: Not applicable to this documentation-only change; verify repository/path scope and review-resource content handling during implementation.
+Performance measurement: Not applicable; no runtime change.
+Workspace gates: Diff check, documentation checker, docs verification scope, queue check, and focused pinned action/schema/settings/review route plus Labonair contract audit.
+Documentation updates: New Git diff/review packet, two bound and eight registered-unbound rows, parity packet index, Git and Diff capability crosswalk, normative parity summary, diff-base settings inventory row, and this task record.
+Current status: Pending focused action, settings, review-consumer, and local typed-route audit.
+Target status: Static Git diff/review requirements classified; native dispatch, persisted setting behavior, end-to-end review, and paired macOS acceptance remain open.
+Evidence links: Pinned ProjectDiff, BranchDiff, AgentPanel and Git action registrations; GitDiffBaseSetting and DiffBase; Labonair panel ProjectDiffRequest and Source Control WorkingTree/Commit routes.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Static route inspection is not native interaction evidence.
+Remaining migration edges: Branch/default-base semantics, typed merge-base and selected-branch sources, staged/unstaged action discovery, active-file diff action, ReviewBranchDiff Agent integration, ToggleDiffBase persistence, errors/recovery, and paired captures.
+Failed/unavailable gates: Rust, native runtime, and visual gates remain R07-000 exit gates.
+Next safe task: Classify and document Git diff/review actions, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify Git diff and review actions
+
+- Added [`action-classification-git-diff-review.md`](../../docs/parity/action-classification-git-diff-review.md) for two bound and eight registered-unbound actions, including configured diff-base, branch selection, split staged/unstaged views, per-file diff, and Agent review dispatch.
+- Updated the two bound and eight unbound action rows, parity packet index/count, Git and Diff capability crosswalks, normative parity summary, `git.diff_base` settings inventory row, and this task record.
+- Focused source audit confirmed Diff/HEAD/default-branch semantics, persisted ToggleDiffBase behavior, missing-default-branch fallback, CompareWithBranch picker flow, staged/unstaged and active-file diff item routes, and the asynchronous merge-base-to-Agent review dispatch.
+- Labonair source audit found `ProjectDiffRequest` supports only WorkingTree and Commit sources. Source Control can emit a whole WorkingTree diff or a read-only commit diff; no local diff-base setting, selected-ref or staged/unstaged source, solo file action, or `ReviewBranchDiff` route was found.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative documents and 206 Markdown files), `python3 scripts/verify.py --scope docs`, and `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active). The focused action ID, packet count, settings link, and crosswalk audit passed for two bound and eight registered-unbound actions.
+- Rust gates, native diff and review behavior, persisted setting reload, and paired visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
+- Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.

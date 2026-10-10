@@ -407,6 +407,13 @@ CheckoutBranch and the RenameBranch argument mismatch. Labonair has
 separate dropdown and palette workflows; native focus, checkout
 safety, rename argument handling, and paired macOS acceptance remain
 open. The independent
+[`Git diff and review action crosswalk`](parity/action-classification-git-diff-review.md)
+records configured HEAD/default-branch diffs, selected-ref comparison,
+staged/unstaged and per-file views, diff-base persistence, and branch-to-Agent
+review dispatch. Labonair has WorkingTree/Commit ProjectDiff display routes,
+but no diff-base or comparison-ref contract, split staged/unstaged sources, or
+branch-review route; native diff states and paired macOS acceptance remain
+open. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The
