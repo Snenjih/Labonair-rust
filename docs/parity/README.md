@@ -17,8 +17,9 @@ source-side research. It records current evidence without claiming parity.
   five deprecated-alias resolutions from the pinned Linux action registry.
   The 585 macOS IDs remain stable. Independent static intent and owner-route
   packets currently cover 23 Search actions, 22 Pane actions, one Editor Go
-  to Line action, and one File Finder action; pinned dispatch and native
-  interaction acceptance remain open for those and all other actions.
+  to Line action, one File Finder action, and two Workspace Open/OpenFiles
+  actions; pinned dispatch and native interaction acceptance remain open for
+  those and all other actions.
 - [`action-classification-search.md`](action-classification-search.md) —
   independently stated user goals, static Labonair owner routes, code coverage,
   and runtime/evidence gaps for 23 default-macOS Search-family actions. No
@@ -36,6 +37,11 @@ source-side research. It records current evidence without claiming parity.
   independently stated intent, Editor/Workspace ownership, current Open File
   route, related Settings targets, and runtime/evidence gaps for the single
   default-macOS File Finder action.
+- [`action-classification-workspace-open.md`](action-classification-workspace-open.md) —
+  independently stated intent, Workspace/Editor ownership, distinct general
+  Open and platform Open Files routes, related Settings targets, and runtime
+  gaps for the macOS-bound Workspace Open action and Linux/Windows-only
+  Workspace OpenFiles action.
 - [`keymap-overlay-requirements.md`](keymap-overlay-requirements.md) — stable
   IDs for 1,402 bindings across seven macOS base-profile overlays, conditional
   Vim/Helix bindings, and macOS-specific overrides. Profile behavior, action

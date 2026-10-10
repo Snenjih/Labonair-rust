@@ -1029,3 +1029,17 @@ correct PID before it could inspect the window.
 before comparing it with the approved debug and packaged Rust binary paths.
 The retry confirmed the correct native window and reached `screencapture`; the
 remaining failure is the genuine macOS Screen Recording permission denial.
+
+## 2026-10-10 — Keep Workspace Open Files distinct from File Finder
+
+**Discovery:** The pinned Linux action catalog lists `editor::OpenFile` as a
+deprecated alias for `workspace::OpenFiles`. Labonair also names its Editor
+File Finder command `editor::OpenFile`, but routes it to a root-scoped fuzzy
+picker with a local `Cmd+Shift+O` default. That shared action-name string does
+not make the two workflows equivalent; File Finder is separately bound to the
+pinned `Cmd+P` action.
+
+**Disposition:** Record the Workspace multi-path action and the action-name
+collision in the [Workspace Open requirements packet](../docs/parity/action-classification-workspace-open.md).
+Labonair's Open Files route remains unimplemented and runtime acceptance is
+pending.

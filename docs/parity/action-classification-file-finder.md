@@ -26,7 +26,7 @@ the same-session independent redevelopment documented in the [parity README](REA
 |---|---|
 | Owner module and canonical crate | Editor — `labonair-editor` owns `FileFinderQuery`, matching, ranking, result limits, and generation-bound session state. |
 | View, listing, and composition | Workspace — `labonair-workspace` hosts the modal view, runs bounded filesystem listing off the foreground thread, and validates a selected path before opening it. Shell (`labonair-shell`) supplies the existing modal host and command composition only. |
-| Canonical user entry point | Current `CommandId::OpenFile` / File > Open File, bound locally to `Cmd+Shift+O`. It opens the keyboard-first FileFinderView. The pinned `Cmd+P` route and repeated-action selection behavior are not mapped. |
+| Canonical user entry point | Current `CommandId::OpenFile` / File > Open File, bound locally to `Cmd+Shift+O`. It opens the keyboard-first FileFinderView. The pinned `Cmd+P` route and repeated-action selection behavior are not mapped. The Workspace path-prompt actions are separate; see the [Workspace Open packet](action-classification-workspace-open.md). |
 | Public typed contract | Editor `FileFinderQuery`, `FileFinderCandidate`, `FileFinderResult`, `FileFinderSession`, `FileFinderSnapshot`, and `FileFinderStatus`; Workspace exposes a validated candidate-open operation. |
 | Query and listing | The local query starts empty, uses smart-case fuzzy matching, ranks basename matches ahead of directory-only matches, and defaults to 100 results (maximum 500). The Workspace adapter enumerates a bounded set of files under its explicit root. |
 | Selection and errors | The view supports keyboard movement and pointer selection. State distinguishes idle, loading, ready, empty, and error. Query generations reject stale results; dismissing cancels in-flight work. |
@@ -42,7 +42,12 @@ arguments in that binding; its schema also exposes optional separate-history
 and include-ignored values, whose defaults and setting interaction need
 acceptance. Source inspection indicates an invocation while the picker is
 already open cycles its selection. Verify all of this against the pinned
-runtime. Required target states include:
+runtime. The pinned Linux action catalog separately lists `editor::OpenFile`
+as a deprecated alias for `workspace::OpenFiles`; Labonair's same-named Editor
+command routes to File Finder and does not implement that Workspace action.
+Neither File Finder nor Open Project is a substitute for the native Open and
+Open Files workflows in the [Workspace Open packet](action-classification-workspace-open.md).
+Required target states include:
 
 - **Open and focus:** no active project, local and remote project, open file,
   closed modal, already-open modal, initial focus, repeated `Cmd+P`, and focus

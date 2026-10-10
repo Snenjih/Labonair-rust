@@ -1380,6 +1380,89 @@ R07-000 remains active.
   host without `DISPLAY` or `WAYLAND_DISPLAY`. Same-session work is independent
   redevelopment; R07-001 and R09 remain unstarted.
 
+## Pre-change contract — classify Workspace file-open actions
+
+Request: Distinguish the pinned Workspace native path-prompt actions from
+File Finder and map current Labonair owners, routes, settings, and evidence.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `ACT-MACOS-workspace-Open` and `ACT-PLATFORM-workspace-OpenFiles`,
+their default key/context, file/directory/multi-selection behavior, window
+placement, settings, and current Labonair file/project-open routes.
+Out of scope: Implementing a native picker, changing menu/keymap bindings,
+starting R07-001/R09, or claiming platform runtime acceptance.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, settings-requirements.md, product,
+Workspace, command/registry, and Editor owner contracts.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns path
+selection and Workspace/window transitions; Editor owns opened document state.
+Canonical user entry points: Pinned macOS Workspace Open (`Cmd+O`) and the
+Linux/Windows Workspace OpenFiles (`Ctrl+O`) menu action. Labonair currently
+routes Open File to Editor-owned FileFinder and Open Project to a typed
+Workspace transition; neither is a multi-path OS-picker route.
+Public typed contract: Existing Workspace identity/transition and file-open
+operations; no Labonair multi-path prompt contract currently exists.
+Events: No new events; distinguish the existing OpenProject transition.
+Registry contributions: No new command or action registrations in this
+inventory slice. Record the missing native picker and exact action routes.
+Allowed dependency changes: None.
+Settings: Cross-reference target `default_open_behavior` and
+`use_system_path_prompts`; add no values and leave their
+load/save/reset/reload effects pending the Settings owner.
+State and persistence: The Workspace owns project/window identity and session
+restoration; selected paths become open Workspace items or project roots.
+Notifications and failure: Record cancellation, invalid/missing paths,
+unavailable directories, and failed window/workspace creation as acceptance.
+Security: Native selection may include paths outside the current root; verify
+the target scope and permission behavior without weakening FileFinder's
+root-safe candidate validation.
+UI-kit: Reuse shared selection/picker surfaces where the native path dialog
+does not provide the platform UI; add no local replacement control here.
+Focused tests: Trace Workspace identity/transition and command-owner evidence;
+do not call them native picker or multi-file acceptance.
+Visual evidence: Pending paired macOS and Linux/Windows runtime interaction.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, exact action/settings route audit.
+Documentation updates: Workspace-open action packet, action register,
+FileFinder cross-reference, parity index/crosswalk, normative scope, discovery
+log, and progress.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Native app interaction is unavailable here.
+Next safe task: Continue R07-000 with action inventory and later implementation
+work only from the independent requirements packets.
+
+## Progress record — 2026-10-10 — Workspace Open action classification
+
+- Added [`../../docs/parity/action-classification-workspace-open.md`](../../docs/parity/action-classification-workspace-open.md)
+  for `ACT-MACOS-workspace-Open` and
+  `ACT-PLATFORM-workspace-OpenFiles`. It separates general file/folder Open
+  from the Linux/Windows multi-file Open Files flow and records Workspace and
+  Editor ownership, menu/key routes, path-prompt states, error recovery, and
+  required native acceptance.
+- Recorded target Settings
+  `SET-general-default-open-behavior` (`existing_window`, `USER`) and
+  `SET-general-use-system-path-prompts` (`true`, `USER`), with Labonair wiring
+  and settings lifecycle checks still open.
+- Traced current Labonair Open Project to a single-directory, in-place project
+  picker and current Open File to Editor File Finder. The packet records that
+  the local `editor::OpenFile` route does not implement pinned Open Files,
+  despite the pinned Linux action catalog's deprecated alias metadata.
+- Logged the non-obvious action-name collision in
+  [`../../memory/bugs_and_fixes.md`](../../memory/bugs_and_fixes.md) so future
+  work keeps the two path-selection workflows distinct.
+- Updated the action register, File Finder packet, parity index, feature
+  crosswalk, and normative parity scope. The exact ID/default/scope/owner-route
+  audit passed. No local test covers pinned action dispatch, multi-path
+  selection, or the required window behavior.
+- Passed `python3 scripts/check_documentation.py` (43 normative documents,
+  172 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active),
+  `git diff --check`, and the focused Workspace Open inventory audit.
+- Not run for this documentation-only slice: Rust formatting, workspace check,
+  Clippy, and tests. They remain R07-000 exit gates. Pinned macOS and Windows
+  runtime interaction and paired captures remain unavailable; Linux evidence
+  is static only. Same-session work is independent redevelopment. R07-001 and
+  R09 remain unstarted.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

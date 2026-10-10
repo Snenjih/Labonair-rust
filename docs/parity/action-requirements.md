@@ -103,11 +103,18 @@ independently states catalog intent and maps the current Labonair owner and
 route for 23 default-macOS Search-family actions. Those rows remain pending
 runtime dispatch and native interaction evidence. Semantic result, exact owner,
 and Labonair route are also statically mapped for the 22 default-macOS Pane
-actions in [the Pane classification register](action-classification-pane.md);
-their runtime dispatch remains pending. Semantic result, exact owner, and
-Labonair route remain `Pending` for all other action rows. A profile cell of
-`—` means no binding was found for that action in that default profile; it does
-not imply that the action is unavailable through other entry points.
+actions in [the Pane classification register](action-classification-pane.md),
+the Go to Line action in
+[its classification register](action-classification-go-to-line.md), and the
+File Finder action in
+[its classification register](action-classification-file-finder.md). The
+Workspace `Open` and `OpenFiles` actions have independent goal and route
+records in the [Workspace Open classification](action-classification-workspace-open.md).
+Runtime dispatch remains pending for every classified action. Semantic result,
+exact owner, and Labonair route remain `Pending` for all other action rows. A
+profile cell of `—` means no binding was found for that action in that default
+profile; it does not imply that the action is unavailable through other entry
+points.
 
 The deprecated `branches::OpenRecent` identifier targets a registered action
 that has no separate direct name in the three defaults. Track that canonical
@@ -397,7 +404,7 @@ requirement above:
 | `ACT-MACOS-editor-UnfoldLines` | `editor::UnfoldLines` | `alt-cmd-]` (`Editor`) | `ctrl-}` (`Editor`) | `ctrl-shift-]` (`Editor`) | Editor editing and display | Pending | Pending | Pending | Pending |
 | `ACT-MACOS-editor-UnfoldRecursive` | `editor::UnfoldRecursive` | `cmd-k cmd-]` (`Editor`) | `ctrl-k ctrl-]` (`Editor`) | `ctrl-k ctrl-]` (`Editor`) | Editor editing and display | Pending | Pending | Pending | Pending |
 | `ACT-MACOS-encoding_selector-Toggle` | `encoding_selector::Toggle` | `cmd-k n` (`Workspace`) | `ctrl-k n` (`Workspace`) | `ctrl-k n` (`Workspace`) | Project, files, search, and language tools | Pending | Pending | Pending | Pending |
-| `ACT-MACOS-file_finder-Toggle` | `file_finder::Toggle` | `cmd-p` (`Workspace`) | `ctrl-p` (`Workspace`)<br />`ctrl-e` (`Workspace`)<br />`ctrl-p` (`FileFinder \|\| (FileFinder > Picker > Editor)`) | `ctrl-p` (`Workspace`)<br />`ctrl-e` (`Workspace`)<br />`ctrl-p` (`FileFinder \|\| (FileFinder > Picker > Editor)`) | Project, files, search, and language tools | Catalog intent and static route: [File Finder crosswalk](action-classification-file-finder.md) | Editor (`labonair-editor`); Workspace (`labonair-workspace`) adapter | Local `Cmd+Shift+O` Open File route; pinned `Cmd+P` route missing | Pending (macOS interaction not observed) |
+| `ACT-MACOS-file_finder-Toggle` | `file_finder::Toggle` | `cmd-p` (`Workspace`) | `ctrl-p` (`Workspace`)<br />`ctrl-e` (`Workspace`)<br />`ctrl-p` (`FileFinder \|\| (FileFinder > Picker > Editor)`) | `ctrl-p` (`Workspace`)<br />`ctrl-e` (`Workspace`)<br />`ctrl-p` (`FileFinder \|\| (FileFinder > Picker > Editor)`) | Project, files, search, and language tools | Catalog intent and static route: [File Finder crosswalk](action-classification-file-finder.md) | Editor (`labonair-editor`); Workspace (`labonair-workspace`) adapter | Local `Cmd+Shift+O` Open File route; pinned `Cmd+P` route missing; separate from Workspace Open/OpenFiles | Pending (macOS interaction not observed) |
 | `ACT-MACOS-git-Amend` | `git::Amend` | `cmd-shift-enter` (`GitDiff > Editor`)<br />`cmd-shift-enter` (`CommitEditor > Editor`)<br />`cmd-shift-enter` (`GitPanel`)<br />`cmd-shift-enter` (`GitCommit > Editor && mode == auto_height`) | `ctrl-shift-enter` (`GitCommit > Editor && mode == auto_height`)<br />`ctrl-shift-enter` (`GitPanel`)<br />`ctrl-shift-enter` (`GitDiff > Editor`)<br />`ctrl-shift-enter` (`CommitEditor > Editor`) | `ctrl-shift-enter` (`GitCommit > Editor && mode == auto_height`)<br />`ctrl-shift-enter` (`GitPanel`)<br />`ctrl-shift-enter` (`GitDiff > Editor`)<br />`ctrl-shift-enter` (`CommitEditor > Editor`) | Git and review | Pending | Pending | Pending | Pending |
 | `ACT-MACOS-git-ApplyCurrentStash` | `git::ApplyCurrentStash` | `ctrl-space` (`StashDiff > Editor`) | `ctrl-space` (`StashDiff > Editor`) | `ctrl-space` (`StashDiff > Editor`) | Git and review | Pending | Pending | Pending | Pending |
 | `ACT-MACOS-git-Blame` | `git::Blame` | `cmd-alt-g b` (`Editor`) | `alt-g b` (`Editor`) | `alt-g b` (`Editor`) | Git and review | Pending | Pending | Pending | Pending |
@@ -669,8 +676,8 @@ requirement above:
 | `ACT-MACOS-workspace-NewFile` | `workspace::NewFile` | `cmd-n` (`Workspace && !Terminal`)<br />`cmd-n` (`Welcome`) | `new` (`Workspace`)<br />`ctrl-n` (`Workspace`)<br />`ctrl-n` (`Welcome`) | `ctrl-n` (`Workspace`)<br />`ctrl-n` (`Welcome`) | Workspace lifecycle and application actions | Pending | Pending | Pending | Pending |
 | `ACT-MACOS-workspace-NewTerminal` | `workspace::NewTerminal` | `ctrl-~` (`Workspace`)<br />`cmd-n` (`Terminal`) | `ctrl-~` (`Workspace`) | `ctrl-shift-`` (`Workspace`)<br />`ctrl-n` (`Terminal`) | Workspace lifecycle and application actions | Pending | Pending | Pending | Pending |
 | `ACT-MACOS-workspace-NewWindow` | `workspace::NewWindow` | `cmd-shift-n` (`Workspace`) | `shift-new` (`Workspace`)<br />`ctrl-shift-n` (`Workspace`) | `ctrl-shift-n` (`Workspace`) | Workspace lifecycle and application actions | Pending | Pending | Pending | Pending |
-| `ACT-MACOS-workspace-Open` | `workspace::Open` | `cmd-o` (`<global>`) | `open` (`<global>`)<br />`ctrl-k ctrl-o` (`<global>`)<br />`ctrl-k ctrl-o` (`RecentProjects \|\| (RecentProjects > Picker > Editor)`) | `ctrl-k ctrl-o` (`<global>`)<br />`ctrl-k ctrl-o` (`RecentProjects \|\| (RecentProjects > Picker > Editor)`) | Workspace lifecycle and application actions | Pending | Pending | Pending | Pending |
-| `ACT-PLATFORM-workspace-OpenFiles` | `workspace::OpenFiles` | — | `ctrl-o` (`<global>`) | `ctrl-o` (`<global>`) | Workspace lifecycle and application actions | Pending | Pending | Pending | Pending |
+| `ACT-MACOS-workspace-Open` | `workspace::Open` | `cmd-o` (`<global>`) | `open` (`<global>`)<br />`ctrl-k ctrl-o` (`<global>`)<br />`ctrl-k ctrl-o` (`RecentProjects \|\| (RecentProjects > Picker > Editor)`) | `ctrl-k ctrl-o` (`<global>`)<br />`ctrl-k ctrl-o` (`RecentProjects \|\| (RecentProjects > Picker > Editor)`) | Workspace lifecycle and application actions | Choose files/folders and open under the explicit or configured window policy: [Workspace Open classification](action-classification-workspace-open.md) | Workspace (`labonair-workspace`); Editor (`labonair-editor`) opens selected documents | Local Open Project is directory-only; local Open File opens File Finder; general path-open route missing | Pending (runtime interaction not observed) |
+| `ACT-PLATFORM-workspace-OpenFiles` | `workspace::OpenFiles` | — | `ctrl-o` (`<global>`) | `ctrl-o` (`<global>`) | Workspace lifecycle and application actions | Choose multiple files and open them in a new window: [Workspace Open classification](action-classification-workspace-open.md) | Workspace (`labonair-workspace`); Editor (`labonair-editor`) opens selected documents | Local Editor `CommandId::OpenFile` opens File Finder; multi-path/new-window route missing | Pending (Linux metadata only; Linux/Windows interaction not observed) |
 | `ACT-MACOS-workspace-OpenWithSystem` | `workspace::OpenWithSystem` | `ctrl-shift-enter` (`ProjectPanel`)<br />`ctrl-shift-enter` (`InvalidBuffer`) | `ctrl-shift-enter` (`ProjectPanel`)<br />`ctrl-shift-enter` (`InvalidBuffer`) | — | Workspace lifecycle and application actions | Pending | Pending | Pending | Pending |
 | `ACT-MACOS-workspace-ReopenLastPicker` | `workspace::ReopenLastPicker` | `cmd-k cmd-p` (`Workspace`) | `ctrl-k ctrl-p` (`Workspace`) | `ctrl-k ctrl-p` (`Workspace`) | Workspace lifecycle and application actions | Pending | Pending | Pending | Pending |
 | `ACT-MACOS-workspace-ResetActiveDockSize` | `workspace::ResetActiveDockSize` | `ctrl-alt-0` (`Workspace`) | `ctrl-alt-0` (`Workspace`) | `alt-r` (`Workspace`) | Workspace lifecycle and application actions | Pending | Pending | Pending | Pending |

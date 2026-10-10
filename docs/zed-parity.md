@@ -277,7 +277,12 @@ paired visual evidence remain open. The independent
 [`File Finder action crosswalk`](parity/action-classification-file-finder.md)
 maps the single default-macOS open-file action to the Editor-owned query model
 and Workspace adapter, records related Settings targets and local route gaps,
-and leaves dispatch and paired interaction evidence pending. All other action
+and leaves dispatch and paired interaction evidence pending. The separate
+[`Workspace Open action crosswalk`](parity/action-classification-workspace-open.md)
+classifies the macOS general Open action and Linux/Windows Open Files action,
+their window and path-picker Settings, and the current single-directory versus
+File Finder route gaps; native dispatch and interaction evidence remain
+pending. All other action
 semantics and owner routes, profile selection/reload, user overrides, and
 macOS/Linux/Windows
 runtime evidence also remain open; these static inventories are not parity
