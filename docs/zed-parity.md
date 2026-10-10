@@ -293,6 +293,12 @@ records active-center-pane Follow Next and Escape-to-Unfollow behavior,
 remembered targets, the one-participant edge case, and the planned Collaboration
 owner gap; native dispatch, participant ordering, network recovery, and paired
 interaction evidence remain pending. The independent
+[`Workspace worktree-security action crosswalk`](parity/action-classification-workspace-worktree-security.md)
+specifies default-restricted project/worktree trust, separate path and global
+auto-trust choices, typed Workspace consumers, the unbound trust reset, and
+Labonair's missing route. The Settings path/backing-field mismatch, reset
+discovery, persistence-failure behavior, native dispatch, and paired macOS
+evidence remain open. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

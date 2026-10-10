@@ -17,9 +17,9 @@ source-side research. It records current evidence without claiming parity.
   five deprecated-alias resolutions from the pinned Linux action registry.
   The 585 macOS IDs remain stable. Independent static intent and owner-route
   packets currently cover 23 Search actions, 22 Pane actions, two Workspace
-  collaborator-follow actions, one Editor Go
-  to Line action, one File Finder action, two Workspace Open/OpenFiles
-  actions, one Workspace New Window action, one Workspace Add Folder to
+  collaborator-follow actions, one Workspace worktree-security action,
+  one Editor Go to Line action, one File Finder action, two Workspace
+  Open/OpenFiles actions, one Workspace New Window action, one Workspace Add Folder to
   Project action, one Workspace New File action,
   one Workspace New Terminal action, one Workspace Open With System action,
   six Workspace dock-sizing actions, five Workspace dock visibility actions,
@@ -58,6 +58,9 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-workspace-collaborator-follow.md`](action-classification-workspace-collaborator-follow.md) —
   independently stated active-pane collaborator cycling and Unfollow behavior,
   Vim/Helix overlay keys, transient state, and the missing Collaboration owner.
+- [`action-classification-workspace-worktree-security.md`](action-classification-workspace-worktree-security.md) —
+  independently stated Restricted Mode consent, path-scoped trust, the global
+  auto-trust setting, reset behavior, and the missing Labonair trust workflow.
 - [`action-classification-workspace-new-window.md`](action-classification-workspace-new-window.md) —
   independently stated intent, Workspace/application-window ownership,
   `On New Window` setting behavior, the missing Labonair action route, and

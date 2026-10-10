@@ -2829,6 +2829,143 @@ family after this slice passes its documentation gates.
 - Next safe task: continue R07-000 with the next unclassified default-map
   action family and reconcile the remaining action catalog.
 
+## Pre-change contract — classify Workspace Toggle Worktree Security
+
+Request: Independently classify the Restricted Mode trust decision reached by
+`ToggleWorktreeSecurity`, including default-deny behavior, trust scope
+validation, persistence, consumers, and current Labonair security gaps.
+Request type: Requirements and security-boundary inventory; no runtime change.
+In scope: `ACT-MACOS-workspace-ToggleWorktreeSecurity`, its relationship to
+unbound `ACT-REGISTRY-LINUX-workspace-ClearTrustedWorktrees`, and
+`SET-general-session-trust-all-projects`. Record the default global key on
+macOS, Linux, and Windows, the action's alternate meaning while the decision
+modal is open, and the global auto-trust setting's default and path mismatch.
+Out of scope: Implementing project trust or clearing trust in this slice,
+other Settings beyond the global trust override, SSH host-key acceptance,
+MCP tab grants, implementation, R07-001/R09, and runtime or visual acceptance.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, settings-requirements.md,
+`docs/security/trust-boundaries.md`, Workspace project/worktree identity,
+shared modal/dismissal contracts, persisted security decisions, and
+Editor/MCP execution gates.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns the
+action, Restricted Mode decision surface, and user-selected trust scope for
+project/worktree paths. Settings stores the global auto-trust value only.
+Editor, Agent, Git, and MCP consumers use a narrow typed trust decision before
+project-controlled behavior runs. Keep trust state and persistence inside
+Workspace; do not put the policy in settings or shell conditionals.
+Canonical user entry point: macOS `Ctrl+Cmd+S`, Linux `Ctrl+Alt+Shift+S`, and
+Windows `Ctrl+Shift+Alt+S`, global; the titlebar Restricted Mode warning and
+Agent profile-picker warning also open the decision. When the decision is open,
+the same action selects Stay in Restricted Mode. Labonair has no project-trust
+action, mouse route, dialog, or default binding. SSH host trust is separate.
+Public typed contract: If the current project contains restricted worktrees
+or single-file roots, open a blocking decision that lists affected paths and
+explains that Restricted Mode blocks project settings, language servers, and
+MCP server installation, and asks the user to review project settings for
+configured commands or extensions. Agent project-local skills and disallowed
+tools are restricted, and Git repository workers receive trust state; the
+global setting and explicit trust decisions can affect linked-worktree trust.
+Explicit Trust and Continue trusts the listed paths.
+The optional, unchecked parent-trust checkbox trusts a containing folder; for
+one directory worktree it exposes a read-only-until-checked editable path that
+defaults to the project parent. That path must be nonempty, absolute (or
+home-relative with tilde expansion), and an ancestor or equal to the project.
+Multiple directory worktrees use a static parent-folder scope; single-file
+roots use a separate “Trust all single files” choice. Stay in Restricted Mode
+leaves paths restricted. While the modal is active, the same action chooses
+Stay and dismisses it. If nothing is restricted, the action is a no-op.
+Escape and outside-click dismissal are blocked until a choice is made.
+Events and registry contributions: Keep action presentation in Workspace.
+Publish trust decisions through a narrow typed contract consumed by project
+settings, language services, Agent, Git, and MCP owners before they expose or
+execute project-controlled behavior. Keep this policy distinct
+from SSH host-key trust and MCP per-tab grants.
+Settings and persistence: The general Security switch “Trust All Projects By
+Default” skips per-project Restricted Mode consent; its declared default is
+false. The pinned Settings UI names its JSON path `session.trust_all_projects`,
+while the backing settings value is named `trust_all_worktrees`; verify the
+effective serialized path and live behavior. Preserve this global opt-in as a
+Settings value whose effect is Workspace-owned. Individual trust decisions
+remain security state, not project settings. Persist explicit trusted paths
+with local or remote-host identity. The pinned Restricted Mode trust flow
+covers local, SSH, and WSL projects; Docker and collaboration remotes use
+provider-managed behavior that needs its own verification. Verify host
+isolation, single-file and directory trust, optional parent scope, restart/reopen,
+turning the global override on and off, and clearing trust.
+`ClearTrustedWorktrees` is a separate unbound action that clears saved trust;
+newly opened projects return to Restricted Mode, while already-open projects
+require restart to apply the clearing. Persistence-failure recovery and the
+restart outcome after a failed trust save are not established by static
+evidence and must be specified and tested before implementation.
+Notifications and failure: Default to Restricted Mode. Escape/outside-click
+dismissal is blocked until the user chooses a button. Invalid parent scope
+keeps the modal open and identifies the field error. Static source review
+does not establish what the user sees after a failed trust save or whether
+trust survives restart. Define explicit current-session and restart behavior,
+visible retry/recovery, and fail-closed handling for a failed trust write
+before implementation.
+UI-kit: Use shared AlertModal, checkbox, input, button, path-list, focus, and
+scroll components. Do not add a shell-local trust dialog or let dismissal
+callbacks bypass explicit consent.
+Focused inspection: Trace no/multiple restricted paths, directories and
+single-file roots, local, SSH/WSL, Docker, and collaboration project identity, initial modal
+behavior,
+checkbox defaults, editable and static scopes, absolute/ancestor/~ validation,
+Trust, Stay, Escape/outside click, action reuse while open, empty-state no-op,
+global auto-trust enable/disable, persistence failure, project settings/LSP/
+MCP restrictions, ClearTrustedWorktrees, restart, and reopen. Resolve the
+Settings UI path/backing-field discrepancy with a saved-value trace.
+Visual evidence: Pending paired macOS checks for warning text, affected paths,
+checkbox/scope field, inline validation, explicit choices, blocked dismissal,
+and focus/scroll behavior at narrow window sizes.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, and exact action-ID/binding/owner/decision/scope/persistence/
+consumer/security audit.
+Documentation updates: One action row, the related unbound-action row and
+global trust-setting record, a Workspace worktree-security packet,
+`docs/security/trust-boundaries.md`, `privacy.security` and command/keymap
+crosswalks, parity index, normative parity scope, and this task's progress
+record.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Labonair lacks the project trust workflow;
+native modal interaction and paired macOS captures are unavailable. R07-001
+and R09 remain unstarted.
+Next safe task: Continue R07-000 with the next unclassified default-map action
+family after this slice passes its documentation gates.
+
+## Progress record — 2026-10-10 — Workspace worktree-security classification
+
+- Added the independent Restricted Mode packet for
+  `ACT-MACOS-workspace-ToggleWorktreeSecurity`, including macOS/Linux/Windows
+  global bindings, titlebar and Agent mouse entry points, explicit consent,
+  single-file and directory roots, validated parent trust, global auto-trust,
+  Agent and Git effects, remote-provider differences, and the unbound
+  `ACT-REGISTRY-LINUX-workspace-ClearTrustedWorktrees` reset action.
+- Updated the action matrix, unbound-action inventory, existing global trust
+  setting record, parity index, privacy/keymap crosswalks, normative parity
+  plan, and security trust-boundary contract. Labonair still has no connected
+  project/worktree trust workflow; the Editor untrusted-root policy remains
+  unconnected to Workspace.
+- Static reference and Labonair source review only. Same-session work is
+  independent redevelopment, not separated-room clean-room implementation.
+- Passed: `python3 scripts/check_documentation.py` (43 normative docs /
+  188 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active),
+  `git diff --check`, and the focused action ID/binding/owner/scope/settings/
+  consumer/security audit.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, or tests. They remain R07-000 exit gates. Native macOS action
+  dispatch, titlebar/modal/Agent interactions, paired captures, global-setting
+  saved-key behavior, Clear Trusted Worktrees discovery, and trust-save
+  failure/retry behavior remain open.
+- Other remote providers (Docker and collaboration) require their own trust
+  policy verification. The global Settings UI path
+  `session.trust_all_projects` differs from the backing value
+  `trust_all_worktrees`; saved-value behavior is unverified.
+- Next safe task: classify Workspace `ToggleZoom` (`Shift+Escape`, global)
+  and continue the R07-000 action inventory. R07-001 and R09 remain unstarted.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified
