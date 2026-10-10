@@ -3682,6 +3682,115 @@ then continue with remaining inventory; do not start R07-001 or R09.
 - Next safe task: Continue the remaining R07-000 action and workflow
   inventory; do not begin R07-001 or R09.
 
+## Pre-change contract — classify Image Viewer zoom actions
+
+Request: Classify the Image Viewer zoom action family across keyboard,
+toolbar, percentage editing, wheel, pinch, and drag inputs; state the
+distinct Fit-to-View and 100% reset outcomes and the view-state persistence.
+Request type: Requirements and default-bound action ownership inventory; no
+runtime change.
+In scope: `ACT-MACOS-image_viewer-FitToView`,
+`ACT-MACOS-image_viewer-ResetZoom`, `ACT-MACOS-image_viewer-ZoomIn`,
+`ACT-MACOS-image_viewer-ZoomOut`, and
+`ACT-MACOS-image_viewer-ZoomToActualSize`; their ImageViewer context and
+macOS/Linux/Windows bindings, toolbar controls, zoom limits/steps, pan input,
+view-state persistence, and current Labonair route.
+Out of scope: Image decoding and format support; preview open/save lifecycle;
+adding a Preview crate; changing the toolbar or app menu; editing image
+pixels; Workspace and text-font zoom; R07-001/R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Default action/keymap inventory, Preview feature crosswalk,
+UI-kit/toolbar ownership, image-viewer setting inventory, and file item
+serialization contract.
+Owner module: Planned Preview capability (`file.previews`) owns Image Viewer
+rendering, zoom state, actions, and toolbar. Editor/Workspace owns opening and
+hosting the view; Keymap owns action bindings. No Labonair canonical Preview
+crate currently exists or is assigned, so the implementation task must settle
+that boundary before code without inventing it in this inventory packet.
+Canonical user entry point: `ImageViewer` context actions are available only
+while the Image Viewer is focused. The active view toolbar provides Zoom Out,
+an editable percent label, Zoom In, and Fit to View. Right-clicking the percent
+label resets to 100%. No toolbar button for ZoomToActualSize was found.
+Public typed contract: `ZoomIn`/`ZoomOut` multiply/divide the current scale by
+1.1 and clamp action-driven scale to 10%–2000%. `ResetZoom` and
+`ZoomToActualSize` both set 100% and clear pan offset. `FitToView` selects the
+smaller width/height fit ratio, never upscales beyond 100%, and clears pan; it
+does nothing until container bounds and image dimensions are available. The
+first rendered layout also starts at fit-to-view scale. Fit scale is computed
+separately from `set_zoom`; extremely small fit scales may fall below the
+10% clamp and require runtime verification.
+State and persistence: Current zoom and pan live in the ImageView. The
+serializable item stores the image path, not zoom/pan, and zoom actions do not
+write Settings. `ImageViewerSettings.unit` only selects binary/decimal file
+size labels; it is unrelated to zoom. After restore/new first layout, fit
+behavior should be checked; do not claim zoom persistence.
+Events and registry contributions: Preview contributes its five typed
+actions and active-view toolbar controls. Keymap contributes the platform
+default bindings below; no global menu or zoom registry is required.
+Allowed dependency changes: None for this inventory slice. Compatibility
+code: none; do not add a parallel local zoom action path.
+Notifications and failure: Zoom/pan are synchronous view state and need no
+notification. Missing image dimensions/container bounds disable the fit
+effect; malformed percent input cancels without altering the prior view.
+Image load errors belong to Preview's separate open/decode workflow.
+UI-kit: Reuse shared `IconButton`, `Tooltip`, `Label`, and the Settings/UI-kit
+numeric input contract for the toolbar and editable percentage field. Keep all
+controls in the owning Preview surface.
+Focused verification: Confirm all five default bindings and ImageViewer
+context; toolbar and right-click routes; 1.1 multiplicative step and
+10%–2000% input/action limits; fit-to-view no-upscale rule and extreme-small
+fit edge; two equivalent 100% reset effects; scroll modifier and cursor anchor;
+wheel-pan, pinch, left/middle drag pan; cancellation/invalid percent input;
+image-view restore and no Settings writes; and current Labonair owner/routes.
+Visual evidence: Pending paired native macOS captures for first-fit landscape
+and portrait images, 100% and extreme scale bounds, fit/actual-size contrast,
+editable and invalid percentages, pointer-focused zoom/pan, pinch, narrow
+toolbar layout, and restored Image Viewer item. Record build, OS, window/image
+bounds, scale, zoom percentage, pan offset, input device, and focus context.
+Workspace gates: Diff check, documentation checker, docs verification scope,
+queue check, and focused action/owner/input/persistence/local-route audit.
+Rust formatting, workspace check, Clippy, and tests remain R07-000 exit gates
+and are not run for this documentation-only slice.
+Documentation updates: Five action rows; a standalone Image Viewer zoom
+classification packet; parity index; Preview capability crosswalk and
+normative parity note; and this task's progress record.
+Security impact: N/A; zoom changes local presentation only. Performance
+impact: No runtime change; future image scaling/rendering must remain
+non-blocking and reuse cached image resources.
+Known limitations: Same-session reference research and requirements writing
+are independent redevelopment, not separated-room clean-room work. Native
+action dispatch, toolbar visuals, modifier interpretation, restoration, and
+paired macOS evidence remain unverified; Preview crate ownership is open.
+R07-001 and R09 remain unstarted.
+Next safe task: Complete this Image Viewer zoom classification within R07-000,
+then continue with remaining inventory; do not start R07-001 or R09.
+
+## Progress record — 2026-10-10 — Image Viewer zoom classification
+
+- Added the independent Image Viewer packet for five bound actions:
+  FitToView, ResetZoom, ZoomIn, ZoomOut, and ZoomToActualSize. It specifies
+  their `ImageViewer` context, platform bindings, 100% resets versus capped
+  FitToView, 1.1 keyboard/button steps, 10%–2000% adjusted scale, percentage
+  editing, modifier-wheel/pinch zoom, drag/wheel pan, and path-only item
+  serialization.
+- Updated all five action rows with semantics, the planned Preview owner and
+  unassigned crate boundary, current missing Labonair routes, the Preview
+  crosswalk, parity action counts/index, and this task's change contract.
+- Static pinned keymap/view/control/serialization and local capability/source
+  review only. Same-session research and packet authoring are independent
+  redevelopment, not separated-room clean-room implementation.
+- Passed: `git diff --check`, `python3 scripts/check_documentation.py`
+  (43 normative docs / 193 Markdown files), `python3 scripts/verify.py
+  --scope docs`, `python3 scripts/check_rework_queue.py` (46 tasks; R07-000
+  active), and the focused five-action/context/scale/input/persistence/
+  owner/local-route audit.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, or tests. They remain R07-000 exit gates. Native ImageViewer
+  dispatch, toolbar behavior, input-modifier behavior, restored state, fit
+  scale edge cases, and paired macOS captures remain open.
+- Next safe task: Continue classifying the remaining R07-000 action and
+  workflow inventory; do not begin R07-001 or R09.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

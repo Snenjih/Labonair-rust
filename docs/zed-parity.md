@@ -330,6 +330,11 @@ registered, default-keymap-unbound direct/maximize actions from the global
 ToggleZoom route and distinguishes active-Pane ZoomIn/Out from Pane
 maximization. Focus dispatch, restore behavior, palette/keymap reachability,
 macOS registration, and paired captures remain pending. The independent
+[`Image Viewer zoom action crosswalk`](parity/action-classification-image-viewer-zoom.md)
+records five context-bound fit, reset, actual-size, and incremental image
+scale actions, the percentage toolbar, pointer gestures, and path-only item
+serialization. Labonair's Preview owner/crate, actions, settings boundary,
+native dispatch, and paired macOS evidence remain open. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

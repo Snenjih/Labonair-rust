@@ -18,8 +18,9 @@ source-side research. It records current evidence without claiming parity.
   The 585 macOS IDs remain stable. Independent static intent and owner-route
   packets currently cover 23 Search actions, 22 Pane actions, two Workspace
   collaborator-follow actions, one Workspace worktree-security action,
-  one Workspace zoom action, one Editor Go to Line action, one File Finder
-  action, two Workspace Open/OpenFiles actions, one Workspace New Window action,
+  four Workspace zoom actions, five Image Viewer zoom actions, one Editor Go
+  to Line action, one File Finder action, two Workspace Open/OpenFiles actions,
+  one Workspace New Window action,
   one Workspace Add Folder to
   Project action, one Workspace New File action,
   one Workspace New Terminal action, one Workspace Open With System action,
@@ -49,6 +50,10 @@ source-side research. It records current evidence without claiming parity.
   independently stated intent, Editor/Workspace ownership, current Open File
   route, related Settings targets, and runtime/evidence gaps for the single
   default-macOS File Finder action.
+- [`action-classification-image-viewer-zoom.md`](action-classification-image-viewer-zoom.md) —
+  independently stated Image Viewer zoom/fit/reset actions, toolbar and
+  percentage editing, wheel/pinch/drag input, view-state persistence, and the
+  missing Labonair Preview owner and route.
 - [`action-classification-workspace-open.md`](action-classification-workspace-open.md) —
   independently stated intent, Workspace/Editor ownership, distinct general
   Open and platform Open Files routes, related Settings targets, and runtime
