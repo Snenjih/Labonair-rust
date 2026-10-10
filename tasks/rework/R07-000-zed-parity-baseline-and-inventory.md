@@ -4757,7 +4757,6 @@ Next safe task: Classify and document the Git commit lifecycle packet, then cont
 - Rust gates, native interaction, and paired visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
 - Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
-
 ## Pre-change contract — default-bound ProjectPanel actions
 
 ```text
@@ -5416,4 +5415,63 @@ Next safe task: Continue R07-000 action/workflow classification; do not begin R0
 - Focused static audit passed for 20 bound action rows and packet rows, all expected owner/routes, 41/16 macOS-profile entries/IDs, 20/14 Linux/Windows entries/IDs, ten Vim/Helix entries/IDs, and three linked Settings effects.
 - Passed git diff --check, python3 scripts/check_documentation.py (43 normative documents and 214 Markdown files), verify scopes docs, agents, knowledge, and settings, and check_rework_queue.py (46 tasks; R07-000 remains earliest active).
 - No Rust build/test, native action dispatch, file-operation recovery, Settings save/reload, or visual check was run for this documentation-only slice. They remain R07-000 exit gates. Same-session source analysis and independently authored requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+
+## Pre-change contract — generic Menu navigation actions
+
+```text
+Request: Classify the six default-macOS-bound menu actions whose semantic/owner/local-route fields remain unresolved: Restart, SecondaryConfirm, SelectChild, SelectFirst, SelectLast, and SelectParent.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: Pinned menu action declarations and discovered call sites; exact default macOS/Linux/Windows bindings; Atom and Vim/Helix overlays; Labonair UI-kit menu behavior, shell action definitions, and local routes; six action rows; one action packet; parity packet index, commands/keymap crosswalk, normative parity summary, and this task record.
+Out of scope: Adding action handlers or key bindings; changing menu controls, shell composition, command providers, Settings, persistence, registries, dependencies, or UI; claiming runtime dispatch; and beginning R07-001 or R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: `labonair-ui-kit` owns reusable controls; `labonair-shell` composes the native application menu and defines app-menu actions; `labonair-keymap` owns user binding data. Product modules own their menu-item behavior and any secondary confirmation effect.
+
+Owner module: Pinned `menu` defines generic action identifiers and short intent descriptions; focused components provide selection, submenu, and secondary-confirm behavior. Labonair candidate owner is `labonair-ui-kit` for shared popover/context menu keyboard behavior, with the focused product owner retaining item-specific confirmation behavior. Shell and Keymap own global menu composition and binding application.
+Canonical capability crate: `labonair-ui-kit` for shared control interaction; `labonair-shell` for application menu actions; no single feature owner for all focused consumer actions.
+Canonical user entry point: Focused shared context/popover menu or hierarchical picker/list; some actions also target non-menu ordered lists. The shell's native application menu is a separate entry point and uses the local `labonair::` action namespace.
+Alternate entry points: Default and profile key bindings in contexts recorded in the action and keymap registers.
+Public typed contract: No local equivalents for these six `menu::` actions are defined by Labonair's `labonair::` shell action set. Do not invent one in this documentation slice.
+Events: No local event changes proposed.
+Registry contributions: No registry changes. Preserve the existing pinned action IDs, default bindings, and profile-layer records.
+Settings and scope: No Settings effect identified.
+Persistence: Menu/list focus, selected item, and submenu depth are transient UI state. User key overrides remain Keymap-owned and persistent by existing contract.
+Migration impact: None in this slice. If implemented later, shared focus traversal belongs in UI Kit, while secondary-confirm results remain owned by each provider.
+Commands: `menu::Restart`, `menu::SecondaryConfirm`, `menu::SelectChild`, `menu::SelectFirst`, `menu::SelectLast`, and `menu::SelectParent`.
+Default keymap: Keep all recorded platform bindings. Classify the two Atom Home/End overlay entries and Vim/Helix boundary and hierarchy bindings without treating static maps as dispatched behavior.
+Notifications: None proposed.
+UI-kit components: Shared `context_menu`, `popover_menu`, menu rows, and controlled submenu interaction.
+User workflow: Move to first/last entries, enter or exit a child menu, invoke a provider's alternative confirmation, and inspect the declared menu restart action without inferring an unobserved handler.
+Failure/cancellation/retry behavior: Boundary selection on empty lists, unavailable child/parent transitions, disabled items, focus loss, repeated confirmation, and `Restart`'s missing discovered handler remain explicit static or runtime evidence cases.
+Security boundary: No new authority or data access.
+Performance budget: No runtime change.
+
+Implementation order: Read the pinned menu declaration and concrete handler examples, inspect local reusable menu controls and shell action definitions, classify exact action/keymap data, update the requirement register and evidence index, then run docs/queue gates.
+Focused tests: Not applicable to documentation-only change; do not add or run tests.
+Contract/integration tests: No runtime contracts changed.
+Persistence/migration tests: Not applicable.
+Command/surface tests: Native menu dispatch remains a later acceptance requirement.
+Visual states: No visual edits. Keyboard focus, boundaries, nested submenu transitions, and menu-dismiss behavior remain paired native acceptance requirements.
+Security/negative tests: Not applicable; no new authority boundary.
+Performance measurement: Not applicable; no runtime change.
+Workspace gates: Diff check, documentation check, docs/agents/knowledge verification, active queue check, focused action/profile/cross-reference audit, and pinned/local source-route audit.
+Documentation updates: Six bound action rows; one generic Menu action packet; parity index; commands/keymap crosswalk; normative parity summary; and this task record.
+Current status: Pending focused pinned handler, local UI-kit, keymap-profile, and cross-reference audit.
+Target status: Static intent, per-provider ownership, current shared menu support, profile bindings, and evidence gaps classified; native dispatch and paired visual acceptance remain open.
+Evidence links: Pinned menu action declarations, Picker/context-menu handlers, shared profile keymaps and Atom/Vim overlays; Labonair UI Kit context menu, Shell action namespace/native menu, and action/keymap inventories.
+Known limitations: Same-session source review and independently authored requirements are redevelopment, not separated-room clean-room implementation. Action declarations and keymap entries alone do not establish handler registration, runtime dispatch, focus behavior, or visual parity.
+Remaining migration edges: Missing generic typed actions and shortcut adapters; complete keyboard boundary and hierarchy navigation in shared popover controls; provider-owned secondary confirmation; unexplained pinned `Restart` handler; native dispatch and visual evidence.
+Failed/unavailable gates: Rust, native runtime, and visual gates remain R07-000 exit gates.
+Next safe task: Complete this generic Menu action-classification slice, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify generic Menu navigation actions
+
+- Added [`action-classification-menu-navigation.md`](../../docs/parity/action-classification-menu-navigation.md) for six default-bound generic Menu actions. The packet separates shared selection/navigation intent from provider-owned secondary confirmation and preserves the unresolved pinned `menu::Restart` handler.
+- Updated all six action rows with pinned semantics, Labonair owners/routes, and explicit pending native evidence. The focused audit confirmed that all macOS/Linux/Windows bindings and contexts are unchanged.
+- Classified 17 macOS, 15 Linux, and 15 Windows default binding records across the six action IDs, plus 20 macOS profile entries (18 Vim/Helix and two Atom) and two shared Linux/Windows Atom entries.
+- Compared pinned Picker, ContextMenu, list, hierarchy, and profile handlers with Labonair UI Kit and Shell. Local controls request Up/Down focus movement, handle Escape, and support controlled submenu movement; no matching generic action registrations or first/last/secondary-confirm/restart routes were found.
+- Focused static audit passed for six requirement rows, preserved platform binding cells, and all 22 profile overlay records. Passed `git diff --check`, `python3 scripts/verify.py --scope docs` (43 normative documents and 215 Markdown files), and `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active).
+- No Rust build, tests, native action dispatch, Settings save/reload, or visual check was run for this documentation-only slice. Native action/focus behavior, profile precedence, the Restart action, and paired macOS menu acceptance remain R07-000 exit gates. Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.

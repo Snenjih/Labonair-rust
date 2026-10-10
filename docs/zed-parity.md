@@ -470,7 +470,11 @@ marked-file comparison, reveal, and focus actions. It records the 41 macOS-profi
 20 Linux/Windows-profile, and 10 Vim/Helix bindings in this action subset, three
 preview/auto-open Settings effects, and Labonair's local Explorer/Workspace gaps.
 Native dispatch, file recovery, Settings save/reload, and paired macOS visuals remain
-open. The
+open. The independent [generic Menu navigation action crosswalk](parity/action-classification-menu-navigation.md)
+classifies six default-bound actions and their Atom/Vim/Helix layers. It records
+provider-owned secondary confirmation, Labonair UI Kit focus/submenu routes, and
+the pinned Restart action declaration with no discovered handler. Native dispatch,
+profile precedence, keyboard focus, and paired menu acceptance remain open. The
 independent
 [`Outline and OutlinePanel action crosswalk`](parity/action-classification-outline-panel-actions.md)
 classifies the searchable Editor Outline picker, five default-macOS-bound
