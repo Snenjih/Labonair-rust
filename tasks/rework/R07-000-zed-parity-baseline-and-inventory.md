@@ -2724,6 +2724,111 @@ family after this slice passes its documentation gates.
 - Next safe task: continue R07-000 with the next unclassified default-map
   action family and reconcile the remaining action catalog.
 
+## Pre-change contract — classify Workspace collaborator-follow actions
+
+Request: Independently classify `FollowNextCollaborator` and `Unfollow`,
+including active-pane scope, collaborator cycling, remembered targets,
+disconnection/error states, and current Labonair ownership gaps.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `ACT-MACOS-workspace-FollowNextCollaborator` and
+`ACT-MACOS-workspace-Unfollow` with their default macOS/Linux/Windows
+bindings. Record the related Vim/Helix overlay bindings for FollowNext as a
+cross-reference without replacing the stable default-action IDs.
+Out of scope: Account, channel, call, project sharing, collaboration transport,
+Agent workflows, implementing a collaboration owner, and paired runtime or
+visual acceptance.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, Workspace active-pane and focus
+contracts, followable view state, collaborator membership/presence, and the
+planned Collaboration capability contract.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns the
+two key actions and active-pane follow projection. The planned Collaboration
+capability owns collaborator identity, call membership, and follow transport;
+it has no canonical Labonair crate yet and its typed Workspace boundary is
+unresolved.
+Canonical user entry points: Follow Next Collaborator is global: macOS
+`Ctrl+Alt+Cmd+F`, Linux `Ctrl+Alt+Shift+F`, Windows `Ctrl+Shift+Alt+F`.
+Unfollow is `Escape` in Workspace context on all three platforms. The Vim/
+Helix overlay also binds Follow Next Collaborator to `[ f` and `] f` in
+normal, visual, and operator modes. Labonair has no collaboration actions or
+default bindings.
+Public typed contract: Follow Next Collaborator targets the active center
+pane. If that pane follows a project collaborator, move to the next available
+target and wrap; when not following, restore its previous target if still
+available or select the first available collaborator. With no available
+target, leave follow state unchanged. Record the order presented to users;
+do not assume it is alphabetical. Starting a follow synchronizes the pane to
+the selected leader's active view. Unfollow identifies the leader associated
+with the active center pane, stops that follow session, and otherwise does
+nothing. It does not leave the call or unshare the project. If that session
+also backs another follower surface, return that surface to its local state
+as well. Test the one-collaborator case, where pinned cycling can resolve to
+the current target, and Agent targets separately.
+Events and registry contributions: Workspace owns the action adapter and
+pane-local projection. Collaboration must provide typed membership, follow,
+and stop-follow contracts; do not add transport or peer state to the shell or
+store another module's private membership map in Workspace.
+Settings and persistence: No setting is introduced by either action. Follow
+state and a pane's previous leader are transient interaction state, not saved
+Editor or project content. Account, project sharing, and call settings belong
+to the future Collaboration capability. Verify what survives disconnect,
+project switch, pane close, and session restart.
+Notifications and failure: With no eligible collaborator, Follow Next is a
+no-op. Pinned follow and unfollow network failures are logged by the detached
+action path; determine whether another collaboration surface informs the user
+and how to retry or clear stale follow UI. Removing a collaborator clears
+their follow state. Local editing may itself leave follow mode and must not be
+mistaken for a failed keyboard action.
+UI-kit: Reuse shared collaborator identity, active-view, cursor, and status
+surfaces supplied by the owning modules; this inventory slice adds no local
+presence indicator or control.
+Focused inspection: Trace action contexts and key precedence, center-pane
+scope with multiple panes and focused docks, candidate order and wrap,
+remembered target, no and one collaborator, Agent, stale/departed leader,
+network failure, local edit, explicit Escape, call leave, pane close, and
+session restore.
+Visual evidence: Pending paired macOS checks for followed-leader identity,
+active-view/cursor tracking, pane focus, Escape precedence, no peers, and
+connection loss in narrow and multi-pane windows.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, and exact action-ID/binding/context/owner/active-pane/state/failure
+audit.
+Documentation updates: Two action rows, a collaborator-follow packet,
+collaboration and command/keymap crosswalks, parity index, normative parity
+scope if needed, and this task's progress record.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Labonair has no current collaboration runtime;
+native dispatch and paired macOS capture remain unavailable. R07-001 and R09
+remain unstarted.
+Next safe task: Continue R07-000 with the next unclassified default-map action
+family after this slice passes its documentation gates.
+
+## Progress record — 2026-10-10 — Workspace collaborator-follow classification
+
+- Added [`../../docs/parity/action-classification-workspace-collaborator-follow.md`](../../docs/parity/action-classification-workspace-collaborator-follow.md)
+  for `FollowNextCollaborator` and `Unfollow`, recording active center-pane
+  scope, target cycling and remembered targets, the one-participant edge case,
+  transient state, failures, and the unresolved Workspace/Collaboration owner
+  boundary.
+- Updated two stable action rows with default platform bindings and owner
+  routes. Cross-referenced both Vim/Helix overlay bindings and updated the
+  collaboration and command/keymap crosswalks, parity index, and normative
+  parity scope. Static repository inspection confirms no Labonair collaboration
+  runtime, follow state, command, or default binding.
+- Passed `python3 scripts/check_documentation.py` (43 normative documents,
+  187 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active),
+  `git diff --check`, and the focused action ID/binding/context/owner/Vim
+  overlay/crosswalk audit.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, and tests. They remain R07-000 exit gates. Native bindings,
+  participant ordering, one/no-participant behavior, network recovery,
+  collaboration owner resolution, and paired macOS captures remain open.
+  Same-session analysis is independent redevelopment, not separated-room
+  clean-room work. R07-001 and R09 remain unstarted.
+- Next safe task: continue R07-000 with the next unclassified default-map
+  action family and reconcile the remaining action catalog.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

@@ -16,7 +16,8 @@ source-side research. It records current evidence without claiming parity.
   keymaps, with 2,731 binding/context records and four null entries. It records
   five deprecated-alias resolutions from the pinned Linux action registry.
   The 585 macOS IDs remain stable. Independent static intent and owner-route
-  packets currently cover 23 Search actions, 22 Pane actions, one Editor Go
+  packets currently cover 23 Search actions, 22 Pane actions, two Workspace
+  collaborator-follow actions, one Editor Go
   to Line action, one File Finder action, two Workspace Open/OpenFiles
   actions, one Workspace New Window action, one Workspace Add Folder to
   Project action, one Workspace New File action,
@@ -54,6 +55,9 @@ source-side research. It records current evidence without claiming parity.
   independently stated multi-directory add-to-current-project behavior,
   collaboration restriction, root persistence, and Labonair's single-root
   Open Project distinction.
+- [`action-classification-workspace-collaborator-follow.md`](action-classification-workspace-collaborator-follow.md) —
+  independently stated active-pane collaborator cycling and Unfollow behavior,
+  Vim/Helix overlay keys, transient state, and the missing Collaboration owner.
 - [`action-classification-workspace-new-window.md`](action-classification-workspace-new-window.md) —
   independently stated intent, Workspace/application-window ownership,
   `On New Window` setting behavior, the missing Labonair action route, and

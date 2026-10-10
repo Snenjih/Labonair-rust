@@ -288,6 +288,11 @@ records directory-only multi-selection, visible roots in the current project,
 the collaboration restriction, worktree persistence, and Labonair's distinct
 single-root Open Project route; native picker, remote-root, partial-error, and
 paired interaction evidence remain pending. The independent
+[`Workspace collaborator-follow action crosswalk`](parity/action-classification-workspace-collaborator-follow.md)
+records active-center-pane Follow Next and Escape-to-Unfollow behavior,
+remembered targets, the one-participant edge case, and the planned Collaboration
+owner gap; native dispatch, participant ordering, network recovery, and paired
+interaction evidence remain pending. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The
