@@ -55,7 +55,9 @@ source-side research. It records current evidence without claiming parity.
   one registered-unbound AnyBrackets action exposed in the Command Palette
   when Vim/Helix is enabled (its commented `b` candidate is inactive and `b`
   remains bound to Parentheses), one AnyPair action without a platform-default
-  binding but with one shared Helix-mode `m` binding, 19 Outline/OutlinePanel actions (six
+  binding but with one shared Helix-mode `m` binding, and one registered-unbound
+  AnyQuotes palette action whose commented `q` candidate is inactive (active
+  `q` remains MiniQuotes), 19 Outline/OutlinePanel actions (six
   default-macOS-bound IDs and 13 registered-unbound panel actions; six of the
   latter occur in seven Vim/Helix entries), one Editor Go to
   Line action,
@@ -122,6 +124,9 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-vim-any-pair.md`](action-classification-vim-any-pair.md) —
   the Helix-mode `m` binding, query-backed current pair, scanned next/previous
   selection, and Labonair's missing Helix/text-object route.
+- [`action-classification-vim-any-quotes.md`](action-classification-vim-any-quotes.md) —
+  the unbound quote text object, commented `q` candidate versus active
+  MiniQuotes, line-local delimiter matching, and change-surround route.
 - [`action-classification-terminal-clear.md`](action-classification-terminal-clear.md) —
   the pinned saved-screen/cwd-history effect, platform bindings, Labonair's ANSI
   PTY command route, and native scrollback/runtime acceptance gaps.

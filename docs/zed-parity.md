@@ -303,6 +303,11 @@ records the Helix-only shared `m` binding, language-query current-pair path,
 text-scanned next/previous selection, and missing local Helix/text-object
 owner route. Profile dispatch, per-language query results, and paired macOS
 acceptance remain open. The independent
+[`Vim AnyQuotes text-object crosswalk`](parity/action-classification-vim-any-quotes.md)
+records the focused-Editor Command Palette route, commented `q` candidate and
+active MiniQuotes binding, line-local quote matching, nearest fallback,
+change-surround path, and missing local action. Palette, platform, and paired
+macOS acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and

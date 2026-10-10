@@ -6471,3 +6471,79 @@ Next safe task: Continue R07-000 with `vim::AnyQuotes`; do not begin R07-001 or 
 - Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, profile load/dispatch, palette invocation, live language-query result, key dispatch, selection/edit, persistence round trip, or paired visual evidence were run for this documentation-only slice.
 - Next safe task: Continue R07-000 with `vim::AnyQuotes`; do not begin R07-001 or R09.
 ~~~
+
+
+## Pre-change contract — Vim AnyQuotes text object
+
+~~~text
+Request: Classify ACT-REGISTRY-LINUX-vim-AnyQuotes, its inactive commented `q` candidate versus active MiniQuotes binding, focused-Editor palette route, line-local quote matching and nearest fallback, change-surround use, Helix adapter limits, and Labonair's Editor/Keymap gap.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: `vim::AnyQuotes`; QUOTE_PAIRS and shared delimiter-scanner semantics; inside/around, visual, operator, and `cs` behavior; shared profile `q` candidate and active `vim::MiniQuotes`; mode settings; command-palette availability; difference from MiniQuotes, AnyPair, and VerticalBars; local Editor, Keymap, and palette route; registered action row, shared-layer note, packet index, `commands.keymap` and `editor.text` crosswalks, normative summary, and this task record.
+Out of scope: Implementing quote text objects, choosing a replacement default for `q`, adding a binding, changing mode settings, or claiming runtime dispatch/visual parity; beginning R07-001 or R09.
+Active task: R07-000, earliest incomplete task in `tasks/rework/README.md`.
+Dependencies: Continue after AnyPair; finish action/workflow inventory before R07-001.
+
+Owner module: Editor owns delimiter matching, selection, operators, and buffer edits; Keymap owns profile and user bindings; Command Palette provides generic action discovery.
+Canonical capability crate: `labonair-editor` for behavior; optional command and custom binding metadata belong to `labonair-keymap`.
+Sibling crates: Existing command-palette core/UI/runtime only if typed discoverability is needed; no new crate.
+Canonical user entry point: Pinned Command Palette exposes the registered action with a focused Editor when Vim/Helix is enabled. The action needs Visual/object context to select; the generic object action in Normal mode without a pending operator cannot select a quote pair. The built-in shared profile does not bind AnyQuotes: its commented `q` candidate is inactive and active `q` invokes MiniQuotes.
+Alternate entry points: A custom key binding can reach the action if user override dispatch is supported; the pinned custom route and local action registration are unverified. The palette is the pinned discoverable route.
+Public typed contract: Editor-owned quote-object request over single-quoted, double-quoted, and backtick delimiter families, with inside/around and nearest fallback; the action may also be supplied to change-surround. Labonair has no corresponding typed object contract.
+Events: No cross-module event is needed for buffer selection; Keymap supplies a binding only if a user/default command descriptor is registered.
+Registry contributions: Pinned Vim registers AnyQuotes on each Editor; the palette enumerates focused action listeners. Labonair has no AnyQuotes action or command descriptor. Do not add an action-only global table.
+Allowed dependency changes: None.
+Removal condition for temporary code: None; this is an inventory slice.
+
+State owner: Editor owns cursor/selection, pending object operator, quote range, and edit; Keymap owns optional override state.
+Persistence owner: No quote-range persistence. User-authored binding persists through Keymap's existing file; mode settings persist through Settings.
+Settings and scope: Pinned `vim_mode` and `helix_mode` are user-scoped with false defaults; either enables the shared layer and palette Vim namespace. The AnyQuotes `q` candidate is commented out; active `q` is MiniQuotes. Labonair has an Editor-owned `editor.vimMode` partial counterpart and no Helix mode; no new setting is implied.
+Migration impact: None for docs-only work; any future user override must use current Keymap file parsing, precedence, and conflict handling.
+Commands: `vim: any quotes` appears in the focused Editor's Command Palette when Vim/Helix is enabled. A pending `i`, `a`, or `cs` operator can consume the quote range. The common profile text-object context includes Helix next/previous, but `AnyQuotes` has no HelixTextObject adapter, so a directional Helix selection does not produce an AnyQuotes range.
+Default keymap: No platform-default AnyQuotes binding. Shared `vim.json` has a commented `q` candidate under object contexts; active `q` maps to `vim::MiniQuotes`.
+Notifications: None; no matching quote range is silent.
+UI-kit components: No new control; use the existing command palette and Keymap surfaces.
+User workflow: Focus a Vim/Helix Editor, open Command Palette, and invoke AnyQuotes from a pending object or Visual context; or configure a user binding. For `cs`, bind the action in its change-surround context, select the source quote pair, then choose the replacement delimiter.
+Failure/cancellation/retry behavior: Quote matching is literal and line-local. A delimiter immediately preceded by backslash is ignored. If no complete pair is found, the object range is absent and pending edit operators do not modify text. Outside an enclosing range the algorithm selects the nearest candidate. In Helix next/previous contexts the action lacks a `HelixTextObject` implementation, so the directional selector ignores its error; record this as a route gap, not supported behavior.
+Security boundary: None beyond ordinary local buffer editing.
+Performance budget: No local runtime work. Future scanning processes the current line for each of three delimiter families and must keep input responsive for long lines.
+
+Contract: Record action ID, disabled default binding, active MiniQuotes distinction, exact pair families/matching rules, palette and `cs` routes, Helix directional limitation, and owner boundary.
+Owner implementation: None; documentation-only.
+Composition adapter: None; document generic focused-Editor palette dispatch.
+Consumer changes: None.
+Command/surface contribution: Update existing action/overlay registers and parity crosswalks; do not add a fake row for the commented binding or duplicate the command palette.
+Obsolete path removed: None.
+
+Focused unit tests: N/A; documentation-only slice, and no tests are added or run.
+Contract/integration tests: Pending macOS Editor/Keymap acceptance for quote matching, `i`/`a`/`cs`, visual selection, palette dispatch, and Helix next/previous unsupported behavior.
+Persistence/migration tests: N/A for quote selection; custom binding save/reload and mode setting lifecycle remain owner acceptance.
+Command/surface tests: Verify command palette visibility by mode/focus, absence from default maps, active `q`→MiniQuotes profile binding, any user override precedence, and `cs` behavior.
+Visual states: No UI edit; paired native palette/editor interaction evidence remains required.
+Security/negative tests: N/A beyond unmatched, escaped, and newline-boundary quote states.
+Performance measurement: N/A for docs-only change; future long-line scans need responsiveness measurements.
+Workspace gates: Diff check; docs, agents, knowledge, settings, active queue, documentation checker, and focused source/profile/local-route audit.
+Documentation updates: AnyQuotes packet; registered-action row; shared Linux/Windows layer note; packet index; `commands.keymap` and `editor.text` crosswalks; normative summary; this task record.
+Current status: Pinned registration, quote-pair search, active/commented keymap status, palette and `cs` routes, Helix adapter limitation, and local gap under static audit; documentation and gates pending.
+Target status: State literal quote behavior and route status precisely without treating MiniQuotes as AnyQuotes or claiming native acceptance.
+Evidence links: `zed-refrence/zed/crates/vim/src/object.rs`; `surrounds.rs`; `helix/object.rs`; `helix/select.rs`; `zed-refrence/zed/assets/keymaps/vim.json`; `docs/parity/keymap-nonmacos-requirements.md`; `docs/parity/settings-requirements.md`; `docs/capabilities.md`; `docs/registries.md`; `crates/editor/src/vim.rs`; `crates/keymap/src/command_provider.rs`.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Pinned tests/source exist but no runtime action, custom binding, or native selection has been executed.
+Remaining migration edges: Labonair lacks AnyQuotes object matching/action, Helix object selection, and command descriptor. The active `q`→MiniQuotes behavior and any potential AnyQuotes binding should remain distinct pending product acceptance.
+Failed/unavailable gates: macOS registration, profile load/dispatch, Command Palette execution, custom binding persistence, quote selection/edit, Helix next/previous, Rust build, tests, and paired visual evidence were not run for this docs-only slice and remain R07-000 exit gates.
+Next safe task: Continue R07-000 with `vim::Argument`; do not begin R07-001 or R09.
+~~~
+
+
+## Progress — classify Vim AnyQuotes text object
+
+~~~text
+- Added [action-classification-vim-any-quotes.md](../../docs/parity/action-classification-vim-any-quotes.md) for ACT-REGISTRY-LINUX-vim-AnyQuotes.
+- Recorded that the profile's `q` AnyQuotes candidate is commented out and active `q` invokes MiniQuotes; AnyQuotes instead has a static focused-Editor Command Palette route when Vim/Helix is enabled, plus a source-pair role in `cs` if bound.
+- Classified literal single/double/backtick matching, smallest enclosing pair then nearest fallback, line-local and immediately escaped-marker rules, adjacent around whitespace, empty/missing ranges, same-type false pairing across neighboring literals, and ignored numeric counts.
+- Recorded the Helix boundary: AnyQuotes is not mapped in the HelixTextObject adapter, so a bound next/previous context does not select a range. AnyQuotes remains distinct from the active MiniQuotes `q` action and language-query-based AnyPair.
+- Mapped behavior to `labonair-editor`, optional binding to `labonair-keymap`, and discovery to the existing command-palette contract; the local Rust owners contain no quote object/action implementation. No new setting, event, notification, shell route, or selection persistence is required.
+- Updated the registered-action row, shared Linux/Windows layer summary, parity packet index, `commands.keymap` and `editor.text` crosswalks, normative parity summary, and this task record. No overlay requirement row was invented for the commented candidate.
+- Focused static audit found only the commented AnyQuotes keymap occurrence in pinned assets; the local Editor/Workspace/Keymap Rust sources contain no AnyQuotes route. Source includes focused object/change-surround fixtures, which were read but not executed.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py`, and `python3 scripts/verify.py` scopes docs, agents, knowledge, settings, and queue. The checker reports 43 normative docs and 232 Markdown files; the queue remains at 46 tasks with R07-000 earliest active.
+- Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, palette invocation, key dispatch, profile load, quote selection/edit, custom binding persistence, or paired visual evidence were run for this documentation-only slice.
+- Next safe task: Continue R07-000 with `vim::Argument`; do not begin R07-001 or R09.
+~~~
