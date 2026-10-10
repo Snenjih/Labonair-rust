@@ -2075,6 +2075,99 @@ Next safe task: Continue R07-000 with the next unclassified action family.
 - Next safe task: continue R07-000 with Workspace directional pane activation
   and swap actions, then classify the remaining default-map actions.
 
+## Pre-change contract — classify Workspace pane activation and swap actions
+
+Request: Independently classify indexed pane activation, directional pane/dock
+focus, and directional center-pane swapping, including key arguments,
+boundaries, and current Labonair command routes.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `ActivatePane`, `ActivatePaneDown`, `ActivatePaneLeft`,
+`ActivatePaneRight`, `ActivatePaneUp`, and `SwapPaneDown`, `SwapPaneLeft`,
+`SwapPaneRight`, `SwapPaneUp` under their stable action IDs.
+Out of scope: `ActivateNextPane` and other Pane actions already in the Pane
+packet, `MovePane*`, item movement, Editor-internal groups, adding commands or
+bindings, implementation, R07-001/R09, and visual acceptance claims.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, action-classification-pane.md,
+workspace-model.md, Workspace, SplitTree, pane focus, dock focus, and TabStore.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns the
+outer pane topology, pane order, active pane, directional focus, and swap
+behavior. View owners provide each pane's clone/split capability and focus
+target. Editor-internal group state remains Editor-owned.
+Canonical user entry point: macOS `Cmd+1` through `Cmd+9` selects indices 0–8;
+Linux/Windows `Alt+1` through `Alt+9` does the same. Directional focus uses
+`Cmd+K` then `Cmd+Arrow` on macOS and `Ctrl+K` then `Ctrl+Arrow` on Linux/
+Windows. Swaps use `Cmd+K` then `Shift+Arrow` on macOS and `Ctrl+K` then
+`Shift+Arrow` on Linux/Windows. Labonair currently maps `Cmd+1` through `Cmd+9`
+to tab selection, provides a split-leaf `FocusNextPane`, and splits right/down.
+Public typed contract: Numeric `ActivatePane(usize)` focuses an existing
+zero-based center-pane index; when the index is absent it attempts one split to
+the right of the active pane with a clone of the active item, and no-ops if
+there is no cloneable active item. Directional activation focuses a neighboring
+pane or an eligible adjacent dock/sidebar; unavailable directions no-op.
+`SwapPane*` exchanges
+the Workspace active center pane with an adjacent center pane in the requested
+direction, regardless of whether a dock currently has focus; absent neighbors
+no-op. No new event, registry, or typed contract is required for this
+inventory slice.
+Events and registry contributions: Workspace owns action handling and layout
+changes. Pane and dock owners provide focus/split capabilities through current
+contracts; add no second pane owner or shell action table.
+Settings: No new value. User keymap overrides and existing pane/layout
+preferences remain separately inventoried.
+State and persistence: Focus actions preserve view contents and split
+geometry. Swaps preserve pane identities and contents while exchanging their
+positions; out-of-range numeric activation may add a split. Verify Workspace
+layout restore for every topology change. Labonair's numeric shortcuts select
+tabs instead of panes and has no directional activation or swap command.
+Notifications and failure: Missing directional neighbors do not mutate the
+layout. Non-cloneable or empty active items make numeric out-of-range fallback
+a no-op. No notification is expected for normal focus/swap actions.
+Security: No path, process, credential, or secret access.
+UI-kit: Reuse shared pane, tab, dock, and focus surfaces; add no local split or
+directional controls in this inventory slice.
+Focused inspection: Trace numeric indices and fallback, spatial neighbor
+selection, dock/sidebar fallback, swap geometry, no-neighbor behavior,
+platform bindings, local Cmd+1..9 collision with SelectTab1..9, and persistence.
+Visual evidence: Pending paired macOS checks for 1–9 indices, nested and
+unequal splits, all directions, dock boundaries, clone failure, and restore.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, and exact action/argument/route audit.
+Documentation updates: Nine action rows, pane activation/swap packet, Workspace
+and keymap crosswalks, parity index, normative parity scope if needed, and
+this task's progress record.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Native macOS interaction is unavailable here.
+Next safe task: Continue R07-000 with the next unclassified action family.
+
+## Progress record — 2026-10-10 — Workspace pane activation and swap action classification
+
+- Added [`../../docs/parity/action-classification-workspace-pane-activation-swap.md`](../../docs/parity/action-classification-workspace-pane-activation-swap.md)
+  for nine indexed, directional-focus, and adjacent-swap actions.
+- Recorded zero-based pane indices and their one-through-nine key arguments,
+  the one-right-split clone fallback for a missing index, directional focus
+  into eligible docks/sidebar, and center-only swaps using Workspace's active
+  pane even when focus is in a dock.
+- Distinguished Labonair's `Cmd+1..9` tab selection from the pinned numeric
+  pane actions, and its split-leaf `FocusNextPane`/right-down split routes from
+  missing directional focus and swap actions. Cross-referenced the existing
+  Workspace/Editor pane ownership and current Terminal-only outer split scope.
+- Updated nine action rows, the parity index, Workspace tabs and command/keymap
+  crosswalks, normative parity scope, and this task's pre-change/progress
+  records. The focused action/argument/conflict/route audit passed.
+- Passed `python3 scripts/check_documentation.py` (43 normative documents,
+  180 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active), and
+  `git diff --check`.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, and tests. They remain R07-000 exit gates. Native geometric
+  focus, clone fallback, swap behavior, key dispatch, pane persistence, and
+  paired macOS evidence remain open. Same-session analysis is independent
+  redevelopment, not separated-room clean-room work. R07-001 and R09 remain
+  unstarted.
+- Next safe task: continue R07-000 with the next unclassified Workspace action
+  family and reconcile the remaining action catalog.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

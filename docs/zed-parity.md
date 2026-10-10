@@ -315,6 +315,12 @@ The independent
 records the visible-region order, wrap and closed-dock behavior, toolbar and
 landmark focus targets, and Labonair's pane-only traversal gap; native F6
 dispatch, screen-reader behavior, and focus-ring evidence remain pending.
+The independent
+[`Workspace pane activation and swap action crosswalk`](parity/action-classification-workspace-pane-activation-swap.md)
+records zero-based pane indices, the missing-index clone attempt, directional
+focus into panes/docks, adjacent center-pane swaps, and Labonair's tab-number
+shortcut collision; geometry, focus, topology restore, and native key behavior
+remain pending.
 All other action
 semantics and owner routes, profile selection/reload, user overrides, and
 macOS/Linux/Windows
