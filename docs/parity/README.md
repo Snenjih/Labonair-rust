@@ -15,8 +15,14 @@ source-side research. It records current evidence without claiming parity.
   for all 595 action identifiers across the default macOS, Linux, and Windows
   keymaps, with 2,731 binding/context records and four null entries. It records
   five deprecated-alias resolutions from the pinned Linux action registry.
-  The 585 macOS IDs remain stable; per-action semantic, owner, route, and
-  runtime acceptance remains open.
+  The 585 macOS IDs remain stable; [`action-classification-search.md`](action-classification-search.md)
+  records static semantics and owner routes for 23 Search-family actions.
+  Pinned dispatch and native interaction acceptance remain open for those and
+  all other actions.
+- [`action-classification-search.md`](action-classification-search.md) —
+  independently stated user goals, static Labonair owner routes, code coverage,
+  and runtime/evidence gaps for 23 default-macOS Search-family actions. No
+  action is marked runtime-observed.
 - [`keymap-overlay-requirements.md`](keymap-overlay-requirements.md) — stable
   IDs for 1,402 bindings across seven macOS base-profile overlays, conditional
   Vim/Helix bindings, and macOS-specific overrides. Profile behavior, action

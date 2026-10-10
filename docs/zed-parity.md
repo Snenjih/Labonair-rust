@@ -261,9 +261,14 @@ stable IDs to 813 actions found in the pinned Linux runtime registry but not
 bound in any of those default-map files; 312 of those actions appear in the
 enumerated macOS layers and 32 additional spellings occur in Linux/Windows
 overlays. Five default-map identifiers and two overlay spellings resolve
-through deprecated-alias metadata. Action semantics, owner routes, profile
-selection/reload behavior, user overrides, and macOS/Linux/Windows runtime
-evidence remain open; these static inventories are not parity evidence.
+through deprecated-alias metadata. The independent
+[`Search action crosswalk`](parity/action-classification-search.md) states
+catalog intent and maps static Labonair owner routes for 23 default-macOS
+Search-family actions. Pinned runtime dispatch, native Labonair interaction,
+and paired visual acceptance remain open for that slice. All other action
+semantics and owner routes, profile selection/reload, user overrides, and
+macOS/Linux/Windows runtime evidence also remain open; these static inventories
+are not parity evidence.
 
 ## Settings parity pilot
 

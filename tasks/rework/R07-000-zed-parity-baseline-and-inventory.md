@@ -1041,6 +1041,103 @@ Next safe task: Continue R07-000 action semantics, remaining platform research,
   references across both overlay registers. Workspace Rust gates and all
   pinned runtime/visual acceptance remain open.
 
+## Pre-change contract — classify the default-macOS Search action family
+
+```text
+Request: Independently state each Search-family action's user goal and map its
+  current Labonair owner, route, implementation evidence, and open runtime gate.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: All 23 distinct macOS-default-bound buffer_search, project_search,
+  and search actions; retain their existing action IDs and exact binding rows;
+  distinguish catalog-described intent, Labonair source coverage, and runtime
+  acceptance; identify unsupported interactions rather than treating names as
+  proof of behavior.
+Out of scope: Implementing action handlers, changing keymaps, starting R09,
+  claiming pinned macOS dispatch, or claiming native visual acceptance.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, pinned Linux action metadata, Editor and
+  Workspace owner contracts, current SearchOverlay and FileFinder source.
+Owner module: Context-specific feature owner. Editor owns buffer/project search;
+  Terminal owns terminal-search state; Workspace composes the cross-pane Find
+  entry; other generic search-field actions remain with their host feature.
+Canonical capability crate: labonair-editor for Editor search state; existing
+  terminal, workspace, AI, Settings, and Keymap owners for their own contexts.
+Canonical user entry point: Existing Find command / SearchOverlay for Editor
+  and Terminal; no parallel entry point is introduced.
+Public typed contract: Existing SearchQuery, SearchOptions, ProjectSearchQuery,
+  ProjectSearchSession, and Editor view operations.
+Events: None added.
+Registry contributions: None added. The one-to-one pinned action/key route gap
+  is recorded instead of adding speculative registrations.
+Allowed dependency changes: None.
+State owner: The capability named by the active action context; Editor retains
+  Editor buffer/project query, match, and replacement state.
+Persistence owner: No durable query-history store exists. Workspace retains one
+  process-local last query only.
+Settings: SearchOptions are transient; their defaults and missing durable
+  history/setting behavior are recorded in the requirements packet.
+Migration impact: None.
+Commands: Preserve CommandId::Find; classify every exact pinned action ID and
+  default macOS key/context through the existing action register.
+Notifications: Preserve invalid-pattern and project-search notification paths.
+UI-kit components: Existing SearchOverlay controls; no new components.
+User workflow: Open contextual search, edit query, navigate or replace results,
+  adjust matching options, dismiss, and recover from no-match/error/loading.
+Failure/cancellation/retry behavior: Record current model/source support and
+  unverified pinned/native behavior separately.
+Security boundary: Project-result paths must remain rooted in the Workspace;
+  no new file or external-service access is added.
+Performance budget: Preserve async project grep, generation checks, and result
+  caps; no new measurement claim.
+Removal condition for compatibility code: N/A.
+Focused tests: Existing Editor find/replace/invalid-regex and project-session /
+  filesystem-adapter tests, linked as evidence only; none claims UI acceptance.
+Visual evidence: Pending paired native macOS interaction/capture for both apps.
+Workspace gates: Documentation, queue, and diff checks for this inventory slice.
+Documentation updates: New action classification packet, action register,
+  parity crosswalk/index, and this progress record.
+Current status: Static bindings are enumerated, but Search semantics, context
+  ownership, local correspondences, and remaining gaps are not mapped.
+Target status: Every in-scope action has an independent user-goal statement,
+  explicit owner/route disposition, code/test trace, and separate runtime gate.
+Known limitations: Runtime and native visual sessions are unavailable here;
+  source inspection is not runtime observation. Same-session work is independent
+  redevelopment, without a separated-room provenance claim.
+Failed/unavailable gates: Pinned macOS dispatch and paired native visuals remain
+  pending; no action is accepted by this inventory alone.
+Next safe task: Continue with another default-macOS action family and the
+  registered-but-unbound action catalog while preserving R07 queue order.
+```
+
+## Progress record — 2026-10-10 — default-macOS Search action classification
+
+- Added [`../../docs/parity/action-classification-search.md`](../../docs/parity/action-classification-search.md)
+  with independently stated intent, context-specific Labonair ownership, and
+  source-checked coverage/gap records for all 23 distinct default-macOS
+  `buffer_search::*`, `project_search::*`, and `search::*` action IDs.
+- The crosswalk traces `CommandId::Find`, Editor-owned query/match/replace and
+  project-result state, Workspace's overlay and filesystem adapter, process-
+  local last-query memory, current query defaults, and the relevant regression
+  tests. It identifies missing per-action routes, query history, result picker/
+  tabs/filter controls, selection-only and multi-match selection, and project
+  replacement without claiming that key names establish runtime behavior.
+- Linked the slice from the action register, feature crosswalk, parity index,
+  and normative parity scope. Existing action IDs and binding/context rows are
+  preserved. Remaining action semantics, owner routes, and all pinned runtime
+  and visual acceptance are still open.
+- Passed for this documentation-only slice: `python3
+  scripts/check_documentation.py` (43 normative docs and 168 Markdown files),
+  `python3 scripts/verify.py --scope docs`, `python3
+  scripts/check_rework_queue.py` (46 tasks; R07-000 active), `git diff --check`,
+  and a custom action-ID coverage audit (23 register rows match 23 unique
+  crosswalk IDs).
+- Not run for this documentation-only slice: Cargo checks, clippy, and tests;
+  R07-000's workspace Rust gates remain required before task exit. Unavailable:
+  pinned macOS dispatch and paired native visuals/interaction. The current host
+  is Linux with neither `DISPLAY` nor `WAYLAND_DISPLAY`. No action is
+  runtime-observed. R07-000 remains In Progress; R07-001 and all R09 tasks
+  remain unstarted.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified
