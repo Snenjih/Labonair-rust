@@ -5003,3 +5003,62 @@ Next safe task: Classify and document Git file history/navigation, then continue
 - Rust gates, native blame/history/ref/permalink behavior, statusbar error recovery, and paired visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
 - Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+## Pre-change contract — Git add and ignore actions
+
+```text
+Request: Independently classify the registered Git Add, AddToGitignore, and AddToGitInfoExclude actions, including their pinned handlers and Labonair Source Control routes.
+Request type: R07-000 requirements inventory; documentation only.
+In scope: Three registered-unbound actions (Add, AddToGitignore, AddToGitInfoExclude); the Add action description/handler discrepancy; selected change-row stage versus ignore behavior; .gitignore and .git/info/exclude path semantics; current Labonair GitService methods, transport adapters, and Source Control file menu.
+Out of scope: Implementing action dispatch or changing staging/ignore semantics; repo initialization/cloning/remotes; Git ignore pattern editing outside these actions; changing settings/keymaps; runtime or visual parity claims; and R09 work.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Git capability (labonair-git); Git transport (labonair-git-transport); Git-owned Source Control sibling (labonair-panel-scm); Workspace action/menu hosting.
+
+Owner module: Git owns stage and ignore repository operations; Source Control owns selected-entry context and its controls; Workspace composes the menu/action surface.
+Canonical capability crate: labonair-git; labonair-git-transport and labonair-panel-scm are Git-owned siblings.
+Canonical user entry point: Pinned GitPanel ChangesList context menu for newly created entries. Labonair exposes Stage and ignore choices in the Source Control changed-file context menu.
+Alternate entry points: Pinned ProjectDiff registers a namespaced `git::Add` action whose schema description says staging but whose inspected handler opens the ProjectDiff item; record this discrepancy separately from file-row staging.
+Public typed contract: Labonair GitService exposes stage_file, stage_all, add_to_gitignore, and add_to_exclude. The ignore calls carry repository root, selected relative path, and optional remote session ID. No action contract changes are proposed.
+Events: Existing Source Control repository-operation and status-refresh paths only; no event changes proposed.
+Registry contributions: No new registry. Record three registered-unbound pinned actions and the current local Source Control menu paths.
+Settings and scope: None introduced or changed.
+Persistence: AddToGitignore appends an idempotent repository-relative entry to `.gitignore`; AddToGitInfoExclude appends an idempotent repository-local entry to `.git/info/exclude`. Staging changes the Git index. No application-owned database or Settings persistence.
+Migration impact: None in this slice. Future action parity must route through Git's typed operations and Source Control context, not shell-wide callbacks.
+Commands: Add, AddToGitignore, AddToGitInfoExclude.
+Default keymap: All three are registered without default bindings. Preserve command discoverability and the target entry's enabled state in action integration.
+Notifications: Pinned ignore failures use Git error toasts; Labonair user messages must use its statusbar notification center. No notification UI changes here.
+UI-kit components: No visual edits. Keep the existing Labonair file context menu on labonair-ui-kit components.
+User workflow: From a changed file row, stage the selected change, add a newly created file to repository `.gitignore`, or add it to repository-local `.git/info/exclude`; confirm ignored paths stop appearing as untracked after refresh. Separately, invoke git::Add and verify actual dispatch because its static name/description and registered behavior disagree.
+Failure/cancellation/retry behavior: Record no selected row/repository, non-created or bulk selection, duplicate ignore pattern, missing/unwritable ignore file, remote-session failure, path containing newline/control characters, refresh after success, action cancellation, and the observed Add no-stage behavior.
+Security boundary: Keep the supplied path repository-relative and contained; reject empty/control-character paths and avoid shell injection for remote file writes. Keep `.gitignore` (shared/project-visible) distinct from `.git/info/exclude` (local repository only).
+Performance budget: No runtime change. Ignore writes remain async for remote repositories and must not block the GPUI foreground thread.
+
+Implementation order: Requirements packet only. Any future change must first resolve the `git::Add` action/handler mismatch, then expose exact selection and ignore scope through Git's typed API and Source Control's canonical owner.
+Focused unit tests: Not applicable to this documentation-only change.
+Contract/integration tests: No tests changed or run.
+Persistence/migration tests: Not applicable to this inventory slice; document filesystem/index persistence separately.
+Command/surface tests: Not applicable; no runtime change.
+Visual states: Created versus tracked file rows, single versus bulk selection, Add/Stage control, both ignore menu entries, duplicate/ignored refresh, error, no repository, and narrow layout remain native acceptance requirements.
+Security/negative tests: Not applicable to this documentation-only change; future implementation must test path containment, newline/control injection, shell quoting, and local-versus-shared ignore scope.
+Performance measurement: Not applicable; no runtime change.
+Workspace gates: Diff check, documentation checker, docs verification scope, queue check, affected table shape check, and focused action/handler/transport/local-route audit.
+Documentation updates: New Git add/ignore packet, three registered-unbound action rows, Git Source Control capability crosswalk, normative parity summary, and this task record.
+Current status: Pending focused action/handler and local ignore-route audit.
+Target status: Static ignore flows and the Add action/handler discrepancy classified; native dispatch and paired macOS acceptance remain open.
+Evidence links: Pinned Git action declarations, ProjectDiff Add registration and GitPanel ignore handlers/menu; Labonair GitService, Git transport appends, and Source Control menu/operation routes.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Static file writes do not establish runtime refresh or UI state.
+Remaining migration edges: git::Add staging semantics; action discovery, selected-entry scope, duplicate/ignored row behavior, error notification policy, and paired captures.
+Failed/unavailable gates: Rust, native runtime, and visual gates remain R07-000 exit gates.
+Next safe task: Classify and document Git Add and ignore actions, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify Git Add and ignore actions
+
+- Added [`action-classification-git-add-ignore.md`](../../docs/parity/action-classification-git-add-ignore.md) for three registered-unbound actions: Add, AddToGitignore, and AddToGitInfoExclude.
+- Updated the three unbound action rows, parity packet index/count, Git Source Control crosswalk, normative parity summary, and this task record.
+- Focused pinned-source audit confirmed the Add schema describes staging while the only inspected registration opens ProjectDiff without a stage call. The two ignore actions are single-created-entry GitPanel operations; bulk and tracked entries are disabled/unavailable.
+- Labonair has typed stage and ignore methods plus Source Control stage/ignore controls. The ignore menu is broader than the pinned created-file route; `.gitignore` pattern anchoring differs; async operations refresh repository state and report errors through the local notification path.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative documents and 208 Markdown files), `python3 scripts/verify.py --scope docs`, and `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active). The focused action/handler/crosswalk/table audit passed for all three actions.
+- Rust gates, native action dispatch, resulting Git index/ignore matching, and paired visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
+- Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.

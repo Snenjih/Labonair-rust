@@ -420,6 +420,12 @@ CommitView, current-file navigation, and provider-backed file permalinks.
 Labonair has repository history/graph and commit-diff display, but no blame,
 path-history, ref-entry CommitView, bulk-open, or permalink route; native
 interaction and paired macOS acceptance remain open. The independent
+[`Git add and ignore action crosswalk`](parity/action-classification-git-add-ignore.md)
+records the Add metadata/handler mismatch and the created-file
+`.gitignore`/`.git/info/exclude` routes. Labonair has typed stage and ignore
+operations, but no matching Add action, exposes ignore controls more broadly,
+and anchors `.gitignore` paths differently; dispatch and paired macOS evidence
+remain pending. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The
