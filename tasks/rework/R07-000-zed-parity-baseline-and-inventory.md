@@ -713,6 +713,28 @@ the shared UI kit and Settings owner. Native visual evidence remains pending.
 - R07-000 remains In Progress. No R09 work has started; R07-001 remains next
   after this inventory task.
 
+## Progress record — 2026-10-10 — Default platform keymap inventory
+
+- Initialized the parent gitlink at the exact pinned Zed commit for authorized
+  static reference analysis. The Zed checkout remains an analysis input; the
+  same-session independent-redevelopment provenance limitation above still
+  applies.
+- Expanded the stable action register to all three default operating-system
+  keymaps. The pinned files contain 930 macOS, 931 Linux, and 870 Windows
+  active bindings, referring to 585, 561, and 557 distinct actions. Their
+  union has 595 action names, with 546 common to all three. The register now
+  tracks all 2,731 active binding records, including contexts and arguments,
+  plus four explicit null-key entries.
+- The 585 macOS action IDs are unchanged; ten additional Linux/Windows action
+  names receive stable IDs. Static keymap inventory is now complete for these
+  three defaults. Semantics, runtime reachability, local owner/route, alternate
+  profiles, unbound registered actions, and all user overrides remain open.
+- The current execution host is Linux and has no macOS screen-capture tool, so
+  it cannot provide the required macOS native interaction or paired-capture
+  evidence. The previously recorded host Screen Recording/app-window blocker
+  remains assigned to the macOS workspace operator.
+- R07-000 remains In Progress; no R09 task has started.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

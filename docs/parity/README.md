@@ -12,9 +12,10 @@ source-side research. It records current evidence without claiming parity.
   map with proposed/current owners and explicit missing areas. It is not an
   exhaustive settings or runtime inventory yet.
 - [`action-requirements.md`](action-requirements.md) — stable requirement IDs
-  for each of the 585 default macOS bound actions, with binding/context
-  inventory and per-action semantic, owner, route, and runtime gates. All
-  action-level acceptance remains open.
+  for all 595 distinct actions across the default macOS, Linux, and Windows
+  keymaps, with 2,731 binding/context records and four null entries. The 585
+  macOS IDs remain stable; per-action semantic, owner, route, and runtime
+  acceptance remains open.
 - [`titlebar-tab-strip.md`](titlebar-tab-strip.md) — independent titlebar tab
   appearance, input/state matrix, ownership, and evidence packet.
 - [`settings-crosswalk.md`](settings-crosswalk.md) — independent Settings

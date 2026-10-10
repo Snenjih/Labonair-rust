@@ -244,9 +244,11 @@ until paired native evidence exists.
 
 The working action requirements register in
 [`docs/parity/action-requirements.md`](parity/action-requirements.md) assigns
-stable IDs to the 585 default-bound macOS actions. It records input contexts,
-but action semantics, owner routes, and runtime evidence remain open; this
-inventory is not parity evidence.
+stable IDs to 595 distinct actions bound across the default macOS, Linux, and
+Windows profiles and records their 2,731 binding/context records. The 585
+macOS requirement IDs remain stable. Alternate profiles, action semantics,
+owner routes, and runtime evidence remain open; this inventory is not parity
+evidence.
 
 ## Settings parity pilot
 
