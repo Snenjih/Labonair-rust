@@ -5040,6 +5040,65 @@ Next safe task: Continue R07-000 action/workflow classification; do not begin R0
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
 ```
 
+## Pre-change contract — Terminal text and keystroke actions
+
+```text
+Request: Classify `terminal::SendKeystroke` and `terminal::SendText`, their default platform bindings, Emacs profile handling, `option_as_meta` effect, and Labonair Terminal input routes.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: The two default-macOS-bound action rows; pinned action payloads and handlers; Terminal model keystroke mapping; macOS/Linux/Windows bindings and relevant profile overlays; the existing `SET-terminal-terminal-option-as-meta` requirement; local Terminal owner, input encoder, and keymap route; parity packet/index, command and Terminal crosswalks, normative summary, and this task.
+Out of scope: Adding Terminal action dispatch or bindings, changing terminal input/key encoding, changing `option_as_meta`, adding settings, or implementing product behavior; claiming runtime parity; beginning R07-001 or R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned TerminalView actions, `Terminal::try_keystroke`, `option_as_meta`, default platform keymaps and Emacs overlays; Labonair `labonair-terminal` input/engine contracts, the Workspace-hosted Terminal view, Settings inventory, and keymap/action routes.
+
+Owner module: Terminal owns terminal input state and behavior; Workspace hosts the active Terminal view. The pinned TerminalView binds both actions and delegates decoded keystrokes to the Terminal model. Locally, `labonair-terminal` is the canonical capability crate; the existing `labonair-workspace` Terminal view currently translates GPUI key events into Terminal input.
+Canonical capability crate: Pinned terminal/terminal_view; local `labonair-terminal` with Workspace integration. No action-specific local input contract or registered `SendKeystroke`/`SendText` route was found.
+Canonical user entry point: A focused Terminal key context resolves the default or user keymap binding. `SendKeystroke` carries a parsed single GPUI keystroke; `SendText` carries an arbitrary string payload for direct byte input.
+Alternate entry points: User keymap overrides may bind these actions; macOS and Linux Emacs profiles include explicit null overrides for compound sequences. No active Terminal send-action binding was found in the inspected JetBrains or other profile maps.
+Public typed contract: Pinned `SendText(String)` writes the string's UTF-8 bytes directly to terminal input. Pinned `SendKeystroke(String)` parses a GPUI Keystroke and asks the Terminal model to process it against current mode and `option_as_meta`; valid keystrokes may be consumed by vi mode or encoded as terminal input. Invalid/unhandled payloads send no bytes.
+Events: Terminal input is forwarded to the active local/remote PTY. No new Labonair event or contract is proposed in this classification slice.
+Registry contributions: Preserve both action IDs, payloads, Terminal contexts, and all platform keymap entries. No local action, command, palette, keymap registry, or event registration is added.
+Settings: `terminal.option_as_meta` is a pinned USER setting with default false, already tracked as `SET-terminal-terminal-option-as-meta`; it affects how supported Alt keystrokes are encoded. Raw `SendText` bytes do not pass through that setting. No matching Labonair setting was found in the inspected Terminal/settings crates.
+Persistence: Action payloads are per-dispatch. Keymap bindings and the referenced Terminal setting persist in their owning settings/keymap stores; terminal mode is live session state.
+Migration impact: None. Keep Terminal input behavior in the Terminal owner and the Workspace view as host/integration; do not create a shell-wide command or a second terminal input surface.
+Commands and keymap: Preserve macOS (13 SendKeystroke, six SendText), Linux (14 SendKeystroke, four SendText), and Windows (14 SendKeystroke, four SendText) entries from the default maps. Keep every existing context and argument exactly as recorded in action requirements. MacOS/Linux Emacs overlays null compound sequences and explain that SendKeystroke is for one keystroke; no JetBrains Terminal send-action override was found.
+Notifications: No new notification route. Invalid `SendKeystroke` parsing is logged by the pinned action handler; runtime diagnostics and no-input behavior remain acceptance cases.
+UI-kit components: No UI changes; use the existing Terminal surface and shared UI kit for future controls.
+User workflow: Bind Terminal navigation/editing shortcuts that send terminal-aware control keys, or send explicit escape/control byte sequences directly, while the Terminal has focus.
+Failure/cancellation/retry behavior: Cover invalid or unsupported keystroke strings, compound sequence bindings, vi mode consuming motions locally, alternate-screen/application-cursor/kitty-keyboard modes, Alt/meta behavior per platform and setting, closed/exited sessions, disconnected local/remote PTYs, and delivery errors.
+Security boundary: `SendText` can send arbitrary bytes, including control/escape bytes, to the focused terminal process. Preserve the Terminal focus context and treat custom payload bindings as explicit user configuration; do not widen dispatch to unrelated views.
+Performance budget: Short synchronous encoding only; PTY writes must continue through the existing asynchronous Terminal session boundary.
+
+Implementation order: Compare both pinned action handlers and `try_keystroke`, inventory default/profile bindings and the setting row, trace Labonair GPUI key translation and terminal mode encoder, confirm the missing action/keymap routes, update the two action rows and parity/crosswalk indexes, then run documentation/agent/knowledge/Settings/queue gates and focused static audits.
+Focused tests: Not applicable to this documentation-only change; do not add or run tests.
+Contract/integration tests: No runtime contract changed; action payload parsing, mode-aware encoding, raw string delivery, and PTY context remain runtime acceptance.
+Persistence/migration tests: Not applicable; record keymap and `option_as_meta` ownership and defaults only.
+Command/surface tests: Verify default and user bindings only in focused Terminal context; distinguish raw SendText payloads from SendKeystroke mode mapping.
+Visual states: No UI edit. Paired macOS evidence is still required for focused Terminal, keymap-dispatched input, and any status feedback.
+Security/negative tests: Later acceptance must verify invalid payloads and out-of-context bindings do not write to a PTY and that raw text is delivered only to the active Terminal.
+Performance measurement: Not applicable.
+Workspace gates: Diff check; docs, agents, knowledge, Settings and active queue; focused two-action/payload/default-profile/setting/local-owner audit.
+Documentation updates: Terminal text/keystroke action packet, two action rows, commands.keymap and terminal.tasks crosswalks, parity packet index, normative summary, and this task record.
+Current status: Static action, keymap/profile, setting, and local-route audits are complete; the requirements packet, action rows, indexes, crosswalks, and normative summary are updated. Required documentation gates pass; native action dispatch and PTY acceptance remain open.
+Target status: Distinguish raw SendText from mode-aware SendKeystroke; preserve all platform bindings/contexts, record `option_as_meta` and local ownership gaps; native dispatch remains open.
+Evidence links: Pinned `terminal_view.rs`, `terminal.rs`, `mappings/keys.rs`, default platform and Emacs keymaps, settings default; Labonair `workspace/src/views/terminal.rs`, `terminal/src/input.rs`, engine mode state, settings content, and keymap/action registry.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Source was inspected; existing tests were not run. Native binding dispatch and PTY effects remain unobserved.
+Remaining migration edges: No local named SendKeystroke/SendText action, no matching default keymap bindings, and no local option_as_meta setting; native mode mapping, raw-byte dispatch, remote delivery, and paired macOS evidence remain open.
+Failed/unavailable gates: Rust build, tests, native Terminal dispatch, local/remote PTY behavior, and visual evidence are outside this documentation-only slice and remain R07-000 exit gates.
+Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+```
+
+## Progress — classify Terminal text and keystroke actions
+
+```text
+- Added [action-classification-terminal-input.md](../../docs/parity/action-classification-terminal-input.md) for `terminal::SendKeystroke` and `terminal::SendText`, separating mode-aware key input from raw UTF-8 bytes, vi-mode consumption, and `option_as_meta` behavior.
+- Preserved both action IDs, all default platform bindings and contexts, and Emacs compound-sequence null overrides. Static binding counts match the maps: macOS 13/6, Linux 14/4, Windows 14/4 for SendKeystroke/SendText. No active JetBrains profile binding was found.
+- Confirmed the local boundary: `labonair-workspace` converts physical GPUI events through `labonair-terminal`'s live-mode encoder, but no named payload actions or corresponding default bindings exist; no local `option_as_meta` setting was found. Terminal remains the behavior owner, Workspace the view host.
+- Passed `git diff --check`; docs (43 normative documents and 222 Markdown files); agents (10 request routes); knowledge; Settings (7 areas and 101 registered UI fields); and active queue verification (46 tasks; R07-000 remains earliest active).
+- No Rust build, tests, native keymap dispatch, PTY/local-remote delivery, or visual check was run for this documentation-only slice. Static source was inspected; same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Native payload action dispatch, terminal-mode/vi behavior, raw byte delivery, macOS Alt-as-meta setting behavior, local/remote session errors, and paired macOS evidence remain open R07-000 exit gates.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+```
+
 ## Pre-change contract — default-bound ProjectPanel actions
 
 ```text

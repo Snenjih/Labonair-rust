@@ -507,6 +507,11 @@ classifies Workspace last-task fallback and Terminal TaskId rerun overrides,
 including same-terminal replacement, context reuse, shortcut overlaps, and the
 missing Labonair Tasks owner. Task scheduling and native context precedence
 remain open. The independent
+[`Terminal text and keystroke action crosswalk`](parity/action-classification-terminal-input.md)
+distinguishes mode-aware `SendKeystroke` dispatch from raw `SendText` bytes,
+records platform and Emacs profile behavior plus the `option_as_meta` setting,
+and identifies the missing local payload actions. Native PTY delivery and
+keymap dispatch remain open. The independent
 [`Outline and OutlinePanel action crosswalk`](parity/action-classification-outline-panel-actions.md)
 classifies the searchable Editor Outline picker, five default-macOS-bound
 OutlinePanel actions, 13 registered-unbound panel actions, six unbound

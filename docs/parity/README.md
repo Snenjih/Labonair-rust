@@ -43,7 +43,8 @@ source-side research. It records current evidence without claiming parity.
   Theme mode/selector actions, one Terminal Clear action, three Terminal
   clipboard actions, six Terminal scroll actions (eight JetBrains profile
   entries), two Terminal character-palette/vi-mode actions, two Task rerun
-  actions (two JetBrains profile entries), 19 Outline/OutlinePanel actions (six
+  actions (two JetBrains profile entries), two Terminal text/keystroke actions,
+  19 Outline/OutlinePanel actions (six
   default-macOS-bound IDs and 13 registered-unbound panel actions; six of the
   latter occur in seven Vim/Helix entries), one Editor Go to
   Line action,
@@ -102,6 +103,9 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-task-rerun.md`](action-classification-task-rerun.md) —
   Workspace last-task fallback, Terminal TaskId rerun overrides, shortcut
   context overlap, JetBrains entries, and Labonair's missing Tasks owner.
+- [`action-classification-terminal-input.md`](action-classification-terminal-input.md) —
+  raw text versus mode-aware keystroke payloads, platform bindings, the
+  `option_as_meta` effect, and missing local action routes.
 - [`action-classification-outline-panel-actions.md`](action-classification-outline-panel-actions.md) —
   independently stated Outline picker and OutlinePanel behavior, four pinned
   Settings effects, six default-macOS-bound actions, and 13 registered-unbound
