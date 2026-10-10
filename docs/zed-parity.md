@@ -308,6 +308,11 @@ records the focused-Editor Command Palette route, commented `q` candidate and
 active MiniQuotes binding, line-local quote matching, nearest fallback,
 change-surround path, and missing local action. Palette, platform, and paired
 macOS acceptance remain open. The independent
+[`Vim Argument text-object crosswalk`](parity/action-classification-vim-argument.md)
+records the active shared `a` binding, parser-backed comma-item selection,
+asymmetric comma-inclusive around range, and unsupported `cs` and Helix
+directional consumers. Language-dependent dispatch and paired macOS
+acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and

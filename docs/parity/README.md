@@ -57,7 +57,9 @@ source-side research. It records current evidence without claiming parity.
   remains bound to Parentheses), one AnyPair action without a platform-default
   binding but with one shared Helix-mode `m` binding, and one registered-unbound
   AnyQuotes palette action whose commented `q` candidate is inactive (active
-  `q` remains MiniQuotes), 19 Outline/OutlinePanel actions (six
+  `q` remains MiniQuotes), one `a`-bound Argument text object in the shared
+  Vim/Helix layer (with parser-backed selection and unsupported `cs` and
+  directional Helix consumers), 19 Outline/OutlinePanel actions (six
   default-macOS-bound IDs and 13 registered-unbound panel actions; six of the
   latter occur in seven Vim/Helix entries), one Editor Go to
   Line action,
@@ -127,6 +129,9 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-vim-any-quotes.md`](action-classification-vim-any-quotes.md) —
   the unbound quote text object, commented `q` candidate versus active
   MiniQuotes, line-local delimiter matching, and change-surround route.
+- [`action-classification-vim-argument.md`](action-classification-vim-argument.md) —
+  the shared `a` binding, parser-backed comma-item selection, asymmetric
+  comma-inclusive around range, and unsupported `cs`/Helix directional routes.
 - [`action-classification-terminal-clear.md`](action-classification-terminal-clear.md) —
   the pinned saved-screen/cwd-history effect, platform bindings, Labonair's ANSI
   PTY command route, and native scrollback/runtime acceptance gaps.

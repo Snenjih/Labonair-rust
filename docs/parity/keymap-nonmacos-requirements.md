@@ -18,6 +18,7 @@ The [Vim AngleBrackets packet](action-classification-vim-angle-brackets.md) clas
 The [Vim AnyBrackets packet](action-classification-vim-any-brackets.md) records that the shared profile's commented `b` candidate is inactive and the actual `b` binding remains Parentheses; the registered action instead appears in the focused Editor's Command Palette when Vim/Helix is enabled. Palette invocation and platform dispatch still need native verification.
 The [Vim AnyPair packet](action-classification-vim-any-pair.md) classifies the shared Helix-mode `m` binding, its `helix_mode` condition, query-derived current pair, and separately scanned next/previous ranges. The profile data is shared; Linux/Windows dispatch and query behavior need runtime verification.
 The [Vim AnyQuotes packet](action-classification-vim-any-quotes.md) records the inactive commented `q` candidate, the active MiniQuotes binding, the Command Palette route, literal line-local quote matching, and the missing Helix directional adapter. No active AnyQuotes profile row exists to dispatch on Linux/Windows.
+The [Vim Argument packet](action-classification-vim-argument.md) classifies the shared `a` binding, parser-backed comma-item range, asymmetric comma-inclusive around range, and unsupported `cs` and Helix next/previous consumers. The profile data is shared; Linux/Windows dispatch and language-dependent selection need runtime verification.
 
 ### Layers
 

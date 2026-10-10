@@ -6547,3 +6547,50 @@ Next safe task: Continue R07-000 with `vim::Argument`; do not begin R07-001 or R
 - Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, palette invocation, key dispatch, profile load, quote selection/edit, custom binding persistence, or paired visual evidence were run for this documentation-only slice.
 - Next safe task: Continue R07-000 with `vim::Argument`; do not begin R07-001 or R09.
 ~~~
+
+
+## Pre-change contract — Vim Argument text object
+
+~~~text
+Request type: Pinned action inventory and independently written parity requirements; documentation-only.
+Owner module: Editor owns syntax-backed text-object selection and edits; Keymap owns optional shared-profile/user bindings; Settings supplies mode values; Command Palette supplies existing Editor-action discovery.
+Canonical capability crate: `labonair-editor`; optional binding composition in `labonair-keymap`.
+Canonical user entry point: Shared Vim/Helix profile key `a` in object/operator contexts; focused-Editor Command Palette when Vim/Helix is enabled; user binding through the canonical Keymap surface.
+Public typed contract: Existing Editor text-object action and selection/operator contract; no local Argument action or range implementation currently exists.
+State owner: Editor owns buffer selection and pending Vim/Helix operator state; Keymap composes profile/user bindings.
+Persistence owner: Settings owns persisted Vim/Helix mode values; Keymap owns persisted user binding overrides; selection and pending operation state are transient.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-Argument`; shared binding `KEYBIND-VIM-HELIX-bdd6381ba4ad`, key `a`, context `vim_operator == a || vim_operator == i || vim_operator == cs || vim_operator == helix_next || vim_operator == helix_previous`; no platform-default map binding.
+Events and registry contributions: Existing Editor action registration and generic palette route; no new event, registry, or shell-wide condition.
+Settings: Existing `vim_mode` / `helix_mode` values control loading the shared layer and palette namespace; no Argument-specific setting.
+Notifications: None for range lookup; a missing range leaves the operation without an edit. No new notification surface.
+UI-kit components: Existing command palette and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only; pinned `test_argument_object` source fixture inspection only, not execution. Future owner implementation needs parser/query and operator integration coverage.
+Visual evidence: No layout change; native macOS editor/keymap interaction and paired evidence remain required for acceptance.
+Security impact: None beyond ordinary local buffer edits.
+Performance impact: No local runtime work. Future syntax-node lookup must remain responsive in large and multiline buffers.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static pinned action, shared-profile binding, range algorithm, flags, and source fixtures can be classified; profile dispatch, editor interaction, macOS registration, and paired acceptance remain pending.
+Documentation updates: New Argument packet; action inventory; shared binding row annotation; non-macOS layer note; packet index; `commands.keymap` and `editor.text` crosswalks; normative summary; this task record.
+Current status: Static pinned source/profile analysis, Labonair owner audit, and crosswalk updates complete; all required documentation and active-queue gates passed.
+Target status: Record parser, delimiter, separator, context, and missing-adapter behavior without claiming native dispatch or user-flow acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: No Labonair text-object action/range engine, no Helix directional adapter, and no selected mode-profile loader; pinned `cs` and Helix next/previous contexts do not produce an Argument selection.
+Failed/unavailable gates: No documentation or queue gate failed. Tests, Rust gates, profile dispatch, palette dispatch, and native/visual acceptance were not run for this documentation-only classification and remain R07-000 acceptance work.
+Next safe task: Continue R07-000 with `vim::ArgumentRequired`; do not begin R07-001 or R09.
+~~~
+
+## Progress — classify Vim Argument text object
+
+~~~text
+- Added [action-classification-vim-argument.md](../../docs/parity/action-classification-vim-argument.md) for ACT-REGISTRY-LINUX-vim-Argument.
+- Recorded active shared binding `a` and stable row KEYBIND-VIM-HELIX-bdd6381ba4ad, its inside/around, `cs`, and Helix next/previous contexts, the lack of a platform-default binding, and the focused-Editor palette route.
+- Classified parser-backed comma-item lookup within nonempty `()`, `[]`, `{}`, `<>`, and `||` pairs; language syntax-layer dependency; AST-boundary full-interior fallback; asymmetric around-comma/whitespace inclusion; multiline/Visual flags; ignored range counts; and the pinned grammar-specific commented regression case.
+- Verified that the shared `cs` context has no Argument pair mapping and therefore produces no source anchors, while Helix next/previous has no Argument adapter and leaves selection unchanged.
+- Mapped future behavior to `labonair-editor`, profile/user binding to `labonair-keymap`, mode values to Settings, and discovery to the existing Command Palette. Local Editor/Keymap sources contain no Argument action or profile/Helix layer; no new setting, event, notification, shell route, or selection persistence is implied.
+- Updated the registered-action row, stable binding row, non-macOS profile note, parity packet index, `commands.keymap` and `editor.text` crosswalks, normative parity summary, and this task record.
+- Read pinned `test_argument_object` fixtures and the `cs`/Helix consumer source without executing tests. Pinned action registration and the single shared profile binding were confirmed; Labonair `rg` audit found no Argument implementation route.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative docs; 233 Markdown files), `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active), and `python3 scripts/verify.py --scope docs`, `agents`, `knowledge`, `settings`, and `queue`.
+- Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, Vim/Helix dispatch, palette invocation, native selection/editing, or paired visual evidence were run; these remain goal acceptance gates.
+- Next safe task: Continue R07-000 with `vim::ArgumentRequired`; do not begin R07-001 or R09.
+~~~
