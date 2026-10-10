@@ -450,6 +450,21 @@ Labonair has no reachable clone/init or remote configuration contract; its
 transport init helper is uncalled, and no active repository selector exists.
 Project, URL/destination, and remote recovery behavior remain open. The
 independent
+[`ProjectPanel and Explorer action crosswalk`](parity/action-classification-project-panel-actions.md)
+classifies 25 registered-unbound actions for recursive tree expansion,
+compact-directory folding, permanent/preview/split opening, selection and
+scrolling, visibility Settings, panel focus, project-root removal, and remote
+downloads. Fifteen action IDs have 17 Vim/Helix profile bindings; the default
+macOS map has none of these actions, and direct macOS registration and
+dispatch remain unverified. Labonair has pointer expansion, permanent and
+generic preview routes, automatic single-child folding, and transient
+hidden-file toggling, but lacks matching tree actions, diagnostic/Git-entry
+navigation, selected-file splits, ignored-file visibility, project-root
+removal, and Explorer-to-Transfers download routing. Its declared
+`explorerShowHiddenByDefault` value has no Explorer consumer. Any future
+transfer progress must use the statusbar notification center under Labonair's
+no-toast contract. Paired native macOS acceptance remains open. The
+independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

@@ -34,7 +34,9 @@ source-side research. It records current evidence without claiming parity.
   diff/review actions (plus nine related registered-unbound
   actions), two Git file/history actions (plus six related registered-unbound
   actions), three Git add/ignore registered-unbound actions, five Git
-  repository/remote-management registered-unbound actions, one Editor Go to
+  repository/remote-management registered-unbound actions, 25 ProjectPanel
+  tree/open/navigation/visibility/remote-download actions (15 action IDs in
+  17 Vim/Helix profile bindings), one Editor Go to
   Line action,
   one File Finder action, two Workspace Open/OpenFiles actions, one Workspace
   New Window action,
@@ -59,6 +61,11 @@ source-side research. It records current evidence without claiming parity.
   tab/pane routes, and evidence gaps for 22 default-macOS Pane actions. The
   split between universal tabs, outer panes, and Editor groups remains explicit;
   runtime acceptance is pending.
+- [`action-classification-project-panel-actions.md`](action-classification-project-panel-actions.md) —
+  independently stated behavior, Workspace/Explorer/Editor/Git/Settings
+  ownership, visibility persistence, and local routes for 25 registered-
+  unbound ProjectPanel actions; 15 action IDs have 17 Vim/Helix profile
+  bindings. macOS registration and runtime acceptance remain pending.
 - [`action-classification-go-to-line.md`](action-classification-go-to-line.md) —
   independently stated intent, Editor owner, current line-jump route, and
   evidence gap for the default-macOS Go to Line action. The arbitrary

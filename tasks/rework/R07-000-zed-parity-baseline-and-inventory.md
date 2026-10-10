@@ -5239,3 +5239,63 @@ Next safe task: Complete this Git panel/graph/branch-filter classification, then
 - Rust gates, native action dispatch, settings save/reload, clipboard effects, graph/branch interaction, and paired macOS visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
 - Same-session source inspection and independently worded requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+## Pre-change contract — ProjectPanel actions and Explorer routes
+
+```text
+Request: Classify 25 registered-unbound ProjectPanel actions against the pinned reference, all relevant keymap contexts, and Labonair Explorer/Workspace/Editor/Git routes.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: Collapse/expand selected subtrees; Fold/Unfold Directory; Open Markdown Preview, OpenPermanent, horizontal/vertical split; RemoveFromProject; cursor scrolling and half-page navigation; diagnostic, directory, Git-entry, and parent selection; Toggle, ToggleHideGitIgnore, ToggleHideHidden; DownloadFromRemote. Update the matching action rows, settings effects, packet index/counts, Explorer crosswalk, normative parity summary, and this task record.
+Out of scope: Implementing action dispatch or Explorer behavior, adding bindings/settings/registries/contracts/dependencies, changing project-root/worktree semantics, claiming runtime or visual parity, R07-001 acceptance, and R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned ProjectPanel and Workspace actions; Labonair Explorer (labonair-panel-explorer and labonair-explorer-host); Workspace file/tab/project/dock behavior; Editor diagnostics and Git decorations; Settings.
+Owner module: Pinned behavior is ProjectPanel with Workspace action adapters. Labonair ownership stays with Explorer for tree behavior, Workspace for project/tab/dock composition and open/remove routing, Editor for diagnostics, Git for status data, and Settings for stored values.
+Canonical capability crates: labonair-panel-explorer, labonair-explorer-host, labonair-workspace, labonair-editor, labonair-git, labonair-settings, labonair-sftp, and labonair-transfers; no crate changes proposed.
+Canonical user entry point: Pinned focused ProjectPanel tree actions and its row/context menus, with Workspace registering panel toggle and visibility-setting actions. Labonair entry points are the Explorer dock, Explorer row/context interactions, and existing Workspace open/preview/dock/project routes; no equivalent typed action contract is established.
+Alternate entry points: Explorer keyboard open/preview and pointer menus; Workspace editor preview, pane split, and project tabs. Keep these distinct from ProjectPanel action dispatch and discoverability.
+Public typed contract: Existing ExplorerHost open-file (peek/permanent), terminal, preview, active-file and remote-directory intents; existing Workspace file, preview, pane, project, and panel routes. No ProjectPanel action contract is added.
+Events: No new events. Record existing host and Workspace routes only.
+Registry contributions: No new action, command, binding, panel registration, or provider. Classify all 25 existing registered-unbound rows and inspect macOS/Vim/Helix and non-macOS overlays for additional uses.
+Allowed dependency changes: None.
+Removal condition for temporary code: Not applicable; no compatibility code.
+State owner: Explorer tree selection/expansion is transient in Labonair; project and pane state belongs to Workspace; diagnostics to Editor; Git status to Git.
+Persistence owner: Pinned ToggleHideGitIgnore and ToggleHideHidden write project_panel.hide_gitignore and project_panel.hide_hidden (both default false). Labonair declares file_manager.explorerShowHiddenByDefault (default false), but source search found no Explorer consumer; the model starts with hidden files off and the Explorer toolbar toggle is transient. No separate local ignore-visibility value was found.
+Settings and scope: Cross-reference SET-panels-project-panel-hide-gitignore and SET-panels-project-panel-hide-hidden. Keep Labonair's default-hidden setting distinct from the pinned runtime toggle semantics.
+Migration impact: None in this requirements slice.
+Commands and keymap entries: The 25 action IDs in scope are absent from the three default keymaps that produced the unbound catalog; Linux registry data does not establish macOS action registration. Inspect overlay/profile use and leave actual Labonair dispatch and native invocation pending.
+Notifications: No notification changes. Existing Explorer remote-unsupported messages are not evidence of remote-download parity.
+UI-kit components: No visual edits or controls. Future reusable interactions must use labonair-ui-kit.
+User workflow: Navigate Explorer entries, directories, Git changes, and diagnostics; reveal the selected row at an alignment or by half-page movement; open a permanent file, Markdown preview, or new split; fold/unfold compact directory chains; recursively collapse/expand the selected subtree; toggle ignored/hidden files; download selected remote paths; remove selected worktrees from the project.
+Failure/cancellation/retry behavior: Cover absent selection, files versus directories, collapsed/loaded descendants, empty tree, no diagnostic source and severity filters, unchanged Git entries, hidden and ignored paths, multi-selection, invalid or unavailable remote paths, destination collisions, permission denial, project/worktree removal, and split/open failures. Runtime effects remain unobserved.
+Security boundary: Keep remote file access and transfer inside SSH/SFTP owners; validate rooted destination paths and avoid credential/path disclosure. Removing a worktree from a project must not be described as deleting files.
+Performance budget: No runtime change or performance claim. Future recursive traversal/expand/download work must remain asynchronous and bounded.
+Implementation order: Requirements packets only. Establish each pinned action's actual route/settings/context, inspect overlay bindings, compare owner routes and settings, then update the action catalog, linked settings effects, packet index, Explorer crosswalk, normative parity summary, and this task record.
+Focused unit tests: Not applicable to a documentation-only change; no tests requested or run.
+Contract/integration tests: No contracts or runtime changed.
+Persistence/migration tests: Not applicable; pinned Settings writes and Labonair transient toggle behavior remain static findings.
+Command/surface tests: Not applicable; native invocation remains pending.
+Visual states: No UI changes. Focused tree navigation, empty/loading/error rows, hidden/ignored visibility, preview, split, remote tree, narrow Explorer, and dock toggle remain acceptance requirements.
+Security/negative tests: Not applicable to this documentation-only change; future remote downloads require rooted-path, cancellation, collision, error-redaction, and secret checks.
+Performance measurement: Not applicable.
+Workspace gates: Diff check, documentation checker, docs verification scope, active queue check, affected catalog shape/count/action-link audit, settings-link audit, and focused pinned handler/setting plus Labonair owner/reachability audit.
+Documentation updates: One ProjectPanel action packet; 25 action rows; the two related Settings effects; parity index/count, Explorer capability crosswalk, normative parity summary, and this task record.
+Current status: Focused pinned action, settings, overlay-keymap, and local route audit underway.
+Target status: Static behavior, owner, settings, alternate entry points, and Labonair gaps classified for 25 actions; action dispatch, runtime behavior, and paired macOS evidence remain open.
+Evidence links: Pinned ProjectPanel action declarations/handlers, Workspace action registrations, ProjectPanel settings, action/keymap dumps and overlays; Labonair ExplorerView, ExplorerHost, Workspace file/project/pane routes, Settings and Git/diagnostic providers.
+Known limitations: Same-session source research and independently authored requirements are redevelopment, not separated-room clean-room implementation. Linux registry evidence does not prove macOS registration or dispatch. Static source inspection does not establish native keyboard focus, Settings persistence, or visual parity.
+Remaining migration edges: Typed Explorer ProjectPanel action route; distinct persisted hidden/ignored behavior; recursive subtree operations; explicit split/scroll/select routes; Explorer diagnostics feed; Git-change selection; project/worktree selection semantics; remote download contract; native interaction and paired captures.
+Failed/unavailable gates: Rust, native runtime, keyboard/action dispatch, Settings save/reload, and visual gates remain R07-000 exit gates.
+Next safe task: Finish ProjectPanel action classification, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify ProjectPanel actions and Explorer routes
+
+- Added the ProjectPanel action packet and classified all 25 registered-unbound action rows. Pinned source review covers recursive subtree expansion/collapse, compact single-child folding, permanent/preview/split opening, viewport and tree selection, diagnostic severity arguments, visibility Settings, panel focus, project-root removal, and remote downloads.
+- Confirmed 15 action IDs across 17 conditional Vim/Helix bindings. None of these actions is in the three default platform maps; the overlay is recorded, but Linux runtime registration does not prove macOS action registration or dispatch.
+- Compared Labonair Explorer/Workspace/Editor/Git/Settings routes. Pointer expansion, permanent open, generic preview, automatic chain compression, Git decoration, and a transient hidden-file toolbar remain distinct from missing action routes. The declared file_manager.explorerShowHiddenByDefault value has no Explorer consumer; no hide-ignored action or selected Explorer-to-SFTP/Transfers download path was found.
+- Updated both pinned hidden-file Settings effects, parity packet index/counts, Explorer feature crosswalk, normative parity summary, and the action catalog. Refreshed docs/generated/settings.md from its source after the Settings verifier found only its generated source fingerprint stale.
+- Passed git diff --check, python3 scripts/check_documentation.py (43 normative documents and 212 Markdown files), verify scopes docs, agents, knowledge, and settings, and check_rework_queue.py (46 tasks; R07-000 remains earliest active). Focused audit passed for all 25 catalog rows, 2 Settings links, 15 profile-bound action IDs/17 entries, and no default-macOS bindings.
+- The first focused audit used an incorrect expected binding count; source evidence established 17 entries and the corrected audit passed. The first Settings-scope run found the stale generated fingerprint; after regeneration, Settings and knowledge verifiers passed.
+- Rust gates, native action dispatch, Settings save/reload, split/preview placement, diagnostics/Git selection, transfers, and paired macOS visual acceptance were not run for this documentation-only slice and remain R07-000 exit gates.
+- Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 with the next action/workflow family; do not begin R07-001 or R09.
