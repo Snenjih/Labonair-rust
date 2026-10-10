@@ -362,6 +362,11 @@ records user-global task/debug files, project `.zed` definitions, and the
 Worktree Picker setup-hook route. Task and Debugger owners/crates are absent in
 Labonair, as are their file actions and native acceptance evidence; task
 execution and debug launch remain unverified. The independent
+[`Git worktree navigation and creation action crosswalk`](parity/action-classification-git-worktree-navigation.md)
+records the titlebar/shortcut picker route, typed create and switch actions,
+and path-targeted new-window flow. Labonair has no worktree lifecycle API or
+picker; Workspace restoration, remote behavior, and paired macOS acceptance
+remain open. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

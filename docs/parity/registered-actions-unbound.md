@@ -305,7 +305,7 @@ For every row, independently establish the user's goal and full invocation flow;
 | `ACT-REGISTRY-LINUX-git-CopyFilePermalink` | `git::CopyFilePermalink` | `git: copy file permalink` | Present | None | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-git-CreatePullRequest` | `git::CreatePullRequest` | `git: create pull request` | Present | None | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-git-CreateRemote` | `git::CreateRemote` | `git: create remote` | Present | None | None | Pending | Pending | Pending |
-| `ACT-REGISTRY-LINUX-git-CreateWorktree` | `git::CreateWorktree` | `git: create worktree` | Present | Present | None | Pending | Pending | Pending |
+| `ACT-REGISTRY-LINUX-git-CreateWorktree` | `git::CreateWorktree` | `git: create worktree` | Present | Present | None | Create a detached worktree from the typed current, existing local, or remote branch target, then open/activate a Workspace there; optional name: [Git worktree navigation and creation classification](action-classification-git-worktree-navigation.md) | Git (`labonair-git`) owns creation; Workspace hosts the new project | No Git worktree creation contract or operation |
 | `ACT-REGISTRY-LINUX-git-DiffBranch` | `git::DiffBranch` | `git: diff branch` | Present | None | Present | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-git-DiffHead` | `git::DiffHead` | `git: diff head` | Present | None | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-git-FetchFrom` | `git::FetchFrom` | `git: fetch from` | Present | None | None | Pending | Pending | Pending |
@@ -316,7 +316,7 @@ For every row, independently establish the user's goal and full invocation flow;
 | `ACT-REGISTRY-LINUX-git-OpenFileAtHead` | `git::OpenFileAtHead` | `git: open file at head` | None | None | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-git-OpenFileDiff` | `git::OpenFileDiff` | `git: open file diff` | Present | None | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-git-OpenFilePermalink` | `git::OpenFilePermalink` | `git: open file permalink` | Present | None | None | Pending | Pending | Pending |
-| `ACT-REGISTRY-LINUX-git-OpenWorktreeInNewWindow` | `git::OpenWorktreeInNewWindow` | `git: open worktree in new window` | Present | Present | None | Pending | Pending | Pending |
+| `ACT-REGISTRY-LINUX-git-OpenWorktreeInNewWindow` | `git::OpenWorktreeInNewWindow` | `git: open worktree in new window` | Present | Present | None | Open the selected existing worktree path in a separate Workspace window; remote projects reuse their connection options: [Git worktree navigation and creation classification](action-classification-git-worktree-navigation.md) | Git selects the worktree; Workspace/platform integration opens the window | No worktree-targeted new-window route |
 | `ACT-REGISTRY-LINUX-git-PushTo` | `git::PushTo` | `git: push to` | Present | None | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-git-RenameBranch` | `git::RenameBranch` | `git: rename branch` | Present | Present | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-git-SelectRepo` | `git::SelectRepo` | `git: select repo` | Present | None | None | Pending | Pending | Pending |
@@ -329,7 +329,7 @@ For every row, independently establish the user's goal and full invocation flow;
 | `ACT-REGISTRY-LINUX-git-StashStaged` | `git::StashStaged` | `git: stash staged` | Present | None | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-git-StashTracked` | `git::StashTracked` | `git: stash tracked` | Present | None | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-git-Switch` | `git::Switch` | `git: switch` | Present | None | None | Pending | Pending | Pending |
-| `ACT-REGISTRY-LINUX-git-SwitchWorktree` | `git::SwitchWorktree` | `git: switch worktree` | Present | Present | None | Pending | Pending | Pending |
+| `ACT-REGISTRY-LINUX-git-SwitchWorktree` | `git::SwitchWorktree` | `git: switch worktree` | Present | Present | None | Switch the current Workspace to the selected linked worktree using its path/display name: [Git worktree navigation and creation classification](action-classification-git-worktree-navigation.md) | Git (`labonair-git`) owns switching; Workspace preserves and activates workspace state | Branch switching exists, but worktree inventory and active-worktree switching do not |
 | `ACT-REGISTRY-LINUX-git-ToggleDiffBase` | `git::ToggleDiffBase` | `git: toggle diff base` | Present | None | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-git-Uncommit` | `git::Uncommit` | `git: uncommit` | Present | None | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-git-UnstageSection` | `git::UnstageSection` | `git: unstage section` | Present | None | None | Pending | Pending | Pending |

@@ -4336,6 +4336,116 @@ then continue R07-000; do not begin R07-001 or R09.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin
   R07-001 or R09.
 
+## Pre-change contract — classify worktree navigation and creation actions
+
+Request: Classify the bound Git Worktree picker action and its typed
+create, switch, and open-in-new-window actions.
+Request type: Git worktree navigation and lifecycle action inventory; no
+runtime change, new setting, or worktree implementation.
+In scope: `ACT-MACOS-git-Worktree`,
+`ACT-REGISTRY-LINUX-git-CreateWorktree`,
+`ACT-REGISTRY-LINUX-git-SwitchWorktree`, and
+`ACT-REGISTRY-LINUX-git-OpenWorktreeInNewWindow`; define picker access,
+selection/create targets, switching, and separate-window opening.
+Out of scope: Delete and force-delete (already classified), Restricted Mode
+and trusted-path decisions (already classified), worktree setup task seeding
+(classified in the task-definition entry packet), branch management, and
+runtime changes to Git, Workspace, Keymap, menus, or project persistence;
+R07-001/R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Git ownership contracts, pinned Git and Worktree Picker action
+inventories, current Git repository API and Workspace hosting model, and the
+Git worktree deletion/security and task-definition entry packets.
+Owner module: Git owns repository worktree discovery, create/switch operations,
+and picker state/behavior. Workspace owns project activation and window
+hosting. Keymap owns the global Workspace shortcut. The shell/app root only
+composes platform window services and menu/toolbar surfaces.
+Canonical capability crates: `labonair-git` is the existing Git contract
+crate, but it currently has no worktree lifecycle API. No Git Worktree UI
+crate or local worktree implementation is present; do not create another owner
+or claim the contract exists.
+Canonical user entry points: The titlebar worktree trigger opens Worktree
+Picker; `cmd-ctrl-w` on macOS, `alt-ctrl-shift-w` on Linux, and `shift-alt-w`
+on Windows invoke `git::Worktree` in Workspace. The picker selects existing
+worktrees, offers creation targets, and has a separate Open in New Window
+control for non-current worktrees.
+Public typed contracts: `Worktree` takes no arguments. `CreateWorktree` takes
+an optional worktree name and a CurrentBranch, ExistingBranch, or RemoteBranch
+target; the target determines the detached starting point, and success opens
+and activates the new worktree Workspace. `SwitchWorktree` takes a path and
+display name and switches the current Workspace to that linked worktree.
+`OpenWorktreeInNewWindow` takes a path and opens that existing worktree in a
+separate window.
+State and persistence: Worktree existence and branch/ref targets persist in
+Git. Worktree switching must account for the current Workspace's open items,
+docks, and focus; creation opens a new Workspace on the new worktree. No
+Settings value is added by these entry actions.
+Events and registry contributions: The reference dispatches typed Git
+actions from Worktree Picker selection. No new Labonair event or registry is
+added in this classification; define operation, lifecycle, and multi-consumer
+contracts before implementation.
+Settings: None added. Existing workspace/tab/session persistence effects
+remain to be measured for switch, create, and new-window paths.
+Notifications and recovery: Repository absence, collaboration restrictions,
+remote fetch/open failures, path conflicts, concurrent creation, and canceled
+switch/create operations require visible owner-routed recovery. Labonair user
+messages must use Notifications; the reference's transient errors still need
+native observation.
+UI-kit: Worktree Picker reuses shared picker, list, button, and icon controls;
+new Labonair controls would use `labonair-ui-kit`.
+Allowed dependency changes: None. Compatibility code: none; do not present
+branch switching as worktree switching or the existing Worktree deletion
+classification as full worktree parity.
+Focused verification: Compare the four action rows and parameter types,
+titlebar/keyboard entry routes, create targets, existing-worktree switch,
+new-window path, repository/collaboration restrictions, remote operations,
+concurrent/canceled operations, and current Labonair Git API/UI absence.
+Visual evidence: Pending paired macOS titlebar trigger, picker list/search,
+create targets, switch, in-new-window, disabled/error, and restored Workspace
+state captures. Record OS, repository/worktrees, active target, Workspace
+window count, selected branch target, and focus.
+Workspace gates: Diff check, documentation checker, docs verification scope,
+queue check, and focused action/parameter/owner/local-API audit. Rust gates
+remain R07-000 exit gates; no implementation change is planned.
+Documentation updates: One bound action row; three registered-unbound Git
+rows; worktree navigation packet, action counts/index, Git crosswalk, normative
+parity note, and this task contract/progress record.
+Security impact: N/A; no file or repository mutation changes. Preserve Git
+repository boundaries and the existing trust/deletion contracts.
+Performance impact: N/A; no runtime change. Picker population and remote
+repository latency remain acceptance requirements.
+Known limitations: Same-session source research and independent requirements
+are redevelopment, not separated-room clean-room implementation. Native
+dispatch, operation outcomes, error recovery, Workspace restoration, and
+paired macOS behavior remain open.
+Next safe task: Complete this bounded worktree navigation/create
+classification, then continue R07-000; do not begin R07-001 or R09.
+
+## Progress — classify Git worktree navigation and creation actions
+
+- Classified the bound Worktree Picker action and typed create, switch, and
+  open-in-new-window actions in
+  [`action-classification-git-worktree-navigation.md`](../../docs/parity/action-classification-git-worktree-navigation.md).
+  The packet records create targets, collaboration/concurrency guards,
+  separate-window behavior, Workspace-state requirements, and the missing
+  Labonair lifecycle API/UI.
+- Updated the bound and registered-unbound action ledgers, Git feature
+  crosswalk, parity packet index, and normative Zed parity summary.
+- Focused source audit passed for the titlebar entry, macOS/Linux/Windows
+  shortcuts, typed parameters, Git service actions, and the absence of matching
+  Labonair worktree routes. Picker dispatch, remote behavior, operation
+  recovery, Workspace restoration, and paired visual acceptance remain open.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py`
+  (43 normative documents and 199 Markdown files),
+  `python3 scripts/verify.py --scope docs`, and
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest
+  active). Rust gates were not run for this documentation-only slice and remain
+  R07-000 exit gates.
+- Same-session source research and independently written requirements are
+  redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin
+  R07-001 or R09.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

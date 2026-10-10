@@ -24,7 +24,7 @@ source-side research. It records current evidence without claiming parity.
   related unbound Settings actions), two Keymap entry actions (plus one
   related unbound default-keymap action), one task-definition entry action
   (plus four related unbound global/project configuration actions),
-  one Editor Go to Line action,
+  four Git worktree navigation/creation actions, one Editor Go to Line action,
   one File Finder action, two Workspace Open/OpenFiles actions, one Workspace
   New Window action,
   one Workspace Add Folder to
@@ -78,6 +78,9 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-task-definition-entry.md`](action-classification-task-definition-entry.md) —
   independently stated global, project, and worktree task/debug configuration
   file routes, with missing Task/Debugger owners and local entry points.
+- [`action-classification-git-worktree-navigation.md`](action-classification-git-worktree-navigation.md) —
+  independently stated Worktree Picker, create, switch, and new-window flows,
+  with current Git owner/API gaps and Workspace-state acceptance.
 - [`action-classification-workspace-open.md`](action-classification-workspace-open.md) —
   independently stated intent, Workspace/Editor ownership, distinct general
   Open and platform Open Files routes, related Settings targets, and runtime
