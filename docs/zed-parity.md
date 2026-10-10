@@ -242,6 +242,12 @@ mouse input, light/dark themes, workload states, accessibility, failure and
 offline behavior, undo, and progressive discovery. Its values remain pending
 until paired native evidence exists.
 
+The working action requirements register in
+[`docs/parity/action-requirements.md`](parity/action-requirements.md) assigns
+stable IDs to the 585 default-bound macOS actions. It records input contexts,
+but action semantics, owner routes, and runtime evidence remain open; this
+inventory is not parity evidence.
+
 ## Settings parity pilot
 
 Settings is the first detailed specification pilot because it has already

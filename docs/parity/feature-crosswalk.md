@@ -17,7 +17,7 @@ expanded before R07-000 can exit.
 | `workspace.tabs` | Open, select, pin/preview, reorder, move, split, merge, close, and restore every view kind | Workspace / universal tab strip and registered views | Partial; universal Labonair tab model is an explicit design choice | Lifecycle proposal remains pending; titlebar appearance, tab navigation, context-menu close scopes, and evidence are recorded in [`titlebar-tab-strip.md`](titlebar-tab-strip.md) |
 | `workspace.docks` | Open and move panels among left, right, and bottom docks; resize and restore dock state | Workspace + panel owners / dock controls | Partial | Map each panel, per-dock action, keyboard route, and narrow-window state |
 | `workspace.shared-controls` | Use menus, pickers, dialogs, context menus, tooltips, buttons, inputs, and focus traversal consistently | UI kit + owning surface / local trigger | Partial | Measure geometry and input states from paired macOS evidence |
-| `commands.keymap` | Discover actions, search, bind keys, resolve conflicts, use contexts, and navigate multi-stroke bindings | Command Palette + Keymap / global menu, palette, keymap tab | Partial | Crosswalk every action and binding; record context and availability rules |
+| `commands.keymap` | Discover actions, search, bind keys, resolve conflicts, use contexts, and navigate multi-stroke bindings | Command Palette + Keymap / global menu, palette, keymap tab | Partial | The 585 bound macOS actions now have stable IDs in [`action-requirements.md`](action-requirements.md); classify each effect, owner, local route, and runtime result, then inventory unbound actions and other platform profiles |
 | `settings.values` | Search, navigate, scope, edit, validate, reset, persist, and restore settings | Settings / Settings window | Partial | Finish the pinned field/control crosswalk and paired Settings pilot |
 | `editor.text` | Open/edit/save files; multi-selection; undo/redo; search/replace; navigation; diagnostics; completions; formatting; and recovery | Editor / Editor tab | Partial | Reconcile all editor workflows with ordered R09 contracts after the inventory |
 | `editor.multibuffer` | Review and edit excerpts returned by search, navigation, or diagnostics | Editor / search or navigation result | Missing or unverified | Assign the durable view owner and record selection/edit/save semantics |
@@ -55,6 +55,12 @@ R07-000. No row is an approved divergence. Every row still needs exact pinned
 runtime evidence, command/action references, setting IDs, persistence,
 extension points, failure behavior, and testable acceptance steps. Current
 public documentation and the pinned runtime must be cross-checked separately.
+
+The action register gives every default-bound macOS action a stable requirement
+ID and preserves its key sequence and context. Its semantic classifications,
+canonical owner assignments, Labonair routes, runtime observations, and
+acceptance evidence are still pending; the IDs do not change the crosswalk's
+partial status.
 
 ## Current Labonair capability reconciliation
 

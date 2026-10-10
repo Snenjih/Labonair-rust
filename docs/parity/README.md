@@ -10,7 +10,11 @@ source-side research. It records current evidence without claiming parity.
 
 - [`feature-crosswalk.md`](feature-crosswalk.md) — draft user-workflow coverage
   map with proposed/current owners and explicit missing areas. It is not an
-  exhaustive action or settings inventory yet.
+  exhaustive settings or runtime inventory yet.
+- [`action-requirements.md`](action-requirements.md) — stable requirement IDs
+  for each of the 585 default macOS bound actions, with binding/context
+  inventory and per-action semantic, owner, route, and runtime gates. All
+  action-level acceptance remains open.
 - [`titlebar-tab-strip.md`](titlebar-tab-strip.md) — independent titlebar tab
   appearance, input/state matrix, ownership, and evidence packet.
 - [`settings-crosswalk.md`](settings-crosswalk.md) — independent Settings
@@ -36,16 +40,21 @@ source-side research. It records current evidence without claiming parity.
 | `Public-doc only` | A current public documentation page describes the behavior; its match to the pinned build is unverified. |
 | `Pending` | Evidence is missing or the comparison has not been completed. |
 
-## Clean-room handoff rule
+## Provenance and source boundary
 
-Implementation work may use only the independent feature records, Labonair's
-normative contracts, and its current code. It must not receive the Zed
-checkout or source-side comparison reports. The reference checkout is pinned
-through the parent gitlink and `.gitmodules`, but the source-blind implementation
-checkout has not yet been created. Before implementation starts, create a
-separate checkout at the accepted parent revision, leave the Zed submodule
-uninitialized and absent from the worktree, and omit the Zed-specific files in
-`docs/reports/`. Verify the checkout contains neither `zed-refrence/zed` nor
-the source-side Settings report. Give the implementation owner only this
-requirements directory and Labonair's normative contracts. R07-000 remains
-open until the packet and the source-blind checkout have both been reviewed.
+The current R07-000 analysis and implementation were performed in the same
+contributor session. A source-blind implementation checkout was not used, so
+this work is recorded as independent redevelopment and makes no claim of
+separated-room clean-room provenance. That limitation applies to prior R07-000
+implementation changes too; it cannot be changed retroactively by creating a
+new checkout. Do not copy Zed code, comments, assets, fonts, or implementation
+details.
+
+The source-side reports remain research records and are not implementation
+briefs. Future work may use a source-blind checkout when its contributor has
+not received source-level reports. Implementation packets in this directory
+must contain independently written user goals, observable flows, states,
+owner/contracts, settings and persistence, dependencies, and acceptance
+evidence. The independent package is not complete while any field is missing
+or marked pending. Runtime evidence and action-level parity remain open under
+R07-000.

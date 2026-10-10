@@ -684,6 +684,35 @@ the shared UI kit and Settings owner. Native visual evidence remains pending.
   Zen, and sidebar states. Visual evidence remains Pending until a native
   Labonair window can be captured.
 
+## Progress record — 2026-10-10 — Stable macOS action requirement IDs
+
+- Added [`../../docs/parity/action-requirements.md`](../../docs/parity/action-requirements.md)
+  with stable IDs for all 585 distinct action names bound in the pinned default
+  macOS profile. The register preserves each key sequence and active context
+  and defines the per-action workflow, state, settings/persistence, owner, and
+  evidence fields required before acceptance.
+- The IDs close only the inventory-identity gap. All 585 action effects,
+  exact Labonair owners/routes, context availability, settings effects, and
+  runtime acceptance remain Pending. Unbound actions and Windows/Linux
+  profiles remain outside this register and are still required by the user
+  objective.
+- Updated the independent parity index and command/keymap crosswalk. Analysis
+  and implementation occurred in the same contributor session; the work is
+  recorded as independent redevelopment and does not claim separated-room
+  clean-room provenance. No source-blind checkout was used.
+- This session has no general native UI interaction/capture tool available.
+  The prior acceptance record documents the host's missing app-window access
+  and denied Screen Recording grant; paired pinned Zed/Labonair evidence stays
+  Pending with the host operator as owner.
+- Replaced dead hyperlinks into the absent `reference-src/` checkout with
+  non-clickable historical path text; no files in that frozen tree were
+  restored or edited. `python3 scripts/check_documentation.py` and
+  `python3 scripts/verify.py --scope docs` pass (43 normative documents, 163
+  Markdown files); `python3 scripts/check_rework_queue.py` passes (46 tasks,
+  R07-000 active), and `git diff --check` passes.
+- R07-000 remains In Progress. No R09 work has started; R07-001 remains next
+  after this inventory task.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified
