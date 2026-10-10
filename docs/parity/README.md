@@ -23,6 +23,11 @@ source-side research. It records current evidence without claiming parity.
   independently stated user goals, static Labonair owner routes, code coverage,
   and runtime/evidence gaps for 23 default-macOS Search-family actions. No
   action is marked runtime-observed.
+- [`action-classification-pane.md`](action-classification-pane.md) —
+  independently stated user goals, Workspace/Editor owner boundaries, current
+  tab/pane routes, and evidence gaps for 22 default-macOS Pane actions. The
+  split between universal tabs, outer panes, and Editor groups remains explicit;
+  runtime acceptance is pending.
 - [`keymap-overlay-requirements.md`](keymap-overlay-requirements.md) — stable
   IDs for 1,402 bindings across seven macOS base-profile overlays, conditional
   Vim/Helix bindings, and macOS-specific overrides. Profile behavior, action

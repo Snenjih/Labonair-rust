@@ -1142,6 +1142,94 @@ Next safe task: Continue with another default-macOS action family and the
   runtime-observed. R07-000 remains In Progress; R07-001 and all R09 tasks
   remain unstarted.
 
+## Pre-change contract — classify default-macOS Pane actions
+
+Task: document the independently stated goals, current owner routes, source
+coverage, and acceptance gaps for the 22 default-macOS `pane::*` actions.
+This is an R07-000 requirements-inventory slice; it does not implement action
+handlers or claim runtime parity.
+
+Dependencies: `docs/parity/action-requirements.md`, pinned action metadata,
+`docs/workspace-model.md`, ADR 0004, and the Workspace, Editor, Explorer,
+Search, and Terminal owner contracts.
+Owner module: Context-specific. Workspace (`labonair-workspace`) owns the
+universal tabs and outer panes; Editor (`labonair-editor`) owns editor-internal
+groups and search state; Explorer owns project-tree reveal; the active view
+owner keeps its navigation history. Workspace hosts the existing Search
+overlay and terminal pane layout.
+Canonical user entry point: Existing universal tab strip/context menu,
+registered Workspace commands, Editor split commands, Explorer active-file
+following, and Workspace `Find`. No parallel entry point is introduced.
+Public typed contract: Existing `TabStore`, `WorkspaceLayout`, Workspace
+command descriptors, Editor `EditorSplitTree`/`EditorCommand`, Explorer
+settings/view, and Search contracts.
+Events: None added.
+Registry contributions: None added. Record the lack of one-to-one action
+routes without adding speculative aliases or registrations.
+Allowed dependency changes: None.
+State and persistence owners: Workspace owns universal tab and outer Terminal
+pane session state; Editor owns internal split state and search state; Explorer
+owns project-tree state; each active view owns its own navigation state. No
+general pin or closed-item history is added.
+Settings: No values or defaults changed. Record the existing Explorer
+auto-reveal default only as related behavior.
+Migration impact: None.
+Notifications: Preserve existing dirty-close and Search error routes; add none.
+UI-kit components: Existing shared tab, menu, pane, focus, and Search controls.
+Failure/cancellation/retry: Specify dirty-close cancellation, missing history,
+unavailable Explorer targets, search errors, and pane creation failure as
+acceptance states; keep unobserved behavior marked pending.
+Security and performance: No new filesystem access or performance path; retain
+existing project-root safety and asynchronous Search behavior.
+Removal condition for compatibility code: N/A.
+Focused tests: Trace existing TabStore, Workspace descriptor, and pane geometry
+tests as related evidence only; do not claim action-dispatch coverage.
+Visual evidence: Pending paired native macOS interaction and captures for all
+relevant states.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, action-ID audit, and test-trace audit.
+Documentation updates: Pane classification packet, action register, parity
+index/crosswalk, normative parity scope, and this progress record.
+Current status: 22 IDs have static semantic and owner/route mapping; none has
+pinned macOS dispatch or native interaction evidence in this environment.
+Target status: Every ID has a traceable goal, owner route, source/test
+correspondence, and separately recorded runtime/visual acceptance.
+Known limitations: Analysis and implementation remain same-session independent
+redevelopment, not separated-room clean-room work. Host is Linux without a
+display server; no paired native capture is available.
+Next safe task: Continue with the next default-macOS action family or the
+registered-but-unbound action catalog while R07-000 remains active.
+
+## Progress record — 2026-10-10 — default-macOS Pane action classification
+
+- Added [`../../docs/parity/action-classification-pane.md`](../../docs/parity/action-classification-pane.md)
+  with independently stated user goals, per-action Labonair owner/crate,
+  existing route and source correspondence, related tests, and explicit
+  unverified interaction states for all 22 default-macOS `pane::*` IDs.
+- Kept the accepted universal tab strip, Workspace outer-pane tree, and
+  Editor-owned groups distinct. The packet also maps Explorer reveal, the
+  Workspace-hosted Search overlay, and active-view navigation ownership.
+- Updated all 22 action-register rows to link the static crosswalk while
+  preserving their action IDs and platform binding/context/argument records.
+  Every row remains `Pending (macOS interaction not observed)`.
+- Linked the packet from the parity index, feature crosswalk, and normative
+  parity scope. The per-action audit found exact agreement between 22 unique
+  register IDs and 22 unique crosswalk IDs; all 22 have an explicit owner.
+- Test traceability maps 14 action IDs to related model or descriptor tests.
+  None has an action-specific regression or pinned-key dispatch test, and all
+  22 lack native interaction and paired visual evidence.
+- Passed: `python3 scripts/check_documentation.py` (43 normative documents,
+  169 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains active),
+  `git diff --check`, and the custom ID/owner/test/runtime-status audit.
+- Not run for this documentation-only slice: Cargo formatting, workspace
+  check, Clippy, and tests. They remain required before R07-000 exit.
+  Unavailable: pinned macOS dispatch and paired native interaction/captures;
+  this host is Linux without `DISPLAY` or `WAYLAND_DISPLAY`. No action is
+  runtime-observed. Same-session work is independent redevelopment and does
+  not claim separated-room clean-room provenance. R07-001 and R09 remain
+  unstarted.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

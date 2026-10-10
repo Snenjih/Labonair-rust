@@ -265,10 +265,14 @@ through deprecated-alias metadata. The independent
 [`Search action crosswalk`](parity/action-classification-search.md) states
 catalog intent and maps static Labonair owner routes for 23 default-macOS
 Search-family actions. Pinned runtime dispatch, native Labonair interaction,
-and paired visual acceptance remain open for that slice. All other action
-semantics and owner routes, profile selection/reload, user overrides, and
-macOS/Linux/Windows runtime evidence also remain open; these static inventories
-are not parity evidence.
+and paired visual acceptance remain open for that slice. The independent
+[`Pane action crosswalk`](parity/action-classification-pane.md) maps static
+owner boundaries and current routes for 22 default-macOS Pane actions while
+preserving the universal-tab and Editor-group contracts; its runtime and
+paired visual evidence also remain open. All other action semantics and owner
+routes, profile selection/reload, user overrides, and macOS/Linux/Windows
+runtime evidence also remain open; these static inventories are not parity
+evidence.
 
 ## Settings parity pilot
 
