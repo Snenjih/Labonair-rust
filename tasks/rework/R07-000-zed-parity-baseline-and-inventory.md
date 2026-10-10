@@ -5099,6 +5099,65 @@ Next safe task: Continue R07-000 action/workflow classification; do not begin R0
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
 ```
 
+## Pre-change contract — Terminal panel toggle and focus actions
+
+```text
+Request: Classify `terminal_panel::Toggle` and the related registered-unbound `terminal_panel::ToggleFocus`, including dock visibility/focus behavior, action/menu/keymap entry points, Settings effects, and Labonair's universal Terminal tab route.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: One default-macOS-bound Toggle row and one Linux-registered-unbound ToggleFocus row; TerminalPanel handlers and Workspace focus behavior; default, JetBrains, Vim command, menu, and command-palette routes; `terminal.dock`, `terminal.starts_open`, `terminal.button`, and `close_panel_on_toggle`; local Workspace Terminal tabs and dock commands; packet/index, action/crosswalk registers, normative summary, and this task.
+Out of scope: Adding a Terminal dock, implementing toggle/focus commands, changing panel/tab architecture or Settings, changing action IDs/bindings, or claiming runtime/visual parity; starting R07-001 or R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned TerminalPanel action callbacks, Workspace `toggle_panel_focus`/`close_panel`, TerminalPanel open/start/default-shell lifecycle, Terminal and Workspace Settings, default and JetBrains keymaps, Vim action alias; Labonair universal tabs, Workspace docks, Terminal module and menu/command surface.
+
+Owner module: Pinned TerminalPanel contributes its panel and owns terminal entries; Workspace owns panel visibility/focus/layout transitions and installs actions. Under Labonair's accepted universal-tab architecture, Workspace is the owner of the Terminal-view focus/entry action and Terminal owns session creation/input; do not create a parallel shell-wide dock command.
+Canonical capability crate: Pinned terminal_view with Workspace panel contracts; local `labonair-workspace` composes `labonair-terminal` sessions as universal Terminal tabs. No local TerminalPanel/dock action owner exists.
+Canonical user entry point: Pinned `terminal_panel::Toggle` from Workspace `ctrl-`` (all defaults), Terminal menu, and Command Palette. JetBrains profiles use `alt-f12`; Vim also exposes the `te rm` and `T erm` action aliases. `ToggleFocus` is separately registered but has no default binding.
+Public typed contract: `Toggle` calls Workspace `toggle_panel_focus<TerminalPanel>` and closes the panel when it was already focused, independent of `close_panel_on_toggle`. `ToggleFocus` calls the focus toggle only; with `close_panel_on_toggle=false` it returns focus to center while leaving the Terminal panel open. The shared focus toggle closes on unfocus when `close_panel_on_toggle=true`.
+Events: Opening/focusing a panel updates Workspace layout; when TerminalPanel becomes active without a Terminal, its activation path asynchronously starts the default shell. No local event change is proposed.
+Registry contributions: Preserve the bound action, the registered-unbound action, menu and palette discovery, `Workspace` key contexts, JetBrains `alt-f12`, and Vim aliases in the source register. Do not add duplicate menu/keymap surfaces.
+Settings: `terminal.dock` defaults to bottom and selects left/bottom/right; `terminal.starts_open` defaults false; `terminal.button` defaults true and controls its panel status item; Workspace `close_panel_on_toggle` defaults false and changes ToggleFocus's close effect. The four existing Settings requirement rows remain linked. Local Labonair's Terminal surface is a tab, so those dock-specific effects are not local parity claims.
+Persistence: Workspace serializes open/active dock state. `terminal.dock`, starts-open, and button visibility are USER Settings; action dispatch itself is transient. Labonair persists universal tab/workspace layout, but has no TerminalPanel position/start-open state.
+Migration impact: No code change. The accepted universal tab strip replaces the pinned dedicated Terminal dock surface, but the same terminal access/focus workflow still needs an owner-approved typed Workspace action and explicit behavior mapping for unfocus/close.
+Commands and keymap: Default `ctrl-`` in `Workspace` on macOS/Linux/Windows; JetBrains `alt-f12` in `Workspace || Editor` on macOS and the shared Linux/Windows profile. `ToggleFocus` has no default key binding. Preserve Terminal menu and palette discovery and Vim `te rm`/`T erm` aliases. Static dispatch and shortcut conflicts remain runtime acceptance.
+Notifications: Opening the TerminalPanel may spawn the configured shell; record the actual error surface for unsupported project, spawn failure, and unavailable session. Do not add a Toast route.
+UI-kit components: No UI edit. The dock/status item and universal tab controls remain owner surfaces; use `labonair-ui-kit` for future reusable controls.
+User workflow: Bring the Terminal surface into view and focus its input; invoke Toggle again while it is focused to close the pinned panel. ToggleFocus returns focus to center and only closes when its setting requests that behavior.
+Failure/cancellation/retry behavior: Cover terminal unsupported or disabled, missing panel registration, no existing session/default-shell failure, focus already in panel/center/another dock, position change, starts-open, dock closed by setting, active terminal selection, workspace restore, and hidden status item.
+Security boundary: ToggleFocus only changes UI focus. Opening an empty TerminalPanel starts the configured local shell; it must not execute a task or arbitrary command. Preserve project/host and local-versus-remote session boundaries.
+Performance budget: Panel toggles are synchronous Workspace state changes; first shell spawn remains asynchronous.
+
+Implementation order: Trace action declarations and both handlers, generic Workspace focus/close behavior and the close setting, terminal panel default shell start/Settings, all action/menu/palette/Vim/profile entries, local universal Terminal tab/dock routes, then update the bound/unbound rows and parity indexes. Run docs/agents/knowledge/Settings/queue gates and a focused source/binding audit.
+Focused tests: Not applicable to this documentation-only change; do not add or run tests.
+Contract/integration tests: No runtime contract changed; toggle/open/focus/close state and one-session shell startup remain acceptance cases.
+Persistence/migration tests: No tests changed; Workspace open state and four Settings lifecycles remain evidence cases.
+Command/surface tests: Verify all entry points, JetBrains and Vim profile behavior, Toggle versus ToggleFocus semantics, `close_panel_on_toggle` true/false, and the universal-tab adaptation.
+Visual states: No UI edit. Paired macOS evidence remains required for terminal visible/hidden, focus in terminal/center, no-session startup, moved dock, and narrow window.
+Security/negative tests: Verify unsupported project and failed shell spawn do not create hidden sessions or route input to another Terminal.
+Performance measurement: Not applicable.
+Workspace gates: Diff check; docs, agents, knowledge, Settings and active queue; focused two-action/handler-registration/settings/profile/local-surface audit.
+Documentation updates: Terminal panel toggle/focus action packet, bound/unbound action rows, parity packet index, command/keymap and Terminal crosswalks, normative summary, and this task record.
+Current status: Pinned action and focus semantics, Settings effects, registration sites, key/profile/menu/Vim routes, and Labonair owner gap audited; packet and required documentation gates pass. Native dispatch and universal-tab mapping remain open.
+Target status: Distinguish Toggle's explicit close from ToggleFocus's settings-based unfocus/close; document terminal startup and all Settings, record handler-registration ordering, and specify the universal-tab owner gap without adding a dock.
+Evidence links: Pinned `terminal_panel.rs`, `workspace.rs`, Zed Workspace action registration, GPUI action dispatch, default and JetBrains keymaps, Vim aliases and Settings; Labonair Workspace Terminal tabs, command provider, menu, dock, and capability/crosswalk docs.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Source was inspected; tests and native action dispatch were not run. The universal-tab action mapping and visual behavior remain open.
+Remaining migration edges: No local TerminalPanel, toggle/focus action, or equivalent focus-only Workspace command; `terminal.dock`, starts-open, button, and close-on-toggle effects differ from universal tabs. Pinned/native handler dispatch and macOS visual acceptance remain open.
+Failed/unavailable gates: Rust build, tests, native menu/key/palette/Vim dispatch, shell startup, and paired visual evidence remain R07-000 exit gates.
+Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+```
+
+## Progress — classify Terminal panel toggle and focus actions
+
+```text
+- Added [action-classification-terminal-panel.md](../../docs/parity/action-classification-terminal-panel.md) for bound `terminal_panel::Toggle` and registered-unbound `terminal_panel::ToggleFocus`, including open/focus/close transitions, default-shell startup, and the universal-tab owner gap.
+- Preserved the default `ctrl-`` Workspace binding on all three platforms, both JetBrains `alt-f12` overrides, Terminal menu/action registry labels, Vim `te rm`/`T erm` aliases, and the unbound action row. Linked the existing Terminal dock, starts-open, button, and `close_panel_on_toggle` Settings requirements.
+- Static source distinguishes Toggle's explicit close from ToggleFocus's setting-driven close. Found module and central Workspace registrations for ToggleFocus; the module callback attaches first, and GPUI's first matching bubble listener stops propagation, so the later handler is shadowed in the inspected Workspace render path. No native action dispatch was observed.
+- Labonair exposes Terminal as universal tabs and a New Terminal Tab command, but no TerminalPanel or typed Workspace action to reveal/focus an existing Terminal view. The packet leaves the tab mapping open and does not add a dock.
+- Passed `git diff --check`; docs (43 normative documents and 223 Markdown files); agents (10 request routes); knowledge; Settings (7 areas and 101 registered UI fields); and active queue verification (46 tasks; R07-000 remains earliest active).
+- No Rust build, tests, native key/menu/palette/Vim dispatch, shell startup, or visual check was run for this documentation-only slice. Same-session source inspection and independently authored requirements are redevelopment, not separated-room clean-room implementation.
+- Native focus/close behavior, shell-start recovery, Setting persistence, the universal-tab transition, action availability, and paired macOS evidence remain open R07-000 exit gates.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+```
+
 ## Pre-change contract — default-bound ProjectPanel actions
 
 ```text

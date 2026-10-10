@@ -512,6 +512,11 @@ distinguishes mode-aware `SendKeystroke` dispatch from raw `SendText` bytes,
 records platform and Emacs profile behavior plus the `option_as_meta` setting,
 and identifies the missing local payload actions. Native PTY delivery and
 keymap dispatch remain open. The independent
+[`Terminal panel toggle/focus action crosswalk`](parity/action-classification-terminal-panel.md)
+classifies TerminalPanel open/focus/close and shell-start behavior, the
+settings-driven distinction between `Toggle` and `ToggleFocus`, and duplicate
+handler registration. Labonair's universal-tab mapping and native focus
+acceptance remain open. The independent
 [`Outline and OutlinePanel action crosswalk`](parity/action-classification-outline-panel-actions.md)
 classifies the searchable Editor Outline picker, five default-macOS-bound
 OutlinePanel actions, 13 registered-unbound panel actions, six unbound

@@ -474,7 +474,7 @@ For every row, independently establish the user's goal and full invocation flow;
 | `ACT-REGISTRY-LINUX-terminal-ScrollHalfPageUp` | `terminal::ScrollHalfPageUp` | `terminal: scroll half page up` | Present | None | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-terminal-SearchTest` | `terminal::SearchTest` | `terminal: search test` | Present | None | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-terminal-SelectAll` | `terminal::SelectAll` | `terminal: select all` | Present | None | None | Pending | Pending | Pending |
-| `ACT-REGISTRY-LINUX-terminal_panel-ToggleFocus` | `terminal_panel::ToggleFocus` | `terminal panel: toggle focus` | Present | None | None | Pending | Pending | Pending |
+| `ACT-REGISTRY-LINUX-terminal_panel-ToggleFocus` | `terminal_panel::ToggleFocus` | `terminal panel: toggle focus` | Present | None | None | Transfer focus between TerminalPanel and Workspace center; close on unfocus only when `close_panel_on_toggle` is enabled: [Terminal panel toggle/focus classification](action-classification-terminal-panel.md) | No TerminalPanel focus target or matching action in Labonair's universal-tab Workspace | Pending (native command discovery, focus transition, duplicate-handler ordering, and setting effect not observed) |
 | `ACT-REGISTRY-LINUX-text_finder-Fold` | `text_finder::Fold` | `text finder: fold` | None | None | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-text_finder-ToProjectSearch` | `text_finder::ToProjectSearch` | `text finder: to project search` | None | None | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-text_finder-ToggleFoldAll` | `text_finder::ToggleFoldAll` | `text finder: toggle fold all` | None | None | None | Pending | Pending | Pending |
