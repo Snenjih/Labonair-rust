@@ -476,6 +476,12 @@ provider-owned secondary confirmation, Labonair UI Kit focus/submenu routes, and
 the pinned Restart action declaration with no discovered handler. Native dispatch,
 profile precedence, keyboard focus, and paired menu acceptance remain open. The
 independent
+[Theme mode and selector action crosswalk](parity/action-classification-theme-mode-selector.md)
+classifies two default-bound actions and ten related Theme/Icon Theme Settings
+rows. It records the static-to-dynamic conversion, theme preview/confirm/cancel,
+and Labonair's separate General color-mode and single theme/icon-theme IDs.
+Native action dispatch, Settings save/reload, and paired appearance states remain
+open. The independent
 [`Outline and OutlinePanel action crosswalk`](parity/action-classification-outline-panel-actions.md)
 classifies the searchable Editor Outline picker, five default-macOS-bound
 OutlinePanel actions, 13 registered-unbound panel actions, six unbound

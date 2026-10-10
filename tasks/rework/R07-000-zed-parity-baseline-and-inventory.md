@@ -5475,3 +5475,61 @@ Next safe task: Complete this generic Menu action-classification slice, then con
 - Focused static audit passed for six requirement rows, preserved platform binding cells, and all 22 profile overlay records. Passed `git diff --check`, `python3 scripts/verify.py --scope docs` (43 normative documents and 215 Markdown files), and `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active).
 - No Rust build, tests, native action dispatch, Settings save/reload, or visual check was run for this documentation-only slice. Native action/focus behavior, profile precedence, the Restart action, and paired macOS menu acceptance remain R07-000 exit gates. Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Theme mode and selector actions
+
+```text
+Request: Classify the default-bound `theme::ToggleMode` and `theme_selector::Toggle` actions, their pinned dynamic Theme/Icon Theme Settings effects, key bindings, and Labonair theme/command-palette routes.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: Two default-macOS action rows and their Linux/Windows bindings; pinned Workspace toggle and ThemeSelector behavior; static-to-dynamic Settings conversion; all ten related Theme and Icon Theme Setting rows; local ThemeStore, theme command provider, Settings fields, titlebar/palette entry points, and default keymap search; parity action packet/index, Appearance crosswalk, normative summary, and this task record.
+Out of scope: Implementing or changing Theme/ThemeSelector actions, keymaps, palette providers, ThemeStore, Settings schemas or controls, themes/icons/assets, persistence, dependencies, registries, or UI; static-catalog expansion; and starting R07-001 or R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned Workspace, theme_settings, ThemeSelector, action declarations, and platform keymaps; Labonair `labonair-theme`, its `labonair-theme-ui` Settings/palette adapter, `labonair-settings`, Workspace palette host, Shell global menu, and Keymap.
+
+Owner module: Pinned Workspace handles `theme::ToggleMode`; ThemeSelector owns theme browsing, preview, commit, and dismissal rollback; theme_settings defines value migration. Labonair `labonair-theme` owns theme catalogs/state, sibling `labonair-theme-ui` applies/persists theme choices, Settings owns values, and Workspace/Shell compose palette and menu entry points.
+Canonical capability crate: `labonair-theme` with `labonair-theme-ui`; `labonair-settings` stores values and `labonair-workspace` hosts the command palette.
+Canonical user entry point: Pinned Workspace shortcuts for mode toggle and modal ThemeSelector, also exposed from the application Settings menu. Labonair exposes the global titlebar Themes menu and Themes palette page with App Themes and Color Mode command submenus.
+Alternate entry points: The two default platform shortcuts; local Color Mode choices in the command palette and persisted General Settings preference.
+Public typed contract: Existing local `ThemePreference`, `ThemeStore`, `PaletteAction::Submenu(SetColorMode/SetAppTheme)`, Theme command provider, and Settings values remain unchanged. No `theme::ToggleMode` or `theme_selector::Toggle` action route is added.
+Events: No event changes proposed.
+Registry contributions: No new action, command, registry, palette page, or key binding. Preserve existing IDs and keymap rows.
+Settings and scope: Classify `SET-appearance-theme`, the static theme alias, `theme.mode`, `theme.light`, `theme.dark`, `icon_theme$`, its static alias, and icon-theme mode/light/dark. Compare these with Labonair `general.theme`, `appearance.app_theme`, and `appearance.icon_theme`; do not add pinned Settings fields.
+Persistence: Pinned ToggleMode persists through the project filesystem Settings updater; `set_mode` may convert a static Theme to dynamic System light/dark defaults and also converts or updates icon-theme mode slots. ThemeSelector previews through global in-memory Settings overrides, persists only on confirmation, and restores original values on dismissal. Labonair Color Mode and theme selection persist `general.theme` and `appearance.app_theme` respectively.
+Migration impact: None in this documentation slice. Record static-to-dynamic conversion and the divergent Labonair value paths; do not change migration behavior.
+Commands: `theme::ToggleMode` and `theme_selector::Toggle`.
+Default keymap: macOS `cmd-k cmd-shift-t` / `cmd-k cmd-t`; Linux and Windows `ctrl-k ctrl-shift-t` / `ctrl-k ctrl-t`. No profile overlay records were found for either action.
+Notifications: No notification changes proposed.
+UI-kit components: No visual edits; document pinned ThemeSelector picker and Labonair command-palette route only.
+User workflow: Toggle configured light/dark/system appearance; browse and preview a theme; commit it or dismiss and restore the prior selection; optionally limit ThemeSelector to a provided theme-name filter.
+Failure/cancellation/retry behavior: No active Workspace, empty or filtered theme catalogs, a filtered catalog omitting the active theme, theme load failures, no-op mode changes, system-appearance changes, cancellation after preview, and Settings write/reload outcomes remain explicit acceptance cases.
+Security boundary: Theme catalogs and appearance settings only; no added file/network access.
+Performance budget: No runtime change.
+
+Implementation order: Read pinned action and Settings behavior, trace the local ThemeStore and command-palette owner paths, update two action rows and ten related Settings rows, link packet indexes/crosswalks, then run docs/queue and focused source/register audits.
+Focused tests: Not applicable to documentation-only change; do not add or run tests.
+Contract/integration tests: No runtime contract changed.
+Persistence/migration tests: No tests changed; Theme Settings save/reload and mode migration remain acceptance gates.
+Command/surface tests: Native mode shortcut, ThemeSelector preview/confirm/cancel, and palette Color Mode/App Theme routes remain runtime acceptance items.
+Visual states: No UI edits. Paired macOS ThemeSelector/palette previews, dismissal, mode changes, theme contrast, and narrow-window behavior remain open.
+Security/negative tests: Not applicable; no new authority boundary.
+Performance measurement: Not applicable.
+Workspace gates: Diff check, documentation checker, docs verification, active queue check, focused two-action/ten-setting/binding cross-reference audit, and pinned/local Theme route audit.
+Documentation updates: Theme action packet, two action rows, ten Settings effects, parity packet index, Appearance capability crosswalk, normative parity summary, and this task.
+Current status: Pending focused pinned mode/selector, local ThemeStore/palette, Setting-effect, and action-route audit.
+Target status: Static intent, dynamic values, local routes, default bindings, and semantic gaps classified; native dispatch, save/reload, selector interaction, and paired macOS acceptance remain open.
+Evidence links: Pinned Workspace ToggleMode, theme_settings `set_mode`, ThemeSelector action/handlers/menu, default settings and keymaps; Labonair ThemeStore, ThemeCommandProvider/Theme UI adapter, Settings, titlebar, and Workspace palette.
+Known limitations: Same-session source research and independently authored requirements are redevelopment, not separated-room clean-room implementation. Source and existing tests were inspected, not run; code declarations do not establish current native dispatch, Settings UI save/reload, or paired visual behavior.
+Remaining migration edges: Missing direct ToggleMode and ThemeSelector actions/default shortcuts; different dynamic Theme/Icon Theme Setting shapes; mode-toggle migration of a preselected static theme; native preview/cancel behavior and paired visual evidence.
+Failed/unavailable gates: Rust, native runtime, Settings persistence/reload, and visual gates remain R07-000 exit gates.
+Next safe task: Complete this Theme action-classification slice, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify Theme mode and selector actions
+
+- Added [`action-classification-theme-mode-selector.md`](../../docs/parity/action-classification-theme-mode-selector.md) for `theme::ToggleMode` and `theme_selector::Toggle`, including their pinned defaults, Workspace routes, and Labonair Theme palette gaps.
+- Preserved the macOS, Linux, and Windows bindings and contexts for both actions. The focused register audit confirmed the two rows retain their source keymaps, all ten related Theme/Icon Theme Settings rows link to the packet, the packet is indexed by the parity README, Appearance crosswalk, and normative parity summary, and neither action appears in the profile overlay registers.
+- Recorded the dynamic ThemeSelector preview, confirmation, and cancellation behavior; ToggleMode's System/light/dark transition; and the pinned static-to-dynamic Theme and Icon Theme conversion effects. Compared those routes with Labonair's separate `general.theme`, `appearance.app_theme`, and single `appearance.icon_theme` values.
+- Passed `git diff --check`; docs (43 normative documents and 216 Markdown files); agents (10 request routes); knowledge (including capability, product catalog, workflow, Settings, visual-evidence, automation, release, and reform freshness); Settings (7 areas and 101 registered UI fields); and rework queue (46 tasks; R07-000 remains earliest active) verification scopes.
+- No Rust build, tests, native action dispatch, Settings save/reload, or visual check was run for this documentation-only slice. Static source and existing tests were inspected, not run. Native registrations, selector preview/cancel, persistence, and paired macOS acceptance remain R07-000 exit gates. Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.

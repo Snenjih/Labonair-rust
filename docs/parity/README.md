@@ -39,8 +39,8 @@ source-side research. It records current evidence without claiming parity.
   17 Vim/Helix profile bindings), 20 default-bound ProjectPanel actions
   (10 IDs in 10 Vim/Helix entries; 16 IDs across 41 macOS-profile entries and
   14 IDs across 20 Linux/Windows-profile entries), six generic Menu actions
-  (20 macOS-profile entries and two shared Linux/Windows Atom entries), 19
-  Outline/OutlinePanel actions (six
+  (20 macOS-profile entries and two shared Linux/Windows Atom entries), two
+  Theme mode/selector actions, 19 Outline/OutlinePanel actions (six
   default-macOS-bound IDs and 13 registered-unbound panel actions; six of the
   latter occur in seven Vim/Helix entries), one Editor Go to
   Line action,
@@ -81,6 +81,9 @@ source-side research. It records current evidence without claiming parity.
   default-bound actions, including the unresolved pinned Restart handler and
   provider-specific SecondaryConfirm behavior. Native dispatch and paired
   keyboard/menu acceptance remain open.
+- [`action-classification-theme-mode-selector.md`](action-classification-theme-mode-selector.md) —
+  pinned Theme mode/selector behavior, ten related Theme and Icon Theme Settings
+  effects, Labonair palette and persistence routes, and native acceptance gaps.
 - [`action-classification-outline-panel-actions.md`](action-classification-outline-panel-actions.md) —
   independently stated Outline picker and OutlinePanel behavior, four pinned
   Settings effects, six default-macOS-bound actions, and 13 registered-unbound
