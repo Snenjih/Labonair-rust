@@ -482,6 +482,11 @@ rows. It records the static-to-dynamic conversion, theme preview/confirm/cancel,
 and Labonair's separate General color-mode and single theme/icon-theme IDs.
 Native action dispatch, Settings save/reload, and paired appearance states remain
 open. The independent
+[`Terminal Clear action crosswalk`](parity/action-classification-terminal-clear.md)
+records the pinned model-level saved-screen/cwd-history effect and the local
+palette command's ANSI PTY write, without assuming equal scrollback behavior.
+Native dispatch, SSH/foreground-process behavior, and paired terminal states
+remain open. The independent
 [`Outline and OutlinePanel action crosswalk`](parity/action-classification-outline-panel-actions.md)
 classifies the searchable Editor Outline picker, five default-macOS-bound
 OutlinePanel actions, 13 registered-unbound panel actions, six unbound

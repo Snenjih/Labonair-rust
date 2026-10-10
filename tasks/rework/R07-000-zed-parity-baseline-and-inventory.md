@@ -4757,6 +4757,61 @@ Next safe task: Classify and document the Git commit lifecycle packet, then cont
 - Rust gates, native interaction, and paired visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
 - Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+## Pre-change contract — Terminal Clear action
+
+```text
+Request: Classify the default-bound `terminal::Clear` action, its pinned terminal-model effect, platform key bindings, and Labonair's Clear Terminal palette command.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: One default-macOS action row and Linux/Windows bindings; pinned TerminalView action handler and saved-screen behavior; all pinned default/profile keymap occurrences; Labonair terminal command provider, active-pane adapter, command ID alias, ANSI write effect, crosswalk and packet indexes.
+Out of scope: Changing terminal model behavior, saved scrollback, PTY writes, command registration, action/keymap runtime, paste/copy behavior, Settings, or UI; modifying pinned/reference source; starting R07-001 or R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned terminal `Clear` action and `TerminalView::clear`; pinned Alacritty saved-screen helper; macOS/Linux/Windows default keymaps; Labonair terminal command provider, Workspace target adapter, active-terminal handle, command ID alias, and parity registers.
+
+Owner module: Pinned TerminalView dispatches the action into the terminal model; Labonair Terminal owns the `ClearTerminal` command metadata and handler contract, while Workspace adapts it to the active terminal pane.
+Canonical capability crate: `labonair-terminal`; `labonair-workspace` owns active pane/tab selection and supplies the target implementation.
+Canonical user entry point: Pinned Terminal-focused shortcut (`cmd-k` on macOS; `ctrl-shift-l` on Linux/Windows). Labonair exposes the Clear Terminal command in the Terminal and SSH Terminal command-palette contexts.
+Alternate entry points: Pinned keymap overrides may rebind `terminal::Clear`; no profile overlay binding is present in the pinned keymap source. Labonair has the palette command alias `terminal::Clear`, but no local matching default chord was found.
+Public typed contract: Existing local `CommandId::ClearTerminal`, TerminalCommandProvider, and `TerminalCommandTarget::clear_active_terminal`; do not add a key-dispatch action or alter the command contract.
+Events: Pinned clear resets cwd-history tracking and emits a terminal wakeup. No local event changes proposed.
+Registry contributions: Preserve the existing command ID/alias and contexts. Add no local action, command, or key binding.
+Settings: None.
+Persistence: Pinned action mutates the in-memory terminal model and its scrollback display, not Settings. Labonair command writes `ESC[2J ESC[H` to the active terminal handle; no new persistence.
+Migration impact: None in this documentation slice. Record that a PTY ANSI write does not equal the pinned model-level saved-screen/scrollback clearing behavior.
+Commands and keymap: `terminal::Clear`; macOS `cmd-k` (`Terminal`), Linux/Windows `ctrl-shift-l` (`Terminal`). No profile overlay occurrences were found. Labonair palette alias exists without a matching default binding.
+Notifications: None proposed.
+UI-kit components: No UI changes; classify the existing command-palette entry only.
+User workflow: Clear the visible terminal and relevant scrollback/history without entering a shell command; invoke from the focused Terminal or command palette.
+Failure/cancellation/retry behavior: No active terminal, a completed/non-PTY session, a remote SSH session, active alternate screen, running foreground process receiving the Labonair ANSI sequence, and scrollback/cwd-history results remain acceptance cases.
+Security boundary: Pinned action is terminal-local; Labonair command writes an ANSI control sequence to the active PTY. No new authority is proposed.
+Performance budget: No runtime change.
+
+Implementation order: Inspect pinned handler and saved-screen helper, compare platform and profile maps, trace local palette command through Workspace to PTY write, update the action row and packet/crosswalk indexes, then run docs/agents/knowledge/settings/queue and focused route/binding audits.
+Focused tests: Not applicable to documentation-only change; do not add or run tests.
+Contract/integration tests: No runtime contract changed.
+Persistence/migration tests: No tests changed; distinguish visible buffer clear from scrollback clearing and record any PTY-dependent behavior for later acceptance.
+Command/surface tests: Terminal-focused shortcut and palette invocation remain native runtime acceptance items.
+Visual states: No UI edit. Visible cleared output, retained/cleared scrollback, alternate screen, local/SSH and narrow terminal states remain paired macOS acceptance evidence.
+Security/negative tests: No new boundary; later acceptance should ensure the command targets only the active terminal and does not inject control data into a non-terminal.
+Performance measurement: Not applicable.
+Workspace gates: Diff check; docs, agents, knowledge, Settings and rework-queue scopes; focused binding/profile and pinned/local effect audit.
+Documentation updates: Terminal Clear action packet, action register row, parity packet index, `terminal.tasks` crosswalk, normative parity summary, and this task.
+Current status: Pending focused static action/binding/local route audit.
+Target status: Pinned saved-screen and history effects, local ANSI route and active-pane behavior, platform bindings, and semantic mismatch documented; native dispatch, scrollback, SSH, and paired macOS acceptance remain open.
+Evidence links: Pinned `terminal::Clear` declaration and `TerminalView::clear`, `Terminal::clear`, `clear_saved_screen`, three default platform keymaps; Labonair TerminalCommandProvider, CommandId alias, Workspace adapter, and `clear_active_terminal`.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Source declarations were inspected, not run; native command routing and exact terminal rendering are unverified.
+Remaining migration edges: Labonair has a palette command ID alias but no action-dispatch/default-shortcut route; its ANSI PTY clear does not implement the pinned in-memory saved-screen operation or explicit cwd-history reset.
+Failed/unavailable gates: Rust build, native terminal dispatch, local/SSH scrollback behavior, and paired visual evidence remain R07-000 exit gates.
+Next safe task: Complete this Terminal Clear action-classification slice, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify Terminal Clear action
+
+- Added [`action-classification-terminal-clear.md`](../../docs/parity/action-classification-terminal-clear.md) for the one default-bound Terminal action, documenting pinned model-level saved-screen and cwd-history effects and Labonair's Clear Terminal palette command.
+- Preserved the macOS `cmd-k` and Linux/Windows `ctrl-shift-l` Terminal-context bindings. The focused audit confirmed the action row, packet links in the parity index, Terminal crosswalk and normative summary, and no profile-overlay entries. It distinguishes the local ANSI write to the active terminal PTY from the pinned model operation without assuming equal scrollback or foreground-process behavior.
+- Passed `git diff --check`; docs (43 normative documents and 217 Markdown files); agents (10 request routes); knowledge (including capability, product catalog, workflow, Settings, visual-evidence, automation, release, and reform freshness); Settings (7 areas and 101 registered UI fields); and rework queue (46 tasks; R07-000 remains earliest active) verification scopes.
+- No Rust build, tests, native action dispatch, local/SSH scrollback check, or visual check was run for this documentation-only slice. Static source and existing tests were inspected, not run. Native route reachability, PTY/foreground-process effects, and paired macOS terminal states remain R07-000 exit gates. Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
 ## Pre-change contract — default-bound ProjectPanel actions
 
 ```text
