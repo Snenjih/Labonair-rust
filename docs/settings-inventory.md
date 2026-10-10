@@ -3,7 +3,7 @@
 **Status:** Normative for R05-001  
 **Version:** 2
 **Owner:** `labonair-settings-content` (values), `labonair-settings` (layers and persistence), `labonair-settings-ui` (value editor)  
-**Last reviewed:** 2026-09-08
+**Last reviewed:** 2026-10-10
 
 This inventory is the gate for changing `SettingsContent`. A field may remain
 in the model only when its owning runtime consumer, default, validation, and
@@ -58,7 +58,8 @@ means a runtime module, not merely serialization or the generated Settings UI.
 | `terminal` | `terminalComposerEnabled`, `terminalComposerHistoryPopup`, `terminalComposerArgumentCompletion`, `terminalBlocksEnabled`, `terminalBlocksAutoCollapseOnAltScreen` | no supported native workflow or consumer | Remove; legacy input remains deserializable only |
 | `editor` | `editorFontFamily`, `editorFontSize`, `editorLineHeight`, `editorTabSize`, `editorWordWrap`, `editorLineNumbers`, `editorRelativeLineNumbers`, `editorIndentWithTabs` | native editor settings adapter; Global + Project where whitelisted | Keep |
 | `editor` | `editorFormatOnSave` | no current native editor consumer | Remove; legacy input remains deserializable only |
-| `editor` | `editorTrimTrailingWhitespace`, `editorInsertFinalNewline`, `editorBracketMatching`, `editorShowCursorPosition`, `editorShowSelectionStats`, `editorShowOutline`, `editorIndentationGuides` | no current native editor consumer | Remove; legacy input remains deserializable only |
+| `editor` | `editorShowOutline` | `workspace` Editor view (`EditorSettings::show_outline` in `workspace/src/views/editor.rs`) renders an inline document-symbol list; the Settings UI exposes “Code outline”; Global, default false | Keep |
+| `editor` | `editorTrimTrailingWhitespace`, `editorInsertFinalNewline`, `editorBracketMatching`, `editorShowCursorPosition`, `editorShowSelectionStats`, `editorIndentationGuides` | no current native editor consumer | Remove; legacy input remains deserializable only |
 | `editor` | `editorAutoSave`, `editorAutoSaveDelay`, `editorAutocompleteDebounceMs`, `editorMaxFileSizeMb` | no current native editor consumer | Remove; legacy input remains deserializable only |
 | `editor` | `editorVimMode`, `vimHlsearch`, `vimIncsearch`, `vimSmartcase` | editor Vim runtime; Global + safe Project values | Keep |
 | `editor` | `editorTheme` | syntax-theme selection persistence; Global + safe Project values | Keep as value, no management page |

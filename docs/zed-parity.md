@@ -465,6 +465,16 @@ removal, and Explorer-to-Transfers download routing. Its declared
 transfer progress must use the statusbar notification center under Labonair's
 no-toast contract. Paired native macOS acceptance remains open. The
 independent
+[`Outline and OutlinePanel action crosswalk`](parity/action-classification-outline-panel-actions.md)
+classifies the searchable Editor Outline picker, five default-macOS-bound
+OutlinePanel actions, 13 registered-unbound panel actions, six unbound
+Vim/Helix IDs across seven entries plus two default-bound IDs across two more,
+and four pinned Settings effects. Labonair's
+`editorShowOutline` is a separate single-document Editor list; the OutlinePanel
+tree, modal picker action, and their macOS dispatch routes are absent. The
+Settings inventory now records its current Editor consumer; native interaction
+and paired visual acceptance remain open. The
+independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

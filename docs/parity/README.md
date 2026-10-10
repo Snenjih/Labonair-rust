@@ -36,7 +36,9 @@ source-side research. It records current evidence without claiming parity.
   actions), three Git add/ignore registered-unbound actions, five Git
   repository/remote-management registered-unbound actions, 25 ProjectPanel
   tree/open/navigation/visibility/remote-download actions (15 action IDs in
-  17 Vim/Helix profile bindings), one Editor Go to
+  17 Vim/Helix profile bindings), 19 Outline/OutlinePanel actions (six
+  default-macOS-bound IDs and 13 registered-unbound panel actions; six of the
+  latter occur in seven Vim/Helix entries), one Editor Go to
   Line action,
   one File Finder action, two Workspace Open/OpenFiles actions, one Workspace
   New Window action,
@@ -66,6 +68,14 @@ source-side research. It records current evidence without claiming parity.
   ownership, visibility persistence, and local routes for 25 registered-
   unbound ProjectPanel actions; 15 action IDs have 17 Vim/Helix profile
   bindings. macOS registration and runtime acceptance remain pending.
+- [`action-classification-outline-panel-actions.md`](action-classification-outline-panel-actions.md) —
+  independently stated Outline picker and OutlinePanel behavior, four pinned
+  Settings effects, six default-macOS-bound actions, and 13 registered-unbound
+  panel actions; six of the unbound IDs occur in seven Vim/Helix entries, and
+  the same layer maps the default-bound collapse/expand actions to `h`/`l`. The
+  local EditorShowOutline list is a separate single-document affordance;
+  OutlinePanel and modal action routes remain absent, with native dispatch and
+  visual acceptance pending.
 - [`action-classification-go-to-line.md`](action-classification-go-to-line.md) —
   independently stated intent, Editor owner, current line-jump route, and
   evidence gap for the default-macOS Go to Line action. The arbitrary
