@@ -6320,3 +6320,78 @@ Next safe task: Continue R07-000 action/workflow classification; do not begin R0
 - Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, native profile load/dispatch, text edit, persistence round trip, or paired visual evidence were run for this documentation-only slice.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
 ~~~
+
+
+## Pre-change contract — Vim AnyBrackets text object
+
+~~~text
+Request: Classify ACT-REGISTRY-LINUX-vim-AnyBrackets, its inactive commented profile candidate, the active `b` → Parentheses binding, command-palette reachability, selection/operator semantics, related mode settings, and Labonair's Editor/Keymap gaps.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: `vim::AnyBrackets`; the commented `b` candidate and active `vim::Parentheses` binding in the shared Vim/Helix layer; command-palette action discovery and invocation; matching across parentheses, square brackets, curly brackets, and angle brackets; nested, escaped, multiline, nearest-pair, unmatched, operator, and visual-selection behavior; distinction from `vim::AnyPair`; local `labonair-editor`, `labonair-keymap`, and command-palette route; registered-action row, shared-layer summary, packet index, `commands.keymap` and `editor.text` crosswalks, normative summary, and this task record.
+Out of scope: Implementing bracket text-object state, a new key binding, Helix, action/command descriptors, changing mode settings, or claiming runtime dispatch or visual parity; beginning R07-001 or R09.
+Active task: R07-000, earliest incomplete task in `tasks/rework/README.md`.
+Dependencies: Complete action and route inventory before R07-001; no code dependency introduced by this documentation slice.
+
+Owner module: Editor owns object selection and buffer behavior; Keymap owns user binding/profile state; the command palette owns the generic discoverable action surface.
+Canonical capability crate: `labonair-editor` for the behavior; `labonair-keymap` for an optional custom binding and command metadata.
+Sibling crates: Existing command-palette core/UI/runtime may carry a typed command contribution; no new sibling crate.
+Canonical user entry point: Pinned Command Palette exposes registered Editor actions while the Editor is focused and Vim/Helix is enabled. The action is useful from Visual mode or an object-pending operator; an invocation in Normal mode with no pending operator is ignored. There is no active built-in AnyBrackets binding: shared-layer `b` invokes Parentheses.
+Alternate entry points: A user-defined binding may invoke the registered action, but local custom action dispatch is absent and pinned user-override execution has not been runtime-verified. Do not add a parallel shell menu or setting.
+Public typed contract: Future Editor-owned object request/action; keep `AnyBrackets` distinct from `AnyPair`, which uses language bracket queries and also includes quote-like pairs. Labonair has no such object/action contract today.
+Events: No cross-module event is required for the selection itself; a Keymap command descriptor is the smallest discoverable contract if local command-palette exposure is added.
+Registry contributions: Pinned Vim registers the action on the Editor and the command palette obtains focused-view actions; Labonair has no matching Editor action or command descriptor. Any local action/command registration belongs to Editor and its typed command provider; do not add a global action table.
+Allowed dependency changes: None.
+Removal condition for temporary code: None; this is an inventory change.
+
+State owner: Editor owns cursor, visual selection, pending operator, and resulting buffer edit; Keymap owns a custom binding.
+Persistence owner: No object or selection persistence. Any user override belongs to the Keymap file and its existing persistence path.
+Settings and scope: Pinned `vim_mode` and `helix_mode` are user-scoped and false by default; either enables the shared mode layer, while the pinned built-in AnyBrackets binding remains commented out. Labonair has an Editor-owned `editor.vimMode` partial counterpart and no Helix mode; no new setting is implied.
+Migration impact: None for this docs-only classification; a future custom keymap override must use the existing keymap format and conflict handling.
+Commands: Pinned command-palette display is `vim: any brackets` from the action name when Vim/Helix is enabled and the Editor owns focus. Invocation in Insert/Replace or Normal without a pending object does not select; Visual mode expands selection and a pending object operator consumes the range. Default `b` is `vim::Parentheses`.
+Default keymap: No active platform-default or shared Vim/Helix binding for `AnyBrackets`; the candidate `b` row is commented out. `b` actively maps to Parentheses.
+Notifications: None; missing pairs do not notify.
+UI-kit components: No new control. The existing command palette is shared UI; local changes should use its existing UI-kit-backed surface.
+User workflow: Focus a Vim/Helix Editor, open Command Palette, find “vim: any brackets”, and invoke it while Visual selection or an object-pending operation can consume the object; alternatively configure a custom binding. Runtime behavior and custom binding acceptance remain open.
+Failure/cancellation/retry behavior: The multiline scanner balances nested delimiters, ignores escaped markers, and selects the smallest enclosing pair; if none encloses the cursor it chooses the nearest matching pair candidate. With no candidate the range is absent, operator processing does not edit and clears pending state; the visual selection range is unchanged although a prior Visual Line/Block mode can switch to Visual. Insert/Replace and Normal-without-an-object-operator do not select a range. Character matching can mistake comparison or malformed angle text for pairs.
+Security boundary: None beyond ordinary local buffer editing.
+Performance budget: No local runtime work in this slice. Future matching scans multiline buffer content and must not block editor input on large buffers.
+
+Contract: Record action identity, exact default-binding absence, command-palette route and invocation preconditions, delimiter range rules, AnyPair distinction, settings, and owner boundary.
+Owner implementation: None; documentation-only.
+Composition adapter: None; record that palette dispatch targets the previously focused Editor.
+Consumer changes: None.
+Command/surface contribution: Document the existing pinned palette entry and lack of a local descriptor; do not invent a default binding.
+Obsolete path removed: None.
+
+Focused unit tests: N/A; documentation-only slice, and no tests are added or run.
+Contract/integration tests: Pending native Editor/Keymap acceptance for palette exposure, custom binding, operator completion, Visual selection, range fallback, and failure behavior.
+Persistence/migration tests: N/A for object state; user keymap save/reload/conflict behavior remains part of Keymap acceptance.
+Command/surface tests: Verify availability with Editor focus and mode enablement, palette selection restoring focus, no AnyBrackets default binding, and the active `b` → Parentheses binding.
+Visual states: No UI edit; paired native selection and Command Palette evidence remain required for acceptance.
+Security/negative tests: N/A beyond unmatched/malformed delimiters and non-editing modes described above.
+Performance measurement: N/A for docs-only change; future multiline scanning needs large-buffer responsiveness measurement.
+Workspace gates: Diff check; docs, agents, knowledge, settings, active queue, documentation checker, and focused source/profile/local-route audit.
+Documentation updates: New AnyBrackets packet; registered-action row; shared Linux/Windows layer note; parity packet index; `commands.keymap` and `editor.text` crosswalks; normative parity summary; this task record.
+Current status: Pinned implementation, command-palette availability, inactive binding, local owner gap, and direct invocation preconditions under static audit; docs and gates pending.
+Target status: State actual built-in routing and object behavior without claiming custom-keymap, macOS, or native acceptance.
+Evidence links: `zed-refrence/zed/crates/vim/src/object.rs`; `normal.rs`; `visual.rs`; `surrounds.rs`; `zed-refrence/zed/crates/command_palette/src/command_palette.rs`; `zed-refrence/zed/crates/gpui/src/window.rs`; `zed-refrence/zed/assets/keymaps/vim.json`; `docs/parity/registered-actions-unbound.md`; `docs/parity/keymap-nonmacos-requirements.md`; `docs/capabilities.md`; `docs/registries.md`; `crates/editor/src/vim.rs`; `crates/keymap/src/command_provider.rs`.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No pinned or local palette invocation, custom user binding, profile load, text selection/edit, or native visual interaction has been exercised.
+Remaining migration edges: Labonair lacks AnyBrackets action/range behavior, a Helix engine, and descriptor-backed text-object palette entry. The pinned built-in map intentionally uses Parentheses for `b`; any local policy on preserving that default while offering a user override needs implementation/acceptance.
+Failed/unavailable gates: Native palette dispatch, user override persistence/conflicts, profile layering, operator/selection behavior, Rust build, tests, and paired visual evidence were not run for this documentation-only slice and remain R07-000 exit gates.
+Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+~~~
+
+
+## Progress — classify Vim AnyBrackets text object
+
+~~~text
+- Added [action-classification-vim-any-brackets.md](../../docs/parity/action-classification-vim-any-brackets.md) for ACT-REGISTRY-LINUX-vim-AnyBrackets and its command-palette route.
+- Recorded that the built-in `b` candidate is a comment, the active shared-profile `b` binding remains `vim::Parentheses`, and the focused Editor's registered Vim actions appear in the Command Palette when Vim/Helix is enabled. Selecting the palette action restores Editor focus before dispatch; Visual selection or a pending object operator is required for an effect.
+- Classified the four literal bracket pairs, smallest-enclosing and nearest-candidate selection, nested/escaped/multiline scan, inside/around and visual behavior, unmatched/no-operator outcomes, AnyPair distinction, and the source-level numeric-count no-op.
+- Mapped the local behavior owner to `labonair-editor`, optional binding and persistence to `labonair-keymap`, and discoverability to the existing typed command-palette contract. Labonair has no text-object action/range scanner or AnyBrackets command descriptor; no new setting, event, notification, or shell surface is required.
+- Updated the registered-action row, shared Linux/Windows layer summary, parity packet index, `commands.keymap` and `editor.text` crosswalks, normative parity summary, and this task record. No fake active keymap-overlay requirement row was added for a commented binding.
+- Focused static audit confirmed the runtime action declaration and Editor registration, Command Palette focused-action enumeration and restore-before-dispatch path, Vim/Helix namespace filter, four-pair matcher, active/commented profile binding status, and absence of a local AnyBrackets action. No macOS/native runtime or custom user-keymap dispatch was exercised.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py`, and `python3 scripts/verify.py` scopes docs, agents, knowledge, settings, and queue. The documentation checker reports 43 normative docs and 230 Markdown files; the queue remains at 46 tasks with R07-000 earliest active.
+- Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, palette invocation, profile load, key dispatch, text selection/edit, user-keymap persistence round trip, or paired visual evidence were run for this documentation-only slice.
+- Next safe task: Continue R07-000 with `vim::AnyPair`; do not begin R07-001 or R09.
+~~~

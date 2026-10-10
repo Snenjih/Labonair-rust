@@ -15,6 +15,7 @@ The non-macOS selector has seven listed choices: Zed, VS Code, Atom, JetBrains, 
 
 The `vim.json` layer is shared across platforms. Its 894 binding entries, eight explicit null bindings, 437 action identifiers, and per-binding requirements are recorded once under `KMP-MODE-VIM-HELIX` and `KEYBIND-VIM-HELIX-*` in the [macOS layer register](keymap-overlay-requirements.md); verify those rows on Linux and Windows separately.
 The [Vim AngleBrackets packet](action-classification-vim-angle-brackets.md) classifies its two shared profile rows and records that Linux/Windows dispatch still needs separate runtime verification.
+The [Vim AnyBrackets packet](action-classification-vim-any-brackets.md) records that the shared profile's commented `b` candidate is inactive and the actual `b` binding remains Parentheses; the registered action instead appears in the focused Editor's Command Palette when Vim/Helix is enabled. Palette invocation and platform dispatch still need native verification.
 
 ### Layers
 

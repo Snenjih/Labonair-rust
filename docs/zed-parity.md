@@ -293,6 +293,11 @@ records the conditional Vim/Helix `<`/`>` profile bindings, nested and
 multiline delimiter matching, operator/selection flow, and missing local
 text-object route. Mode-layer loading, key dispatch, and paired macOS
 acceptance remain open. The independent
+[`Vim AnyBrackets text-object crosswalk`](parity/action-classification-vim-any-brackets.md)
+records the focused-Editor Command Palette route, inactive commented `b`
+candidate (active `b` remains Parentheses), four literal bracket types,
+nearest-pair fallback, and missing local object action. Palette dispatch,
+platform behavior, and paired macOS acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and
