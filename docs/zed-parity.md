@@ -283,6 +283,11 @@ classifies the macOS general Open action and Linux/Windows Open Files action,
 their window and path-picker Settings, and the current single-directory versus
 File Finder route gaps; native dispatch and interaction evidence remain
 pending. The independent
+[`Workspace Add Folder to Project action crosswalk`](parity/action-classification-workspace-add-folder.md)
+records directory-only multi-selection, visible roots in the current project,
+the collaboration restriction, worktree persistence, and Labonair's distinct
+single-root Open Project route; native picker, remote-root, partial-error, and
+paired interaction evidence remain pending. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

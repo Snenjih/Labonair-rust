@@ -2630,6 +2630,100 @@ family after this slice passes its documentation gates.
 - Next safe task: continue R07-000 with the next unclassified default-map
   action family and reconcile the remaining action catalog.
 
+## Pre-change contract — classify Workspace Add Folder to Project
+
+Request: Independently classify adding one or more selected directories to
+the current project, including multi-root behavior, project-panel visibility,
+collaboration restrictions, persistence, and current Labonair routes.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `ACT-MACOS-workspace-AddFolderToProject` and its File menu and
+project-root context-menu entry points. Record its `RecentProjects` and nested
+picker key contexts on all three desktop platforms.
+Out of scope: General Open/OpenFiles, opening a folder as a new project or
+Space, creating/renaming/removing folders, remote picker protocol design,
+implementation, R07-001/R09, and runtime or visual acceptance claims.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, Workspace project identity and
+worktree/root lifecycle, Explorer root presentation, native or project-aware
+directory selection, and persisted Workspace/worktree state.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns the
+action and adds selected roots to the active project's worktree state.
+Filesystem (`labonair-filesystem`) supplies path and watcher behavior;
+Explorer owns presentation of the resulting roots.
+Canonical user entry point: File > Add Folder to Project; the project-root
+context menu's Add Folders to Project entry; macOS `Cmd+Shift+A` and Linux/
+Windows `Ctrl+Shift+A` while the Recent Projects surface or its nested picker
+editor context is active. Labonair exposes Open Project, which replaces the
+active Space's single project root, but no add-root route.
+Public typed contract: Present a directory-only multi-select picker scoped to
+the current project. Attempt to add each accepted directory to that project as
+a visible root/worktree, retaining already open content and existing roots.
+Cancel changes nothing. Reject adding folders to a collaboratively owned
+project with a user-visible explanation. Preserve deterministic root/selection
+state when several or nested directories are accepted. The pinned handler
+continues after per-path failures and logs them; determine their user-visible
+recovery rather than claiming atomic rollback. Non-collaborative remote-project
+behavior and overlap with existing roots require explicit acceptance evidence.
+Events and registry contributions: Keep the action in Workspace. Root changes
+flow through the Workspace project's existing typed worktree lifecycle and
+Explorer's root presentation; add no shell-wide file operation table or
+duplicate Explorer-only owner.
+Settings and persistence: No action-specific setting. Accepted roots become
+current-project worktree state and participate in normal Workspace/project
+serialization, rather than only the transient picker result. Verify reopening
+the project restores its root set and missing/moved-root recovery.
+Notifications and failure: Cancellation is silent. The pinned handler reports
+the collaboration restriction and logs per-path open errors; whether picker
+and root-creation failures are visible and how users retry remain to verify.
+For multi-selection, retain successful roots if another path fails and record
+the remaining paths and recovery state.
+UI-kit: Use the native or project-aware shared directory picker and existing
+Explorer/workspace surfaces; add no local duplicate picker style.
+Focused inspection: Trace action registration and all entry points, context
+matching, directory-only/multiple selection, current-project scope, local,
+remote and collaborative cases, duplicate/nested roots, visible-root ordering,
+per-path errors, cancellation, focus, and persisted reopen/recovery.
+Visual evidence: Pending paired macOS checks for File menu and root context
+menu, directory picker, multi-root Explorer state, cancellation, errors, and
+narrow-window presentation.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, and exact action-ID/binding/context/owner/root/persistence/route
+audit.
+Documentation updates: One action row, a Workspace add-folder packet,
+app.windows and project.explorer crosswalks, command/keymap crosswalk, parity
+index, normative parity scope if needed, and this task's progress record.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Native picker interaction, remote behavior,
+and paired macOS captures are unavailable here.
+Next safe task: Continue R07-000 with the next unclassified default-map action
+family after this slice passes its documentation gates.
+
+## Progress record — 2026-10-10 — Workspace Add Folder to Project classification
+
+- Added [`../../docs/parity/action-classification-workspace-add-folder.md`](../../docs/parity/action-classification-workspace-add-folder.md)
+  for `ACT-MACOS-workspace-AddFolderToProject`, recording directory-only
+  multi-selection, visible roots in the current project, collaboration
+  rejection, worktree persistence, partial-path errors, and recovery states.
+- Updated the stable action row with macOS/Linux/Windows bindings, Workspace,
+  Filesystem, and Explorer ownership, and Labonair's missing multi-root path.
+  Linked the packet from the parity index, application-window and
+  project-explorer crosswalks, command/keymap crosswalk, and normative parity
+  scope. Static inspection confirms Labonair Open Project re-roots a Space's
+  single project root; it is not this action.
+- Passed `python3 scripts/check_documentation.py` (43 normative documents,
+  186 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active),
+  `git diff --check`, and the focused action ID/bindings/context/owner/
+  multi-root/persistence/route audit.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, and tests. They remain R07-000 exit gates. Native picker
+  acceptance, non-collaborative remote roots, partial-failure visibility,
+  restore/recovery, and paired macOS captures remain open. Same-session
+  analysis is independent redevelopment, not separated-room clean-room work.
+  R07-001 and R09 remain unstarted.
+- Next safe task: continue R07-000 with the next unclassified default-map
+  action family and reconcile the remaining action catalog.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

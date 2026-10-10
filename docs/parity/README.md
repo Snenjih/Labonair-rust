@@ -18,7 +18,8 @@ source-side research. It records current evidence without claiming parity.
   The 585 macOS IDs remain stable. Independent static intent and owner-route
   packets currently cover 23 Search actions, 22 Pane actions, one Editor Go
   to Line action, one File Finder action, two Workspace Open/OpenFiles
-  actions, one Workspace New Window action, one Workspace New File action,
+  actions, one Workspace New Window action, one Workspace Add Folder to
+  Project action, one Workspace New File action,
   one Workspace New Terminal action, one Workspace Open With System action,
   six Workspace dock-sizing actions, five Workspace dock visibility actions,
   two Workspace major-region focus actions, nine Workspace pane
@@ -49,6 +50,10 @@ source-side research. It records current evidence without claiming parity.
   Open and platform Open Files routes, related Settings targets, and runtime
   gaps for the macOS-bound Workspace Open action and Linux/Windows-only
   Workspace OpenFiles action.
+- [`action-classification-workspace-add-folder.md`](action-classification-workspace-add-folder.md) —
+  independently stated multi-directory add-to-current-project behavior,
+  collaboration restriction, root persistence, and Labonair's single-root
+  Open Project distinction.
 - [`action-classification-workspace-new-window.md`](action-classification-workspace-new-window.md) —
   independently stated intent, Workspace/application-window ownership,
   `On New Window` setting behavior, the missing Labonair action route, and
