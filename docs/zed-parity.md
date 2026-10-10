@@ -299,6 +299,12 @@ auto-trust choices, typed Workspace consumers, the unbound trust reset, and
 Labonair's missing route. The Settings path/backing-field mismatch, reset
 discovery, persistence-failure behavior, native dispatch, and paired macOS
 evidence remain open. The independent
+[`Git worktree deletion action crosswalk`](parity/action-classification-git-worktree-delete.md)
+records normal and force removal, protection for main and open worktrees,
+dirty-tree confirmation, destructive effects, and Labonair's missing worktree
+catalog/removal contract. Native dispatch, data-loss confirmation, cross-window
+open-path races, Git error recovery, and paired macOS interaction captures
+remain pending. The independent
 [`Workspace zoom action crosswalk`](parity/action-classification-workspace-zoom.md)
 records focused Pane/Panel overlay behavior, global Shift+Escape, the
 CommitEditor override, the zoom padding setting, and Labonair's separate

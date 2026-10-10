@@ -3061,6 +3061,132 @@ Next safe task: Continue R07-000 with the remaining unclassified actions.
   `worktree_picker::DeleteWorktree` and `ForceDeleteWorktree`. R07-001 and R09
   remain unstarted.
 
+## Pre-change contract — classify Git worktree deletion
+
+Request: Independently classify normal and forced deletion of a Git worktree,
+including the picker entry points, open-worktree protections, dirty-tree
+confirmation, destructive effects, asynchronous state, and failure recovery.
+Request type: Requirements and action ownership inventory; no runtime change.
+In scope: `ACT-MACOS-worktree_picker-DeleteWorktree` and
+`ACT-MACOS-worktree_picker-ForceDeleteWorktree`; their macOS/Linux/Windows
+bindings and `WorktreePicker || (WorktreePicker > Picker > Editor)` context;
+the row/footer mouse affordances; and the distinction between deleting a Git
+worktree and removing an open worktree from a window.
+Out of scope: Implementing Git worktree management; classifying worktree
+creation, switching, or open-in-new-window behavior beyond identifying the
+picker entry point; deleting Git branches; trust policy; R07-001/R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action and unbound-action inventories; the Git capability
+contract; Workspace's open-worktree visibility model; Git execution adapter;
+the canonical notification center; shared picker, button, icon-button,
+tooltip, and confirmation-dialog contracts.
+Owner module and canonical crate: Git (`labonair-git`) owns worktree
+discovery and lifecycle. `labonair-git-transport` executes the operation
+through the configured local/remote Git adapter. Workspace provides a typed
+view of worktree paths currently open across related windows so Git can
+prevent deleting a live project root. The current `GitService` has no
+worktree-list or worktree-remove operation; preserve one Git owner and do not
+add a parallel Workspace deletion owner or registry without a discovery need.
+Canonical user entry point: Open the Git Worktree picker from the titlebar
+worktree selector or registered Git Worktree action. While the picker is open,
+the selected eligible row offers Delete in the footer and a trash icon. The
+icon's ordinary click deletes normally; holding Alt changes it to Force
+Delete. The keyboard actions are available only in the WorktreePicker action
+context. “Remove Worktree from Window” only closes another workspace view and
+is not deletion.
+Public typed contract: A request identifies one listed, non-main Git worktree
+by repository identity and path and selects normal or forced removal. Reject
+the main worktree, any path currently visible in a workspace in the same
+project group, a missing/stale selection, and duplicate in-flight removal.
+Normal removal asks Git to remove the worktree and its directory without
+force. Force removal uses Git's force option, which can discard modified and
+untracked files. Neither request deletes the branch. Completion reports
+success or a descriptive Git failure; a successful removal invalidates the
+worktree listing and removes the row. A dirty-normal-delete refusal offers an
+explicit Force Delete / Cancel decision, then rechecks that the same worktree
+still exists before retrying once with force.
+Settings and persistence: No Labonair preference controls deletion. A
+successful request changes Git's worktree metadata and filesystem; a force
+request may permanently discard uncommitted and untracked files. These effects
+survive restart. The branch lifecycle is separate and must not be changed by
+this operation. Test repository refresh and restart discovery after success.
+Events and registry contributions: Register both typed actions in the Git
+picker context with the platform bindings recorded in
+`action-requirements.md`. Use the Git repository's worktree-list-changed event
+to refresh picker rows; keep one in-flight operation per path. Workspace
+contributes only the typed open-path snapshot used for safety checks. No new
+generic registry is required for one Git operation provider.
+Notifications and failure: A dirty normal removal opens a warning with
+Force Delete and Cancel. Cancel leaves the worktree intact. A declined or
+failed operation clears its pending indicator and retains the row. Other Git
+errors go through the notification center with the attempted command; retry
+remains possible. If the worktree disappears while confirmation is open,
+revalidate and avoid a duplicate removal. Perform Git I/O asynchronously and
+never block the GPUI foreground thread.
+UI-kit: Compose the picker, footer button, trash icon button, loading state,
+tooltip, warning prompt, and error notification using existing shared UI-kit
+and notification-center components. The force modifier must be visible in the
+tooltip and destructive state, and keyboard and mouse paths must invoke the
+same typed operation.
+Focused inspection: Verify normal clean removal; normal dirty refusal and
+Force Delete/Cancel; explicit force removal without a second prompt; main and
+currently open worktree disabling; another-window “Remove Worktree from
+Window” distinction; duplicate requests; a stale path during confirmation;
+Git errors and retry; row refresh; and branch preservation. Check picker focus,
+selection, keyboard bindings, Alt tooltip state, pending spinner, narrow
+layout, and restart persistence.
+Visual evidence: Pending paired native macOS captures and interaction checks
+for the picker, selected/disabled rows, hover/Alt force affordance, warning,
+loading, and error states. Record window bounds, theme, scale, focus, and
+selected worktree. Linux host runtime and paired macOS capture access are not
+available in this session.
+Workspace gates: Documentation checker, docs verification scope, active
+queue check, diff check, and a focused action/context/owner/safety/effect/
+failure/current-route audit. Rust build, Clippy, and tests remain R07-000 exit
+gates and are not run for this documentation-only slice.
+Documentation updates: Both bound action rows, the independent Git worktree
+deletion packet, parity index, `git.source-control` and `commands.keymap`
+crosswalks, normative parity workflow, and this active task's progress record.
+The existing Git capability remains the canonical owner; no new capability,
+setting, or implementation queue task is added by this inventory slice.
+Known limitations: Same-session source research and packet authoring are
+independent redevelopment, not separated-room clean-room work. Pinned runtime
+dispatch, native macOS captures, real Git failure recovery, and cross-window
+open-path races remain open acceptance evidence. R07-001 and R09 remain
+unstarted.
+Next safe task: Continue R07-000 with the remaining unclassified actions.
+
+## Progress record — 2026-10-10 — Git worktree deletion classification
+
+- Added an independent requirements packet for
+  `ACT-MACOS-worktree_picker-DeleteWorktree` and
+  `ACT-MACOS-worktree_picker-ForceDeleteWorktree`, covering all three
+  platform bindings, compact and modal picker routes, main/open-worktree
+  protections, dirty-tree confirmation, force data loss, asynchronous state,
+  error recovery, and the distinction from removing a worktree from a window.
+- Recorded Git (`labonair-git`) as the lifecycle owner and Workspace as the
+  source of the typed open-path guard. The current `GitService` has no
+  worktree-list or removal API. No setting, capability, or new active queue
+  item is introduced by this inventory slice.
+- Updated both bound action rows, the parity packet index, Git and keymap
+  crosswalks, normative parity workflow, and this task's pre-change contract
+  and progress record.
+- Static reference and Labonair source review only. The same-session work is
+  independent redevelopment, not separated-room clean-room implementation.
+- Passed: `git diff --check`, `python3 scripts/check_documentation.py`
+  (43 normative docs / 190 Markdown files), `python3 scripts/verify.py
+  --scope docs`, `python3 scripts/check_rework_queue.py` (46 tasks; R07-000
+  active), and the focused requirement-ID, binding, safety/failure,
+  cross-reference, task-order, and Git API audit.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, or tests. They remain R07-000 exit gates. Native keyboard
+  dispatch, dirty-tree confirmation/cancellation, actual file/branch effects,
+  cross-window open-path races, Git failure recovery, and paired macOS visual
+  acceptance remain open.
+- Next safe task: classify the adjacent bound font-size action pair,
+  `zed::DecreaseBufferFontSize` and `zed::DecreaseUiFontSize`, within R07-000.
+  R07-001 and R09 remain unstarted.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

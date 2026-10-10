@@ -25,8 +25,9 @@ source-side research. It records current evidence without claiming parity.
   one Workspace New Terminal action, one Workspace Open With System action,
   six Workspace dock-sizing actions, five Workspace dock visibility actions,
   two Workspace major-region focus actions, nine Workspace pane
-  activation/swap actions, two Workspace bulk item/pane close actions, one
-  Workspace Close Window action, one Workspace Reopen Last Picker action,
+  activation/swap actions, two Workspace bulk item/pane close actions, two
+  Git worktree deletion actions, one Workspace Close Window action, one
+  Workspace Reopen Last Picker action,
   two Workspace path-copy actions, and four Workspace save actions;
   pinned dispatch and native interaction acceptance remain open for those and
   all other actions.
@@ -66,6 +67,10 @@ source-side research. It records current evidence without claiming parity.
   independently stated focused Pane/Panel zoom, Workspace overlay behavior,
   padding and persistence, the Git CommitEditor key override, and Labonair's
   separate debug dock and native window zoom routes.
+- [`action-classification-git-worktree-delete.md`](action-classification-git-worktree-delete.md) —
+  independently stated normal and forced worktree removal, protection for
+  main/open worktrees, dirty-tree confirmation, data-loss effects, and the
+  missing Labonair worktree lifecycle route.
 - [`action-classification-workspace-new-window.md`](action-classification-workspace-new-window.md) —
   independently stated intent, Workspace/application-window ownership,
   `On New Window` setting behavior, the missing Labonair action route, and
