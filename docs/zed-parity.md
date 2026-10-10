@@ -290,7 +290,12 @@ separate
 [`Workspace New File action crosswalk`](parity/action-classification-workspace-new-file.md)
 records the untitled-document action contexts, unsaved-buffer Settings, and
 Labonair's universal-tab adaptation; dispatch and file-lifecycle acceptance
-remain pending. All other action
+remain pending. The independent
+[`Workspace New Terminal action crosswalk`](parity/action-classification-workspace-new-terminal.md)
+records the local/remote shell choice, focus-dependent placement, related
+Terminal Settings, and Labonair's separate local New Terminal Tab route;
+dispatch, local/remote execution, and paired interaction evidence remain
+pending. All other action
 semantics and owner routes, profile selection/reload, user overrides, and
 macOS/Linux/Windows
 runtime evidence also remain open; these static inventories are not parity

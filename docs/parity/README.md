@@ -18,7 +18,8 @@ source-side research. It records current evidence without claiming parity.
   The 585 macOS IDs remain stable. Independent static intent and owner-route
   packets currently cover 23 Search actions, 22 Pane actions, one Editor Go
   to Line action, one File Finder action, two Workspace Open/OpenFiles
-  actions, one Workspace New Window action, and one Workspace New File action;
+  actions, one Workspace New Window action, one Workspace New File action,
+  and one Workspace New Terminal action;
   pinned dispatch and native interaction acceptance remain open for those and
   all other actions.
 - [`action-classification-search.md`](action-classification-search.md) —
@@ -51,6 +52,10 @@ source-side research. It records current evidence without claiming parity.
   independently stated intent, Editor/Workspace ownership, New File contexts,
   local universal-tab adaptation, unsaved-buffer Settings, and action/runtime
   gaps for the default-macOS untitled-document action.
+- [`action-classification-workspace-new-terminal.md`](action-classification-workspace-new-terminal.md) —
+  independently stated intent, Terminal/Workspace ownership, shell/cwd
+  Settings, local/remote execution, focus-dependent placement, and runtime
+  gaps for the default-macOS New Terminal action.
 - [`keymap-overlay-requirements.md`](keymap-overlay-requirements.md) — stable
   IDs for 1,402 bindings across seven macOS base-profile overlays, conditional
   Vim/Helix bindings, and macOS-specific overrides. Profile behavior, action

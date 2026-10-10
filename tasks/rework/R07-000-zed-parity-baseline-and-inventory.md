@@ -1619,6 +1619,107 @@ Next safe task: Continue R07-000 with the next unclassified action family.
   is static only. Same-session analysis is independent redevelopment.
   R07-001 and R09 remain unstarted.
 
+## Pre-change contract — classify Workspace New Terminal
+
+Request: Independently state the pinned `workspace::NewTerminal` user goal,
+Terminal-context key routes, focus-dependent placement, local/remote session
+selection, shell/cwd settings, and the existing Labonair terminal-tab route.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `ACT-MACOS-workspace-NewTerminal`, default platform bindings,
+Terminal versus Workspace focus behavior, the optional `local` action value,
+Terminal ownership, launch defaults, failures, and interaction evidence.
+Out of scope: Rebinding `NewTerminalTab`, adding the pinned center-terminal or
+remote-shell workflow, changing Terminal settings/session creation, starting
+R07-001/R09, or claiming action acceptance.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, settings-requirements.md,
+feature-crosswalk.md, capabilities.md, Terminal, Workspace, and command/keymap
+owner contracts.
+Owner module and canonical crate: Terminal (`labonair-terminal`) owns shell
+configuration, process/session state, and terminal rendering. Workspace
+(`labonair-workspace`) owns tab/pane hosting and the current `NewTerminalTab`
+entry route. A Terminal action may request a typed session and placement from
+Workspace; the shell remains a composition root.
+Canonical user entry point: Pinned `Ctrl+~` in Workspace and `Cmd+N` in
+Terminal on macOS; `Ctrl+~` in Workspace and `Ctrl+N` in Terminal on Linux;
+`Ctrl+Shift+Backtick` in Workspace and `Ctrl+N` in Terminal on Windows. The
+Terminal context menu also exposes New Terminal. Labonair has File > New
+Terminal Tab, Command Palette `New Terminal Tab`, and `Cmd+T` on macOS / `Ctrl+T`
+on Linux and Windows; it opens a new local workspace terminal tab.
+Public typed contract: Reuse `labonair-terminal::SessionOptions` and
+`TerminalRegistry::create` for configured local session creation. The
+transport-backed terminal entry accepts remote input/output adapters supplied
+by the owning SSH/remote contract. Workspace owns new terminal tab, panel, and
+center placement; any future owner-crossing request must be typed and narrow.
+Keep the `local` versus project/remote execution choice explicit; do not add a
+second string-dispatched action table or an unnecessary registry.
+Events and registry contributions: The existing local menu and command
+provider call the Workspace handler, which calls `TerminalRegistry`. No
+terminal-launch event or new registry is required for this inventory slice.
+Settings: Cross-reference the pinned shell and working-directory settings,
+plus local shell, shell-argument, and environment settings. Record the local
+absence of a configurable working-directory policy; add no Settings values or
+change defaults.
+State and persistence: Create one new shell session and preserve all existing
+sessions. Pinned default `local=false` uses the active project execution
+environment (remote when the project is remote); `local=true` explicitly
+forces a local shell. Labonair currently creates a local process, using the
+active terminal cwd, then project root, and otherwise passes no explicit cwd;
+the inherited process cwd needs runtime verification. Verify remote, standalone,
+and project behavior as separate cases.
+Notifications and failure: A failed process/session spawn must preserve
+existing tabs and expose a recoverable notification with retry. Record the
+current local `tracing::error!` plus silent return as incomplete user-facing
+failure handling; change no notification path in this inventory slice.
+Security: Do not leak project/remote credentials into local process
+environment. A forced-local action in a remote project must use local cwd and
+environment only. Record shell path, arguments, inherited variables, and
+remote/local target in acceptance traces.
+UI-kit: Reuse Terminal, Workspace tab, panel, and pane surfaces. Add no
+feature-local tab/menu/button controls.
+Focused inspection: Trace action parameters and handler, platform keymaps,
+current TerminalSettings consumption, `NewTerminalTab` descriptor/handler, and
+the TerminalRegistry options contract. Descriptor presence is not action
+dispatch acceptance.
+Visual evidence: Pending pinned macOS and Labonair interaction/capture with
+Workspace focus, Terminal focus, panel placement, center placement, and remote
+project state.
+Workspace gates: Documentation checker, docs verification scope, queue
+check, diff check, exact action/settings/route audit.
+Documentation updates: New Terminal action packet, action register, parity
+index, Terminal feature crosswalk, normative parity scope if needed, and
+R07-000 progress.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Native macOS interaction is unavailable here.
+Next safe task: Continue R07-000 with the next unclassified action family.
+
+## Progress record — 2026-10-10 — Workspace New Terminal action classification
+
+- Added [`../../docs/parity/action-classification-workspace-new-terminal.md`](../../docs/parity/action-classification-workspace-new-terminal.md)
+  for `ACT-MACOS-workspace-NewTerminal`, its Workspace and Terminal key
+  contexts, focus-dependent dock/center placement, and the explicit local
+  override for remote projects.
+- Recorded Terminal's typed local session contract separately from
+  transport-backed session I/O. Labonair's current New Terminal Tab always
+  starts a local process in a new universal workspace tab; it does not supply
+  the pinned action's local/remote choice or focus-dependent placement.
+- Cross-referenced the pinned shell and working-directory Settings and local
+  shell, argument, and environment fields. The local working-directory policy
+  setting is absent. Spawn errors currently reach tracing and silently return
+  without a notification.
+- Updated the action register, parity README, Terminal and command/keymap
+  crosswalks, normative parity scope, and this task progress record. The
+  focused action/settings/route audit passed.
+- Passed `python3 scripts/check_documentation.py` (43 normative documents,
+  175 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active), and
+  `git diff --check`.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, and tests. They remain R07-000 exit gates. Pinned dispatch,
+  macOS interaction, local/remote shell behavior, spawn-failure notification,
+  and paired captures remain open. Same-session analysis is independent
+  redevelopment. R07-001 and R09 remain unstarted.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified
