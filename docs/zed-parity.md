@@ -381,6 +381,13 @@ Control row/all/section controls and per-hunk stage/unstage routes, but the
 default action shortcuts, selection-range operation, and stage/unstage-and-next
 flows remain absent or unverified; native dispatch and paired macOS acceptance
 remain open. The independent
+[`Git restore and discard action crosswalk`](parity/action-classification-git-restore-discard.md)
+records selected-hunk edits, file restore prompt arguments, tracked-change
+selection, and untracked-file Trash behavior. Labonair's per-file discard is
+unconfirmed, its hunk discard route is unsupported, and Clean Untracked uses
+permanent deletion rather than system Trash. Pinned multi-file RestoreFile and
+RestoreTrackedFiles scopes need runtime confirmation; destructive recovery
+and paired macOS evidence remain open. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

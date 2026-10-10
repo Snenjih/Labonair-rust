@@ -4613,3 +4613,83 @@ Next safe task: Complete Git staging classification, then continue R07-000; do n
   not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin
   R07-001 or R09.
+
+## Pre-change contract — Git restore and discard actions
+
+```text
+Request: Independently classify pinned hunk, file, tracked-set, and untracked restore/discard actions and compare current Labonair recovery paths.
+Request type: R07-000 requirements inventory; documentation only.
+In scope: Five default-macOS bound actions: Restore, RestoreAndNext, RestoreFile, RestoreTrackedFiles, TrashUntrackedFiles; hunk selection, skip_prompt arguments, tracked/untracked boundaries, prompts, system Trash, and local routes.
+Out of scope: Stage/unstage, stash, commit, fetch/push/pull, implementation changes, new actions/settings, and runtime or visual parity claims.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Git (`labonair-git`) status/mutations; `labonair-git-transport`; panel-scm sibling; Workspace Project/Editor buffers and Trash hosting; Keymap bindings.
+
+Owner module: Git owns repository status and discard/restore operations; Editor owns selected hunk buffer edits; Workspace hosts Project/Editor items and system Trash operations; Keymap owns bindings.
+Canonical capability crate: `labonair-git`.
+Sibling crates: `labonair-git-transport`, `labonair-panel-scm`; Workspace and Editor are consumers.
+Canonical user entry point: GitPanel ChangesList for file/set/section cleanup; Editor/GitDiff for selected-hunk restore.
+Alternate entry points: GitPanel row menus and repository shortcuts; Editor hunk controls.
+Public typed contract: Existing RestoreFile `skip_prompt` action argument, checkout/status APIs, and Git hunk/Trash operations; no new API is proposed.
+Events: Existing Git status refresh and Workspace project-file lifecycle; no new event.
+Registry contributions: Classify five pinned bound actions; add no Labonair action, command, or registry entry.
+Allowed dependency changes: None.
+Removal condition for temporary code: None; no implementation code.
+
+State owner: Git index/worktree; Editor buffer hunk selection; Workspace system-Trash workflow.
+Persistence owner: Git repository/index and source files; Editor restores edit the current buffer and follow the owning buffer save lifecycle.
+Settings and scope: None introduced; pinned skip_prompt is an action argument, not a Settings value.
+Migration impact: None.
+Commands: Restore, RestoreAndNext, RestoreFile, RestoreTrackedFiles, TrashUntrackedFiles.
+Default keymap: Record exact contexts, platform bindings, and `skip_prompt` values from the action register; do not edit keymaps.
+Notifications: Labonair mutation failures route through Notifications; confirmation and destructive intent stay with the owning Git/Workspace surface.
+UI-kit components: Labonair file rows and menus use `labonair-ui-kit`; destructive confirmation remains shared rather than feature-local.
+User workflow: Restore selected diff hunks; restore/advance; discard selected tracked files or stage state; restore tracked changes in scope; move selected untracked files to system Trash.
+Failure/cancellation/retry behavior: Record read-only buffers, stale hunks, empty selection, tracked and untracked prompts, skip-prompt behavior, missing repository, partial failure, and retry/refresh outcomes.
+Security boundary: Preserve repository/project path validation and use the system Trash for untracked-file deletion where specified; never widen to ignored files without explicit intent.
+Performance budget: No runtime change; do not block the GPUI foreground thread during Git or Workspace file operations.
+
+Implementation order: Classification only; future changes must first define typed Git file/hunk restore operations and confirmation contracts, then implement in Git/Editor owners, then adapt Workspace and Keymap consumers.
+Focused unit tests: Not applicable to this documentation-only change.
+Contract/integration tests: No tests changed or run.
+Persistence/migration tests: Not applicable; no persistence changes.
+Command/surface tests: Not applicable; no runtime change.
+Visual states: Paired macOS hunk restore, tracked/untracked confirmation, skip-prompt, mixed selection, loading, and error states remain pending.
+Security/negative tests: Not applicable to this documentation-only change; destructive scope, ignored files, repository boundaries, and trash restoration remain acceptance requirements.
+Performance measurement: Not applicable to this documentation-only change.
+Workspace gates: Diff check, documentation checker, docs verification scope, queue check, and focused pinned/local restore audit.
+Documentation updates: New restore/discard packet, five bound action rows, packet index, Git capability crosswalk, normative parity summary, and this task record.
+Current status: Pending focused action and behavior audit.
+Target status: Static restore/discard requirements classified; native interactions and data recovery remain open.
+Evidence links: Pinned Editor/GitPanel handlers and keymaps; Labonair panel-scm, Git transport, Editor Git bridge, and Workspace Trash routes.
+Known limitations: Same-session source research and independent requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Native interaction, per-hunk discard implementation, file restore confirmation, system Trash parity, and paired captures.
+Failed/unavailable gates: Rust and visual gates remain R07-000 exit gates.
+Next safe task: Complete Git restore/discard classification, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify Git restore and discard actions
+
+- Added [`action-classification-git-restore-discard.md`](../../docs/parity/action-classification-git-restore-discard.md)
+  for five bound actions. It separates selected-hunk buffer restore, selected
+  file checkout, staged-tracked selection, and moving untracked files to
+  system Trash.
+- Updated the bound action register, packet index, Git capability crosswalk,
+  and normative parity summary. Labonair's no-prompt row discard, unsupported
+  hunk discard, broader tracked Discard All, and permanent Clean Untracked
+  paths are recorded.
+- Focused audit found a pinned source discrepancy: multi-file RestoreFile
+  labels created files for Trash but reaches permanent project deletion;
+  RestoreTrackedFiles filters to staged tracked entries despite the broader
+  registered description. Runtime confirmation and paired acceptance remain
+  open.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py`
+  (43 normative documents and 202 Markdown files),
+  `python3 scripts/verify.py --scope docs`, and
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest
+  active). The focused action-ID and cross-reference audit passed for all five
+  bound restore/discard actions. Rust gates remain R07-000 exit gates and were
+  not run for this documentation-only slice.
+- Same-session source research and independent requirements are redevelopment,
+  not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin
+  R07-001 or R09.
