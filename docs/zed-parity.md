@@ -295,6 +295,11 @@ remain pending. The independent
 records the local/remote shell choice, focus-dependent placement, related
 Terminal Settings, and Labonair's separate local New Terminal Tab route;
 dispatch, local/remote execution, and paired interaction evidence remain
+pending. The independent
+[`Workspace Open With System action crosswalk`](parity/action-classification-workspace-open-with-system.md)
+records the ProjectPanel and InvalidBuffer contexts, local-path default-app
+handoff, Windows deprecated-alias binding, and current Labonair Preview versus
+Reveal routes; native alias dispatch and external-app acceptance remain
 pending. All other action
 semantics and owner routes, profile selection/reload, user overrides, and
 macOS/Linux/Windows

@@ -19,7 +19,8 @@ source-side research. It records current evidence without claiming parity.
   packets currently cover 23 Search actions, 22 Pane actions, one Editor Go
   to Line action, one File Finder action, two Workspace Open/OpenFiles
   actions, one Workspace New Window action, one Workspace New File action,
-  and one Workspace New Terminal action;
+  one Workspace New Terminal action, and one Workspace Open With System
+  action;
   pinned dispatch and native interaction acceptance remain open for those and
   all other actions.
 - [`action-classification-search.md`](action-classification-search.md) —
@@ -56,6 +57,10 @@ source-side research. It records current evidence without claiming parity.
   independently stated intent, Terminal/Workspace ownership, shell/cwd
   Settings, local/remote execution, focus-dependent placement, and runtime
   gaps for the default-macOS New Terminal action.
+- [`action-classification-workspace-open-with-system.md`](action-classification-workspace-open-with-system.md) —
+  independently stated intent, Workspace ownership, ProjectPanel and
+  InvalidBuffer contexts, the Windows deprecated-alias route, and Labonair's
+  missing selected-path default-app action.
 - [`keymap-overlay-requirements.md`](keymap-overlay-requirements.md) — stable
   IDs for 1,402 bindings across seven macOS base-profile overlays, conditional
   Vim/Helix bindings, and macOS-specific overrides. Profile behavior, action

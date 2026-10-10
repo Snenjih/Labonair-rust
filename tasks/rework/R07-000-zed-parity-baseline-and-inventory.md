@@ -1720,6 +1720,100 @@ Next safe task: Continue R07-000 with the next unclassified action family.
   and paired captures remain open. Same-session analysis is independent
   redevelopment. R07-001 and R09 remain unstarted.
 
+## Pre-change contract — classify Workspace Open With System
+
+Request: Independently state the pinned `workspace::OpenWithSystem` behavior,
+its ProjectPanel and InvalidBuffer contexts, default-platform bindings and
+Windows legacy spelling, and current local Explorer/Editor paths.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `ACT-MACOS-workspace-OpenWithSystem`, selected local files and
+folders, failed local file loading, OS default-app handoff, platform alias
+records, missing local action paths, and error/security evidence.
+Out of scope: Adding or rebinding an action, changing preview launch behavior,
+opening remote paths in local applications, starting R07-001/R09, or claiming
+native-app acceptance.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, feature-crosswalk.md, capabilities.md,
+Workspace, Explorer, Editor, and platform external-open contracts.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns the
+generic local-path default-app action and its platform handoff. Explorer
+(`labonair-panel-explorer`) owns selected-path UI state; Editor supplies the
+invalid-file context. The shell remains a composition root.
+Canonical user entry point: Pinned `Ctrl+Shift+Enter` in ProjectPanel and
+InvalidBuffer on macOS and Linux. Windows' default ProjectPanel map contains
+`project_panel::OpenWithSystem` with the same key; the inspected pinned Linux
+registry declares that spelling as a deprecated alias for the canonical
+Workspace action. Windows InvalidBuffer has no recorded binding. Labonair's
+Explorer context menu has Open, Open Preview, and Reveal in Finder; Preview
+offers an external-open button for external content. There is no action or key
+route matching Open With System for Explorer selection or an invalid Editor
+file.
+Public typed contract: Pinned dispatch uses the typed
+`workspace::OpenWithSystem` action, resolves the selected ProjectPanel entry
+or the invalid local item's absolute path, then calls the native
+`open_with_system(Path)` service. Labonair has a Workspace preview helper that
+spawns the system opener for preview paths/URLs, but no shared Explorer/Editor
+contract. If that action is implemented, keep a local `PathBuf` handoff typed
+and Workspace-owned; no provider-discovery registry is needed.
+Events and registry contributions: This inventory adds no event, registry,
+action, or menu contribution. Keep external launch separate from Explorer's
+`Reveal in Finder` operation and the in-app Editor `Open` action.
+Settings: None. Use the OS default file association; add no values or profile
+selection controls.
+State and persistence: Do not mutate Editor or Explorer state. Opening a
+selected local path externally should leave the current selection, tabs,
+unsaved buffers, and project identity unchanged. The OS application owns the
+external document state.
+Notifications and failure: A failed OS handoff should report a recoverable
+notification. Labonair's existing Preview helper only logs a warning when
+process spawn fails; change no notification path in this inventory slice.
+Security: Only expose local paths through this action. The pinned ProjectPanel
+does not show its Default App item for remote worktrees, and InvalidBuffer only
+shows the button for local paths. Avoid shell interpolation; do not pass
+credentials or remote locations to a local default app.
+UI-kit: Reuse Explorer's shared context menu and Editor's shared button/menu
+surface. Add no local open-with button style.
+Focused inspection: Trace action bindings/alias metadata, selected-entry
+resolution, invalid-item action, local Explorer context menu, preview opener,
+and native platform open operation. Static route evidence does not establish
+Windows alias dispatch or OS association behavior.
+Visual evidence: Pending pinned macOS and Labonair pointer/keyboard interaction
+and paired captures for a local file, directory, invalid local file, and
+remote-path absence.
+Workspace gates: Documentation checker, docs verification scope, queue
+check, diff check, exact action/alias/route audit.
+Documentation updates: Open With System packet, action register, parity
+index, Explorer/editor crosswalk, normative parity scope if needed, and
+R07-000 progress.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Native macOS interaction is unavailable here.
+Next safe task: Continue R07-000 with the next unclassified action family.
+
+## Progress record — 2026-10-10 — Workspace Open With System action classification
+
+- Added [`../../docs/parity/action-classification-workspace-open-with-system.md`](../../docs/parity/action-classification-workspace-open-with-system.md)
+  for `ACT-MACOS-workspace-OpenWithSystem`, its ProjectPanel and InvalidBuffer
+  contexts, local file/folder handoff, and remote-path restriction.
+- Recorded the Windows default-map binding as the deprecated
+  `project_panel::OpenWithSystem` spelling in ProjectPanel only. The pinned
+  Linux registry metadata maps it to the canonical Workspace action; Windows
+  runtime alias dispatch remains unverified.
+- Distinguished default-app launch from Labonair's Explorer `Open`, Preview
+  external opener, and `Reveal in Finder`. No matching local Explorer or
+  invalid-file action/key route was found.
+- Updated the action register, parity README, Explorer/Editor and command/keymap
+  crosswalks, normative parity scope, and this task progress record. The
+  focused action/alias/route audit passed.
+- Passed `python3 scripts/check_documentation.py` (43 normative documents,
+  176 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active), and
+  `git diff --check`.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, and tests. They remain R07-000 exit gates. Pinned macOS
+  dispatch, Windows alias behavior, native OS handoff, and paired visual
+  evidence remain open. Same-session analysis is independent redevelopment.
+  R07-001 and R09 remain unstarted.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified
