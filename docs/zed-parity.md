@@ -282,7 +282,11 @@ and leaves dispatch and paired interaction evidence pending. The separate
 classifies the macOS general Open action and Linux/Windows Open Files action,
 their window and path-picker Settings, and the current single-directory versus
 File Finder route gaps; native dispatch and interaction evidence remain
-pending. All other action
+pending. The independent
+[`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
+records initial-content Settings and the missing Labonair user-facing window
+route; pinned dispatch and paired interaction evidence remain pending. All
+other action
 semantics and owner routes, profile selection/reload, user overrides, and
 macOS/Linux/Windows
 runtime evidence also remain open; these static inventories are not parity

@@ -1463,6 +1463,84 @@ work only from the independent requirements packets.
   is static only. Same-session work is independent redevelopment. R07-001 and
   R09 remain unstarted.
 
+## Pre-change contract — classify Workspace New Window
+
+Request: Record the pinned `workspace::NewWindow` user flow, its new-window
+content setting, current Labonair route, and runtime acceptance gaps.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `ACT-MACOS-workspace-NewWindow`, its default key/menu route, window
+activation and initial content, and `SET-general-on-new-window`.
+Out of scope: Implementing a new-window command, changing window behavior,
+starting R07-001/R09, or claiming runtime acceptance.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, settings-requirements.md, product,
+Workspace, and application-composition owner contracts.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns the
+workspace action and resulting workspace state; application composition
+supplies the platform window host and registers the owner contribution.
+Canonical user entry point: Pinned File > New Window and `Cmd+Shift+N` on
+macOS; Linux and Windows bindings remain in the action register. Labonair has
+no user-facing Workspace New Window command or keybinding.
+Public typed contract: No Labonair create-new-workspace-window contract is
+currently registered. Specify a Workspace-owned typed request carrying the
+`on_new_window` content choice to the native window host. Do not promote the
+shell's debug Gallery window to the product route.
+Events and registry contributions: None added in this inventory slice; record
+the missing Workspace-owned action/command route.
+Allowed dependency changes: None.
+Settings: Cross-reference `on_new_window` and its target default/options;
+add no value and leave settings lifecycle and runtime effects pending the
+Settings and Workspace owners.
+State and persistence: A successful action creates and activates one new
+application window. Its initial view follows the target setting. Preserve the
+requesting window and existing workspace state. Verify empty-tab and
+Launchpad persistence separately.
+Notifications and failure: Record create/activate failure and retry behavior;
+use the notification center for recoverable user-facing errors.
+Security: No new path is selected. Preserve the existing session/project trust
+state and avoid implicitly cloning sensitive project content into the new
+window.
+UI-kit: Reuse Workspace's existing content surfaces; add no local window or
+launchpad controls here.
+Focused tests: Trace current application startup and Workspace ownership
+contracts. Do not treat startup-window or debug Gallery creation as this
+action's runtime acceptance.
+Visual evidence: Pending pinned macOS and Labonair interaction with paired
+window/state captures.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, exact action/settings route audit.
+Documentation updates: NewWindow action packet, action register, capability
+crosswalk, parity index/normative scope, and R07-000 progress.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Native macOS interaction is unavailable here.
+Next safe task: Continue R07-000 with the next unclassified action family.
+
+## Progress record — 2026-10-10 — Workspace New Window action classification
+
+- Added [`../../docs/parity/action-classification-workspace-new-window.md`](../../docs/parity/action-classification-workspace-new-window.md)
+  for `ACT-MACOS-workspace-NewWindow`, including its key/menu route, Workspace
+  owner, typed window-host request, existing-window preservation, and native
+  interaction requirements.
+- Cross-referenced `SET-general-on-new-window` (`launchpad`, user scope) and
+  its `launchpad` / `empty_tab` initial-content choices. Labonair has no
+  matching setting wiring or user-facing Workspace New Window route.
+- Distinguished app startup and the debug-only Component Gallery window
+  from the required Workspace action. Pinned source inspection records new
+  window activation and initial content; no pinned runtime observation or
+  Labonair end-to-end test exists.
+- Updated the action register, parity index, app-window and command/keymap
+  crosswalks, and normative parity scope. The exact action/Settings/route
+  audit passed.
+- Passed `python3 scripts/check_documentation.py` (43 normative documents,
+  173 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active),
+  `git diff --check`, and the focused Workspace New Window inventory audit.
+- Not run for this documentation-only slice: Rust formatting, workspace check,
+  Clippy, and tests. They remain R07-000 exit gates. Pinned macOS and Windows
+  interaction and paired captures remain open; Linux evidence is static only.
+  Same-session analysis is independent redevelopment. R07-001 and R09 remain
+  unstarted.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified
