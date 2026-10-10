@@ -27,7 +27,7 @@ source-side research. It records current evidence without claiming parity.
   two Workspace major-region focus actions, nine Workspace pane
   activation/swap actions, two Workspace bulk item/pane close actions, two
   Git worktree deletion actions, two font-size decrease actions, two increase
-  actions and three reset actions, one Workspace Close Window action, one
+  actions and four reset actions, one Workspace Close Window action, one
   Workspace Reopen Last Picker action,
   two Workspace path-copy actions, and four Workspace save actions;
   pinned dispatch and native interaction acceptance remain open for those and
@@ -79,8 +79,9 @@ source-side research. It records current evidence without claiming parity.
   duplicate font-size paths.
 - [`action-classification-font-size-increase-reset.md`](action-classification-font-size-increase-reset.md) —
   independently stated buffer/UI increase and reset behavior, the four-scope
-  Reset All menu route, transient versus persistent effects, Settings values,
-  context precedence, and Labonair's removed no-op Zoom routes.
+  Reset All menu route, Agent-only ResetAgentZoom behavior, transient versus
+  persistent effects, Settings values, context precedence, and Labonair's
+  removed no-op Zoom routes.
 - [`action-classification-workspace-new-window.md`](action-classification-workspace-new-window.md) —
   independently stated intent, Workspace/application-window ownership,
   `On New Window` setting behavior, the missing Labonair action route, and

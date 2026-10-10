@@ -317,10 +317,11 @@ duplicate font-size paths and default mismatch, key dispatch, live effects,
 persistence, and paired macOS captures remain open. The independent
 [`Font-size increase and reset action crosswalk`](parity/action-classification-font-size-increase-reset.md)
 records global buffer increases, Welcome/Onboarding UI overrides, transient
-and persistent resets, and the View-menu Reset All route across four
-typography scopes. Duplicate local font paths, typed action/menu routes,
-settings-write recovery, native dispatch, and paired macOS captures remain
-open. The independent
+and persistent resets, the View-menu Reset All route across four typography
+scopes, and the Agent-panel-only ResetAgentZoom action. Duplicate local font
+paths, typed action/menu routes, Agent-panel reachability, settings-write
+recovery, native dispatch, and paired macOS captures remain open. The
+independent
 [`Workspace zoom action crosswalk`](parity/action-classification-workspace-zoom.md)
 records focused Pane/Panel overlay behavior, global Shift+Escape, the
 CommitEditor override, the zoom padding setting, and Labonair's separate

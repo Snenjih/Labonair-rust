@@ -3480,6 +3480,101 @@ continue R07-000 with its remaining inventory; do not begin R07-001 or R09.
 - Next safe task: Continue classifying R07-000's remaining action and
   workflow inventory; do not begin R07-001 or R09.
 
+## Pre-change contract — classify Agent Reset Zoom
+
+Request: Classify the registered Agent `ResetAgentZoom` action and distinguish
+its Agent-only transient reset from Zed's View-menu Reset All action.
+Request type: Requirements and registered-action ownership inventory; no
+runtime change.
+In scope: `ACT-REGISTRY-LINUX-agent-ResetAgentZoom`; action availability when
+the current Workspace has an AgentPanel; Agent UI and Agent buffer typography
+fallbacks; relation to `ACT-REGISTRY-LINUX-zed-ResetAllZoom`; and the missing
+Labonair AI/Agent UI route.
+Out of scope: Implementing the AI/Agent panel, changing global-menu or palette
+structure, classifying other Agent panel actions, changing configured font
+values, or starting R07-001/R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: The registered-action inventory, AI capability owner, Themes
+typography state contract, Appearance Agent-size settings, and the completed
+font-size increase/reset packet.
+Owner module: AI (`labonair-ai`) owns the Agent-panel action and workflow;
+Themes (`labonair-theme`) owns Agent UI/buffer runtime adjustments and reset
+semantics. Settings owns configured fallbacks. Agent UI dispatches through a
+typed Themes contract; it does not create a second typography owner.
+Canonical user entry point: The pinned Linux catalog lists
+`agent::ResetAgentZoom`, and AgentPanel source registers its handler in the
+current Workspace; it acts only when that Workspace has an AgentPanel. No
+default key binding or menu route was found; command-palette discoverability
+and macOS runtime registration remain unverified.
+Public typed contract: No arguments. Remove the transient Agent UI and Agent
+buffer font-size overrides, restoring their configured fallbacks. Do not
+change Settings. If the current Workspace has no AgentPanel, the action has
+no effect. This is narrower than Reset All Zoom, which also clears shared UI
+and buffer font adjustments.
+State and persistence: Agent UI size defaults unset and inherits shared UI
+size; Agent buffer size defaults to 12 px. The action only clears the two
+runtime Agent adjustments and refreshes windows; no settings save occurs.
+Events and registry contributions: AI contributes its typed action in the
+existing Agent action namespace and invokes the Themes-owned reset operation.
+No general font registry or shell dispatch conditional is needed.
+Allowed dependency changes: None for the documentation-only slice. Temporary
+compatibility code: none; no stale path is introduced.
+Notifications and failure: Reset is in-memory and needs no notification.
+Dispatch with no AgentPanel remains an evidenced no-op; no I/O failure path
+applies.
+UI-kit: No UI control is established from the current evidence. Any eventual
+discoverability surface must use the existing AI/Agent and UI-kit contracts.
+Focused verification: Confirm action schema has no arguments, default and
+profile keymaps lack a binding, no View menu item exists, the AgentPanel guard
+and two Theme reset targets, runtime override removal/refresh behavior, and
+Labonair's missing AI/Agent panel and Theme API.
+Visual evidence: Pending paired macOS Agent panel captures before/after Agent
+UI and Agent buffer adjustments, with shared UI/buffer values held constant;
+capture with Agent panel present and absent, plus any confirmed action surface.
+Workspace gates: Diff check, documentation checker, docs verification scope,
+queue check, and focused action/owner/current-route audit. Rust formatting,
+workspace check, Clippy, and tests remain R07-000 exit gates and are not run
+for this documentation-only slice.
+Documentation updates: Font increase/reset packet, ResetAgentZoom unbound
+action row, AI capability crosswalk and action counts, normative parity note,
+and this task's progress record.
+Security impact: N/A; this action changes only local presentation settings
+and introduces no permission boundary. Performance impact: No runtime change;
+the future reset must avoid blocking GPUI and refresh only necessary windows.
+Known limitations: Same-session source research and requirements authoring are
+independent redevelopment, not separated-room clean-room work. Command-palette
+discoverability, macOS registration, native dispatch, actual Agent font
+changes, and paired macOS captures remain pending. R07-001 and R09 remain
+unstarted.
+Next safe task: Complete the Agent Reset Zoom classification in R07-000, then
+continue with the next unclassified action or workflow; do not start R07-001
+or R09.
+
+## Progress record — 2026-10-10 — Agent Reset Zoom classification
+
+- Classified `ACT-REGISTRY-LINUX-agent-ResetAgentZoom` as an AgentPanel action
+  that clears only app-global transient Agent UI and Agent buffer font
+  overrides. Distinguished its current-Workspace AgentPanel guard from
+  View > Reset All Zoom's four-scope reset and noted that no Settings write
+  occurs.
+- Updated the font-size increase/reset packet, registered-action row, AI
+  crosswalk, action counts, and normative parity note. Recorded that command-
+  palette reachability and macOS runtime registration are unverified.
+- Static Linux inventory and pinned AgentPanel/Theme handler inspection plus
+  local capability/source audit only. Same-session work is independent
+  redevelopment, not separated-room clean-room implementation.
+- Passed: `git diff --check`, `python3 scripts/check_documentation.py`
+  (43 normative docs / 192 Markdown files), `python3 scripts/verify.py
+  --scope docs`, `python3 scripts/check_rework_queue.py` (46 tasks; R07-000
+  active), and the focused action schema, default/profile binding, menu,
+  AgentPanel guard, reset-scope, owner, and local-route audit.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, or tests. They remain R07-000 exit gates. Native/macOS action
+  registration and dispatch, palette reachability, visible Agent typography
+  reset, and paired macOS captures remain open.
+- Next safe task: Continue classifying the remaining R07-000 action and
+  workflow inventory; do not begin R07-001 or R09.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified
