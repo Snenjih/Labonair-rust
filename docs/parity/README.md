@@ -18,8 +18,9 @@ source-side research. It records current evidence without claiming parity.
   The 585 macOS IDs remain stable. Independent static intent and owner-route
   packets currently cover 23 Search actions, 22 Pane actions, two Workspace
   collaborator-follow actions, one Workspace worktree-security action,
-  one Editor Go to Line action, one File Finder action, two Workspace
-  Open/OpenFiles actions, one Workspace New Window action, one Workspace Add Folder to
+  one Workspace zoom action, one Editor Go to Line action, one File Finder
+  action, two Workspace Open/OpenFiles actions, one Workspace New Window action,
+  one Workspace Add Folder to
   Project action, one Workspace New File action,
   one Workspace New Terminal action, one Workspace Open With System action,
   six Workspace dock-sizing actions, five Workspace dock visibility actions,
@@ -61,6 +62,10 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-workspace-worktree-security.md`](action-classification-workspace-worktree-security.md) —
   independently stated Restricted Mode consent, path-scoped trust, the global
   auto-trust setting, reset behavior, and the missing Labonair trust workflow.
+- [`action-classification-workspace-zoom.md`](action-classification-workspace-zoom.md) —
+  independently stated focused Pane/Panel zoom, Workspace overlay behavior,
+  padding and persistence, the Git CommitEditor key override, and Labonair's
+  separate debug dock and native window zoom routes.
 - [`action-classification-workspace-new-window.md`](action-classification-workspace-new-window.md) —
   independently stated intent, Workspace/application-window ownership,
   `On New Window` setting behavior, the missing Labonair action route, and

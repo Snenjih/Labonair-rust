@@ -299,6 +299,11 @@ auto-trust choices, typed Workspace consumers, the unbound trust reset, and
 Labonair's missing route. The Settings path/backing-field mismatch, reset
 discovery, persistence-failure behavior, native dispatch, and paired macOS
 evidence remain open. The independent
+[`Workspace zoom action crosswalk`](parity/action-classification-workspace-zoom.md)
+records focused Pane/Panel overlay behavior, global Shift+Escape, the
+CommitEditor override, the zoom padding setting, and Labonair's separate
+Debug dock and native Window Zoom routes. Focus dispatch, restore behavior,
+and paired macOS captures remain pending. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

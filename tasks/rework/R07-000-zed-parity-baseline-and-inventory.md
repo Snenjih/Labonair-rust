@@ -2966,6 +2966,101 @@ family after this slice passes its documentation gates.
 - Next safe task: classify Workspace `ToggleZoom` (`Shift+Escape`, global)
   and continue the R07-000 action inventory. R07-001 and R09 remain unstarted.
 
+## Pre-change contract — classify Workspace Toggle Zoom
+
+Request: Independently classify the Workspace zoom toggle, including its
+center-pane and dock-panel targets, focus and action-context routing,
+appearance setting, persistence, and Labonair route.
+Request type: Requirements and action ownership inventory; no runtime change.
+In scope: `ACT-MACOS-workspace-ToggleZoom`, the more-specific Git CommitEditor
+binding that shadows the global key, and related `ACT-REGISTRY-LINUX-workspace-ToggleEditorZoom`,
+`ACT-REGISTRY-LINUX-workspace-ZoomIn`, `ACT-REGISTRY-LINUX-workspace-ZoomOut`,
+and `SET-window-layout-zoomed-padding` records.
+Out of scope: Implementing zoom behavior; fully classifying each related
+unbound action; native OS window zoom; Editor font zoom; individual image,
+diff, or preview zoom; R07-001/R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, registered-actions-unbound.md,
+settings-requirements.md, Workspace pane/dock state, the shared Panel contract,
+Git CommitEditor context, current Workspace zoom controls, and session restore.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns
+cross-pane and dock zoom state, focus routing, and the `ToggleZoom` action.
+Pane and panel content owners expose their supported zoom transition through
+the existing typed owner boundary. Do not add zoom policy to shell or a second
+global action table.
+Canonical user entry point: Global `Shift+Escape` on macOS, Linux, and
+Windows. In the more-specific `CommitEditor > Editor` context the same key
+invokes `git::ExpandCommitEditor`. Pane headers and supported Agent,
+Terminal, and Debugger panel surfaces provide mouse zoom controls. Labonair
+has no Workspace `ToggleZoom` action or default binding; its debug dock-zoom
+command and native Window Zoom are separate routes.
+Public typed contract: Toggle the zoom state of the focused zoom-capable Pane
+or Panel; do nothing for an empty or non-zoomable target. One Workspace zoom
+overlay is visible at a time. Zooming a center Pane overlays sibling content
+and docks while retaining the Workspace layout; zooming a dock Panel overlays
+the Workspace around that panel. Repeating the action restores the prior
+layout. Keep this overlay distinct from `ToggleEditorZoom`, which maximizes
+the active center Pane within the pane layout, and from OS Window Zoom.
+Settings and persistence: the `zoomed_padding` setting defaults to true and
+controls the inset around zoomed content. The pinned dock state persists its
+zoom flag; center-Pane zoom is not part of serialized Pane state. Verify
+restart behavior, panel registration/restoration, setting scope, save/reload,
+and resets.
+Events and registry contributions: Preserve Workspace as action and layout
+owner. Route mouse and keyboard intent through the same typed Pane/Panel zoom
+transition. The action has the three global default bindings above; the
+CommitEditor context override takes precedence. Related `ToggleEditorZoom`,
+`ZoomIn`, and `ZoomOut` are distinct unbound action records.
+Notifications and failure: Zoom is local layout state with no expected I/O.
+If focus, target teardown, or a panel refusing zoom makes the transition
+unavailable, preserve the existing layout and focus and do not leave a stale
+overlay target.
+UI-kit: Reuse the shared icon button, tooltip, active/toggled state, panel
+header, and focus styles. Do not add a shell-local zoom button or new setting.
+Focused inspection: Verify center Pane and left/right/bottom Panel targets,
+empty and non-zoomable content, active/inactive panes, focus transfer,
+concurrent zoom requests, pane/panel close, tab changes, Git CommitEditor
+precedence, the padding setting, dock restore, and session restart.
+Visual evidence: Pending paired macOS checks for maximized and inset geometry,
+overlap/occlusion, resize, focus, and narrow windows.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, and focused action/binding/context/owner/setting/persistence/
+distinction/current-route audit.
+Documentation updates: ToggleZoom action row, Workspace zoom packet, parity
+index, `workspace.docks` and `commands.keymap` crosswalks, the related
+zoom-padding setting reference, normative parity plan, and this progress log.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Pinned key dispatch/focus precedence and
+paired macOS captures are unavailable. R07-001 and R09 remain unstarted.
+Next safe task: Continue R07-000 with the remaining unclassified actions.
+
+## Progress record — 2026-10-10 — Workspace ToggleZoom classification
+
+- Added an independent requirements packet for
+  `ACT-MACOS-workspace-ToggleZoom`, covering the global Shift+Escape binding
+  on macOS/Linux/Windows, the Git CommitEditor context override, center-Pane
+  and dock-Panel overlays, the Zoomed Padding setting, per-target persistence,
+  related unbound zoom actions, and Labonair's separate Debug dock route.
+- Updated the bound action row, related setting record, parity index, Workspace
+  docks/keymap/Settings crosswalks, normative parity plan, and this active
+  task's contract and progress evidence.
+- Static reference and Labonair source review only. The same-session work is
+  independent redevelopment, not separated-room clean-room implementation.
+- Passed: `python3 scripts/check_documentation.py` (43 normative docs /
+  189 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active),
+  `git diff --check`, and the focused binding/context/setting/persistence/
+  current-route audit.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, or tests. They remain R07-000 exit gates. Native dispatch to
+  the focused Pane/Panel, CommitEditor precedence, profile/user overrides,
+  paired macOS captures, and settings live/reload behavior remain open.
+- Current Labonair dock zoom is only a Debug command and resizes the dock
+  within its region; the global action and center-Pane overlay are absent.
+- Next safe task: classify the next unclassified Workspace action family,
+  `worktree_picker::DeleteWorktree` and `ForceDeleteWorktree`. R07-001 and R09
+  remain unstarted.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified
