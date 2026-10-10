@@ -502,6 +502,11 @@ records macOS palette support and non-macOS no-op behavior, the alternate-screen
 `option_as_meta` input, transient vi-motion dispatch, missing local actions, and
 platform-specific acceptance gaps. Keyboard reachability and native palette/vi
 interaction remain open. The independent
+[`Task rerun action crosswalk`](parity/action-classification-task-rerun.md)
+classifies Workspace last-task fallback and Terminal TaskId rerun overrides,
+including same-terminal replacement, context reuse, shortcut overlaps, and the
+missing Labonair Tasks owner. Task scheduling and native context precedence
+remain open. The independent
 [`Outline and OutlinePanel action crosswalk`](parity/action-classification-outline-panel-actions.md)
 classifies the searchable Editor Outline picker, five default-macOS-bound
 OutlinePanel actions, 13 registered-unbound panel actions, six unbound

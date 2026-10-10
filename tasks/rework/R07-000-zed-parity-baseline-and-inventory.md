@@ -4981,6 +4981,65 @@ Next safe task: Complete this two-action Terminal classification slice, then con
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
 ```
 
+## Pre-change contract — Workspace and Terminal task rerun actions
+
+```text
+Request: Classify `task::Rerun` and `terminal::RerunTask`, including the Workspace last-task workflow, current-Terminal task ID override, rerun options, and overlapping platform shortcuts.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: Two default-bound action rows and platform contexts/bindings; pinned Task Rerun contract and Tasks UI handler; Terminal rerun action/button and `TaskState`; terminal task replacement options; local task-owner/command/terminal searches; parity packet/index, command and Terminal crosswalks, normative summary, and this task.
+Out of scope: Implementing a Tasks capability, task definition storage or execution, Terminal task association, key bindings, notifications, or task rerun UI; changing task replacement behavior; starting R07-001 or R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned `task::Rerun` action, Tasks UI Workspace handler, terminal task state/rerun button, terminal panel task replacement, default platform maps and Task/Terminal contexts; Labonair crate/capability inventory, Task command registration search, Workspace terminal, and terminal integration.
+
+Owner module: Pinned Tasks UI and Workspace own last-task lookup and rerun scheduling; TerminalView routes its current task ID and replacement overrides into the Tasks action. Labonair's crosswalk lists a planned Tasks owner, but no canonical task execution crate, task inventory, task-backed terminal state, or rerun handler exists locally.
+Canonical capability crate: Pinned `task`/`tasks_ui` with Workspace scheduling and Terminal task UI. Local canonical Tasks crate remains unresolved; do not create or assign task execution to Shell in this documentation slice.
+Canonical user entry point: Workspace `task::Rerun` shortcut (`cmd-alt-r` on macOS; platform-specific Task chords elsewhere) and Terminal `terminal::RerunTask` shortcut, plus the Terminal task breadcrumb rerun button.
+Alternate entry points: Tasks modal footer reruns the last task; when no previous task is available, Task Rerun opens task selection. Terminal action/button target the terminal's recorded TaskId when present.
+Public typed contract: `task::Rerun` carries `reevaluate_context`, optional `allow_concurrent_runs`, optional `use_new_terminal`, and an internal optional `task_id`. `terminal::RerunTask` dispatches that contract with a TaskId and Terminal-specific overrides; preserve both action IDs and bindings.
+Events: Task scheduling/completion updates the task inventory and Terminal TaskState; no event changes proposed.
+Registry contributions: Preserve existing task and terminal action IDs and platform contexts. Resolve shared `cmd-alt-r`, `ctrl-shift-r`, `ctrl-alt-r`, and `alt-t` Terminal-vs-Workspace context precedence as a runtime acceptance item. No local action/command registration is added.
+Settings: No standalone Settings row identified; rerun behavior consumes stored task definitions and their task-level concurrency/new-terminal options.
+Persistence: Workspace last-scheduled task/task inventory and resolved command context are task-owned state. Terminal action with `reevaluate_context=false` reruns the resolved task using the prior execution context; Task action can request current editor/workspace context when the flag is true.
+Migration impact: None in this documentation slice. Record that Labonair has no current Task owner or runnable task state; do not implement a partial shell/workspace shortcut.
+Commands and keymap: Preserve macOS `task::Rerun` `cmd-alt-r` in `Workspace && !Terminal` and `terminal::RerunTask` `cmd-alt-r` in `Terminal`. Preserve Linux/Windows Task and Terminal chords/contexts as stored in action requirements; profile overlays must be checked and the shared context precedence recorded.
+Notifications: No notification route proposed; task completion/error surfaces remain Task/Terminal-owned and acceptance cases.
+UI-kit components: No UI changes; classify pinned Terminal task rerun button and task modal route only.
+User workflow: Repeat the last task; repeat a specific task shown in the current terminal in-place; retain old task context or reevaluate according to action arguments; if no rerun target exists, choose a task.
+Failure/cancellation/retry behavior: Empty task inventory, stale task ID, no project/workspace, task still running, terminal closed, concurrent run, local vs remote task, collaboration guest restrictions, spawn failure, cancellation, context changes, and task result reporting remain acceptance cases.
+Security boundary: Rerun executes previously configured shell task commands in their stored local/remote workspace context. No shell command or task record is added by this documentation slice.
+Performance budget: No runtime change.
+
+Implementation order: Inspect action struct and Tasks UI handler, trace Terminal task state/button overrides and panel replacement, compare exact default/profile bindings and contexts, confirm local Task capability/command absence, update two action rows and parity/crosswalk indexes, then run docs/agents/knowledge/Settings/queue and focused handler/binding/local-owner audits.
+Focused tests: Not applicable to documentation-only change; do not add or run tests.
+Contract/integration tests: No runtime contract changed.
+Persistence/migration tests: No tests changed; last-task and resolved-context persistence remain evidence cases.
+Command/surface tests: Workspace and Terminal shared shortcuts, rerun button, modal fallback, same-terminal replacement, and option overrides remain native runtime acceptance.
+Visual states: No UI edit; task status/rerun affordance, no-task modal, running/completed/error, remote, and narrow Terminal states need paired macOS evidence.
+Security/negative tests: No new authority; later acceptance must verify reruns only execute previously selected task definitions and preserve project/remote/guest boundaries.
+Performance measurement: Not applicable.
+Workspace gates: Diff check; docs, agents, knowledge, Settings and rework queue; focused two-action/task-handler/profile/context and local capability audit.
+Documentation updates: Task rerun action packet, Workspace and Terminal action rows, commands.keymap and terminal.tasks crosswalk, parity packet index, normative summary, and this task.
+Current status: Static pinned handler, Terminal override, platform/profile binding, and Labonair owner audits are complete; parity packet and required documentation gates pass. Native task execution and context acceptance remain open.
+Target status: Last-task fallback, TaskId override, prior/current context behavior, concurrency and same-terminal replacement, platform bindings/context, and Labonair's missing owner route are documented; native dispatch and runtime precedence remain open.
+Evidence links: Pinned Rerun action, Tasks UI action handler, TerminalView rerun button, `TaskState`, TerminalPanel task replacement and platform keymaps; Labonair crate/registry/task routes and Terminal workspace.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Source and existing tests were inspected, not run; no task was executed and shortcut precedence was not observed.
+Remaining migration edges: No canonical local Tasks owner/TaskInventory/task-backed terminal state/rerun route; no native context precedence, task execution, or paired macOS evidence.
+Failed/unavailable gates: Rust build, native task scheduling, workspace/terminal context resolution, remote task behavior, and visual evidence remain R07-000 exit gates.
+Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+```
+
+## Progress — classify Workspace and Terminal task rerun
+
+```text
+- Added [action-classification-task-rerun.md](../../docs/parity/action-classification-task-rerun.md) for `task::Rerun` and `terminal::RerunTask`, including the Workspace last-task fallback, TaskId override, context reuse/reevaluation, concurrency/new-terminal flags, Terminal same-session replacement, and optional rerun button.
+- Preserved both action IDs and platform binding/context cells; recorded the two JetBrains Workspace overrides and shared Workspace/Terminal shortcut contexts. The static audit found the Task action's Workspace/!Terminal macOS context and Terminal action's Terminal context; Linux/Windows context precedence remains unobserved at runtime.
+- Confirmed the local capability gap: no canonical Tasks owner, task inventory/executor, task-backed Terminal state, or rerun action/command route is present. The packet and crosswalk leave Tasks ownership explicit and do not assign task execution to Shell or Workspace.
+- Passed `git diff --check`; docs (43 normative documents and 221 Markdown files); agents (10 request routes); knowledge; Settings (7 areas and 101 registered UI fields); and active queue verification (46 tasks; R07-000 remains earliest active).
+- No Rust build, tests, task execution, shortcut dispatch, remote task workflow, or visual check was run for this documentation-only slice. Static source and existing tests were inspected, not run. Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Native Task owner and end-to-end rerun behavior, shared shortcut precedence, TaskId replacement, error/recovery behavior, and paired macOS evidence remain open R07-000 exit gates.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+```
+
 ## Pre-change contract — default-bound ProjectPanel actions
 
 ```text
