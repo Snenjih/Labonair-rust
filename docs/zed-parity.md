@@ -283,6 +283,11 @@ classifies registered-unbound toolchain selection and the bound AddToolchain
 flow, including per-directory WorkspaceDb state and Labonair's unresolved
 canonical owner. Native dispatch, persistence failures, and paired macOS
 acceptance remain open. The independent
+[`Debugger Go To Memory action crosswalk`](parity/action-classification-debugger-go-to-memory.md)
+records the capability-gated Variables-list context-menu action, selected DAP
+memory-reference and size behavior, transient Memory View state, and the
+missing local Debugger owner. macOS registration, native DAP behavior, layout
+restoration, and paired visual acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and

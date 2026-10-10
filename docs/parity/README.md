@@ -42,7 +42,8 @@ source-side research. It records current evidence without claiming parity.
   (20 macOS-profile entries and two shared Linux/Windows Atom entries),
   two default-bound Theme mode/selector actions and one registered-unbound
   Theme Selector reload declaration, one registered-unbound Toolchain Select
-  action (related default-bound AddToolchain action), one Terminal Clear action,
+  action (related default-bound AddToolchain action), one registered-unbound
+  Debugger Go To Memory action, one Terminal Clear action,
   three Terminal clipboard actions, six Terminal scroll actions (eight JetBrains profile
   entries), two Terminal character-palette/vi-mode actions, two Task rerun
   actions (two JetBrains profile entries), two Terminal text/keystroke actions,
@@ -104,6 +105,9 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-toolchain.md`](action-classification-toolchain.md) —
   unbound toolchain selection, bound AddToolchain paths/scopes, WorkspaceDb
   persistence, and Labonair's missing owner and runtime route.
+- [`action-classification-debugger-go-to-memory.md`](action-classification-debugger-go-to-memory.md) —
+  the capability-gated Variables-list action, DAP memory-reference and size
+  behavior, transient Memory View state, and Labonair's missing Debugger owner.
 - [`action-classification-terminal-clear.md`](action-classification-terminal-clear.md) —
   the pinned saved-screen/cwd-history effect, platform bindings, Labonair's ANSI
   PTY command route, and native scrollback/runtime acceptance gaps.

@@ -6186,3 +6186,69 @@ Next safe task: Continue R07-000 action/workflow classification; do not begin R0
 - Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, native dispatch, Settings or WorkspaceDb round trips, subprocess checks, or visual evidence were run for this documentation-only slice.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
 ~~~
+
+## Pre-change contract — Debugger Go To Memory action
+
+~~~text
+Request: Classify the registered-unbound variable_list::GoToMemory action, its Variables-list context-menu route, DAP memory-reference and size behavior, memory-view activation/state, and Labonair's missing Debugger owner.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: ACT-REGISTRY-LINUX-variable_list-GoToMemory; pinned action declaration/handler, adapter capability gate, selected DAP variable requirements, MemoryView address/byte-selection state and pane activation; local Debugger capability/owner crosswalk; action inventory, packet index, commands.keymap and debugger crosswalks, normative summary, and this task record.
+Out of scope: Implementing a Debugger crate, DAP client, memory reader/view, action or keybinding; deciding the Debugger crate/persistence/trust contract; claiming runtime dispatch, DAP adapter behavior, data-read correctness, or visual parity; beginning R07-001 or R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned debugger_ui VariableList and MemoryView, project DAP session/readMemory, Debugger pane-layout serialization; local planned Debugger owner and product/registry contracts.
+
+Owner module: Pinned debugger_ui owns the VariableList action and MemoryView UI; project owns DAP session state and memory requests. Labonair's planned Debugger capability is the intended owner; no canonical crate exists yet.
+Canonical capability crate: Pinned debugger_ui plus project DAP contracts. Labonair: unresolved; do not place the feature in Shell or Editor.
+Sibling crates: Pinned project and debugger_ui. No local sibling crate is introduced.
+Canonical user entry point: Secondary-click a variable row in the active Debugger Variables list; the row is selected before its context menu opens. Choose “Go To Memory”; the item appears only when the adapter advertises supports_read_memory_request. The Linux-registered action has no default/profile binding found; macOS registration and palette reachability remain unverified.
+Alternate entry points: No keybinding or separate direct action entry point found. MemoryView has its own address/expression query workflow, which is not this variable action.
+Public typed contract: DAP Variable.memory_reference supplies the address; an optional variable type/evaluate expression and selected stack-frame ID request data-access size; MemoryView reads DAP memory. Labonair has no equivalent typed contract.
+Events: No new action-specific event found. Pane activation is deferred through RunningState; DAP memory read is performed by MemoryView. No Labonair event is proposed.
+Registry contributions: Preserve the registered Linux action ID and the context-menu contribution. The menu is capability-gated and variable-row-gated but does not check memory_reference presence; the handler silently returns when selection, variable, or memory_reference is absent. No keymap contribution is proposed in this inventory slice.
+Allowed dependency changes: None.
+Removal condition for temporary code: None; no code or compatibility path is added.
+
+State owner: Pinned MemoryView owns transient base row, row width, scroll position, and selected byte range. Debugger pane layout separately owns serialized pane membership and active item.
+Persistence owner: The inspected debugger layout serializer persists pane arrangement/active item, not MemoryView address or selected-byte ViewState. No Labonair persistence owner/format is assigned.
+Settings and scope: No related setting found; do not add one in this slice.
+Migration impact: No schema or data migration in this documentation-only change.
+Commands: Go To Memory is a registered-unbound action and context-menu item; it has no default/profile binding in inspected keymaps.
+Default keymap: None found in macOS/Linux/Windows defaults or inspected profile overlays. macOS registry/dispatch and Command Palette reachability are not proven by Linux registration.
+Notifications: No user notification found. Missing data or invalid/unparseable memory reference is silent; future local errors must use the notification center.
+UI-kit components: No local UI edit. Pinned route uses the shared context-menu machinery and Debugger MemoryView byte grid/query editor; future Labonair controls must use labonair-ui-kit.
+User workflow: In a live supported debugger session, select a variable, open its context menu, choose Go To Memory, inspect bytes at the variable's memory address, and see the memory range selected; Memory View becomes the active Debugger pane item.
+Failure/cancellation/retry behavior: No selection/non-variable/no memory_reference is a silent handler no-op. The memory-reference parser returns without changing address on parse failure, but the outer handler still schedules Memory View activation. A size-expression request uses the selected frame and falls back to one byte when absent/failing. Read failures, invalid references, stale frame/variable, stopped/historic sessions, and retry behavior need runtime characterization.
+Security boundary: No local code. A future DAP memory request must remain within the authorized debugger session and respect adapter/project trust; do not infer safe memory access from menu capability alone.
+Performance budget: No local runtime work. Pinned size lookup and memory reads are asynchronous; preserve responsiveness for large or remote debug sessions.
+
+Implementation order: Trace the registered action and capability-gated row menu; inspect selected-variable extraction, memory-reference parsing, size lookup, byte selection, pane activation and layout serialization; verify binding absence; map the missing local owner; update the action row, independent packet/index, owner crosswalks, parity summary, and this task.
+Focused unit tests: N/A; documentation-only slice, and no tests are added or run.
+Contract/integration tests: Pending native debugger acceptance; verify capability/menu gating, selected-variable references, DAP read, frame-aware size lookup, pane activation, and silent/error behavior.
+Persistence/migration tests: Pending runtime acceptance for debugger pane-layout persistence versus transient address/range/query state; no local persistence change.
+Command/surface tests: Verify exact menu visibility and activation, keymap absence in inspected defaults/profile overlays, macOS registration, and palette reachability.
+Visual states: No UI edit. Paired macOS debugger variable menu, memory view, selection, empty/loading/error, narrow, and restored-layout evidence remain required.
+Security/negative tests: Pending Debugger owner contract; cover unsupported adapter capability, absent/invalid memory reference, stopped or historical session, and session authorization.
+Performance measurement: N/A for docs-only change; future DAP requests require async responsiveness and remote latency checks.
+Workspace gates: Diff check; docs, agents, knowledge, settings, and active queue verification; focused source/keymap audit.
+Documentation updates: New Go To Memory packet; registered-unbound action row; packet index; commands.keymap and debugger crosswalks; normative parity summary; this task record.
+Current status: Pinned static route and local owner gap under inspection; documentation and gates pending.
+Target status: Record the action's actual menu and DAP behavior without claiming macOS/native acceptance or a local Debugger implementation.
+Evidence links: zed-refrence/zed/crates/debugger_ui/src/session/running/variable_list.rs; zed-refrence/zed/crates/debugger_ui/src/session/running/memory_view.rs; zed-refrence/zed/crates/debugger_ui/src/persistence.rs; docs/parity/registered-actions-unbound.md; docs/parity/feature-crosswalk.md.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No native Debug Adapter, memory-read, or UI interaction was exercised.
+Remaining migration edges: Labonair has no Debugger crate, DAP memory-read contract, Variables-list route, or MemoryView. The Debugger owner, persistence, launch/trust boundary, and error reporting are unresolved.
+Failed/unavailable gates: Rust build, tests, native dispatch, DAP adapter behavior, persistence round trip, and paired visual evidence are outside this documentation-only slice and remain R07-000 exit gates.
+Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+~~~
+
+## Progress — classify Debugger Go To Memory
+
+~~~text
+- Added [action-classification-debugger-go-to-memory.md](../../docs/parity/action-classification-debugger-go-to-memory.md) for ACT-REGISTRY-LINUX-variable_list-GoToMemory.
+- Recorded that secondary-click selects the clicked Variables-list row before opening its adapter-capability-gated context menu, plus the selected DAP variable and memory_reference preconditions, type/evaluate-name size expression, frame-aware size request and one-byte fallback, byte-range selection, Memory View activation, and invalid-reference behavior.
+- Verified that the Debugger layout persists pane membership/active item while the MemoryView address, row width, scroll handle, and selected byte range are held in transient ViewState. No related setting was found.
+- Updated the registered-unbound action row, parity packet index, commands.keymap and debugger crosswalks, normative parity summary, and this task record. The Linux action ID has no binding in inspected default or profile keymap assets; macOS registration and native reachability remain unverified.
+- Focused audit confirmed the action declaration, attached handler, variable-only context menu, `supports_read_memory_request` gate, missing-reference no-op, outer MemoryView activation, transient state boundary, and keymap absence.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py`, and `python3 scripts/verify.py` scopes docs, agents, knowledge, settings, and queue. The queue reports 46 tasks with R07-000 still earliest active.
+- Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, native dispatch, DAP adapter/read behavior, persistence round trip, or visual evidence were run for this documentation-only slice.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+~~~
