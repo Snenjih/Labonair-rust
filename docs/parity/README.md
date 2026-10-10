@@ -22,7 +22,8 @@ source-side research. It records current evidence without claiming parity.
   one Workspace New Terminal action, one Workspace Open With System action,
   six Workspace dock-sizing actions, five Workspace dock visibility actions,
   two Workspace major-region focus actions, nine Workspace pane
-  activation/swap actions, and two Workspace bulk item/pane close actions;
+  activation/swap actions, two Workspace bulk item/pane close actions, and one
+  Workspace Close Window action;
   pinned dispatch and native interaction acceptance remain open for those and
   all other actions.
 - [`action-classification-search.md`](action-classification-search.md) —
@@ -82,6 +83,10 @@ source-side research. It records current evidence without claiming parity.
   independently stated cross-pane close-all and close-inactive behavior,
   pinned-item retention, save intent, partial cancellation, and Labonair's
   Space-scoped tab close routes.
+- [`action-classification-workspace-close-window.md`](action-classification-workspace-close-window.md) —
+  independently stated per-window close preparation, context-specific
+  bindings, dirty-item/call prompts, session handling, and Labonair's native
+  close and tab/pane shortcut differences.
 - [`keymap-overlay-requirements.md`](keymap-overlay-requirements.md) — stable
   IDs for 1,402 bindings across seven macOS base-profile overlays, conditional
   Vim/Helix bindings, and macOS-specific overrides. Profile behavior, action

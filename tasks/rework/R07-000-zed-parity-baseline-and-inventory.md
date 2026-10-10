@@ -2257,6 +2257,104 @@ family after this slice passes its documentation gates.
 - Next safe task: continue R07-000 with the next unclassified default-map
   action family and reconcile the remaining action catalog.
 
+## Pre-change contract — classify Workspace Close Window
+
+Request: Independently classify closing the current Workspace window, its
+context-specific secondary-window bindings, dirty-item/call confirmation,
+session handling, and Labonair's native-window close route.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `ACT-MACOS-workspace-CloseWindow` across its global,
+`SettingsWindow`, `SkillCreator`, and `Terminal` binding contexts.
+Out of scope: `CloseProject`, app Quit, closing tabs or panes, adding commands
+or bindings, implementation, R07-001/R09, and runtime or visual acceptance
+claims.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, feature-crosswalk.md, Workspace window
+lifecycle, dirty-item save/close contracts, application close policy, and
+Labonair's universal tab/session model.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns the
+Workspace close lifecycle; application composition owns process-level quit
+policy; secondary window owners close their own Settings or Skill Creator
+surfaces.
+Canonical user entry point: Pinned File > Close Window and macOS
+`Cmd+Shift+W` globally; Linux `Ctrl+Shift+W`; Windows `Ctrl+Shift+W`, with
+additional SettingsWindow/SkillCreator context bindings and Windows Terminal
+`Alt+F4`. Labonair has the native OS window-close affordance, `Cmd+W` for
+Close Current Tab, and `Cmd+Shift+W` for Close Active Pane while the Terminal
+context is active; it has no Workspace Close Window command or menu route.
+Public typed contract: Close the current window only after its Workspace
+passes the close preparation flow. Dirty items may be serialized to hot-exit
+storage when the Workspace remains reachable; otherwise users must be able to
+save, discard, or cancel; cancelling keeps the window and dirty content open,
+while an explicit discard accepts losing those unsaved edits. Failed saves may
+offer a close-without-saving choice. The pinned flow may also ask for
+confirmation before leaving an active call when this is the sole Workspace
+window. App Quit and Close Project remain distinct. No new event, registry, or
+API is required for this inventory slice.
+State and persistence: The close flow may serialize dirty items, remove a
+Workspace from session state, flush window serialization, and remove the
+window. Whether the final-window action quits the process depends on platform
+and application policy. Verify session restore, last-window policy, and
+reopening behavior; do not equate a window close with tab close.
+Settings: Map existing last-window/session-restore and active-session
+confirmation behavior where it affects the user flow; add no setting in this
+slice.
+Notifications and failure: Dirty-item save/discard/cancel and active-call
+confirmation can block closure. A failed or cancelled close keeps the window
+available and resets its removal state. Labonair's native close callback uses
+the notification center for a running-shell confirmation; its behavior is
+not equivalent to the Workspace dirty-item preparation flow.
+Events and registry contributions: Keep the Workspace owner and platform
+window composition boundary; add no second shell close table or global
+feature-specific conditional.
+UI-kit: Reuse shared dialog and notification surfaces; do not add a local
+window-close control in this inventory slice.
+Focused inspection: Trace every action context, File menu route, active-call
+prompt, dirty-buffer hot-exit and save/discard/cancel behavior, save failure,
+last-window policy, session removal/restore, local OS close callback, current
+tab/pane key conflicts, and secondary Settings/Skill Creator windows.
+Visual evidence: Pending paired macOS checks for menu/key closure, dirty
+buffers, active call, cancellation, another surviving window, and final-window
+behavior.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, and exact context/key/route/persistence audit.
+Documentation updates: One action row, a Workspace Close Window packet,
+app.windows and command/keymap crosswalks, parity index, normative parity
+scope if needed, and this task's progress record.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Native macOS dispatch and paired captures are
+unavailable here.
+Next safe task: Continue R07-000 with the next unclassified default-map action
+family after this slice passes its documentation gates.
+
+## Progress record — 2026-10-10 — Workspace Close Window action classification
+
+- Added [`../../docs/parity/action-classification-workspace-close-window.md`](../../docs/parity/action-classification-workspace-close-window.md)
+  for the global, SettingsWindow, SkillCreator, and Windows Terminal contexts
+  of `CloseWindow`.
+- Recorded the current-window close-preparation flow, dirty-item
+  save/discard/cancel choices, active-call confirmation, session/hot-exit
+  handling, final-window policy, and separation from app Quit, Close Project,
+  tab close, and Pane close.
+- Distinguished Labonair's native running-shell/session-restore callback from
+  the missing Workspace close action. Recorded its `Cmd+W` tab close and
+  Terminal-context `Cmd+Shift+W` pane close collision with the pinned global
+  Close Window shortcut. Updated the action row, app.windows and command/keymap
+  crosswalks, parity index, normative parity scope, and this task's records.
+- Passed the focused action-context/route audit, `python3
+  scripts/check_documentation.py` (43 normative documents, 182 Markdown
+  files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active), and
+  `git diff --check`.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, and tests. They remain R07-000 exit gates. Native key/menu
+  dispatch, dirty-item and call prompts, cancellation, session restore,
+  final-window process policy, and paired macOS captures remain open.
+  Same-session analysis is independent redevelopment, not separated-room
+  clean-room work. R07-001 and R09 remain unstarted.
+- Next safe task: continue R07-000 with the next unclassified default-map
+  action family and reconcile the remaining action catalog.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified
