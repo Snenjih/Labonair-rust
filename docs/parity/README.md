@@ -32,7 +32,8 @@ source-side research. It records current evidence without claiming parity.
   related registered-unbound actions), three Git branch selection/rename
   actions, two Git diff/review actions (plus eight related registered-unbound
   actions), two Git file/history actions (plus six related registered-unbound
-  actions), three Git add/ignore registered-unbound actions, one Editor Go to
+  actions), three Git add/ignore registered-unbound actions, five Git
+  repository/remote-management registered-unbound actions, one Editor Go to
   Line action,
   one File Finder action, two Workspace Open/OpenFiles actions, one Workspace
   New Window action,
@@ -121,6 +122,9 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-git-add-ignore.md`](action-classification-git-add-ignore.md) —
   independently stated Git Add dispatch discrepancy and created-file
   `.gitignore`/`.git/info/exclude` workflows.
+- [`action-classification-git-repository-management.md`](action-classification-git-repository-management.md) —
+  independently stated clone/init/project-selection routes, the fallback
+  branch setting, and unresolved registered remote actions.
 - [`action-classification-workspace-open.md`](action-classification-workspace-open.md) —
   independently stated intent, Workspace/Editor ownership, distinct general
   Open and platform Open Files routes, related Settings targets, and runtime

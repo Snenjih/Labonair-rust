@@ -5062,3 +5062,62 @@ Next safe task: Classify and document Git Add and ignore actions, then continue 
 - Rust gates, native action dispatch, resulting Git index/ignore matching, and paired visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
 - Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+## Pre-change contract — Git repository and remote management actions
+
+```text
+Request: Independently classify pinned Git Clone, Init, SelectRepo, CreateRemote, and FilterRemotes workflows against Labonair's current repository, Workspace, and Git transport contracts.
+Request type: R07-000 requirements inventory; documentation only.
+In scope: Five registered-unbound actions (Clone, Init, SelectRepo, CreateRemote, FilterRemotes); GitPanel clone/init/selector surfaces; branch-picker's separate remote-create and local/remote branch filter paths; git_panel.fallback_branch_name; local GitService and transport helper reachability; current Source Control/GitGraph repository targeting.
+Out of scope: Implementing clone/init/repository selection or remote CRUD; remote synchronization actions already classified; branch selection and worktree lifecycle already classified; changing Settings values or keymaps; runtime/visual parity claims; and R09 work.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Git capability (labonair-git); Git transport (labonair-git-transport); Source Control and GitGraph sibling views; Workspace project/worktree creation and activation; SSH supplies optional remote execution.
+
+Owner module: Git owns repository detection and remote configuration. Workspace owns project/worktree creation and switching. Source Control hosts the Git actions and current repository context; SSH supplies remote file/command transport.
+Canonical capability crate: labonair-git; `labonair-git-transport` executes local/remote Git operations; `labonair-panel-scm` and `labonair-panel-git-graph` are Git-owned views; `labonair-workspace` composes project and tab state.
+Canonical user entry point: Pinned GitPanel Clone/Initialize empty states and GitPanel repository selector. CreateRemote/FilterRemotes appear in the registered action inventory, but no handler was found for either action. The BranchPicker has a separate type-URL/remote-name creation flow and Local/Remote/All branch filters.
+Alternate entry points: Pinned Welcome/GitPanel clone affordance; init path picker when multiple worktrees are visible; branch picker query to create a remote; local-vs-remote branch tabs. Labonair's current Git panel accepts one repository root and its GitGraph uses that repository.
+Public typed contract: Labonair GitService exposes repository detection/root/state and branch listing, but no clone, init, repository inventory/selection, remote list/mutation, or remote filter operation. A `git_init` transport helper exists but has no caller in the inspected crates and is not exposed through GitService. Do not alter contracts in this inventory slice.
+Events: No local project-clone/init/repository-selection events in scope were found; no events proposed.
+Registry contributions: No new registry. Preserve the distinction between registered-unbound `git::CreateRemote` and the branch picker’s independent remote creation flow.
+Settings and scope: Existing `git_panel.fallback_branch_name` defaults to `main` and supplies the initial branch name for pinned Init. Document the relation without changing the setting.
+Persistence: Clone creates repository files at a user-selected filesystem destination and then adds the repository to the project or opens a new project; Init creates repository metadata in a selected worktree; remote creation updates repository Git config; repository selection is transient active-GitStore state. No app-owned persistence change is proposed.
+Migration impact: None in this slice. Future work should add Git-owned typed repository/remote contracts, then adapt Workspace project lifecycle and Source Control entry points; do not put Git operations into shell-wide conditionals.
+Commands: Clone, Init, SelectRepo, CreateRemote, FilterRemotes.
+Default keymap: All five are registered without default bindings. Preserve their action discovery and distinguish no-handler actions from actions with a modal route.
+Notifications: Pinned clone/init/remote failures use Workspace/Git error surfaces, including status toasts; Labonair user messages must use the statusbar notification center. No notification UI change here.
+UI-kit components: No visual edits. Any future picker, URL/name input, destination flow, or empty state must use labonair-ui-kit.
+User workflow: Initialize Git in the sole worktree or select among visible worktrees, using the configured fallback branch name; clone a repository URL to a selected parent directory and add it to the current project or open a new project; select the active repository in a multi-repository Project; create a named remote from URL; and invoke/filter remote discovery. Keep the separate BranchPicker remote-create/branch-filter workflows visible in the evidence.
+Failure/cancellation/retry behavior: Record no panel/repository/worktree, multiple worktrees, invalid or empty URL, unavailable destination, clone/init permissions, repository already initialized, duplicate remote name, invalid remote URL, remote fetch failure, picker cancellation, active repository changes, empty/no handler for CreateRemote/FilterRemotes, and retry without losing Workspace state.
+Security boundary: Validate and display repository URLs and destination paths; avoid exposing embedded credentials; preserve project/workspace trust boundaries; keep remote URL parsing and credential handling inside Git/SSH owners.
+Performance budget: No runtime change. Clone, init, and remote operations must remain asynchronous and not block the GPUI foreground thread.
+
+Implementation order: Requirements packet only. Future work should establish repository enumeration/selection and typed remote CRUD in Git, connect project clone/init/open flows through Workspace, and then expose action/menu entry points and configured branch defaults.
+Focused unit tests: Not applicable to this documentation-only change.
+Contract/integration tests: No tests changed or run.
+Persistence/migration tests: Not applicable; identify Git config, filesystem destination, workspace recent/open state, and existing user fallback-branch setting for future acceptance.
+Command/surface tests: Not applicable; no runtime change.
+Visual states: Clone URL/destination, add-to-project/new-project choice, Init single/multiple/no worktree, repository selector active/filter/empty list, remote creation query/name/error, remote filter states, loading, cancellation, permission failure, notification, and narrow layout remain native acceptance requirements.
+Security/negative tests: Not applicable to this documentation-only change; future implementation must test URL/credential redaction, destination containment, duplicate names, remote parsing, and cancellation.
+Performance measurement: Not applicable; no runtime change.
+Workspace gates: Diff check, documentation checker, docs verification scope, queue check, affected table shape check, and focused pinned action/handler/settings plus local contract/reachability audit.
+Documentation updates: New Git repository/remote-management packet, five registered-unbound action rows, Git Source Control crosswalk, fallback-branch Settings effect, normative parity summary, and this task record.
+Current status: Pending focused action-handler, Settings, and local-reachability audit.
+Target status: Static clone/init/selection routes, unhandled remote action IDs, and separate branch-picker remote flows classified; native project-state and paired macOS acceptance remain open.
+Evidence links: Pinned GitUI CloneModal/clone-and-open, GitPanel init, RepositorySelector, BranchPicker remote creation/filter, and GitPanel fallback setting; Labonair GitService/GitGraphService, transport helper call sites, Source Control context, and Workspace project tabs.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Static route inspection does not establish clone provider support, filesystem prompts, or native recovery.
+Remaining migration edges: Local clone/init contract and reachable helper, multi-repository enumeration/selection, remote CRUD/filter API, action IDs without handlers, fallback branch setting effects, clone target/project lifecycle, and paired captures.
+Failed/unavailable gates: Rust, native runtime, and visual gates remain R07-000 exit gates.
+Next safe task: Classify and document Git repository and remote management actions, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify Git repository and remote management actions
+
+- Added [`action-classification-git-repository-management.md`](../../docs/parity/action-classification-git-repository-management.md) for five registered-unbound actions: Clone, Init, SelectRepo, CreateRemote, and FilterRemotes.
+- Updated five unbound action rows, the Git panel fallback-branch setting effect, parity packet index/count, Git Source Control crosswalk, normative parity summary, and this task record.
+- Focused pinned-source audit confirmed Clone's URL/destination/add-or-open project flow, Init's visible-worktree selection and `git_panel.fallback_branch_name`, and SelectRepo's active Project repository picker. No action handlers were found for CreateRemote or FilterRemotes; BranchPicker has separate remote-create and Local/Remote/All branch-filter paths.
+- Labonair `GitService` has no clone/init/repository selector/remote CRUD operations; a `git_init` transport helper has no caller. Source Control is scoped to one repository root and exposes no matching action routes.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative documents and 209 Markdown files), `python3 scripts/verify.py --scope docs`, and `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active). Focused action/settings/crosswalk checks passed for five actions; affected table shape passed for five action rows and one setting row.
+- Rust gates, native clone/init/project selection, remote action dispatch, and paired visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
+- Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.

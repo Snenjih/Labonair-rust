@@ -426,6 +426,13 @@ records the Add metadata/handler mismatch and the created-file
 operations, but no matching Add action, exposes ignore controls more broadly,
 and anchors `.gitignore` paths differently; dispatch and paired macOS evidence
 remain pending. The independent
+[`Git repository and remote management action crosswalk`](parity/action-classification-git-repository-management.md)
+records clone, initialize, repository selection, and remote-create/filter
+entry points, including two registered actions with no matching handler.
+Labonair has no reachable clone/init or remote configuration contract; its
+transport init helper is uncalled, and no active repository selector exists.
+Project, URL/destination, and remote recovery behavior remain open. The
+independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The
