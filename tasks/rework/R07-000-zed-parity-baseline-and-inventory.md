@@ -1230,6 +1230,78 @@ registered-but-unbound action catalog while R07-000 remains active.
   not claim separated-room clean-room provenance. R07-001 and R09 remain
   unstarted.
 
+## Pre-change contract — classify Editor Go to Line
+
+Request: Independently state the pinned `go_to_line::Toggle` user goal and
+map its current Editor owner, route, source correspondence, and acceptance gap.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `ACT-MACOS-go_to_line-Toggle`, its default binding/context, arbitrary
+line/column and relative navigation workflow, current Labonair caret operations,
+related route/test evidence, and pending runtime/visual acceptance.
+Out of scope: Implementing a prompt or action handler, changing keymaps,
+starting R07-001/R09, or claiming pinned dispatch or native visual acceptance.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, pinned action metadata, Editor and
+Workspace contracts, and the current Outline-to-line palette route.
+Owner module: Editor owns document caret/navigation state; Workspace composes
+the current Editor view and typed command-palette action.
+Canonical capability crate: labonair-editor; current view integration is in
+labonair-workspace.
+Canonical user entry point: No direct Go to Line prompt or toggle is
+registered. Outline symbol selection jumps to a known line only.
+Public typed contract: Editor Position/goto_line/goto_position operations and
+Palette SubmenuAction::GoToLine(usize), which currently carries a line only.
+Events: None added.
+Registry contributions: None added.
+Allowed dependency changes: None.
+State and persistence: Editor owns the caret. The query and preview are
+transient; no setting or persistence schema is added.
+Notifications and failure: Preserve existing caret operation behavior; record
+the missing invalid-query, cancel, and focus behavior as acceptance work.
+UI-kit: No direct Go to Line input exists; any future prompt must use the
+shared input controls and remain in the Editor owner.
+Workspace and shell: Workspace composes the active Editor view and applies
+typed Outline actions; no shell-wide action conditional is added.
+Security and performance: No new filesystem or external-service access.
+Focused tests: Inspect existing route and operation tests; map none as direct
+action-dispatch coverage when absent.
+Visual evidence: Pending paired native macOS interaction and captures.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, action-ID audit, and test-trace audit.
+Documentation updates: Go to Line packet, action register, parity
+index/crosswalk, normative parity scope, and this progress record.
+Known limitations: Same-session analysis and implementation are independent
+redevelopment, not separated-room clean-room work. The Linux host has no
+display server or paired native capture.
+Next safe task: Continue with another default-macOS action family while
+R07-000 remains active.
+
+## Progress record — 2026-10-10 — default-macOS Go to Line action classification
+
+- Added [`../../docs/parity/action-classification-go-to-line.md`](../../docs/parity/action-classification-go-to-line.md)
+  with the independently stated line/column/relative-navigation goal, Editor
+  owner, current route, related local code, and required runtime states for
+  `ACT-MACOS-go_to_line-Toggle`.
+- The action register preserves its `Ctrl+G` full-Editor context and now links
+  the packet. The crosswalk distinguishes Editor-owned caret state and the
+  current Workspace composition from the missing direct prompt/Toggle route.
+- Existing Workspace `goto_line`/`goto_position` operations and Outline's
+  typed line jump are recorded as related behavior only. No direct
+  action-specific local test or pinned-key dispatch test was found.
+- Linked the packet from the parity index, Editor workflow and command/keymap
+  crosswalks, and normative parity scope. A custom one-ID audit passed for
+  register/payload linkage, both owner crates, route gap, and pending runtime
+  status.
+- Passed: `python3 scripts/check_documentation.py` (43 normative documents,
+  170 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active), and
+  `git diff --check`.
+- Not run for this documentation-only slice: Rust formatting, workspace check,
+  Clippy, and tests. They remain R07-000 exit gates. Pinned `Ctrl+G` dispatch,
+  native Labonair interaction, and paired visuals remain unobserved on this
+  Linux host without `DISPLAY` or `WAYLAND_DISPLAY`. This work remains
+  same-session independent redevelopment. R07-001 and R09 remain unstarted.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

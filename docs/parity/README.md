@@ -15,10 +15,10 @@ source-side research. It records current evidence without claiming parity.
   for all 595 action identifiers across the default macOS, Linux, and Windows
   keymaps, with 2,731 binding/context records and four null entries. It records
   five deprecated-alias resolutions from the pinned Linux action registry.
-  The 585 macOS IDs remain stable; [`action-classification-search.md`](action-classification-search.md)
-  records static semantics and owner routes for 23 Search-family actions.
-  Pinned dispatch and native interaction acceptance remain open for those and
-  all other actions.
+  The 585 macOS IDs remain stable. Independent static intent and owner-route
+  packets currently cover 23 Search actions, 22 Pane actions, and one Editor
+  Go to Line action; pinned dispatch and native interaction acceptance remain
+  open for those and all other actions.
 - [`action-classification-search.md`](action-classification-search.md) —
   independently stated user goals, static Labonair owner routes, code coverage,
   and runtime/evidence gaps for 23 default-macOS Search-family actions. No
@@ -28,6 +28,10 @@ source-side research. It records current evidence without claiming parity.
   tab/pane routes, and evidence gaps for 22 default-macOS Pane actions. The
   split between universal tabs, outer panes, and Editor groups remains explicit;
   runtime acceptance is pending.
+- [`action-classification-go-to-line.md`](action-classification-go-to-line.md) —
+  independently stated intent, Editor owner, current line-jump route, and
+  evidence gap for the default-macOS Go to Line action. The arbitrary
+  line/column prompt and its runtime acceptance remain open.
 - [`keymap-overlay-requirements.md`](keymap-overlay-requirements.md) — stable
   IDs for 1,402 bindings across seven macOS base-profile overlays, conditional
   Vim/Helix bindings, and macOS-specific overrides. Profile behavior, action

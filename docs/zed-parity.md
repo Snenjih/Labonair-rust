@@ -269,7 +269,11 @@ and paired visual acceptance remain open for that slice. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and
-paired visual evidence also remain open. All other action semantics and owner
+paired visual evidence also remain open. The independent
+[`Editor Go to Line action crosswalk`](parity/action-classification-go-to-line.md)
+records the current line-only Outline route and the missing arbitrary
+line/column prompt for one default-macOS action; its dispatch, interaction, and
+paired visual evidence remain open. All other action semantics and owner
 routes, profile selection/reload, user overrides, and macOS/Linux/Windows
 runtime evidence also remain open; these static inventories are not parity
 evidence.
