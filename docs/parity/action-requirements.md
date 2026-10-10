@@ -15,10 +15,34 @@ three. Ten actions bound on Linux and/or Windows are not bound in the macOS
 default. All 2,731 active binding records and four explicit null entries are
 listed below. Binding presence is static inventory evidence only.
 
+The pinned Linux runtime dump records 1,404 registered action names. Of the
+595 identifiers in the three default maps, 590 match a registered name directly
+and five are declared deprecated aliases. Resolving those aliases reaches 591
+unique registered actions; the other 813 registered Linux actions have no key
+binding in any of these three defaults and receive stable IDs in
+[`registered-actions-unbound.md`](registered-actions-unbound.md). These counts
+do not establish command-palette, menu, pointer, extension, or programmatic
+reachability. Linux registration does not establish macOS registration.
+
 Each action name has one requirement ID. The 585 macOS IDs retain their existing
 `ACT-MACOS-<namespace>-<action>` values. The ten additional actions use
 `ACT-PLATFORM-<namespace>-<action>`. Each profile cell records its exact default
 key sequences, activation context, and any action arguments.
+
+Five names in the default maps are deprecated aliases in the pinned Linux
+runtime metadata. They resolve to three registered action names:
+
+| Default-map identifier | Registered action name | Registered-action requirement ID |
+|---|---|---|
+| `branches::OpenRecent` | `git::Branch` | `ACT-ALIAS-TARGET-LINUX-git-Branch` |
+| `editor::CopyPath` | `workspace::CopyPath` | `ACT-MACOS-workspace-CopyPath` |
+| `outline_panel::CopyPath` | `workspace::CopyPath` | `ACT-MACOS-workspace-CopyPath` |
+| `project_panel::CopyPath` | `workspace::CopyPath` | `ACT-MACOS-workspace-CopyPath` |
+| `project_panel::OpenWithSystem` | `workspace::OpenWithSystem` | `ACT-MACOS-workspace-OpenWithSystem` |
+
+This is registration metadata from the pinned Linux build, not an observed
+keymap dispatch. The exact dump and schemas are preserved in
+[`evidence/zed-actions-3569541-linux-x86_64.json`](evidence/zed-actions-3569541-linux-x86_64.json).
 
 Named alternate keymap profiles (Atom, Cursor, Emacs, JetBrains, Sublime Text,
 TextMate, VS Code, and Vim), profile composition/overrides, and user-edited
@@ -68,6 +92,15 @@ Semantic behavior, exact owner, local route, and runtime evidence are `Pending`
 for every action row. A profile cell of `—` means no binding was found for that
 action in that default profile; it does not imply that the action is unavailable
 through other entry points.
+
+The deprecated `branches::OpenRecent` identifier targets a registered action
+that has no separate direct name in the three defaults. Track that canonical
+action with its own requirement ID in addition to the keymap-identifier
+requirement above:
+
+| Requirement ID | Registered action | Alias source requirement | Semantic result | Canonical owner | Labonair route | Runtime dispatch evidence |
+|---|---|---|---|---|---|---|
+| `ACT-ALIAS-TARGET-LINUX-git-Branch` | `git::Branch` | `ACT-MACOS-branches-OpenRecent` | Pending | Pending | Pending | Linux metadata only; keymap dispatch pending |
 
 | Requirement ID | Action identifier | macOS bindings and contexts | Linux bindings and contexts | Windows bindings and contexts | Workflow family | Semantic result | Canonical owner | Labonair route | Runtime evidence |
 |---|---|---|---|---|---|---|---|---|---|

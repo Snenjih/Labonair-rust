@@ -735,6 +735,33 @@ the shared UI kit and Settings owner. Native visual evidence remains pending.
   remains assigned to the macOS workspace operator.
 - R07-000 remains In Progress; no R09 task has started.
 
+
+
+## Progress record — 2026-10-10 — Pinned Linux action registry
+
+- Built the exact pinned Zed debug executable and ran `--dump-all-actions` on
+  Linux x86_64. The host had the versioned `libX11-xcb.so.1` runtime but no
+  development symlink; a temporary linker symlink under `/tmp` allowed the
+  final link without installing packages or changing the pinned checkout. The
+  command was run from `zed-refrence/zed/` with `LIBRARY_PATH=/tmp/labonair-native-libs`
+  and `CARGO_TARGET_DIR=/tmp/labonair-pinned-zed-target`.
+- Preserved the successful 447,231-byte runtime metadata output and schemas at
+  [`../../docs/parity/evidence/zed-actions-3569541-linux-x86_64.json`](../../docs/parity/evidence/zed-actions-3569541-linux-x86_64.json)
+  (SHA-256 `fda3ca179a9e6a27508646fde530a5ebf956252020d5505f45e2cfea60620db5`).
+  The runtime registered 1,404 actions; its metadata contains documentation for
+  1,338 and argument schemas for 187.
+- Reconciled all three default-map name sets with runtime-declared deprecated
+  aliases: 590 names match directly, five aliases resolve to three registered
+  actions, and 591 distinct registered actions are referenced by the defaults.
+  Added stable IDs for the remaining 813 Linux-registered actions in
+  [`../../docs/parity/registered-actions-unbound.md`](../../docs/parity/registered-actions-unbound.md).
+- This catalog proves Linux action registration and preserves metadata. It
+  does not prove action effects, keymap dispatch, user reachability, macOS
+  registration, Labonair ownership/routes, or end-to-end behavior; those remain
+  Pending. Alternate profiles and user overrides also remain open.
+- Updated the parity index, feature crosswalk, and normative parity inventory.
+  R07-000 remains In Progress; no R09 task has started.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

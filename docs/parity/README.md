@@ -12,10 +12,18 @@ source-side research. It records current evidence without claiming parity.
   map with proposed/current owners and explicit missing areas. It is not an
   exhaustive settings or runtime inventory yet.
 - [`action-requirements.md`](action-requirements.md) — stable requirement IDs
-  for all 595 distinct actions across the default macOS, Linux, and Windows
-  keymaps, with 2,731 binding/context records and four null entries. The 585
-  macOS IDs remain stable; per-action semantic, owner, route, and runtime
-  acceptance remains open.
+  for all 595 action identifiers across the default macOS, Linux, and Windows
+  keymaps, with 2,731 binding/context records and four null entries. It records
+  five deprecated-alias resolutions from the pinned Linux action registry.
+  The 585 macOS IDs remain stable; per-action semantic, owner, route, and
+  runtime acceptance remains open.
+- [`registered-actions-unbound.md`](registered-actions-unbound.md) — stable IDs
+  for 813 actions registered by the pinned Linux runtime but absent from all
+  three default keymaps. Reachability, semantic classification, Labonair owner
+  and route, and runtime behavior remain open. The complete pinned registry
+  metadata and schemas are in [`evidence/zed-actions-3569541-linux-x86_64.json`](evidence/zed-actions-3569541-linux-x86_64.json).
+  The JSON under `evidence/` is machine-generated reference metadata, not an
+  implementation brief or proof of user-visible behavior.
 - [`titlebar-tab-strip.md`](titlebar-tab-strip.md) — independent titlebar tab
   appearance, input/state matrix, ownership, and evidence packet.
 - [`settings-crosswalk.md`](settings-crosswalk.md) — independent Settings
