@@ -3187,6 +3187,151 @@ Next safe task: Continue R07-000 with the remaining unclassified actions.
   `zed::DecreaseBufferFontSize` and `zed::DecreaseUiFontSize`, within R07-000.
   R07-001 and R09 remain unstarted.
 
+## Pre-change contract — classify font-size decrease actions
+
+Request: Independently classify the bound buffer-font and UI-font decrease
+actions, including their distinct scopes, context precedence, transient versus
+persistent arguments, settings effects, and Labonair's prior no-op-command
+removal.
+Request type: Requirements and action ownership inventory; no runtime change.
+In scope: `ACT-MACOS-zed-DecreaseBufferFontSize` and
+`ACT-MACOS-zed-DecreaseUiFontSize`; their default macOS/Linux/Windows bindings,
+the Onboarding/Welcome context overrides, `persist:false` behavior, the
+buffer-size View menu action, the conditional Command/Ctrl+wheel buffer-size
+gesture, and related `SET-appearance-buffer-font-size`,
+`SET-appearance-ui-font-size`, `SET-editor-mouse-wheel-zoom`, and terminal
+font-size records.
+Out of scope: Implementing font zoom; classifying the separate Increase and
+Reset action IDs; restoring the removed no-op `ZoomIn`/`ZoomOut`/`ZoomReset`
+command IDs as-is; other font families/sizes such as Agent, Git Commit,
+Markdown Preview, or terminal-specific controls; R07-001/R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action and settings inventories; the Themes typography owner;
+Settings value and Settings UI contracts; Editor and Terminal font consumers;
+ThemeStore live-update contract; keymap contexts and alternate profiles; the
+historical R08-002 no-op command removal record.
+Owner module and canonical crate: Themes (`labonair-theme`) owns global UI and
+shared buffer typography state and the live adjustment contract. Settings
+(`labonair-settings`) owns configured values; `labonair-theme-ui` applies
+those values to the ThemeStore, and Editor/Terminal consume the shared buffer
+metrics. A terminal-specific size may override the shared buffer value. Do
+not put font-zoom policy in the shell or make Settings own action behavior.
+Canonical user entry point: The pinned global `Command+-` action and View >
+Zoom Out both decrease buffer text size. In the more-specific `Onboarding` and
+`Welcome` contexts, `Command+-` invokes DecreaseUiFontSize and changes the
+application UI font instead. Linux/Windows use `Ctrl+-` for both routes. The
+JetBrains keymap adds an Editor-context `Ctrl+<` buffer decrease with
+`persist:true`. In an eligible Editor, Command+wheel on macOS or Ctrl+wheel on
+Linux/Windows also changes buffer size when the global mouse-wheel setting is
+enabled; the UI-font action has no mouse route. Labonair has no matching
+mouse-wheel setting or action. Its font-size Settings remain visible but the
+old Zoom In/Out/Reset menu, palette, and default-keymap affordances were
+removed under R08-002 because they had no handler and no product decision.
+The active parity goal supplies that product requirement; it does not
+authorize restoring the old dead command IDs.
+Public typed contract: Each action lowers its own effective font size by one
+pixel, bounded by the pinned 6–100 px clamp. DecreaseBufferFontSize adjusts
+the shared buffer text size used by Editor and by Terminal when the separate
+terminal size is unset. DecreaseUiFontSize adjusts UI font size, which affects
+all UI elements and windows even though its default key route is available
+only from Onboarding and Welcome. The more-specific UI context wins over the
+global buffer action for the same key. With `persist:false`, store a transient
+app-wide override and refresh all open windows without editing Settings; it
+lasts until restart or a corresponding setting change. With `persist:true`,
+write the clamped value to the user's `theme.buffer_font_size` or
+`theme.ui_font_size` setting. Repeated decrease stops at the lower bound.
+Settings and persistence: The pinned settings inventory records
+`SET-appearance-buffer-font-size` default 15 and
+`SET-appearance-ui-font-size` default 16, both user-scoped; a configured
+terminal font size overrides buffer inheritance.
+`SET-editor-mouse-wheel-zoom` is user-scoped and defaults to false;
+Command/Ctrl+wheel is inactive until enabled, and some embedded Editor
+surfaces disable the gesture themselves. The wheel gesture always makes a
+transient buffer adjustment. The persistent argument updates the matching
+user setting, while the shipped default binding remains transient. The local Settings model has `appearance.appFontSize` and
+`appearance.bufferFontSize` plus separate editor and terminal font-size
+fields; its defaults/ranges and ThemeStore bridge do not match the pinned
+values one-to-one. Reconcile the canonical Labonair value path and effect
+before implementation; do not add another size field or silently conflate
+the existing ones.
+Events and registry contributions: The Themes owner supplies typed decrease
+actions and updates one ThemeStore typography state. A real settings write
+uses the Settings value owner; a transient adjustment only changes runtime
+state and refreshes windows. Editor owns its mouse-wheel gesture and the
+`mouse_wheel_zoom` gate, routing an eligible gesture to the Theme-owned buffer
+adjustment contract. Keep the global buffer action and scoped UI action
+context-aware in Keymap. Do not add a generic font-action registry for this
+single owner.
+Notifications and failure: Transient adjustment has no I/O and should not
+emit an operation notification. Persistent adjustment must respect the
+Settings save result: on failure preserve a truthful displayed value and
+surface recovery through the notification center. A successful decrease
+needs no toast. The separate Reset action family restores the configured
+base value and is classified independently.
+UI-kit: Keep Settings field controls on the shared Settings/UI-kit components.
+Use the existing application menu and Keymap surfaces for discoverability;
+do not add local +/- controls solely for these actions. UI scale changes must
+update shared tokens/spacing consistently with typography.
+Focused inspection: Verify the effective one-pixel step and 6 px lower bound;
+global buffer scope; terminal inheritance and explicit terminal override;
+global UI effect across multiple windows; Cmd+- precedence in Onboarding and
+Welcome; menu behavior; Command/Ctrl+wheel modifier mapping, the false-by-
+default mouse-wheel setting, enabled and ineligible Editor surfaces; persisted
+true versus default false; keymap-profile arguments; restart, live Settings
+edits, and resets; persistent-write failure; and interaction with the existing
+duplicate local buffer-size fields.
+Visual evidence: Pending paired native macOS captures for normal and minimum
+buffer size, UI scale across windows, Editor/Terminal inheritance and
+override, Settings after persistent and transient changes, narrow layout, and
+Welcome/Onboarding context behavior. Record build, OS, window bounds, theme,
+scale, focused context, settings values, keymap profile, and `persist` arg.
+Workspace gates: Documentation checker, docs verification scope, active
+queue check, diff check, and a focused action/context/argument/scope/
+settings/owner/current-route audit. Rust formatting, build, Clippy, and tests
+remain R07-000 exit gates and are not run for this documentation-only slice.
+Documentation updates: Both bound action rows, the independent decrease
+packet, parity index, keymap/appearance/Editor/Terminal crosswalks, normative
+parity workflow, related setting references, and this active task's progress
+record. Keep the R08-002 no-op removal record historical and explicitly
+document that the active parity goal now requires real font-size actions.
+Known limitations: Same-session source research and packet authoring are
+independent redevelopment, not separated-room clean-room work. Native action
+precedence, actual transient/persistent runtime effects, Settings save failure,
+and paired macOS captures remain pending. R07-001 and R09 remain unstarted.
+Next safe task: Continue R07-000 with the separate buffer/UI font increase and
+reset action family; do not begin R07-001 or R09 early.
+
+## Progress record — 2026-10-10 — Font-size decrease action classification
+
+- Added an independent requirements packet for
+  `ACT-MACOS-zed-DecreaseBufferFontSize` and
+  `ACT-MACOS-zed-DecreaseUiFontSize`, covering platform bindings, the
+  Onboarding/Welcome context override, 1 px adjustment, 6–100 px clamp,
+  transient and persistent arguments, and the Theme/Settings owner boundary.
+- Included the optional Editor primary-modifier wheel gesture, gated by
+  `SET-editor-mouse-wheel-zoom` (default false) and the Editor instance;
+  recorded Terminal's inherited buffer size and separate override. The packet
+  also notes R08-002's historical removal of no-op Zoom routes and the current
+  Labonair duplicate font-size paths and missing adjustment action.
+- Updated the action rows, packet index, Settings/Editor/Terminal/Appearance
+  crosswalks, normative parity plan, and this task's pre-change contract and
+  progress record. Static keymap inspection confirms the JetBrains Editor
+  binding persists its buffer-size change while default routes are transient.
+- Static reference and Labonair source review only. Same-session work is
+  independent redevelopment, not separated-room clean-room implementation.
+- Passed: `git diff --check`, `python3 scripts/check_documentation.py`
+  (43 normative docs / 191 Markdown files), `python3 scripts/verify.py
+  --scope docs`, `python3 scripts/check_rework_queue.py` (46 tasks; R07-000
+  active), and the focused keymap argument/context, Settings default, mouse
+  gate/modifier, local-route, crosswalk, and task-order audit.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, or tests. They remain R07-000 exit gates. Actual buffer/UI
+  size changes, key-context dispatch, wheel behavior and setting update,
+  transient reset, persistent-save failure recovery, and paired macOS captures
+  remain open.
+- Next safe task: classify the separate buffer/UI font Increase and Reset
+  actions within R07-000. R07-001 and R09 remain unstarted.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

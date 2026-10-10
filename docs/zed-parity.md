@@ -305,6 +305,16 @@ dirty-tree confirmation, destructive effects, and Labonair's missing worktree
 catalog/removal contract. Native dispatch, data-loss confirmation, cross-window
 open-path races, Git error recovery, and paired macOS interaction captures
 remain pending. The independent
+[`Font-size decrease action crosswalk`](parity/action-classification-font-size-decrease.md)
+records the global buffer-size action, the Welcome/Onboarding UI-size override,
+1 px adjustments, transient defaults, persistent arguments, and pinned
+settings defaults. It also records the Editor primary-modifier wheel gesture,
+gated by the user setting `editor.mouse_wheel_zoom` (default false). R08-002's
+historical removal of unhandled Zoom commands does not satisfy the active
+parity requirement; a restored route needs real Theme ownership, Settings
+behavior, and execution evidence. Labonair's missing gesture setting,
+duplicate font-size paths and default mismatch, key dispatch, live effects,
+persistence, and paired macOS captures remain open. The independent
 [`Workspace zoom action crosswalk`](parity/action-classification-workspace-zoom.md)
 records focused Pane/Panel overlay behavior, global Shift+Escape, the
 CommitEditor override, the zoom padding setting, and Labonair's separate

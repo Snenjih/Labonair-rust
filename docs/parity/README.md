@@ -26,8 +26,8 @@ source-side research. It records current evidence without claiming parity.
   six Workspace dock-sizing actions, five Workspace dock visibility actions,
   two Workspace major-region focus actions, nine Workspace pane
   activation/swap actions, two Workspace bulk item/pane close actions, two
-  Git worktree deletion actions, one Workspace Close Window action, one
-  Workspace Reopen Last Picker action,
+  Git worktree deletion actions, two font-size decrease actions, one
+  Workspace Close Window action, one Workspace Reopen Last Picker action,
   two Workspace path-copy actions, and four Workspace save actions;
   pinned dispatch and native interaction acceptance remain open for those and
   all other actions.
@@ -71,6 +71,11 @@ source-side research. It records current evidence without claiming parity.
   independently stated normal and forced worktree removal, protection for
   main/open worktrees, dirty-tree confirmation, data-loss effects, and the
   missing Labonair worktree lifecycle route.
+- [`action-classification-font-size-decrease.md`](action-classification-font-size-decrease.md) —
+  independently stated shared-buffer and app-UI decrease effects, transient
+  versus persistent arguments, context precedence, the gated primary-modifier
+  wheel gesture, Settings values, and Labonair's removed no-op route and
+  duplicate font-size paths.
 - [`action-classification-workspace-new-window.md`](action-classification-workspace-new-window.md) —
   independently stated intent, Workspace/application-window ownership,
   `On New Window` setting behavior, the missing Labonair action route, and
