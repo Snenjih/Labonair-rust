@@ -4508,6 +4508,59 @@ Failed/unavailable gates: Rust and runtime/visual gates are not in scope for thi
 Next safe task: Finish Git stash classification, then continue R07-000; do not begin R07-001 or R09.
 ```
 
+## Pre-change contract — Git staging and selection actions
+
+```text
+Request: Independently classify the pinned Git stage/unstage action family and record current Labonair routes and gaps.
+Request type: R07-000 requirements inventory; documentation only.
+In scope: Eight bound actions for repository-wide, file, selected-range, and hunk staging plus two related registered-unbound section actions.
+Out of scope: Destructive restore/discard actions, commit lifecycle, stash workflows, runtime code, action/keymap changes, and parity claims.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Git (`labonair-git`) repository operations; `labonair-git-transport`; panel-scm sibling; Workspace Project Diff and Editor adapters; Keymap bindings.
+
+Owner module: Git owns index mutations; Workspace hosts Git-aware editor and Project Diff surfaces; Keymap owns default bindings.
+Canonical capability crate: `labonair-git`.
+Sibling crates: `labonair-git-transport`, `labonair-panel-scm`; Workspace/Editor are typed consumers.
+Canonical user entry point: Git change list and GitDiff/Project Diff review surfaces.
+Alternate entry points: Editor hunk context menu and Git Source Control row/section controls.
+Public typed contract: Existing Labonair stage/unstage all, file, and hunk methods; this classification adds no API.
+Events: Existing Git state refresh; no new event.
+Registry contributions: Classify default bound actions and unbound StageSection/UnstageSection; add no Labonair action or registry entries.
+Allowed dependency changes: None.
+Removal condition for temporary code: None; no implementation code.
+
+State owner: Git repository/index; selected entry, range anchor, editor hunk and transient operation state belong to their Git/Workspace UI hosts.
+Persistence owner: Git index; view selection and focus remain transient.
+Settings and scope: None introduced.
+Migration impact: None.
+Commands: StageAll, UnstageAll, StageFile, UnstageFile, ToggleStaged, StageRange, StageAndNext, UnstageAndNext, StageSection, and UnstageSection.
+Default keymap: Record exact platform bindings and contexts from the action register; do not edit keymaps.
+Notifications: Labonair staging errors use Notifications and refresh owner state after completion.
+UI-kit components: Labonair Source Control row, section and directory checkboxes, controls, and menus use `labonair-ui-kit`; editor hunk controls remain Editor-owned.
+User workflow: Stage/unstage all changes, selected files, a selected row range, a section, or a diff hunk; optionally move to the next hunk after the mutation.
+Failure/cancellation/retry behavior: Record no selection/repository, partial and mixed staging, conflict exclusions, asynchronous operation errors, and hunk/revision changes.
+Security boundary: Mutations remain scoped to the selected local or remote repository/session.
+Performance budget: No runtime change; keep Git work async and preserve responsive list/diff interaction.
+
+Implementation order: Classification only; future migration starts with typed Git index operations, then Git UI, Workspace editor/diff adapters, and Keymap consumers.
+Focused unit tests: Not applicable to this documentation-only change.
+Contract/integration tests: Existing staging/hunk contracts are inventoried; no tests changed or run.
+Persistence/migration tests: Not applicable; no persistence changes.
+Command/surface tests: Not applicable; no runtime change.
+Visual states: Paired macOS staging list, mixed/partial selection, hunk controls, no-repository/loading/error, and operation progress remain pending.
+Security/negative tests: Not applicable to this documentation-only change; repository/session boundaries remain acceptance requirements.
+Performance measurement: Not applicable to this documentation-only change.
+Workspace gates: Diff check, documentation checker, docs verification scope, queue check, and focused source/action/local-route audit.
+Documentation updates: New staging packet, eight bound and two unbound action rows, packet index, Git capability crosswalk, normative parity summary, and this task record.
+Current status: Pending focused audit and documentation updates.
+Target status: Static action and owner routes classified; native dispatch and end-to-end acceptance remain open.
+Evidence links: Pinned Git action declarations/UI, default platform keymaps, Labonair Git, panel-scm, Editor Git hunk bridge, and Workspace Project Diff.
+Known limitations: Same-session source research and independent requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Native key dispatch, exact range/hunk navigation, and paired runtime captures.
+Failed/unavailable gates: Rust and visual gates remain R07-000 exit gates.
+Next safe task: Complete Git staging classification, then continue R07-000; do not begin R07-001 or R09.
+```
+
 ## Progress — classify Git stash workflow actions
 
 - Added [`action-classification-git-stash.md`](../../docs/parity/action-classification-git-stash.md)
@@ -4531,5 +4584,32 @@ Next safe task: Finish Git stash classification, then continue R07-000; do not b
   were not run for this documentation-only slice.
 - Same-session source research and independently written requirements are
   redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin
+  R07-001 or R09.
+
+## Progress — classify Git staging and selection actions
+
+- Added [`action-classification-git-staging.md`](../../docs/parity/action-classification-git-staging.md)
+  for eight bound and two registered-unbound actions. It distinguishes
+  repository/file/section/range staging from Editor hunk toggling and the
+  stage-or-unstage-and-next-hunk workflows.
+- Updated the bound and unbound action registers, packet index, Git capability
+  crosswalk, and normative parity summary. Labonair's Source Control row,
+  all/section, and the Editor/Project Diff hunk routes are recorded as partial
+  support; range operation, pinned default actions, and next-hunk shortcuts
+  remain gaps.
+- Focused source audit confirmed platform bindings and contexts, selection
+  range/conflict behavior, selected-file handling, hunk action semantics, and
+  the corresponding Labonair Git/transport/panel/editor routes. No native
+  interaction was observed.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py`
+  (43 normative documents and 201 Markdown files),
+  `python3 scripts/verify.py --scope docs`, and
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest
+  active). The focused action-ID and cross-reference audit passed for all
+  eight bound and two registered-unbound staging actions. Rust gates remain
+  R07-000 exit gates and were not run for this documentation-only slice.
+- Same-session source research and independent requirements are redevelopment,
+  not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin
   R07-001 or R09.

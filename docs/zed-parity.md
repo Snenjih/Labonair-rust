@@ -374,6 +374,13 @@ has partial Source Control list operations and message entry, but no
 stage-specific stash commands, picker/diff route, or latest-stash actions;
 native dispatch, conflict recovery, and paired macOS acceptance remain open.
 The independent
+[`Git staging and selection action crosswalk`](parity/action-classification-git-staging.md)
+records repository-, file-, section-, selection-range-, and hunk-level
+stage/unstage behavior with platform-specific bindings. Labonair has Source
+Control row/all/section controls and per-hunk stage/unstage routes, but the
+default action shortcuts, selection-range operation, and stage/unstage-and-next
+flows remain absent or unverified; native dispatch and paired macOS acceptance
+remain open. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

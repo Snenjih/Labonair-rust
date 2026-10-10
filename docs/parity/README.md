@@ -25,7 +25,8 @@ source-side research. It records current evidence without claiming parity.
   related unbound default-keymap action), one task-definition entry action
   (plus four related unbound global/project configuration actions),
   four Git worktree navigation/creation actions, six Git stash workflow
-  actions (plus six related registered-unbound stash actions), one Editor Go to Line action,
+  actions (plus six related registered-unbound stash actions), eight Git
+  staging actions (plus two related registered-unbound section actions), one Editor Go to Line action,
   one File Finder action, two Workspace Open/OpenFiles actions, one Workspace
   New Window action,
   one Workspace Add Folder to
@@ -86,6 +87,10 @@ source-side research. It records current evidence without claiming parity.
   independently stated stash creation variants, latest and selected-entry
   apply/pop, picker and stash-diff routes, confirmation/conflict states, and
   current Labonair Source Control coverage and action gaps.
+- [`action-classification-git-staging.md`](action-classification-git-staging.md) —
+  independently stated repository, file, section, selection-range, and hunk
+  stage/unstage behavior with per-platform bindings and current Labonair
+  Source Control/Editor routes.
 - [`action-classification-workspace-open.md`](action-classification-workspace-open.md) —
   independently stated intent, Workspace/Editor ownership, distinct general
   Open and platform Open Files routes, related Settings targets, and runtime
