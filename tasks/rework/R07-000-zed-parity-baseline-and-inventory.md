@@ -2445,6 +2445,102 @@ family after this slice passes its documentation gates.
 - Next safe task: continue R07-000 with the next unclassified default-map
   action family and reconcile the remaining action catalog.
 
+## Pre-change contract — classify Workspace save actions
+
+Request: Independently classify active-item Save, workspace-wide Save All,
+Save As, and Save Without Format, including typed save intents, formatting
+settings, conflicts, and current Labonair Editor routes.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `Save`, `SaveAll`, `SaveAs`, and `SaveWithoutFormat` under their
+stable action requirement IDs. Include the optional `save_intent` arguments
+accepted by Save and SaveAll.
+Out of scope: Auto Save timers, close/quit save flows, standalone formatter
+actions, adding keybindings or commands, implementation, R07-001/R09, and
+runtime or visual acceptance claims.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, Editor file lifecycle and dirty-state
+contracts, Workspace active-pane/item model, format-on-save settings, and
+save conflict/recovery behavior.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns the
+four user actions and their scope. Editor (`labonair-editor`) owns document
+content, dirty state, formatting, path, and disk writes for Editor items.
+Canonical user entry point: macOS `Cmd+S`, `Cmd+Alt+S`, `Cmd+Shift+S`, and
+`Cmd+K S`; Linux `Save`/`Ctrl+S`, `Alt+Save`/`Ctrl+Alt+S`,
+`Shift+Save`/`Ctrl+Shift+S`, and `Ctrl+K S`; Windows `Ctrl+S`, `Ctrl+K S`,
+`Ctrl+Shift+S`, and `Ctrl+K Ctrl+Shift+S`, respectively. Labonair exposes
+active Editor Save in its File menu and command palette; its descriptor has no
+published default key binding, and no default Save All, Save As, or Save
+Without Format route is registered.
+Public typed contract: Save targets the active item in the active center pane
+and defaults to `Save`, which writes even if unchanged. Save All targets dirty
+items across Workspace center panes and defaults to `SaveAll`, which writes
+items with local changes. Save As always requests a new destination for the
+active saveable item. Save Without Format saves the active item while
+bypassing automatic formatting for this invocation. Save/SaveAll's optional
+`save_intent` supports Save, FormatAndSave, SaveWithoutFormat, SaveAll, SaveAs,
+Close, Overwrite, and Skip; record behavior of each used intent. Preserve the
+active item, dirty-state, and file identity correctly after success, conflict,
+failure, and cancellation.
+Events and registry contributions: Keep action ownership in Workspace and
+file writes in Editor; add no parallel save registry or generic shell save
+table.
+Settings and persistence: No new setting or schema. Map the pinned effective
+per-language `format_on_save` setting (`SET-LANGUAGE-FIELD-format-on-save`)
+and Labonair's global `editor.editorFormatOnSave` counterpart. Pinned
+SaveWithoutFormat bypasses automatic format-on-save; FormatAndSave forces it.
+No settings are persisted by the save action itself beyond normal document
+file writes and Workspace session state.
+Notifications and failure: Save, Save As, and Save Without Format route
+errors through the save error surface. Save All is asynchronous and its error
+handler is log-only in the static route; determine which item failures are
+surfaced and whether earlier saves remain committed. External-change and
+deleted-file prompts must preserve the user's edits on Cancel.
+UI-kit: Reuse the shared command/menu surfaces, file picker, prompts, and
+notification center; add no local save button or dialog style in this slice.
+Focused inspection: Trace active item/pane scope, readonly/no-item behavior,
+pathless documents, SaveAs path selection/overwrite, dirty and clean writes,
+per-language formatter modes, forced/bypassed formatting, file conflicts,
+deleted files, save errors, multiple dirty items, partial Save All, and local
+menu/keymap registration.
+Visual evidence: Pending paired macOS checks for the File menu, Save As
+picker, conflict/deleted-file prompts, formatter availability, and dirty
+indicators before/after save.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, and exact ID/intent/key/context/current-route audit.
+Documentation updates: Four action rows, a Workspace save packet,
+Editor/settings and command-keymap crosswalks, parity index, normative parity
+scope if needed, and this task's progress record.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Native macOS dispatch, file picker interaction,
+and paired captures are unavailable here.
+Next safe task: Continue R07-000 with the next unclassified default-map action
+family after this slice passes its documentation gates.
+
+## Progress record — 2026-10-10 — Workspace save action classification
+
+- Added [`../../docs/parity/action-classification-workspace-save.md`](../../docs/parity/action-classification-workspace-save.md)
+  for `Save`, `SaveAll`, `SaveAs`, and `SaveWithoutFormat`, recording active
+  item versus cross-pane dirty-file scope, typed save intents, path-picker and
+  conflict behavior, partial batch failures, and format-on-save semantics.
+- Updated the four stable action rows with pinned outcomes, platform bindings,
+  Workspace/Editor ownership, and current Labonair route gaps. Linked the
+  packet from the parity index, Editor and command/keymap crosswalks, Settings
+  crosswalk, and normative parity scope. The Editor Settings record already
+  contains the pinned language field and local global Boolean.
+- Passed `python3 scripts/check_documentation.py` (43 normative documents,
+  184 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active),
+  `git diff --check`, and the focused save ID/context/owner/intent/failure
+  audit.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, and tests. They remain R07-000 exit gates. Native key
+  dispatch, Save As picker and conflict interaction, formatter behavior,
+  partial Save All failure visibility, and paired macOS captures remain open.
+  Same-session analysis is independent redevelopment, not separated-room
+  clean-room work. R07-001 and R09 remain unstarted.
+- Next safe task: continue R07-000 with the next unclassified default-map
+  action family and reconcile the remaining action catalog.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

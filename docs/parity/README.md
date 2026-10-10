@@ -23,7 +23,8 @@ source-side research. It records current evidence without claiming parity.
   six Workspace dock-sizing actions, five Workspace dock visibility actions,
   two Workspace major-region focus actions, nine Workspace pane
   activation/swap actions, two Workspace bulk item/pane close actions, one
-  Workspace Close Window action, and two Workspace path-copy actions;
+  Workspace Close Window action, two Workspace path-copy actions, and four
+  Workspace save actions;
   pinned dispatch and native interaction acceptance remain open for those and
   all other actions.
 - [`action-classification-search.md`](action-classification-search.md) —
@@ -91,6 +92,10 @@ source-side research. It records current evidence without claiming parity.
   independently stated absolute and worktree-relative clipboard paths,
   owner-specific selection cardinality, path formatting, and Labonair's
   Explorer-only equivalent.
+- [`action-classification-workspace-save.md`](action-classification-workspace-save.md) —
+  independently stated active-item and Workspace-wide save scope, typed save
+  intents, format-on-save settings, conflict and partial-failure behavior,
+  and Labonair's active-Editor-only route.
 - [`keymap-overlay-requirements.md`](keymap-overlay-requirements.md) — stable
   IDs for 1,402 bindings across seven macOS base-profile overlays, conditional
   Vim/Helix bindings, and macOS-specific overrides. Profile behavior, action

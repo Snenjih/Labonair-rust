@@ -298,6 +298,13 @@ records absolute and worktree-relative clipboard values, per-panel selection
 cardinality, path style, and Labonair's Explorer-only menu route; platform
 dispatch, multiline order, Outline/Git routes, clipboard behavior, and paired
 interaction evidence remain pending. The
+independent
+[`Workspace save action crosswalk`](parity/action-classification-workspace-save.md)
+records active-item versus Workspace-wide save scope, typed save intents,
+format-on-save settings, conflict prompts, partial Save All failure behavior,
+and Labonair's active-Editor-only route; native dispatch, picker and prompt
+interaction, formatter behavior, partial-failure visibility, and paired
+interaction evidence remain pending. The
 separate
 [`Workspace New File action crosswalk`](parity/action-classification-workspace-new-file.md)
 records the untitled-document action contexts, unsaved-buffer Settings, and
