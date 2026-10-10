@@ -274,6 +274,10 @@ TextFinder's explicit selection-only override of the generic query-seed setting.
 Labonair has Editor code-folds and inline project SearchOverlay results, but no
 matching grouped-result picker or tab conversion. Native dispatch, setting
 scope, and paired visual acceptance remain open. The independent
+[`Theme Selector Reload action crosswalk`](parity/action-classification-theme-selector-reload.md)
+records the Linux-only registered action declaration, its missing pinned
+handler and keymap routes, and Labonair's deferred, test-retained reload API.
+macOS registration and runtime behavior remain unverified. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and

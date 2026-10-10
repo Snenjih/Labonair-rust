@@ -6060,3 +6060,66 @@ Next safe task: Continue R07-000 action/workflow classification; do not begin R0
 - Native profile loading/precedence, group selection and collapse dispatch, in-progress stream handoff, query-seed setting scope on its actual consumers, and paired macOS evidence remain open.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
 ~~~
+
+## Pre-change contract — registered-unbound Theme Selector Reload action
+
+~~~text
+Request: Classify the registered-unbound theme_selector::Reload action, its pinned declaration and reachability evidence, and Labonair's ThemeStore reload API and owner boundary.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: ACT-REGISTRY-LINUX-theme_selector-Reload; pinned Linux registry metadata, source declaration, handlers/call sites, default and profile keymaps, theme_settings::reload_theme distinction; Labonair ThemeRegistry/ThemeStore reload APIs and their deferred status; parity action row, independent packet, packet index, commands.keymap crosswalk, normative summary, and this task.
+Out of scope: Implementing or wiring theme reload, changing theme discovery/import, adding an action, palette/menu entry, file watcher, Settings value, persistence behavior, theme registry API, or dependency; claiming native action dispatch or visual parity; beginning R07-001 or R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned theme_selector and theme_settings source, Linux runtime action catalog, default and profile keymaps; Labonair Themes capability contract, ThemeRegistry/ThemeStore, theme-ui, shell composition, and deferred R08-011 boundary.
+
+Owner module: Themes owns the color-theme registry and runtime state. Its UI sibling owns selection surfaces. Do not move reload behavior into Settings, Workspace, or Shell.
+Canonical capability crate: Pinned ThemeSelector declares the action; Labonair `labonair-theme` owns registry and store APIs, with `labonair-theme-ui` owning any future user-facing route.
+Sibling crates: Existing theme-ui and shell composition only; no new crate or dependency.
+Canonical user entry point: Pinned user entry point is unresolved; no handler, direct menu route, default key binding, or profile binding was found. Labonair has no reload action or user surface; its canonical Themes palette remains the theme-selection entry point.
+Alternate entry points: Pinned theme_settings::reload_theme refreshes the selected theme from the currently loaded registry; it does not establish a disk-rescan route for this action. Labonair reload_user_themes remains test-retained and unwired.
+Public typed contract: Linux catalog action has no arguments and its declaration says “reloads all themes from disk”; effect and availability are unresolved because no handler or call site was found. Labonair's method accepts a theme directory and returns non-fatal load warnings but is not a product API.
+Events: No Labonair event or notification is proposed. Any future surface must use ThemeStore change notification and the existing notification owner for user-facing failures.
+Registry contributions: Preserve the Linux registered action ID and its unbound status in known keymaps. Do not add a local action or palette contribution in this inventory slice.
+State owner: Pinned ThemeRegistry owns loaded theme families; ThemeSelector owns browsing/preview. Labonair ThemeStore owns active family and selected variant.
+Persistence owner: Settings owns the selected theme ID. The action has no separate persisted state. Local reload can drop a vanished active family to built-in runtime state; its durable Settings reconciliation is not specified and remains acceptance.
+Settings: No setting controls this action. Do not add a reload setting or change the Appearance catalog.
+Commands and keymap: No default platform or inspected profile binding was found for the Linux catalog action. macOS action registration, command-palette reachability, and direct invocation remain unverified. Do not conflate theme_settings::reload_theme with full registry reload.
+Notifications: No route added. Local `load_user_themes` returns warnings; a future user route must publish recoverable errors through the notification center without a toast.
+UI-kit components: No UI change. Any future selector or menu must use the existing Themes surface and `labonair-ui-kit` controls.
+User workflow: Intended declaration suggests refreshing the available on-disk color themes; the pinned invocation and exact scope (including icon themes) are unresolved. Labonair currently ships built-in catalogs and has no user reload workflow.
+Failure/cancellation/retry behavior: Pinned behavior is unknown. Acceptance must cover unreadable/malformed/add/edit/remove files, active theme removal, selector refresh, retry, and restart state. Local reload skips invalid files and returns warnings, retains the built-in registry family, and falls back if the active family disappears.
+Security boundary: No code execution from theme JSON; user file contents are parsed as data. No boundary change proposed.
+Performance budget: No runtime change. Local registry scan/read is synchronous; any future GPUI action must perform filesystem I/O off the foreground thread.
+Removal condition for compatibility code: None; no compatibility path is introduced.
+
+Implementation order: Trace the Linux action metadata and exact declaration; search pinned call sites, handlers, menu routes, and every default/profile keymap; distinguish current-theme refresh from registry rescan; inspect Labonair capability and deferred API; update the action row, independent packet, crosswalks/index and this task; run documentation and repository-control gates.
+Focused tests: Not applicable to this documentation-only change; do not add or run tests.
+Contract/integration tests: No runtime contract changed. Pinned macOS registration, handler dispatch, surface discovery, and catalog refresh remain acceptance cases.
+Persistence/migration tests: No test changes. Selected-theme persistence when a family is removed remains open; do not claim the local fallback API resolves Settings state.
+Command/surface tests: Verify no keymap binding in the inspected default/profile assets; establish command-palette and menu discovery in the pinned runtime.
+Visual states: No UI edit. Paired macOS evidence remains required if the action is reachable, including list refresh, active-family removal, and failure states.
+Security/negative tests: No new test. Future acceptance confirms theme files remain data-only and malformed files cannot displace the built-in theme.
+Performance measurement: Not applicable; any future disk scan needs async implementation and measurement for large catalogs.
+Workspace gates: Diff check; docs, agents, knowledge, Settings and active queue; focused audit of action declaration/handler/call-site and keymap absence.
+Documentation updates: Theme Selector Reload action packet, registry action row, parity packet index, commands.keymap crosswalk, normative parity summary, and this task record.
+Current status: Linux metadata and source declaration located; no pinned handler/call site or keymap entry found. Labonair reload API and R08-011 deferral confirmed. Packet and gates pending.
+Target status: Separate documented action intent from absent pinned dispatch; map the candidate functionality to Themes and preserve all unverified macOS/user-workflow gates.
+Evidence links: `zed-refrence/zed/crates/theme_selector/src/theme_selector.rs`; `zed-refrence/zed/crates/theme_settings/src/theme_settings.rs`; `crates/theme/src/registry.rs`; `crates/theme/src/store.rs`; `crates/theme/src/import.rs`; `docs/parity/action-classification-theme-mode-selector.md`; `docs/capabilities.md`.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Source was inspected; tests and native dispatch were not run.
+Remaining migration edges: No user-facing local theme reload, and the pinned action's handler, macOS registration, discovery, and exact scope are unverified. Local Settings behavior after selected-family deletion remains unresolved.
+Failed/unavailable gates: Rust build, tests, native profile/action dispatch, Settings persistence round trip, and paired visual evidence are outside this documentation-only slice and remain R07-000 exit gates.
+Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+~~~
+
+## Progress — classify registered-unbound Theme Selector Reload
+
+~~~text
+- Added [action-classification-theme-selector-reload.md](../../docs/parity/action-classification-theme-selector-reload.md) for ACT-REGISTRY-LINUX-theme_selector-Reload.
+- Recorded the Linux catalog declaration's documented intent, no arguments, no discovered handler/call site, and no default/profile keymap entry. The action's macOS registration and Command Palette reachability remain unverified.
+- Distinguished the pinned theme_settings::reload_theme selected-theme refresh from a full theme-registry disk rescan.
+- Mapped Labonair's ThemeRegistry/ThemeStore reload methods to the Themes owner and recorded their R08-011 deferred, test-retained, unwired status; noted synchronous filesystem access and selected-theme fallback limits.
+- Updated the registered action row, parity packet index, commands.keymap crosswalk, normative parity summary, and this task record.
+- Focused action-row/packet audit passed; the pinned action does not occur in the default or profile keymap assets.
+- Passed `git diff --check`, docs (43 normative documents and 226 Markdown files), agents (10 request routes), knowledge, Settings (7 areas and 101 registered UI fields), and active queue verification (46 tasks; R07-000 remains earliest active).
+- Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, native dispatch, Settings persistence round trip, or visual check were run for this documentation-only slice.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+~~~

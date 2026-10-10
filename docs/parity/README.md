@@ -39,8 +39,9 @@ source-side research. It records current evidence without claiming parity.
   17 Vim/Helix profile bindings), 20 default-bound ProjectPanel actions
   (10 IDs in 10 Vim/Helix entries; 16 IDs across 41 macOS-profile entries and
   14 IDs across 20 Linux/Windows-profile entries), six generic Menu actions
-  (20 macOS-profile entries and two shared Linux/Windows Atom entries), two
-  Theme mode/selector actions, one Terminal Clear action, three Terminal
+  (20 macOS-profile entries and two shared Linux/Windows Atom entries),
+  two default-bound Theme mode/selector actions and one registered-unbound
+  Theme Selector reload declaration, one Terminal Clear action, three Terminal
   clipboard actions, six Terminal scroll actions (eight JetBrains profile
   entries), two Terminal character-palette/vi-mode actions, two Task rerun
   actions (two JetBrains profile entries), two Terminal text/keystroke actions,
@@ -96,6 +97,9 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-theme-mode-selector.md`](action-classification-theme-mode-selector.md) —
   pinned Theme mode/selector behavior, ten related Theme and Icon Theme Settings
   effects, Labonair palette and persistence routes, and native acceptance gaps.
+- [`action-classification-theme-selector-reload.md`](action-classification-theme-selector-reload.md) —
+  registered-unbound Theme Selector reload declaration, the missing pinned
+  handler, and Labonair's deferred ThemeStore reload API.
 - [`action-classification-terminal-clear.md`](action-classification-terminal-clear.md) —
   the pinned saved-screen/cwd-history effect, platform bindings, Labonair's ANSI
   PTY command route, and native scrollback/runtime acceptance gaps.
