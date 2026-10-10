@@ -246,12 +246,24 @@ The working action requirements register in
 [`docs/parity/action-requirements.md`](parity/action-requirements.md) assigns
 stable IDs to the 595 action identifiers across the default macOS, Linux, and
 Windows profiles and records their 2,731 binding/context records. The 585
-macOS requirement IDs remain stable. A separate
+macOS requirement IDs remain stable for the default macOS map file. The
+[`macOS overlay register`](parity/keymap-overlay-requirements.md) adds stable
+IDs for 1,402 binding entries across the seven alternate macOS profiles, the
+conditional Vim/Helix layer, and macOS-specific overrides. The latter adds 12
+distinct action identifiers to the built-in macOS default composition, which
+has 597 before optional profiles or modes. The overlay register also records
+the 133 default macOS context-block key-equivalent flags. A separate
+[`non-macOS layer register`](parity/keymap-nonmacos-requirements.md) covers
+446 shared Linux/Windows overlay bindings and 259 default-map context-block
+flags; it records that TextMate is omitted from the non-macOS selector. A
 [`registered action catalog`](parity/registered-actions-unbound.md) assigns
 stable IDs to 813 actions found in the pinned Linux runtime registry but not
-bound in any of those defaults. Five default-map identifiers resolve through
-deprecated-alias metadata. Alternate profiles, action semantics, owner routes,
-and runtime evidence remain open; these inventories are not parity evidence.
+bound in any of those default-map files; 312 of those actions appear in the
+enumerated macOS layers and 32 additional spellings occur in Linux/Windows
+overlays. Five default-map identifiers and two overlay spellings resolve
+through deprecated-alias metadata. Action semantics, owner routes, profile
+selection/reload behavior, user overrides, and macOS/Linux/Windows runtime
+evidence remain open; these static inventories are not parity evidence.
 
 ## Settings parity pilot
 

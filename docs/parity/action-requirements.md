@@ -44,10 +44,20 @@ This is registration metadata from the pinned Linux build, not an observed
 keymap dispatch. The exact dump and schemas are preserved in
 [`evidence/zed-actions-3569541-linux-x86_64.json`](evidence/zed-actions-3569541-linux-x86_64.json).
 
-Named alternate keymap profiles (Atom, Cursor, Emacs, JetBrains, Sublime Text,
-TextMate, VS Code, and Vim), profile composition/overrides, and user-edited
-bindings are not covered by these three defaults. Their action/binding maps and
-runtime selection flows remain open inventory items.
+The seven macOS base-profile overlays (Atom, Cursor, Emacs, JetBrains, Sublime
+Text, TextMate, and VS Code), the conditional Vim/Helix layer, and the
+macOS-specific override layer now have stable per-binding IDs in
+[`keymap-overlay-requirements.md`](keymap-overlay-requirements.md). The
+inventory contains 1,402 entries, including 25 explicit null bindings. The
+default macOS file has 585 action identifiers; its specific override layer adds
+12 identifiers, for 597 in the built-in default composition before optional
+profiles or modes. Static map records do not prove action semantics or runtime
+dispatch. The six shared non-macOS profile overlays and common Linux/Windows
+override layer now have 446 stable binding IDs in
+[`keymap-nonmacos-requirements.md`](keymap-nonmacos-requirements.md); that
+register also records 259 default Linux/Windows key-equivalent block IDs.
+Static coverage does not establish Linux or Windows dispatch. User-authored
+bindings and profile-selection/reload behavior remain open.
 
 ## Shared acceptance contract inherited by every action
 

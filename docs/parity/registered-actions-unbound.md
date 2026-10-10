@@ -7,7 +7,7 @@
 
 ## Inventory result
 
-The pinned Linux runtime dump contains 1404 uniquely registered action names. After resolving the five default-keymap identifiers that the runtime declares as deprecated aliases, 591 registered actions are referenced by at least one of the macOS, Linux, or Windows default keymaps. The 813 rows below are registered by the Linux build but have no binding in any of those three defaults.
+The pinned Linux runtime dump contains 1404 uniquely registered action names. After resolving the five default-keymap identifiers that the runtime declares as deprecated aliases, 591 registered actions are referenced by at least one of the macOS, Linux, or Windows default keymaps. The 813 rows below are registered by the Linux build but have no binding in any of those three default-map files. This does not mean that every action is unbound in alternate profiles: 312 of these actions appear in the enumerated macOS profile, Vim/Helix, or macOS-specific override layers in [`keymap-overlay-requirements.md`](keymap-overlay-requirements.md), and 32 action spellings appear in the shared Linux/Windows profile or override layers in [`keymap-nonmacos-requirements.md`](keymap-nonmacos-requirements.md). Those sets overlap; do not add their counts. Their effects and platform dispatch remain open.
 
 The inventory does not show that these actions are unreachable: a command palette, menu, pointer interaction, extension, or programmatic caller may invoke an action. Per-action user goals and discovery routes need independent classification. Linux runtime registration does not establish registration on macOS. `Pending` means there is no Labonair behavior or end-to-end invocation evidence recorded for that action.
 

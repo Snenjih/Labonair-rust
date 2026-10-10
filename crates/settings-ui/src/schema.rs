@@ -161,7 +161,6 @@ macro_rules! field {
 const UI_REMOVED_FIELDS: &[&str] = &[
     "editor.editorIndentationGuides",
     "editor.editorBracketMatching",
-    "editor.editorFormatOnSave",
     "editor.editorTrimTrailingWhitespace",
     "editor.editorInsertFinalNewline",
     "editor.editorShowCursorPosition",

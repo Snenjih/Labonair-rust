@@ -17,6 +17,15 @@ source-side research. It records current evidence without claiming parity.
   five deprecated-alias resolutions from the pinned Linux action registry.
   The 585 macOS IDs remain stable; per-action semantic, owner, route, and
   runtime acceptance remains open.
+- [`keymap-overlay-requirements.md`](keymap-overlay-requirements.md) — stable
+  IDs for 1,402 bindings across seven macOS base-profile overlays, conditional
+  Vim/Helix bindings, and macOS-specific overrides. Profile behavior, action
+  semantics, and native macOS dispatch remain open. It also records 133
+  default-map context-block flags for key-equivalent handling.
+- [`keymap-nonmacos-requirements.md`](keymap-nonmacos-requirements.md) — stable
+  IDs for 446 shared Linux/Windows profile and override bindings, plus 259
+  default-map key-equivalent block records. Windows runtime acceptance and
+  both platforms' action semantics and dispatch remain open.
 - [`registered-actions-unbound.md`](registered-actions-unbound.md) — stable IDs
   for 813 actions registered by the pinned Linux runtime but absent from all
   three default keymaps. Reachability, semantic classification, Labonair owner

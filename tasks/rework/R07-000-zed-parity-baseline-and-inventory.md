@@ -778,6 +778,269 @@ the shared UI kit and Settings owner. Native visual evidence remains pending.
 - Updated the Settings index and feature crosswalk. R07-000 remains In
   Progress; no R09 task has started.
 
+## Pre-change contract — expose the existing Editor format-on-save setting
+
+```text
+Request: Expose the existing consumer-backed format-on-save value in Settings.
+Request type: Owner-backed Settings field and category placement.
+In scope: One Editor-page switch for editor.editorFormatOnSave.
+Out of scope: Adding formatter behavior or language-specific policy; enabling
+  auto-save, trailing-whitespace removal, or final-newline settings without
+  verified consumers; reproducing Zed's multi-mode/per-language formatter model.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Existing Editor save path, SettingsContent value, and SettingsStore.
+Owner module: Editor.
+Canonical capability crate: labonair-editor.
+Sibling crates: labonair-settings-content, labonair-settings,
+  labonair-settings-ui, labonair-workspace (hosting adapter).
+Canonical user entry point: Settings → Editor → Formatting & Save.
+Alternate entry points: User or Project settings file for editorFormatOnSave.
+Public typed contract: SettingsContent.editor.editor_format_on_save and
+  EditorSettings::format_on_save().
+Events: Existing SettingsStore observer refreshes Editor preferences; add none.
+Registry contributions: None.
+Allowed dependency changes: None.
+Removal condition for temporary code: Not applicable.
+State owner: Editor.
+Persistence owner: Settings and settings-content; preserve existing JSON key,
+  default, project whitelist, and migration behavior.
+Settings and scope: Boolean, default false, User and Project scopes supported.
+Migration impact: None; existing compatibility/migration code remains in place.
+Commands: None.
+Default keymap: None.
+Notifications: Preserve the existing notification when formatting is unavailable
+  or fails and the current text is saved.
+UI-kit components: Existing Settings field renderer and shared Switch.
+User workflow: Open Settings → Editor, toggle Format on Save, then save a file;
+  Editor requests formatting asynchronously and saves after applying edits.
+Failure/cancellation/retry: On a formatter error or unsupported capability,
+  notify the user and save the current text once without retrying the formatter.
+Security boundary: No new external access or secret handling.
+Performance budget: Keep formatter work asynchronous; do not block GPUI.
+Implementation order: Remove the field from the hidden-field filter, place it
+  in the Editor Formatting & Save group, and link its requirement record.
+Obsolete path removed: None.
+Focused tests: Existing Settings field registration and Editor save-policy tests.
+Contract/integration tests: Existing SettingsStore-to-Editor live-update path.
+Persistence/migration tests: Existing schema/migration behavior; no changes planned.
+Visual states: Off/on, focus, User/Project scope, narrow layout, formatter absent,
+  and formatter error; paired macOS capture remains required.
+Security/negative tests: Not applicable beyond existing formatter failure path.
+Performance measurement: No new benchmark; preserve background service execution.
+Workspace gates: Docs and queue scopes; Rust gates at R07-000 acceptance.
+Documentation updates: Settings requirement register, Settings crosswalk, this log.
+Current status: Pre-change; current field is filtered from the UI.
+Target status: Visible Editor setting backed by the existing live save consumer.
+Known limitations: Local value is Boolean and global; pinned behavior includes
+  richer modes and per-language overrides, which remain separate requirements.
+Failed/unavailable gates: Native paired macOS visual capture is unavailable here.
+Next safe task: Continue R07-000 Settings field/runtime acceptance.
+```
+
+## Progress record — 2026-10-10 — Editor format-on-save Settings route
+
+- Exposed the existing `editor.editorFormatOnSave` switch in the shared
+  Settings UI under Settings → Editor → Formatting & Save. Its schema, default,
+  persistence path, project scope, live SettingsStore observer, and asynchronous
+  formatter/save behavior already existed; this change adds no setting,
+  behavior, dependency, event, or registry.
+- Added a Settings page-location regression assertion for the Editor group.
+  Formatter unavailability or failure continues to use the existing notification
+  and saves the current text without another formatting attempt.
+- Recorded this as Labonair-only ID `LAB-SET-EDITOR-FORMAT-ON-SAVE`, not as an
+  additional pinned-baseline requirement. It is only a partial counterpart to
+  `SET-LANGUAGE-FIELD-format-on-save`; per-language modes and overrides remain
+  open.
+- Passed for this slice: `cargo fmt --check`, `cargo test
+  -p labonair-settings-ui` (33 passed), `cargo clippy -p
+  labonair-settings-ui --all-targets -- -D warnings`, `python3 scripts/verify.py
+  --scope docs`, `python3 scripts/check_rework_queue.py`, and `git diff --check`.
+  Workspace-wide check, clippy, and test gates remain part of R07-000's finish
+  gates. Native macOS visual and interaction evidence is unavailable on this
+  host and remains an open acceptance gate.
+- R07-000 remains In Progress; no R09 task has started.
+
+## Pre-change contract — inventory the macOS keymap layers
+
+```text
+Request: Record every pinned macOS alternate-profile and conditional keymap binding.
+Request type: Independent reference requirement inventory.
+In scope: Seven macOS base-profile overlays, the conditional Vim/Helix layer,
+  and macOS-specific overrides; stable IDs for every key/context/action/argument
+  or explicit null binding; links to existing action requirement IDs through
+  direct registration or declared alias metadata; record platform registration
+  gaps without inventing a binding action ID.
+Out of scope: Keymap runtime implementation, claims about action effects from
+  binding presence alone, macOS dispatch or visual acceptance, Linux/Windows
+  alternate-profile layers, and user-authored keymap contents.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned platform maps and runtime action catalog; Keymap owner contract.
+Owner module: Keymap.
+Canonical capability crate: labonair-keymap.
+Sibling crate: labonair-keymap-ui.
+Canonical user entry point: Titlebar global menu → Keymap; Settings → Keymap;
+  Command Palette quick access.
+Public typed contract: Existing KeymapDocument, KeymapManagementSnapshot,
+  command/action registry, and Workspace Keymap tab composition; profile-layer
+  acceptance remains pending.
+Events: Existing file-watch/reload flow only; add none.
+Registry contributions: No changes.
+Allowed dependency changes: None.
+State owner: Keymap.
+Persistence owner: Keymap owns user binding persistence and runtime composition.
+  The profile/mode value and persistence boundary remains open under the
+  Settings and Keymap owner contracts; do not assume a local profile field.
+Settings and scope: Profile selection and Vim/Helix mode are inventoried as
+  behavior conditions; exact local profile parity remains open.
+Migration impact: None.
+Commands: No new commands; every inventoried action links to its action ID.
+Default keymap: Preserve the pinned layer order and null bindings as requirements.
+Notifications: No changes.
+UI-kit components: No changes.
+Security boundary: User keymap files are untrusted input; no parser or runtime
+  behavior is changed in this inventory step.
+Performance budget: No runtime work added.
+Implementation order: Count the pinned macOS layers, add profile/layer and
+  per-binding stable IDs, link actions, and record direct/alias registration
+  evidence plus unresolved macOS runtime differences.
+Focused tests: Inventory count, ID uniqueness, action-ID resolution, and docs checks.
+Workspace gates: Documentation and queue scopes; full Rust gates at R07-000 exit.
+Documentation updates: Action register, overlay binding register, parity index,
+  unbound-action limitation, and this task log.
+Current status: Profile overlays are named but their binding records are absent.
+Target status: Exact static macOS layer/binding inventory with explicit open
+  runtime dispatch, semantic, and native-capture acceptance.
+Current Labonair gap: Keymap has the Workspace editor and default platform maps,
+  but no base-profile loader/setting; Editor has `editor.vimMode`, with no
+  Helix mode or combined Vim/Helix layer.
+Known limitations: Analysis and implementation are in the same session; this is
+  independently written requirements work, not a separated clean-room claim.
+Failed/unavailable gates: Native macOS interaction/capture is unavailable here.
+Next safe task: Continue R07-000 action semantics, runtime evidence, and full
+  platform-profile inventory.
+```
+
+## Progress record — 2026-10-10 — macOS keymap overlay inventory
+
+- Added [`../../docs/parity/keymap-overlay-requirements.md`](../../docs/parity/keymap-overlay-requirements.md)
+  with 1,402 stable binding IDs across seven macOS base-profile overlays, the
+  conditional Vim/Helix layer, and macOS-specific overrides. The register
+  preserves 1,377 action bindings, 25 explicit nulls, action arguments, exact
+  contexts, and each overlay block's key-equivalent setting.
+- Added 133 stable IDs for the default macOS map's context blocks and their
+  key-equivalent flags: 109 explicitly enabled and 24 not set. The default map
+  has 585 action identifiers; its specific override layer adds 12 distinct
+  identifiers, yielding 597 in the built-in default composition before
+  optional profiles or modes.
+- Reconciled 578 raw overlay action identifiers against the pinned Linux
+  runtime: 576 direct registrations and two declared deprecated aliases. Of
+  the overlay identifiers, 312 are registered actions absent from all three
+  default-map files; their binding rows now link to the existing Linux
+  registry IDs. macOS registration and dispatch remain unverified.
+- Recorded `BaseKeymap::None` as a required profile state: it is in the pinned
+  typed setting but omitted from the macOS selector options. Its Settings
+  reachability and runtime behavior need acceptance evidence.
+- Updated the default action register, unbound-action scope note, parity index,
+  and feature crosswalk. Linux/Windows alternate-profile maps, per-action
+  semantics/owners/routes, user-keymap behavior, and native macOS interaction
+  evidence remain open. R07-000 remains In Progress; no R09 task has started.
+- Passed `python3 scripts/verify.py --scope docs` (43 normative docs and 166
+  Markdown files), `python3 scripts/check_rework_queue.py` (46 tasks; active
+  R07-000), `git diff --check`, and a static audit confirming 1,402 unique
+  binding IDs, 133 unique default-map block IDs, and 1,377 resolved action-ID
+  references. Rust workspace gates are still required at R07-000 exit. Native
+  macOS interaction and paired capture remain unavailable on this host.
+
+## Pre-change contract — inventory Linux and Windows keymap layers
+
+```text
+Request: Complete the static alternate-keymap inventory for non-macOS platforms.
+Request type: Independent platform requirements inventory.
+In scope: Six non-macOS base-profile overlays shared by Linux and Windows, their
+  shared platform override layer, default Linux/Windows context-block key-equivalent
+  metadata, stable per-binding and per-block IDs, and action-ID cross-references.
+  Reuse the existing Vim/Helix layer IDs rather than duplicating its shared map.
+Out of scope: Changing keymap or settings code, claiming Linux/Windows action
+  effects from registration, native Windows runtime/visual acceptance, user map
+  contents, and per-action behavior/owner implementation.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Existing default action register, macOS overlay register, pinned
+  Linux runtime action catalog, and Keymap capability contract.
+Owner module: Keymap.
+Canonical capability crate: labonair-keymap.
+Sibling crate: labonair-keymap-ui.
+Canonical user entry point: Keymap owner editor, reached from the titlebar
+  menu, Settings link, and Command Palette.
+Public typed contract: Existing KeymapDocument, KeymapManagementSnapshot,
+  command/action registry, and Workspace Keymap tab; profile composition is
+  still absent locally.
+Events: No additions; record the existing user-file reload path only.
+Registry contributions: No changes.
+Allowed dependency changes: None.
+State owner: Keymap; base-profile persistence and selection contract remain open.
+Persistence owner: Keymap owns user binding persistence; do not assume the
+  profile value is currently stored in Settings.
+Settings and scope: The pinned base_keymap choices and None/TextMate behavior
+  are requirements; local equivalents are unimplemented or unverified.
+Migration impact: None.
+Commands: No additions.
+Default keymap: Preserve default Linux/Windows maps, overlay contexts,
+  arguments, nulls, and exact key-equivalent flags.
+Notifications: No additions.
+UI-kit components: No changes.
+Security boundary: No parser or runtime behavior changes in this inventory step.
+Performance budget: No runtime work added.
+Implementation order: Record counts and options, assign stable IDs to all
+  non-macOS overlay rows and default-map block flags, resolve action IDs, and
+  document platform-specific runtime gates.
+Focused tests: Inventory counts, ID uniqueness, action-ID resolution, and docs checks.
+Workspace gates: Documentation and queue scopes; full Rust gates at R07-000 exit.
+Documentation updates: New non-macOS keymap register, parity index, crosswalk,
+  and this task log.
+Current status: Default maps are inventoried, but Linux profile overlays,
+  shared non-macOS overrides, and non-macOS block flags are not separately
+  listed; TextMate availability differs by platform.
+Target status: Exact non-macOS static maps with explicit runtime and platform
+  option gaps.
+Known limitations: Same-session analysis and implementation; no separated
+  clean-room provenance claim.
+Failed/unavailable gates: Windows native runtime/capture and paired visual
+  evidence are unavailable on this host.
+Next safe task: Continue R07-000 action semantics, remaining platform research,
+  and runtime acceptance.
+```
+
+## Progress record — 2026-10-10 — Linux and Windows keymap inventory
+
+- Added [`../../docs/parity/keymap-nonmacos-requirements.md`](../../docs/parity/keymap-nonmacos-requirements.md)
+  with 446 stable binding IDs for six shared Linux/Windows base-profile
+  overlays and their shared override layer: 429 action bindings and 17 nulls.
+  It links the 894 already inventoried shared Vim/Helix rows instead of
+  duplicating their IDs; all conditional non-macOS layers total 1,340 entries.
+- Added 259 default-map context-block IDs for key-equivalent behavior: 130
+  Linux blocks (35 explicitly enabled, 95 not set) and 129 Windows blocks
+  (112 enabled, 17 not set). Default map actions, contexts, and arguments
+  remain linked from the existing default action register.
+- Reconciled 217 raw non-macOS overlay action identifiers against Linux
+  registry evidence: 215 direct registrations and two deprecated aliases.
+  Thirty-two spellings are absent from all three default maps; these sets
+  overlap with macOS profile-only IDs and are not additive action counts.
+- Recorded the non-macOS TextMate mismatch (typed enum value with no selector
+  option or overlay asset), the pinned `None` state, and current Labonair gaps:
+  no base-profile/overlay loader or Helix mode; existing `editor.vimMode` is
+  only a partial Editor-owned counterpart.
+- Updated the action inventory, unbound-action scope note, parity index,
+  feature crosswalk, and this task log. Linux and Windows dispatch, per-action
+  semantics/owners/routes, profile selection and persistence, and Windows
+  native evidence remain open. R07-000 remains In Progress; no R09 task has
+  started.
+- Passed `python3 scripts/verify.py --scope docs` (43 normative docs and 167
+  Markdown files), `python3 scripts/check_rework_queue.py` (46 tasks; active
+  R07-000), `git diff --check`, and a static audit confirming 1,848 unique
+  binding IDs, 392 unique default-map block IDs, and 1,806 resolved action-ID
+  references across both overlay registers. Workspace Rust gates and all
+  pinned runtime/visual acceptance remain open.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

@@ -414,7 +414,7 @@ Each option applies within a language override unless its Settings resolver maps
 | `SET-LANGUAGE-FIELD-show-wrap-guides` | `show_wrap_guides` | `bool` | true | Set show wrap guides for a language while preserving the inherited value when no override exists. | User/Project override; exceptions pending | Editor / language-service owner validation pending | Pending |
 | `SET-LANGUAGE-FIELD-wrap-guides` | `wrap_guides` | `Vec<usize>` | [] | Set wrap guides for a language while preserving the inherited value when no override exists. | User/Project override; exceptions pending | Editor / language-service owner validation pending | Pending |
 | `SET-LANGUAGE-FIELD-indent-guides` | `indent_guides` | `IndentGuideSettingsContent` | Inherited or structured; verify | Set indent guides for a language while preserving the inherited value when no override exists. | User/Project override; exceptions pending | Editor / language-service owner validation pending | Pending |
-| `SET-LANGUAGE-FIELD-format-on-save` | `format_on_save` | `FormatOnSave` | on | Set format on save for a language while preserving the inherited value when no override exists. | User/Project override; exceptions pending | Editor / language-service owner validation pending | Pending |
+| `SET-LANGUAGE-FIELD-format-on-save` | `format_on_save` | `FormatOnSave` | on | Set format on save for a language while preserving the inherited value when no override exists. | User/Project override; exceptions pending | Editor (Labonair currently has only a global boolean counterpart) | Pending |
 | `SET-LANGUAGE-FIELD-remove-trailing-whitespace-on-save` | `remove_trailing_whitespace_on_save` | `bool` | true | Set remove trailing whitespace on save for a language while preserving the inherited value when no override exists. | User/Project override; exceptions pending | Editor / language-service owner validation pending | Pending |
 | `SET-LANGUAGE-FIELD-ensure-final-newline-on-save` | `ensure_final_newline_on_save` | `bool` | true | Set ensure final newline on save for a language while preserving the inherited value when no override exists. | User/Project override; exceptions pending | Editor / language-service owner validation pending | Pending |
 | `SET-LANGUAGE-FIELD-line-ending` | `line_ending` | `LineEndingSetting` | detect | Set line ending for a language while preserving the inherited value when no override exists. | User/Project override; exceptions pending | Editor / language-service owner validation pending | Pending |
@@ -450,6 +450,16 @@ Each option applies within a language override unless its Settings resolver maps
 | `SET-LANGUAGE-FIELD-debuggers` | `debuggers` | `Vec<String>` | [] | Set debuggers for a language while preserving the inherited value when no override exists. | User/Project override; exceptions pending | Editor / language-service owner validation pending | Pending |
 | `SET-LANGUAGE-FIELD-word-diff-enabled` | `word_diff_enabled` | `bool` | true | Set word diff enabled for a language while preserving the inherited value when no override exists. | User/Project override; exceptions pending | Editor / language-service owner validation pending | Pending |
 | `SET-LANGUAGE-FIELD-colorize-brackets` | `colorize_brackets` | `bool` | false | Set colorize brackets for a language while preserving the inherited value when no override exists. | User/Project override; exceptions pending | Editor / language-service owner validation pending | Pending |
+
+### Current Labonair counterpart (not a pinned requirement)
+
+| Labonair ID | Local key | Default | Scope | Owner and live consumer | Settings entry point | Relationship to pinned requirement |
+|---|---|---|---|---|---|---|
+| `LAB-SET-EDITOR-FORMAT-ON-SAVE` | `editor.editorFormatOnSave` | false | User / Project | Editor; the editor save path observes `SettingsStore`, requests formatting asynchronously when enabled, and saves after applying formatter edits. | Settings → Editor → Formatting & Save | Partial counterpart to `SET-LANGUAGE-FIELD-format-on-save`: one global Boolean only; no per-language `FormatOnSave` modes, formatter selection, or override inheritance. UI exposure is implemented; persistence/runtime and macOS visual acceptance remain open. |
+
+This Labonair-only record is not included in the 486 pinned-baseline IDs above.
+The existing setting and save consumer were not added to claim parity; this
+crosswalk records their current relationship and the remaining gap.
 
 ## Shipped language profiles
 

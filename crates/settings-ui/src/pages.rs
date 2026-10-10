@@ -375,6 +375,7 @@ const EDITOR_GROUPS: &[Group] = &[
     ),
     ("Behaviour", paths!("editor": "editorTabSize")),
     ("Indentation", paths!("editor": "editorIndentWithTabs")),
+    ("Formatting & Save", paths!("editor": "editorFormatOnSave")),
     (
         "Display",
         paths!("editor":
@@ -722,6 +723,14 @@ mod tests {
             section_label_for_field(&pages, "editor.editorGitWordDiff")
                 .map(|location| (location.page_index, location.section)),
             Some((8, Some("Editor")))
+        );
+        assert_eq!(
+            section_label_for_field(&pages, "editor.editorFormatOnSave"),
+            Some(FieldLocation {
+                page_index: 3,
+                sub_page_slug: None,
+                section: Some("Formatting & Save"),
+            })
         );
         assert_eq!(
             section_label_for_field(&pages, "general.restoreWindowState")
