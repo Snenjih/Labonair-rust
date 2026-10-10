@@ -161,7 +161,7 @@ The default action register contains each action binding and its context. This t
 | <code>KEYMAP-BLOCK-MACOS-DEFAULT-faf93cca1f15</code> | <code>CallHierarchyPicker &gt; Picker &gt; Editor</code> | yes | 3 | 3 active / 0 null | Pending |
 | <code>KEYMAP-BLOCK-MACOS-DEFAULT-80076d249eee</code> | <code>Picker &gt; Editor</code> | yes | 6 | 6 active / 0 null | Pending |
 | <code>KEYMAP-BLOCK-MACOS-DEFAULT-9d79106bde65</code> | <code>ChannelModal &gt; Picker &gt; Editor</code> | yes | 1 | 1 active / 0 null | Pending |
-| <code>KEYMAP-BLOCK-MACOS-DEFAULT-dd9f517d8f1b</code> | <code>ToolchainSelector</code> | yes | 1 | 1 active / 0 null | Pending |
+| <code>KEYMAP-BLOCK-MACOS-DEFAULT-dd9f517d8f1b</code> | <code>ToolchainSelector</code> | yes | 1 | 1 active / 0 null | Pending; see [Toolchain action classification](action-classification-toolchain.md) |
 | <code>KEYMAP-BLOCK-MACOS-DEFAULT-7c30587616d8</code> | <code>FileFinder &#124;&#124; (FileFinder &gt; Picker &gt; Editor)</code> | yes | 1 | 1 active / 0 null | Pending |
 | <code>KEYMAP-BLOCK-MACOS-DEFAULT-38fbea6abd13</code> | <code>RecentProjects &#124;&#124; (RecentProjects &gt; Picker &gt; Editor)</code> | yes | 4 | 4 active / 0 null | Pending |
 | <code>KEYMAP-BLOCK-MACOS-DEFAULT-0937402071b9</code> | <code>TabSwitcher</code> | yes | 4 | 4 active / 0 null | Pending |

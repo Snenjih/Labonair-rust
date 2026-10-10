@@ -41,8 +41,9 @@ source-side research. It records current evidence without claiming parity.
   14 IDs across 20 Linux/Windows-profile entries), six generic Menu actions
   (20 macOS-profile entries and two shared Linux/Windows Atom entries),
   two default-bound Theme mode/selector actions and one registered-unbound
-  Theme Selector reload declaration, one Terminal Clear action, three Terminal
-  clipboard actions, six Terminal scroll actions (eight JetBrains profile
+  Theme Selector reload declaration, one registered-unbound Toolchain Select
+  action (related default-bound AddToolchain action), one Terminal Clear action,
+  three Terminal clipboard actions, six Terminal scroll actions (eight JetBrains profile
   entries), two Terminal character-palette/vi-mode actions, two Task rerun
   actions (two JetBrains profile entries), two Terminal text/keystroke actions,
   one Terminal panel toggle and one registered-unbound Terminal panel focus
@@ -100,6 +101,9 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-theme-selector-reload.md`](action-classification-theme-selector-reload.md) —
   registered-unbound Theme Selector reload declaration, the missing pinned
   handler, and Labonair's deferred ThemeStore reload API.
+- [`action-classification-toolchain.md`](action-classification-toolchain.md) —
+  unbound toolchain selection, bound AddToolchain paths/scopes, WorkspaceDb
+  persistence, and Labonair's missing owner and runtime route.
 - [`action-classification-terminal-clear.md`](action-classification-terminal-clear.md) —
   the pinned saved-screen/cwd-history effect, platform bindings, Labonair's ANSI
   PTY command route, and native scrollback/runtime acceptance gaps.

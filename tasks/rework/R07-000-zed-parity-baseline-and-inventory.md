@@ -6061,6 +6061,7 @@ Next safe task: Continue R07-000 action/workflow classification; do not begin R0
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
 ~~~
 
+
 ## Pre-change contract — registered-unbound Theme Selector Reload action
 
 ~~~text
@@ -6121,5 +6122,67 @@ Next safe task: Continue R07-000 action/workflow classification; do not begin R0
 - Focused action-row/packet audit passed; the pinned action does not occur in the default or profile keymap assets.
 - Passed `git diff --check`, docs (43 normative documents and 226 Markdown files), agents (10 request routes), knowledge, Settings (7 areas and 101 registered UI fields), and active queue verification (46 tasks; R07-000 remains earliest active).
 - Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, native dispatch, Settings persistence round trip, or visual check were run for this documentation-only slice.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+~~~
+
+## Pre-change contract — Toolchain selection and AddToolchain actions
+
+~~~text
+Request: Classify registered-unbound toolchain::Select and default-bound toolchain::AddToolchain, their status-item and picker flows, platform keys, custom scopes, persistence, and Labonair owner gaps.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: ACT-REGISTRY-LINUX-toolchain-Select; ACT-MACOS-toolchain-AddToolchain and macOS/Linux/Windows default bindings; ToolchainSelector, ActiveToolchain, Project ToolchainStore, ToolchainScope, WorkspaceDb selected/user toolchain state; Labonair language-service owner and lack of toolchain APIs; action/keymap/feature crosswalks, parity index, normative summary, and this task.
+Out of scope: Implementing toolchain selection, discovery, add/remove, language execution, status item, persistence, permission checks, Settings values, action bindings, dependencies, or a new owner crate; claiming native dispatch or visual parity; beginning R07-001 or R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned toolchain_selector, language and Project toolchain store, Workspace persistence/status item, platform keymaps; Labonair capability matrix, Editor local language services, Settings and Workspace boundaries, and planned Extensions owner.
+
+Owner module: Pinned ToolchainSelector owns selection/add UI, Project owns detection and scoped user toolchains, Workspace composes the active-Editor status item and persists state. Labonair has no final Toolchains owner; Editor is a candidate for active-file selection and the planned Extensions owner may provide installed catalogs. R07-001 must settle the single owner and typed provider/persistence boundary before implementation.
+Canonical capability crate: Pinned toolchain_selector UI with `project` state and `language` contracts. Labonair has no Toolchains crate or public contract; `labonair-editor` is a candidate for the language-specific selection owner, but no implementation decision is recorded here.
+Sibling crates: Pinned `project`, `language`, `workspace`; local Editor, Workspace and planned Extensions boundaries only. No new crate or dependency proposed.
+Canonical user entry point: The pinned active Editor Toolchain status item opens the selector by pointer when a toolchain resolves. `toolchain::Select` is registered on Workspace but has no default or profile binding. Local Labonair has no matching status item or action.
+Alternate entry points: `toolchain::AddToolchain` has Workspace and ToolchainSelector context bindings and an Add footer button. A Workspace-context invocation attempts to open the selector when no selector is active and the active item has a file-backed, language-bearing Editor buffer; the ToolchainSelector context or footer enters path/name/scope add flow.
+Public typed contract: Select applies a discovered or custom language toolchain to the active file's relative directory. AddToolchain resolves a chosen path for the active language, collects a non-empty name and Subproject/Project/Global scope, and adds the custom toolchain to Project state.
+Events: Project emits `CustomToolchainsModified`; Workspace serializes user toolchain definitions. Selection persists to WorkspaceDb and activates through Project. No Labonair event or API is proposed.
+Registry contributions: Preserve the Linux registered Select action and the two AddToolchain default binding records per platform: macOS cmd-k cmd-m / cmd-shift-a, Linux ctrl-k ctrl-m / ctrl-shift-a, Windows ctrl-m ctrl-m / ctrl-shift-a. Preserve Workspace and ToolchainSelector contexts and each ToolchainSelector block's key-equivalent flag. Do not add a local route in this slice.
+State owner: Pinned Project ToolchainStore owns detected/user candidate state and activation; ToolchainSelector owns query/selection/add form; ActiveToolchain follows the active Editor buffer. Labonair has no equivalent runtime state.
+Persistence owner: Pinned WorkspaceDb stores selected toolchain by Workspace/worktree/directory/language and stores user toolchain definitions with Subproject/Project/Global scopes. Workspace serialization is triggered by CustomToolchainsModified. These are not Settings values. Labonair persistence owner remains unresolved with the capability owner.
+Settings: No Settings value controls the selected toolchain in this flow. Do not add one in this inventory slice.
+Commands and keymap: Record all AddToolchain default keys and their contexts. Select has no default or inspected profile binding. Palette discoverability, macOS action registration/dispatch, and actual user keymap override behavior remain acceptance.
+Notifications: No new route proposed. Pinned selected-toolchain DB failure is logged and activation still attempted; no user-facing error route was found. Future local errors must use the notification center.
+UI-kit components: No UI edit. Pinned UI composes Picker, path picker, single-line Editor, scope options, buttons and row removal. Any Labonair reimplementation must use `labonair-ui-kit` and reuse the canonical Editor/Workspace surface.
+User workflow: Select the correct toolchain for the active supported language/file directory; search detected or scoped custom choices; add, name, scope, select, or remove a custom toolchain; retain selection for future sessions.
+Failure/cancellation/retry behavior: Cover no active/file-backed Editor, absent language or metadata, empty candidate list, stale selection, Add path cancellation/errors, async path resolution, empty name, DB write failure, activation failure, remote project, and restore/retry after restart. Escape from Select dismisses without applying a new choice.
+Security boundary: No code changed. Before implementation define project trust and permission checks for any language-specific executable or toolchain process; path resolution must not grant execution to an untrusted project by selection alone.
+Performance budget: Pinned availability and path resolution are asynchronous. No runtime work added; local catalogs must not block the GPUI foreground thread.
+Removal condition for compatibility code: None; no compatibility path is introduced.
+
+Implementation order: Trace registered actions, selector context/handlers/status item, candidate scope and selection activation; inspect AddToolchain state machine and WorkspaceDb persistence; verify all default keys and context blocks plus absence of Select bindings; inspect local Editor/Workspace/Extensions contracts and record unresolved owner; update action and keymap rows, packet/index/crosswalks and this task; run documentation and queue gates.
+Focused tests: Not applicable to this documentation-only change; do not add or run tests.
+Contract/integration tests: No runtime contract changed. Native Select/Add dispatch, active-file gating, activation, error and cancellation behavior remain acceptance.
+Persistence/migration tests: No tests changed. WorkspaceDb selected/user toolchain scopes and restore behavior remain native acceptance; no local format or Settings equivalence is claimed.
+Command/surface tests: Verify default AddToolchain contexts/keys, unbound Select discoverability, status-item pointer route, picker keyboard/click focus, and user overrides.
+Visual states: No UI edit. Paired native macOS evidence remains required for status item, picker, empty/loading/error, path/name/scope steps, narrow layout, and dismissal.
+Security/negative tests: No new test. Future acceptance verifies project trust and executable invocation denial for untrusted workspaces.
+Performance measurement: Not applicable; future toolchain resolution/candidate loading requires async and large-project latency measurement.
+Workspace gates: Diff check; docs, agents, knowledge, Settings and active queue; focused two-action/three-platform binding and owner-route audit.
+Documentation updates: Toolchain classification packet; registry-unbound Select row; AddToolchain action requirements row; macOS/Linux/Windows ToolchainSelector context block references; keymap and language.services crosswalks; parity index and normative summary; this task record.
+Current status: ToolchainSelector handlers, status item, candidate scopes, Add state machine, and WorkspaceDb persistence audited. Local Editor has no toolchain route; the feature owner and persistence boundary remain unresolved. Documentation and gates pending.
+Target status: Capture the full Select/Add workflows and exact platform contexts without presenting local language-service functionality as toolchain parity; carry the owner decision into R07-001.
+Evidence links: `zed-refrence/zed/crates/toolchain_selector/src/toolchain_selector.rs`; `active_toolchain.rs`; `zed-refrence/zed/crates/project/src/toolchain_store.rs`; `zed-refrence/zed/crates/workspace/src/persistence.rs`; default platform keymaps; `crates/editor/src/language_services.rs`; `docs/capabilities.md` and `docs/parity/feature-crosswalk.md`.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Tests, native dispatch and visual interaction were not run.
+Remaining migration edges: No Labonair toolchain detector/selector/add UI or persistence route; active selection owner, catalog provider, trust/permission model and persistence contract remain unresolved. Keybinding conflicts and runtime status-item availability are not observed.
+Failed/unavailable gates: Rust build, tests, native key dispatch, toolchain subprocess behavior, persistence round trips and paired visual evidence are outside this documentation-only slice and remain R07-000 exit gates.
+Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+~~~
+
+## Progress — classify Toolchain selection and AddToolchain
+
+~~~text
+- Added [action-classification-toolchain.md](../../docs/parity/action-classification-toolchain.md) for registered-unbound Select and default-bound AddToolchain.
+- Recorded active-Editor/file/language gating, status-item pointer route, detected and scoped candidates, WorkspaceDb selection/custom persistence, activation/error behavior, and async path/name/scope/add workflow.
+- Preserved all default keys and contexts across macOS, Linux, and Windows; Select has no default or inspected profile binding. Linked each ToolchainSelector context block to the semantic packet.
+- Updated the AddToolchain action requirements row, registered-unbound Select row, parity index, commands.keymap and language.services crosswalks, normative summary, and this task record.
+- Focused audit confirmed the exact six AddToolchain default bindings across the three platforms, no Select binding in pinned default/profile assets, both action requirement links, and the owner/persistence distinctions.
+- Passed `git diff --check`; docs (43 normative documents and 227 Markdown files), agents (10 request routes), knowledge, Settings (7 areas and 101 registered UI fields), and active queue verification (46 tasks; R07-000 remains earliest active).
+- Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, native dispatch, Settings or WorkspaceDb round trips, subprocess checks, or visual evidence were run for this documentation-only slice.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
 ~~~

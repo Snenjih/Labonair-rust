@@ -278,6 +278,11 @@ scope, and paired visual acceptance remain open. The independent
 records the Linux-only registered action declaration, its missing pinned
 handler and keymap routes, and Labonair's deferred, test-retained reload API.
 macOS registration and runtime behavior remain unverified. The independent
+[`Toolchain action crosswalk`](parity/action-classification-toolchain.md)
+classifies registered-unbound toolchain selection and the bound AddToolchain
+flow, including per-directory WorkspaceDb state and Labonair's unresolved
+canonical owner. Native dispatch, persistence failures, and paired macOS
+acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and

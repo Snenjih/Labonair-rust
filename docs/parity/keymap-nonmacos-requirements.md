@@ -153,7 +153,7 @@ The default action register already records Linux and Windows key sequences, con
 | <code>KEYMAP-BLOCK-LINUX-DEFAULT-f006a370f9fa</code> | <code>CallHierarchyPicker &gt; Picker &gt; Editor</code> | not set | 3 | 3 active / 0 null | Pending |
 | <code>KEYMAP-BLOCK-LINUX-DEFAULT-6820f321edee</code> | <code>Picker &gt; Editor</code> | not set | 5 | 5 active / 0 null | Pending |
 | <code>KEYMAP-BLOCK-LINUX-DEFAULT-a1298e138267</code> | <code>ChannelModal &gt; Picker &gt; Editor</code> | not set | 1 | 1 active / 0 null | Pending |
-| <code>KEYMAP-BLOCK-LINUX-DEFAULT-b79832c5cf48</code> | <code>ToolchainSelector</code> | yes | 1 | 1 active / 0 null | Pending |
+| <code>KEYMAP-BLOCK-LINUX-DEFAULT-b79832c5cf48</code> | <code>ToolchainSelector</code> | yes | 1 | 1 active / 0 null | Pending; see [Toolchain action classification](action-classification-toolchain.md) |
 | <code>KEYMAP-BLOCK-LINUX-DEFAULT-6b07cfc562e3</code> | <code>FileFinder &#124;&#124; (FileFinder &gt; Picker &gt; Editor)</code> | not set | 2 | 2 active / 0 null | Pending |
 | <code>KEYMAP-BLOCK-LINUX-DEFAULT-d081f5914594</code> | <code>RecentProjects &#124;&#124; (RecentProjects &gt; Picker &gt; Editor)</code> | not set | 5 | 5 active / 0 null | Pending |
 | <code>KEYMAP-BLOCK-LINUX-DEFAULT-aa12baefc79f</code> | <code>TabSwitcher</code> | not set | 4 | 4 active / 0 null | Pending |
@@ -283,7 +283,7 @@ The default action register already records Linux and Windows key sequences, con
 | <code>KEYMAP-BLOCK-WINDOWS-DEFAULT-f9d29727d9ea</code> | <code>CallHierarchyPicker &gt; Picker &gt; Editor</code> | yes | 3 | 3 active / 0 null | Pending |
 | <code>KEYMAP-BLOCK-WINDOWS-DEFAULT-74c27e7936a8</code> | <code>Picker &gt; Editor</code> | yes | 5 | 5 active / 0 null | Pending |
 | <code>KEYMAP-BLOCK-WINDOWS-DEFAULT-731c300311c0</code> | <code>ChannelModal &gt; Picker &gt; Editor</code> | yes | 1 | 1 active / 0 null | Pending |
-| <code>KEYMAP-BLOCK-WINDOWS-DEFAULT-2f14c51133e7</code> | <code>ToolchainSelector</code> | yes | 1 | 1 active / 0 null | Pending |
+| <code>KEYMAP-BLOCK-WINDOWS-DEFAULT-2f14c51133e7</code> | <code>ToolchainSelector</code> | yes | 1 | 1 active / 0 null | Pending; see [Toolchain action classification](action-classification-toolchain.md) |
 | <code>KEYMAP-BLOCK-WINDOWS-DEFAULT-fa5217ff2533</code> | <code>FileFinder &#124;&#124; (FileFinder &gt; Picker &gt; Editor)</code> | yes | 2 | 2 active / 0 null | Pending |
 | <code>KEYMAP-BLOCK-WINDOWS-DEFAULT-971326b4620c</code> | <code>RecentProjects &#124;&#124; (RecentProjects &gt; Picker &gt; Editor)</code> | yes | 5 | 5 active / 0 null | Pending |
 | <code>KEYMAP-BLOCK-WINDOWS-DEFAULT-71cbb95701f0</code> | <code>TabSwitcher</code> | yes | 4 | 4 active / 0 null | Pending |
