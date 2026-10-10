@@ -395,6 +395,12 @@ transient hook skipping, and pushed-commit undo. Labonair has partial staged/tra
 tracked mode stages untracked files too. Generation, typed signoff/no-verify
 options, modal/action routes, and last-commit undo are missing; runtime and
 paired macOS evidence remain open. The independent
+[`Git remote synchronization action crosswalk`](parity/action-classification-git-remote-sync.md)
+records fetch-all/selected-remote, pull/rebase, upstream push/publish,
+and force-with-lease workflows. Labonair lacks selected remotes and
+rebase; its confirmed Force Push calls ordinary push and Publish does
+not set upstream. Runtime and paired macOS acceptance remain open. The
+independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

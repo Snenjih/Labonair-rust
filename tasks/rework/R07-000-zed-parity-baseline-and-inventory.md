@@ -4757,3 +4757,67 @@ Next safe task: Classify and document the Git commit lifecycle packet, then cont
 - Rust gates, native interaction, and paired visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
 - Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+## Pre-change contract — Git remote synchronization actions
+
+```text
+Request: Independently classify pinned fetch, pull, rebase-pull, push, force-push, remote selection, upstream publication, and current Labonair remote routes.
+Request type: R07-000 requirements inventory; documentation only.
+In scope: Five default-macOS bound actions (Fetch, ForcePush, Pull, PullRebase, Push) and two related registered-unbound actions (FetchFrom, PushTo); remote selection, upstream selection, force-with-lease, authentication, concurrent operations, and success/error output.
+Out of scope: Implementing Git or transport changes, adding actions/settings, remotes management, branch/worktree behavior outside sync selection, runtime or visual parity claims, and R09 work.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Git capability (labonair-git); transport (labonair-git-transport); Source Control sibling (labonair-panel-scm); SSH session resolution and credentials; Workspace action hosting; Notifications.
+
+Owner module: Git owns repository synchronization and remote state; Workspace hosts action composition and remote prompts; SSH owns session transport and credential routing.
+Canonical capability crate: labonair-git.
+Sibling crates: labonair-git-transport and labonair-panel-scm remain under Git ownership; Workspace and SSH are consumers/providers.
+Canonical user entry point: Source Control repository actions menu and Push/Pull/Fetch controls.
+Alternate entry points: Default GitPanel keybindings, the repository menu, and pinned Fetch From/Push To selectors.
+Public typed contract: Labonair Git trait exposes push(path, remote, branch, session_id), pull(path, session_id), and fetch(path, session_id); it has no pull-rebase or force flag and no selected-fetch operation. The transport defaults ordinary push to origin and fetch to all remotes. Existing force-with-lease and set-upstream helper functions are not called by the adapter. Do not modify contracts in this inventory slice.
+Events: Existing repository refresh/status operation events only; no event changes proposed.
+Registry contributions: Classify five bound and two registered-unbound actions. Add no Labonair action, command, binding, or registry entry.
+Allowed dependency changes: None.
+Removal condition for temporary code: None; documentation only.
+
+State owner: Git repository config/index/ref state; SSH owns remote session credentials; Source Control owns pending operation and confirmation UI; Workspace owns action/menu hosting.
+Persistence owner: Git owns remotes, upstream config, refs, and tracking state. Source Control operation progress and confirmation are transient.
+Settings and scope: No settings changes proposed. Record current remote/upstream selection and any relevant defaults from static source without assuming UI-observed behavior.
+Migration impact: None in this slice. Future work must connect force-with-lease and set-upstream behavior through typed Git contracts and remove or wire unused transport helpers based on their named consumer.
+Commands: Fetch, FetchFrom, Pull, PullRebase, Push, PushTo, ForcePush.
+Default keymap: Record platform contexts for all five bound actions; FetchFrom and PushTo are registered without default bindings but appear in the pinned remote action menu.
+Notifications: Remote success output and failures must route through the Git/Notifications owner and preserve actionable provider/credential errors.
+UI-kit components: Remote selection, confirmation, operation progress, and output must use shared UI-kit/menu/prompt components.
+User workflow: Fetch all or select a remote; pull from the branch's selected remote with merge or rebase; push the current branch using its upstream or publish a new upstream; select a different push remote; force-push with lease; authenticate and inspect success/error output.
+Failure/cancellation/retry behavior: Record no repository/branch/remote, collaborative/read-only restrictions, remote-picker cancellation, missing credentials, offline/network errors, concurrent remote operation, non-fast-forward push, rebase conflict, force-with-lease rejection, output visibility, refresh/retry, and upstream state after publish.
+Security boundary: Preserve the pinned force-with-lease guard and exact remote/branch selection. Do not label ordinary push as force push or report a branch published unless upstream tracking is actually set. Keep credential prompts and remote secrets out of logs.
+Performance budget: No runtime change; remote Git and SSH operations remain asynchronous and single-flight per Source Control panel.
+
+Implementation order: Requirements packet only. Future changes must establish typed force/upstream/rebase/fetch-selection contracts in Git, implement transport commands, adapt Source Control selectors/confirmation/progress, then add default bindings and Workspace menu hosting. Preserve acyclic crate dependencies.
+Focused unit tests: Not applicable to this documentation-only change.
+Contract/integration tests: No tests changed or run.
+Persistence/migration tests: Not applicable; upstream state is repository-owned and unchanged.
+Command/surface tests: Not applicable; no runtime change.
+Visual states: Remote menu, remote picker, publish, force confirmation, in-progress fetch/pull/push, credential prompt, success output, network error, rebase conflict, and narrow layout remain native acceptance requirements.
+Security/negative tests: Not applicable to this documentation-only change; verify force-with-lease, remote/branch targeting, credentials redaction, and cancelled/failed publication.
+Performance measurement: Not applicable; no runtime change.
+Workspace gates: Diff check, documentation checker, docs verification scope, queue check, and focused pinned/local action, transport, and remote-scope audit.
+Documentation updates: New Git remote-sync packet, five bound rows, two unbound rows, packet index, Git capability crosswalk, normative parity summary, and this task record.
+Current status: Pending focused behavior and local-transport audit.
+Target status: Static remote-sync requirements classified; native interaction, remote recovery, and paired macOS acceptance remain open.
+Evidence links: Pinned GitPanel/Workspace action handlers and remote selectors; pinned Git repository PushOptions; Labonair Git trait, transport adapter, and panel-scm operation routes.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Typed rebase, force, upstream, and fetch-remote support; ordinary versus force-push mismatch; origin/upstream routing; publish upstream tracking; remote selectors; default actions; paired captures.
+Failed/unavailable gates: Rust, native runtime, and visual gates remain R07-000 exit gates.
+Next safe task: Classify and document Git remote synchronization, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify Git remote synchronization actions
+
+- Added [`action-classification-git-remote-sync.md`](../../docs/parity/action-classification-git-remote-sync.md) for five bound and two registered-unbound actions: Fetch, FetchFrom, Pull, PullRebase, Push, PushTo, and ForcePush.
+- Updated the five bound and two unbound action rows, parity packet index/count, Git capability crosswalk, normative parity summary, and this task record. Native dispatch and paired captures remain Pending.
+- Focused source audit confirmed all platform bindings, remote selection rules, current-branch/upstream selection, set-upstream behavior, force-with-lease semantics, collaboration restrictions, single-flight operation gating, and remote output/error paths.
+- Labonair source audit found that Fetch runs `git fetch --all`, Pull runs plain `git pull`, ordinary Push defaults to origin without using stored upstream mapping, and Publish calls `git push origin <branch>` without setting upstream. The confirmed Force Push route also calls ordinary push; the transport's force-with-lease and set-upstream helpers have no callers in the Git adapter/UI.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative documents and 204 Markdown files), `python3 scripts/verify.py --scope docs`, and `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active). The focused ID/cross-reference audit passed for all five bound and two registered-unbound actions.
+- Rust gates, remote runtime checks, and paired visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
+- Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.

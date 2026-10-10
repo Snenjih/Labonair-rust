@@ -1,0 +1,50 @@
+# Git Remote Synchronization Action Classification
+
+**Status:** Static action and remote-operation classification; native interaction, recovery, and paired macOS acceptance pending
+
+**Baseline:** Zed commit `3569541038dd51524b03998ba4d38d253cb54f80`
+
+**Owner:** Git owns remote synchronization and repository state. Workspace hosts action/menu composition; SSH supplies remote session and credential transport.
+
+## Evidence boundary
+
+This packet independently states the pinned Fetch, FetchFrom, Pull, PullRebase, Push, PushTo, and ForcePush workflows and compares Labonair's Git trait, transport, and Source Control routes. Source establishes action registration, command construction, and current call paths; native selection prompts, credential behavior, output, and data recovery remain unobserved. Research and requirements were produced in the same session, so this is independent redevelopment, not separated-room clean-room implementation.
+
+## Owner and workflow contract
+
+| Contract field | Requirement and current Labonair record |
+|---|---|
+| Fetch all | Fetch requires a local active repository and is disabled for a collaborative project. It fetches all remotes, starts only when another remote operation is not pending, uses the authentication delegate, then shows remote output or a Git error. Labonair also runs `git fetch --all`, but has no matching default action/binding or in-panel operation-specific status parity verified. |
+| Fetch from a remote | FetchFrom is registered without a default key binding and appears in the Git remote action menu. Its picker lists configured remotes and adds an All choice when there is more than one. Canceling the picker exits without fetching. Labonair has no per-remote or picker route; its transport only fetches all. |
+| Pull and rebase pull | Both require a local active repository and current branch, and are blocked during another remote operation or collaboration. The panel selects a remote for the current branch and calls the repository pull API with `rebase=false` for Pull or `rebase=true` for PullRebase. Credentials, success output, failure, and rebase conflict outcomes belong to the remote operation flow. Labonair exposes only `pull(path, session_id)` and runs plain `git pull`; it has no rebase action or remote selector. |
+| Push and publish | Push selects from remotes associated with the current branch and derives the destination branch from its tracked upstream when available. If the upstream is absent or gone, it requests `--set-upstream`; otherwise it performs a normal push. The action requires a current branch and one free remote-operation slot. Labonair's panel detects whether an upstream exists, but its typed call does not carry upstream metadata; the adapter defaults the remote to origin. The no-upstream Publish route invokes `git push origin <branch>` without `--set-upstream`, even though a separate set-upstream helper exists and is not called. |
+| Push to a selected remote | PushTo is registered without a default binding and appears in the Git action menu. It expands remote selection to all configured remotes rather than the current branch's normal push candidates, then pushes the current branch and chooses an upstream option only if needed. Labonair has no PushTo action or selector. |
+| Force push | ForcePush is a default GitPanel action; it uses the normal branch/remote flow and `PushOptions::Force`, which invokes `--force-with-lease`. The pinned handler does not add a separate confirmation step. Labonair's menu asks “Force-push with lease?” and requires confirmation, but then calls the ordinary `Git::push` adapter route. That route builds plain `git push`; the separate `git_push_force_with_lease` function has no adapter or UI caller. The visible action therefore does not perform its labeled operation in the inspected local code. |
+| Operation state and failures | Pinned Fetch/Pull/Push operations are single-flight per GitPanel and are unavailable through collaboration. The credential delegate is passed to Git. Remote success output is shown through the Git remote-output surface and failures through the Git error surface; picker cancellation ends without mutation. Labonair serializes a single repository operation, reports errors through its notification path, refreshes repository state, and uses SSH session IDs for remote resolution. |
+| Ownership, contract, and persistence | Labonair's canonical capability is `labonair-git`; `labonair-git-transport` and `labonair-panel-scm` are sibling crates under the Git owner. The public trait has `push(path, remote, branch, session_id)`, `pull(path, session_id)`, and `fetch(path, session_id)`. It has no typed force, set-upstream, pull-rebase, or selected-fetch arguments. The transport contains force-with-lease and set-upstream helpers, but source search found no callers. Remote/upstream state remains repository-owned; no new Settings, persistence, event, registry, action, or dependency change is proposed. |
+| Current Labonair routes | Source Control exposes Fetch, Pull, Push/Publish, and a confirmed Force Push menu item. Its Fetch runs `git fetch --all`; Pull runs `git pull`; ordinary Push defaults to origin and does not use the current branch's recorded remote/name; Publish passes origin and branch but does not configure upstream. Force Push confirms intent but invokes ordinary `git push`. There are no default parity bindings, PullRebase, FetchFrom, or PushTo routes. |
+
+## Action requirements
+
+| Requirement ID | Pinned entry and target | Current Labonair route and gap |
+|---|---|---|
+| [`ACT-MACOS-git-Fetch`](action-requirements.md) | `ctrl-g ctrl-g` in GitPanel on macOS, Linux, and Windows; fetch all remotes. | `git fetch --all` exists in Source Control; pinned action and default binding are absent. |
+| [`ACT-MACOS-git-Pull`](action-requirements.md) | `ctrl-g down` in GitPanel on all platforms; pull the current branch through its selected upstream/remote using merge behavior. | Plain `git pull` exists; no pinned action/binding or remote selection. |
+| [`ACT-MACOS-git-PullRebase`](action-requirements.md) | `ctrl-g shift-down` in GitPanel on all platforms; pull the current branch with rebase. | No rebase argument, action, or route in the Git trait, adapter, or Source Control UI. |
+| [`ACT-MACOS-git-Push`](action-requirements.md) | `ctrl-g up` in GitPanel on all platforms; push current branch to its tracked remote/branch, setting upstream when absent or gone. | Push/Publish exists, but remote/upstream mapping and set-upstream behavior are incorrect or absent. |
+| [`ACT-MACOS-git-ForcePush`](action-requirements.md) | `ctrl-g shift-up` in GitPanel on all platforms; use `--force-with-lease` through the current branch's normal remote selection. | The confirmed menu route invokes ordinary push; force-with-lease transport helper is unused and no matching action/binding exists. |
+| [`ACT-REGISTRY-LINUX-git-FetchFrom`](registered-actions-unbound.md) | Registered without a default binding; select one remote or All when several are configured, then fetch. | No remote picker or selected-fetch contract; current Fetch always uses all remotes. |
+| [`ACT-REGISTRY-LINUX-git-PushTo`](registered-actions-unbound.md) | Registered without a default binding; select any configured remote and push the current branch. | No remote picker/action; ordinary push uses origin by default. |
+
+## Required user-flow and state acceptance
+
+- Fetch with one and multiple remotes; FetchFrom each remote and All; cancel the picker; test no remote, offline, credential denial, and partial remote failure. Verify fetched refs and displayed output.
+- Pull through a configured upstream, a non-origin remote, a renamed upstream branch, and no upstream. Compare merge Pull and PullRebase, including conflicts, cancellation, credential prompts, retry, and final HEAD/index/worktree state.
+- Push a tracked branch with an upstream on origin and another remote, with a distinct upstream branch name, with a deleted upstream, and with no upstream. Verify the exact remote/ref and that Publish configures tracking.
+- Force-push divergent local/remote history. Verify the pinned `--force-with-lease` guard, remote selection, stale-lease rejection, credential flow, and post-failure refs. For Labonair, verify whether the confirmed Force Push route actually adds force-with-lease; current source indicates ordinary push.
+- Invoke all five bound actions in the GitPanel context, verify pending-operation gating, collaboration restrictions, keymap dispatch, keyboard focus, menu route, success/error output, and repository refresh. Invoke FetchFrom and PushTo through their menu/command discovery routes.
+- Compare remote selectors, branch/upstream handling, confirmation, operation progress, error retry, and output states at narrow and normal widths. Capture paired native macOS states with exact builds, remote layout, upstream/ref graph, window size, scale, theme, and result; verify Linux/Windows keymaps separately.
+
+## Acceptance evidence still required
+
+Static review establishes five bound and two registered-unbound actions, platform bindings, remote selection routes, single-flight/collaboration guards, `--force-with-lease` and `--set-upstream` pinned semantics, and Labonair's local transport calls. It also establishes a local source mismatch: the confirmed Force Push button and Publish route call plain push, while the corresponding lease/set-upstream helper functions are not connected to the Git adapter. It does not establish native menu/picker behavior, remote credentials, actual network recovery, server-side lease outcomes, upstream persistence after publish, or paired visual parity. Runtime, implementation, and macOS acceptance remain open.
