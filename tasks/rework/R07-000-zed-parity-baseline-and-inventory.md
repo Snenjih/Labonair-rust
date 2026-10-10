@@ -4868,6 +4868,62 @@ Next safe task: Complete this Terminal clipboard action-classification slice, th
 - Passed `git diff --check`; docs (43 normative documents and 218 Markdown files); agents (10 request routes); knowledge (including capability, product catalog, workflow, Settings, visual-evidence, automation, release, and reform freshness); Settings (7 areas and 101 registered UI fields); and rework queue (46 tasks; R07-000 remains earliest active) verification scopes.
 - No Rust build, tests, native clipboard dispatch, clipboard-type/input check, Settings save/reload, or visual check was run for this documentation-only slice. Static source and existing tests were inspected, not run. Native clipboard behavior, platform shortcut reachability, paste sanitation effects, and paired macOS acceptance remain R07-000 exit gates. Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+## Pre-change contract — Terminal scroll actions
+
+```text
+Request: Classify the six default-bound Terminal scroll actions for line, page, and top/bottom navigation, including pinned alternate-screen and inline-block behavior and Labonair scrollback routes.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: Six default-macOS action rows, platform bindings and eight JetBrains profile entries; pinned TerminalView/model scroll semantics, alternate-screen propagation, inline-block offset handling; Labonair wheel/scrollbar/session routes and history limits; the related max-scroll-history Setting row; packet/index, Terminal and Settings crosswalks, normative summary, and this task.
+Out of scope: Adding actions/keybindings, changing wheel/scrollbar semantics, terminal scrollback limits or persistence, vi-mode behavior, application key dispatch, UI layout, or starting R07-001/R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned TerminalView scroll action handlers, terminal model scroll events, six action/keymap declarations, eight JetBrains overlay rows, `terminal.max_scroll_history_lines`; Labonair Workspace Terminal view, TerminalSession/Emulator scrolling, `terminal_scrollback`, persisted session scrollback, and local default keymap.
+
+Owner module: Pinned TerminalView owns action dispatch/viewport behavior and Terminal owns scrollback offsets. Labonair `labonair-terminal` owns session/emulator scrollback; Workspace embeds the view and input/scroll controls.
+Canonical capability crate: `labonair-terminal`; `labonair-workspace` owns the active Terminal view and its pointer handlers.
+Canonical user entry point: Pinned Terminal-scoped line/page/top/bottom key bindings; Labonair currently exposes Terminal wheel, scrollbar, and scroll APIs.
+Alternate entry points: Pinned JetBrains keymap overrides for line and page actions; mouse-wheel and scrollbar movement. Do not recast input keys forwarded to the shell as app scroll actions.
+Public typed contract: Pinned `terminal::{ScrollLineUp, ScrollLineDown, ScrollPageUp, ScrollPageDown, ScrollToTop, ScrollToBottom}`; local `Scroll`/session/emulator interfaces remain unchanged.
+Events: Pinned model scroll events update the view; no event changes proposed.
+Registry contributions: Preserve six action IDs, platform binding/context cells, and all eight existing macOS/Linux JetBrains profile entries. No local action or registry contribution.
+Settings: Classify `SET-terminal-terminal-max-scroll-history-lines` (pinned default 10,000) against Labonair live `terminal_scrollback` (default 5,000) and persisted `session_scrollback_lines` (default 1,000); do not invent direct schema equivalence.
+Persistence: Scroll offset is transient. Labonair persists/replays a bounded local session scrollback; this differs from the pinned live max-history setting and must be recorded as current state.
+Migration impact: None in this documentation slice. Document differences in action availability, available history, and local persistence only.
+Commands and keymap: Preserve default macOS `shift-up/down`, `shift-pageup/pagedown` plus `cmd-up/down`, `shift-home/end` plus `cmd-home/end`; Linux/Windows `shift-up/down`, `shift-pageup/pagedown`, and `shift-home/end`. Preserve eight JetBrains profile rows: four each for macOS and Linux/Windows.
+Notifications: None.
+UI-kit components: No visual edits; record the existing local scroll controls and pinned TerminalView path only.
+User workflow: Move one line, one page, or to the oldest/newest visible terminal history while output continues and while an inline block may extend below the cursor.
+Failure/cancellation/retry behavior: Empty history, output arriving during navigation, top/bottom boundaries, block-below-cursor viewport, selection preservation, active alternate-screen app, unavailable retained history, close/reopen replay, and local/remote sessions remain acceptance cases.
+Security boundary: No new authority; keyboard scroll must not send unintended control bytes to the foreground process.
+Performance budget: No runtime change.
+
+Implementation order: Inspect pinned handlers and the alternate-screen/block branches; enumerate default and JetBrains keymap occurrences; trace local session/engine scroll and history settings; update six rows and the one Settings effect; add packet and crosswalk links; run docs/agents/knowledge/Settings/queue and focused binding/runtime-route audits.
+Focused tests: Not applicable to documentation-only change; do not add or run tests.
+Contract/integration tests: No runtime contract changed.
+Persistence/migration tests: No tests changed; retained history, scope, and replay remain evidence gaps.
+Command/surface tests: Six pinned native shortcuts and focus/context resolution remain runtime acceptance items.
+Visual states: No UI edits; top, bottom, intermediate offset, active output, alternate screen, block below cursor, persisted reopen, and narrow Terminal states require paired macOS evidence.
+Security/negative tests: No new boundary; later acceptance should ensure scroll shortcuts do not reach shell input unexpectedly.
+Performance measurement: Not applicable.
+Workspace gates: Diff check; docs, agents, knowledge, Settings, queue; focused six-action binding and JetBrains overlay audit, local scroll-route and Settings audit.
+Documentation updates: Terminal scroll action packet, six action rows, related history-limit Setting effect, parity index, Terminal and Settings crosswalks, normative parity summary, and this task.
+Current status: Pending focused pinned scroll/action, profile, local session, and history-setting audit.
+Target status: Line/page/top/bottom semantics, alternate-screen/block behavior, bindings/overlays, history limits, local routes and parity gaps documented; native action dispatch and paired macOS acceptance remain open.
+Evidence links: Pinned TerminalView line/page/top/bottom handlers, terminal model scroll methods, platform keymaps/JetBrains overlays, default max-scroll history; Labonair Workspace Terminal view, session/emulator scroll interface, and scrollback settings.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Existing sources/tests were inspected, not run; native keyboard/scroll behavior and exact page sizing were not observed.
+Remaining migration edges: No six-action dispatch route/default shortcuts in Labonair; scrollback-limit and persistence settings differ; pinned alternate-screen propagation and inline-block offsets need native acceptance.
+Failed/unavailable gates: Rust build, native shortcuts, history replay, alternate-screen behavior, and paired visual evidence remain R07-000 exit gates.
+Next safe task: Complete this Terminal scroll action-classification slice, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify Terminal scroll actions
+
+- Added [`action-classification-terminal-scroll.md`](../../docs/parity/action-classification-terminal-scroll.md) for six Terminal line/page/top/bottom actions and the related max-history Setting.
+- Preserved each macOS/Linux/Windows action binding and context. The focused audit confirmed eight JetBrains profile entries (four macOS, four shared Linux/Windows), all packet/index/crosswalk links, and the distinction between pinned alternate-screen/inline-block behavior and Labonair's wheel/session routes.
+- Compared pinned `terminal.max_scroll_history_lines` (10,000) with Labonair live `terminal_scrollback` (5,000) and persisted/replayed `session_scrollback_lines` (1,000). No local named Terminal scroll action or matching default binding was found.
+- Passed `git diff --check`; docs (43 normative documents and 219 Markdown files); agents (10 request routes); knowledge (including capability, product catalog, workflow, Settings, visual-evidence, automation, release, and reform freshness); Settings (7 areas and 101 registered UI fields); and rework queue (46 tasks; R07-000 remains earliest active) verification scopes.
+- No Rust build, tests, native shortcut dispatch, alternate-screen/inline-block check, scrollback replay, or visual check was run for this documentation-only slice. Static source and existing tests were inspected, not run. Native page/boundary behavior and paired macOS scroll states remain R07-000 exit gates. Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
 ## Pre-change contract — default-bound ProjectPanel actions
 
 ```text
