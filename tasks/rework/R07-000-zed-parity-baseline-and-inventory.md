@@ -1906,6 +1906,95 @@ Next safe task: Continue R07-000 with the next unclassified action family.
   unstarted.
 - Next safe task: continue R07-000 with the next unclassified action family.
 
+## Pre-change contract — classify Workspace dock visibility actions
+
+Request: Independently classify the Workspace close-active-dock, toggle-all-
+docks, and per-edge dock visibility actions, including focus, restoration,
+keybindings, and current Labonair routes.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `CloseActiveDock`, `ToggleAllDocks`, `ToggleBottomDock`,
+`ToggleLeftDock`, and `ToggleRightDock` under their stable action IDs.
+Out of scope: The unbound `CloseAllDocks` registry action, new keybindings or
+controls, changing panel-location settings, implementation, R07-001/R09, and
+claims of native interaction or visual acceptance.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, feature-crosswalk.md, capabilities.md,
+Workspace, Dock, statusbar panel controls, and current tab-close command.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns dock
+edge visibility, active-panel focus, remembered open positions, and layout
+persistence. Panel owners provide edge placement and enabled/active state.
+Canonical user entry point: Pinned Workspace-context keybindings. `CloseActiveDock`
+uses macOS `Cmd+W` and Linux/Windows `Ctrl+F4` or `Ctrl+W`; `ToggleAllDocks`
+uses macOS `Alt+Cmd+Y`, Linux `Ctrl+Alt+Y`, and Windows `Ctrl+Shift+Y`;
+left/right/bottom toggles use macOS `Cmd+B`, `Cmd+Alt+B`/`Cmd+R`, `Cmd+J`,
+and Linux/Windows `Ctrl+B`, `Ctrl+Alt+B`, `Ctrl+J` respectively. Labonair has
+per-panel statusbar buttons and `Toggle Sidebar`, which toggles the primary
+dock; its `Cmd+W` palette command closes the current tab.
+Public typed contract: Workspace closes the focused open dock, toggles a
+specific edge, or closes all open docks and restores the last remembered open
+edge set when all are closed. Closing an active dock without dock focus
+propagates the action. No new event, registry, or typed contract is required
+for this inventory slice.
+Events and registry contributions: Existing Workspace action handlers own
+visibility changes. Statusbar panel buttons and existing Workspace commands
+remain their current owner contributions; add no parallel shell action table.
+Settings: No new setting. Existing panel-edge settings determine placement;
+the per-edge toggle actions are independent of panel identity. Labonair's
+`Toggle Sidebar` currently targets its configurable primary dock.
+State and persistence: Preserve active panel, edge, size, and unrelated docks
+when toggling one edge. Toggling all remembers which edges were open before
+closing them; confirm whether this restoration memory survives reload rather
+than implying persistence. Labonair stores per-dock open and active-panel state
+in Workspace layout snapshots.
+Notifications and failure: Closing when no dock is focused propagates rather
+than reporting an error. Toggling all with no open or remembered docks is a
+no-op. Empty/disabled edges, zoom, focus transfer, and panel visibility need
+acceptance coverage; no notification is expected for a normal toggle.
+Security: No external path, process, or secret access.
+UI-kit: Reuse registered panel statusbar controls and shared menus; create no
+local dock toggle buttons or close-button style.
+Focused inspection: Trace the five action declarations, handlers, platform
+bindings, remembered-position flow, panel activation/focus behavior, current
+statusbar/menu/palette routes, `Cmd+W` local command, and layout persistence.
+Visual evidence: Pending paired macOS checks for each edge, all-dock
+close/restore, empty and zoomed docks, focus transfer, and narrow windows.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, and exact action/route/persistence audit.
+Documentation updates: Five action register rows, dock visibility packet,
+Workspace and keymap crosswalks, parity index, normative parity scope if
+needed, and this task's progress record.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Native macOS interaction is unavailable here.
+Next safe task: Continue R07-000 with the next unclassified action family.
+
+## Progress record — 2026-10-10 — Workspace dock visibility action classification
+
+- Added [`../../docs/parity/action-classification-workspace-dock-visibility.md`](../../docs/parity/action-classification-workspace-dock-visibility.md)
+  for five Workspace actions: closing the focused dock, toggling each edge,
+  and hiding/restoring all open edges with the remembered set.
+- Recorded the focus propagation for Close Active Dock, per-edge activation
+  and focus behavior, all-dock restore semantics, and the unresolved reload
+  behavior of the pinned in-memory remembered set. Kept unbound `CloseAllDocks`
+  outside this default-map action family.
+- Cross-checked Labonair's panel statusbar buttons, the primary-dock Toggle
+  Sidebar command, persisted per-edge open/active state, and local `Cmd+W` tab-close
+  command. No fixed-edge, all-docks, or close-active keyboard route exists in
+  the current Workspace command map.
+- Updated five action rows, Workspace and keymap crosswalks, the parity index,
+  normative parity scope, and this task's pre-change/progress records. The
+  focused action/route/persistence audit passed.
+- Passed `python3 scripts/check_documentation.py` (43 normative documents,
+  178 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active), and
+  `git diff --check`.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, and tests. They remain R07-000 exit gates. Pinned keyboard
+  dispatch, active-dock focus behavior, all-dock restoration after reload,
+  platform interaction, and paired native visual evidence remain open.
+  Same-session analysis is independent redevelopment, not separated-room
+  clean-room work. R07-001 and R09 remain unstarted.
+- Next safe task: continue R07-000 with the next unclassified action family.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

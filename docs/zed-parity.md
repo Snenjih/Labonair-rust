@@ -305,7 +305,12 @@ pending. The independent
 records six active/all-open resize and reset actions, their pixel-step and
 font-size behavior, the JSON-only resize-all-panels setting, and Labonair's
 per-edge pointer resize route; keyboard dispatch and native interaction remain
-pending. All other action
+pending. The independent
+[`Workspace dock visibility action crosswalk`](parity/action-classification-workspace-dock-visibility.md)
+records the focused-dock close, three edge toggles, remembered all-dock
+restoration, the local primary-sidebar/statusbar routes, and the local tab
+close key distinction; focus, dispatch, and reload behavior remain pending.
+All other action
 semantics and owner routes, profile selection/reload, user overrides, and
 macOS/Linux/Windows
 runtime evidence also remain open; these static inventories are not parity

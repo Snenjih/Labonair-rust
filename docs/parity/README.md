@@ -19,8 +19,9 @@ source-side research. It records current evidence without claiming parity.
   packets currently cover 23 Search actions, 22 Pane actions, one Editor Go
   to Line action, one File Finder action, two Workspace Open/OpenFiles
   actions, one Workspace New Window action, one Workspace New File action,
-  one Workspace New Terminal action, and one Workspace Open With System
-  action, and six Workspace dock-sizing actions;
+  one Workspace New Terminal action, one Workspace Open With System action,
+  six Workspace dock-sizing actions, and five Workspace dock visibility
+  actions;
   pinned dispatch and native interaction acceptance remain open for those and
   all other actions.
 - [`action-classification-search.md`](action-classification-search.md) —
@@ -65,6 +66,10 @@ source-side research. It records current evidence without claiming parity.
   independently stated Workspace dock resize/reset behavior, six action
   bindings, the JSON-only resize-all-panels setting, and Labonair's existing
   pointer route and per-edge sizing model.
+- [`action-classification-workspace-dock-visibility.md`](action-classification-workspace-dock-visibility.md) —
+  independently stated active-dock close, per-edge toggles, all-dock
+  restoration, keybindings, and Labonair's panel/statusbar and primary-dock
+  routes.
 - [`keymap-overlay-requirements.md`](keymap-overlay-requirements.md) — stable
   IDs for 1,402 bindings across seven macOS base-profile overlays, conditional
   Vim/Helix bindings, and macOS-specific overrides. Profile behavior, action
