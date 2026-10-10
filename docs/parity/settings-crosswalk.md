@@ -11,9 +11,9 @@ implementation details. `Partial` means the owner or some matching values
 exist, not that the page is accepted.
 
 The field-level register [`settings-requirements.md`](settings-requirements.md)
-assigns stable IDs to 382 static field/control rows, 43 typed per-language
-options, 44 packaged language profiles, 10 dynamic setup pages, and 7 shared
-Settings flows. IDs identify scope only: each field's exact owner, runtime
+assigns stable IDs to 383 static field/value rows, including JSON-only values,
+43 typed per-language options, 44 packaged language profiles, 10 dynamic setup
+pages, and 7 shared Settings flows. IDs identify scope only: each field's exact owner, runtime
 effect, validation, persistence, and acceptance evidence remain open.
 
 ## Page and owner crosswalk
@@ -26,7 +26,7 @@ effect, validation, persistence, and acceptance evidence remain open.
 | 4 | Editor | Editor | Typography, wrapping, line numbers, indentation, Vim, caret and current-line behavior, and the existing global format-on-save switch | Partial; the consumer-backed global format-on-save switch is available under Formatting & Save; implement and verify remaining behavior before exposing other values |
 | 5 | Languages & Tools | Editor, Snippets, planned Extensions | Language services, toolchains, formatters, language-specific support | Missing; language-service lifecycle and extension owner are dependencies |
 | 6 | Search & Files | File Finder, Filesystem, Explorer, SFTP | File search, Explorer behavior, SFTP browser presentation | Partial; map search and Explorer settings, retain SFTP values with their owning workflow |
-| 7 | Window & Layout | Workspace | Startup/session choices, tab placement, zen presentation; runtime layout is Workspace-owned | Partial; define the universal tab/split/layout setting boundary and persistence |
+| 7 | Window & Layout | Workspace | Startup/session choices, tab placement, zen presentation, and the JSON-only dock resize policy | Partial; define the universal tab/split/layout setting boundary, dock policy scope, and persistence |
 | 8 | Panels | Workspace and panel owners | Panel visibility, docking, and panel presentation | Missing as a Settings page; depends on the accepted dock and owner-contribution contract |
 | 9 | Debugger | Planned Debugger | No current debugger settings owner | Missing; debugger capability, protocol, lifecycle, and settings contract come first |
 | 10 | Terminal | Terminal, Workspace | Shell, typography, cursor, scrollback, input, environment, and close behavior | Partial; finish terminal value/effect coverage and visual states |

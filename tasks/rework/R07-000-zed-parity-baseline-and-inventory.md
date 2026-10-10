@@ -1814,6 +1814,98 @@ Next safe task: Continue R07-000 with the next unclassified action family.
   evidence remain open. Same-session analysis is independent redevelopment.
   R07-001 and R09 remain unstarted.
 
+## Pre-change contract — classify Workspace dock sizing actions
+
+Request: Independently classify the six pinned Workspace active/open dock
+increase, decrease, and reset actions, their pixel arguments, platform routes,
+related Settings, and Labonair's persisted dock-resize controls.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `DecreaseActiveDockSize`, `DecreaseOpenDocksSize`,
+`IncreaseActiveDockSize`, `IncreaseOpenDocksSize`, `ResetActiveDockSize`, and
+`ResetOpenDocksSize` under their stable action requirement IDs.
+Out of scope: Adding keyboard actions, changing dock layout or min/max rules,
+changing Settings values, starting R07-001/R09, or claiming visual acceptance.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, settings-requirements.md,
+feature-crosswalk.md, Workspace, Dock, and panel owner contracts.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns dock
+visibility, focus, edge geometry, size bounds, reset behavior, and layout
+persistence. Registered panel owners provide their default/minimum sizes.
+Canonical user entry point: Pinned Workspace keybindings. macOS/Linux use
+`Ctrl+Alt` plus `-`, `=`, `0`, `_`, `+`, or `)` for active/all-open actions.
+Windows has active-dock `Shift+Alt+-`/`Shift+Alt+=`, active reset `Alt+R`, and
+open-dock reset `Shift+Alt+0`; open-dock increment/decrement have no binding.
+Labonair currently resizes the pointer-selected dock by dragging its handle
+and resets one dock by double-clicking its handle.
+Public typed contract: Pinned Workspace actions carry `px` for incremental
+changes. `px=0` resolves to the UI font size. Workspace applies one signed
+delta to the focused open dock or every open dock, or resets the eligible
+active panels to their registered default size. No new event, registry, or
+action contract is required for this inventory slice.
+Events and registry contributions: Existing Workspace action handlers mutate
+Workspace-owned dock state. Panel providers contribute their view/default
+size and constraints; no new provider registration is needed.
+Settings: Cross-reference `ui_font_size` (16, user scope) for zero-argument
+increments. Record `workspace.resize_all_panels_in_dock` (default `["left"]`)
+as a pinned JSON setting currently missing from the Settings register; leave
+its supported scope pending unless the source proves it. Labonair has no
+matching setting, and its dock stores one size per edge for all panels.
+State and persistence: Pinned resize updates the active panel, or panels using
+the same sizing mode in configured edges. Reset-active targets the focused
+open dock; Reset-open targets every dock with a visible panel. Preserve open
+state and active panel, respect min/max/workspace bounds, and persist through
+the Workspace layout. Labonair persists one size for each edge dock; keyboard
+adjust/reset-all operations are absent.
+Notifications and failure: A missing focused dock is a no-op for active-dock
+actions; no visible dock is a no-op for all-open actions. Bounds and empty
+docks must not disturb other layout state. No notification is expected for a
+no-op; do not add error messages in this inventory slice.
+Security: No external process, path, or secret access. Do not change project
+trust or unrelated workspace state.
+UI-kit: Reuse existing dock resize handles and shared panel surfaces; add no
+local controls or resize handle styling.
+Focused inspection: Trace all six action parameters, handlers, platform
+bindings, Settings dependencies, reset-all behavior, local drag/double-click
+route, bounds, and layout persistence. Static source is not key dispatch or
+visual acceptance.
+Visual evidence: Pending matched macOS comparison for left/right/bottom docks,
+active/all-open resize and reset, panel focus, bounds, and persisted reload.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, exact action/settings/route audit.
+Documentation updates: Six action register rows, dock-sizing packet,
+`ui_font_size` and resize-all Settings crosswalk, Workspace/Settings feature
+crosswalk, normative parity scope if needed, and R07-000 progress.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Native macOS interaction is unavailable here.
+Next safe task: Continue R07-000 with the next unclassified action family.
+
+## Progress record — 2026-10-10 — Workspace dock sizing action classification
+
+- Added [`../../docs/parity/action-classification-workspace-dock-sizing.md`](../../docs/parity/action-classification-workspace-dock-sizing.md)
+  covering six active/all-open dock resize and reset actions, their platform
+  bindings, `px=0` UI-font-size fallback, focus and bounds behavior, and
+  `workspace.resize_all_panels_in_dock`.
+- Added `SET-settings-json-only-workspace-resize-all-panels-in-dock` to the
+  Settings requirements inventory. Its pinned default is `["left"]`; the
+  Settings scope remains pending. Labonair stores one persisted dimension per
+  edge dock and currently exposes pointer drag and per-dock double-click reset,
+  with no matching keyboard actions.
+- Updated all six action rows, Settings and feature crosswalks, parity index,
+  and normative parity scope. The focused audit passed for all six action IDs,
+  the new Settings ID, current inventory counts, packet references, and
+  crosswalk links.
+- Passed `python3 scripts/check_documentation.py` (43 normative documents,
+  177 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active), and
+  `git diff --check`.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, and tests. They remain R07-000 exit gates. Pinned keyboard
+  dispatch, platform interactions, persisted reload behavior, and paired
+  native visual evidence remain open. Same-session analysis is independent
+  redevelopment, not separated-room clean-room work. R07-001 and R09 remain
+  unstarted.
+- Next safe task: continue R07-000 with the next unclassified action family.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

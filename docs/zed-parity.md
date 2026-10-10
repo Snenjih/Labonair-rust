@@ -300,6 +300,11 @@ pending. The independent
 records the ProjectPanel and InvalidBuffer contexts, local-path default-app
 handoff, Windows deprecated-alias binding, and current Labonair Preview versus
 Reveal routes; native alias dispatch and external-app acceptance remain
+pending. The independent
+[`Workspace dock sizing action crosswalk`](parity/action-classification-workspace-dock-sizing.md)
+records six active/all-open resize and reset actions, their pixel-step and
+font-size behavior, the JSON-only resize-all-panels setting, and Labonair's
+per-edge pointer resize route; keyboard dispatch and native interaction remain
 pending. All other action
 semantics and owner routes, profile selection/reload, user overrides, and
 macOS/Linux/Windows

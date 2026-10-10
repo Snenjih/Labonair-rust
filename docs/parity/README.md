@@ -20,7 +20,7 @@ source-side research. It records current evidence without claiming parity.
   to Line action, one File Finder action, two Workspace Open/OpenFiles
   actions, one Workspace New Window action, one Workspace New File action,
   one Workspace New Terminal action, and one Workspace Open With System
-  action;
+  action, and six Workspace dock-sizing actions;
   pinned dispatch and native interaction acceptance remain open for those and
   all other actions.
 - [`action-classification-search.md`](action-classification-search.md) —
@@ -61,6 +61,10 @@ source-side research. It records current evidence without claiming parity.
   independently stated intent, Workspace ownership, ProjectPanel and
   InvalidBuffer contexts, the Windows deprecated-alias route, and Labonair's
   missing selected-path default-app action.
+- [`action-classification-workspace-dock-sizing.md`](action-classification-workspace-dock-sizing.md) —
+  independently stated Workspace dock resize/reset behavior, six action
+  bindings, the JSON-only resize-all-panels setting, and Labonair's existing
+  pointer route and per-edge sizing model.
 - [`keymap-overlay-requirements.md`](keymap-overlay-requirements.md) — stable
   IDs for 1,402 bindings across seven macOS base-profile overlays, conditional
   Vim/Helix bindings, and macOS-specific overrides. Profile behavior, action
@@ -79,10 +83,11 @@ source-side research. It records current evidence without claiming parity.
   implementation brief or proof of user-visible behavior.
 - [`titlebar-tab-strip.md`](titlebar-tab-strip.md) — independent titlebar tab
   appearance, input/state matrix, ownership, and evidence packet.
-- [`settings-requirements.md`](settings-requirements.md) — 486 stable IDs for
-  static Settings fields, per-language values, shipped profiles, dynamic setup
-  pages, and core Settings flows. Field effects, exact owners/routes, runtime
-  behavior, and visual acceptance remain open.
+- [`settings-requirements.md`](settings-requirements.md) — 487 stable IDs for
+  383 static field/value rows, including four JSON-only settings, per-language
+  values, shipped profiles, dynamic setup pages, and core Settings flows.
+  Field effects, exact owners/routes, runtime behavior, and visual acceptance
+  remain open.
 - [`settings-crosswalk.md`](settings-crosswalk.md) — independent Settings
   page-to-owner map and implementation order. It records page ownership;
   field-level acceptance remains incomplete.
