@@ -4229,6 +4229,113 @@ continue R07-000; do not begin R07-001 or R09.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin
   R07-001 or R09.
 
+## Pre-change contract — classify task-definition file entry actions
+
+Request: Classify the bound Open Worktree Setup Tasks action and the related
+global/project task and debug-configuration file routes.
+Request type: Task/debug configuration entry and ownership inventory; no
+runtime change, Task runner, debugger session, or new setting.
+In scope: `ACT-MACOS-zed-OpenWorktreeSetupTasks`,
+`ACT-REGISTRY-LINUX-zed-OpenTasks`,
+`ACT-REGISTRY-LINUX-zed-OpenDebugTasks`,
+`ACT-REGISTRY-LINUX-zed-OpenProjectTasks`, and
+`ACT-REGISTRY-LINUX-debugger-OpenProjectDebugTasks`; distinguish user-global
+tasks, user-global debug scenarios, project tasks, project debug scenarios,
+and the worktree setup task example.
+Out of scope: Task execution, shell integration, debugger lifecycle/protocols,
+task discovery/picker behavior, task profile settings, and runtime changes to
+Task, Debugger, Workspace, Settings, Editor, Keymap, or native menus;
+R07-001/R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: `terminal.tasks` and `debugger` feature crosswalks, pinned
+action/keymap inventories, global and project file ownership contracts,
+Workspace Editor file-open behavior, and current Task/Debugger capability
+inventory.
+Owner module: Task definitions belong to the planned Tasks owner; debug
+scenario definitions belong to the planned Debugger owner. Workspace hosts
+the files as Editor items, while Keymap owns the bound Worktree Picker
+shortcut. No current Labonair Task or Debugger owner/crate is established;
+their canonical contracts remain an explicit implementation prerequisite.
+Canonical capability crates: None exists for Task or Debugger in the current
+tree. Do not assign these workflows to Settings or create a facade in this
+entry-only inventory. Workspace's existing Editor owns document presentation.
+Canonical user entry points: Global `zed: open tasks` and `zed: open debug
+tasks` actions open user configuration files. Run > Edit tasks.json and
+Edit debug.json open project files. `cmd-shift-c`/`ctrl-shift-c` on macOS/Linux
+and `ctrl-shift-,` on Windows in WorktreePicker contexts opens project tasks
+and supplies a create-worktree hook example.
+Public typed contracts: All five actions take no arguments. Global task/debug
+actions open or initialize their user config JSON documents. Project actions
+open or initialize `.zed/tasks.json` and `.zed/debug.json` in the active
+project. The worktree setup action opens `.zed/tasks.json` and inserts one
+safe create-worktree example only when the file has no existing hook.
+State and persistence: Global task/debug definitions persist in user config;
+project task/debug definitions persist in their respective worktree files.
+The worktree setup entry mutates project task JSON only to seed a missing hook
+example. Task execution state and debugger session state are out of scope.
+Events and registry contributions: No new event or registry is needed to
+classify file-open routes. Future Task/Debugger discovery and execution
+contracts require their own owner and consumer-count analysis.
+Settings: No setting/value additions. The global file's initial contents are
+separate from Settings values.
+Notifications and failure: Project-scoped open with no visible project
+worktree publishes an explanatory notification. File creation/open failures
+use Workspace errors; malformed content remains in the owning Task/Debugger
+validation contract.
+UI-kit: Config JSON uses the Workspace Editor; menu/picker controls use their
+own surface and shared UI-kit components.
+Allowed dependency changes: None. Compatibility code: none; do not add a
+second Task/Debugger file editor or move configuration ownership to Settings.
+Focused verification: Match all five action rows, global/project/worktree
+targets, three-platform shortcut contexts, project/no-project behavior,
+initial file creation, existing-hook suppression, and current Labonair owner
+and route absence. Keep task definitions separate from Settings and from
+runtime task/debug execution.
+Visual evidence: Pending paired macOS Run-menu project file entry, Worktree
+Picker route, created JSON editor item, existing-hook behavior, and no-project
+notification. Record OS, active project/worktree, target file, and focus.
+Workspace gates: Diff check, documentation checker, docs verification scope,
+queue check, and focused pinned-action/file-target/current-owner audit. Rust
+gates remain R07-000 exit gates; no implementation change is planned.
+Documentation updates: One bound action row; four registered-unbound task and
+debug rows; task-definition entry packet, action counts/index, feature
+crosswalks, normative parity note, and this task contract/progress record.
+Security impact: N/A; no runtime file access changes. Project config files
+remain project-scoped. Performance impact: N/A; no runtime change.
+Known limitations: Same-session source research and independent requirements
+are redevelopment, not separated-room clean-room implementation. Canonical
+Task/Debugger crates, native dispatch, file behavior, no-project recovery, and
+paired macOS acceptance remain unresolved.
+Next safe task: Complete this bounded task-definition entry classification,
+then continue R07-000; do not begin R07-001 or R09.
+
+## Progress — classify task-definition file entry actions
+
+- Classified the Worktree Setup Tasks shortcut and four related global and
+  project task/debug JSON routes in
+  [`action-classification-task-definition-entry.md`](../../docs/parity/action-classification-task-definition-entry.md).
+  The packet records each file scope, initial-file behavior, project
+  worktree selection, conditional hook insertion, and the absent Labonair
+  Task/Debugger owners and routes.
+- Updated the bound and registered-unbound action ledgers, task and debugger
+  feature crosswalks, parity packet index, and normative Zed parity summary.
+- Focused source audit passed for the pinned global and project file targets,
+  project/no-folder recovery, conditional worktree-hook seeding, and
+  macOS/Linux/Windows shortcut actions in the WorktreePicker contexts. No
+  corresponding local action routes or Task/Debugger owner crates exist.
+  Native dispatch, execution, debug launch, and paired visual evidence remain
+  open.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py`
+  (43 normative documents and 198 Markdown files),
+  `python3 scripts/verify.py --scope docs`, and
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest
+  active). Rust gates were not run for this documentation-only slice and remain
+  R07-000 exit gates.
+- Same-session source research and independently written requirements are
+  redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin
+  R07-001 or R09.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

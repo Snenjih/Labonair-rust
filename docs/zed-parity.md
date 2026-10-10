@@ -357,6 +357,11 @@ default bindings as separate targets, including menu, Welcome, Settings, and
 shortcut routes. Labonair's extra management shortcut, missing raw-file
 shortcut/menu entry, and absent bundled-document route remain open; native
 dispatch and paired Keymap acceptance are pending. The independent
+[`Task definition entry action crosswalk`](parity/action-classification-task-definition-entry.md)
+records user-global task/debug files, project `.zed` definitions, and the
+Worktree Picker setup-hook route. Task and Debugger owners/crates are absent in
+Labonair, as are their file actions and native acceptance evidence; task
+execution and debug launch remain unverified. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

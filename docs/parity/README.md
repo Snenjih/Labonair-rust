@@ -22,7 +22,9 @@ source-side research. It records current evidence without claiming parity.
   Application/window lifecycle actions (plus the related unbound Show All
   action), one Extensions action, two Settings entry actions (plus three
   related unbound Settings actions), two Keymap entry actions (plus one
-  related unbound default-keymap action), one Editor Go to Line action,
+  related unbound default-keymap action), one task-definition entry action
+  (plus four related unbound global/project configuration actions),
+  one Editor Go to Line action,
   one File Finder action, two Workspace Open/OpenFiles actions, one Workspace
   New Window action,
   one Workspace Add Folder to
@@ -73,6 +75,9 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-keymap-entry.md`](action-classification-keymap-entry.md) —
   independently stated Keymap management, editable user keymap JSON, and
   bundled-default entry routes, with current Labonair command and menu gaps.
+- [`action-classification-task-definition-entry.md`](action-classification-task-definition-entry.md) —
+  independently stated global, project, and worktree task/debug configuration
+  file routes, with missing Task/Debugger owners and local entry points.
 - [`action-classification-workspace-open.md`](action-classification-workspace-open.md) —
   independently stated intent, Workspace/Editor ownership, distinct general
   Open and platform Open Files routes, related Settings targets, and runtime
