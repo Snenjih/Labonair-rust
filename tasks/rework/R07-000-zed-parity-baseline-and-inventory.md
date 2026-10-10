@@ -4944,3 +4944,62 @@ Next safe task: Classify and document Git diff/review actions, then continue R07
 - Rust gates, native diff and review behavior, persisted setting reload, and paired visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
 - Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+## Pre-change contract — Git file history and navigation actions
+
+```text
+Request: Independently classify pinned Git blame, modified-file opening, file-history, commit-ref viewing, file-at-HEAD, file opening, and hosting-permalink actions against Labonair's current Git contracts and surfaces.
+Request type: R07-000 requirements inventory; documentation only.
+In scope: Two bound actions (Blame, OpenModifiedFiles); six related registered-unbound actions (CopyFilePermalink, FileHistory, OpenFileAtHead, OpenFilePermalink, ViewCommit, ViewFile); Git inline-blame settings; GitGraph path-history resolution; active editor/GitPanel file targeting; Git hosting permalink provider; current Labonair GitService/GitGraphService, Source Control history, Graph view, file preview, and notification routes.
+Out of scope: Implementing blame, hosting providers, permalink APIs, file-history/ref modals, or bulk open actions; global Git graph action inventory; file-diff/branch-review work classified in the sibling packet; changing settings/keymaps; runtime/visual parity claims; and R09 work.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Editor consumes Git blame; Git owns repository data; Workspace hosts file tabs and ref modal; Git Graph owns commit graph/history surface; Git host provider registry resolves links; Source Control remains a Git-owned sibling.
+
+Owner module: Git owns blame/history/commit/ref facts and hosting URL generation; Editor presents blame; Workspace owns file tab navigation/permalink entry points; Git Graph presents history; Source Control presents its existing History list.
+Canonical capability crate: labonair-git owns the typed GitService and GitGraphService; labonair-git-transport supplies adapters; labonair-panel-scm and labonair-panel-git-graph are Git-owned view siblings; labonair-workspace and labonair-editor are consumers.
+Canonical user entry point: Pinned Blame and OpenModifiedFiles act in Editor; FileHistory targets the focused GitPanel row or active Editor file; ViewCommit opens a Git ref-entry modal; ViewFile opens the selected GitPanel file; file permalink actions are in Workspace file-tab context menus.
+Alternate entry points: GitPanel row menu for file history and View File, commit-diff file context menu for OpenFileAtHead, and GitGraph's path history tab. Labonair currently has a Source Control Changes/History switch, row-selected WorkingTree/Commit ProjectDiff, and global GitGraph tab.
+Public typed contract: Labonair GitService exposes repository status, log, per-file diff, and full commit_diff; GitGraphService exposes repository log and commit detail/diff helpers. It has no blame, per-file log-source, commit-ref show/detail, hosting permalink, or bulk-open operation. Do not alter contracts in this inventory slice.
+Events: Existing ScmEvent opens Workspace ProjectDiff; no new event proposed.
+Registry contributions: No registry/action/command changes in this slice. Pinned file permalink generation consults a multi-provider Git hosting registry; if implemented later, provider discovery belongs to the Git capability, not a shell URL table.
+Settings and scope: Blame presentation relates to git.inline_blame.enabled, location, delay_ms, padding, min_column, show_commit_summary, and git.blame.show_avatar. Record current defaults and routes through the existing settings IDs; do not add or change settings.
+Persistence: Git history and blame are repository-derived; selected GitGraph identity is Workspace item state. Permalink actions use current project/repository provider resolution and write only the generated URL to clipboard or open it externally. No new local persistence is proposed.
+Migration impact: None in this slice. Future blame/history/permalink work must establish Git typed contracts and owner-specific registry needs before wiring Editor, Workspace, Graph, and Source Control consumers.
+Commands: Blame, OpenModifiedFiles, CopyFilePermalink, FileHistory, OpenFileAtHead, OpenFilePermalink, ViewCommit, ViewFile.
+Default keymap: Blame and OpenModifiedFiles have Editor bindings; the six related actions are registered without default bindings. Preserve exact macOS/Linux/Windows contexts in the action catalog.
+Notifications: Pinned ref/file-permalink failures use transient toasts; Labonair user messages must use its statusbar notification center per product contract. No notification UI changes in this inventory slice.
+UI-kit components: No UI change. Future file/ref/blame controls must use labonair-ui-kit.
+User workflow: Toggle blame for a project file; open all modified Git files; open per-file commit history from the active editor or GitPanel; enter a ref to inspect a commit and its changed files; open the selected current project file from GitPanel or CommitView; and copy/open a provider permalink for a project file.
+Failure/cancellation/retry behavior: Record no active GitPanel/repository/file, non-Git or historic file, unsupported status, empty/invalid ref, ref preview/deep lookup failure, file absent at current HEAD, no hosting provider/remote, clipboard/browser failure, path-history reuse, and cancellation without losing the current Workspace state.
+Security boundary: Treat refs and repository-relative paths as typed Git inputs; resolve permalink host from repository remotes/provider policy; do not construct arbitrary URLs from untrusted remote text or expose credentials in copied/opened URLs.
+Performance budget: No runtime change. Blame and ref lookup are asynchronous; file/history views must avoid blocking the GPUI foreground thread and handle large repositories.
+
+Implementation order: Requirements packet only. Future work should define Git blame and path-log contracts, Git hosting provider discovery/permalink contract, then connect Editor, Workspace, Git Graph, and Source Control routes and preserve statusbar notification policy.
+Focused unit tests: Not applicable to this documentation-only change.
+Contract/integration tests: No tests changed or run.
+Persistence/migration tests: Not applicable; existing Git settings and Workspace item state remain unchanged.
+Command/surface tests: Not applicable; no runtime change.
+Visual states: Inline/gutter blame and its popover/statusbar details, all modified-file tabs, path history, ref picker preview/valid/invalid/cancel, commit view, current-file preview, provider permalink menu, loading/no repository/error, and narrow layout remain native acceptance requirements.
+Security/negative tests: Not applicable to this documentation-only change; future implementation must validate host-provider resolution, path scope, ref input, and clipboard/URL data.
+Performance measurement: Not applicable; no runtime change.
+Workspace gates: Diff check, documentation checker, docs verification scope, queue check, affected-table shape check, and focused pinned action/settings/provider plus Labonair owner-route audit.
+Documentation updates: New Git file-history/navigation packet, two bound and six registered-unbound rows, related blame Settings effects, parity packet index, Git and Git Graph capability crosswalks, normative parity summary, and this task record.
+Current status: Pending focused action, Settings, provider, and local owner-route audit.
+Target status: Static Git file/history requirements classified; native blame/history/ref/permalink interactions and paired macOS acceptance remain open.
+Evidence links: Pinned Editor blame toggler, GitUI bulk-open, GitGraph FileHistory, RefPickerModal/CommitView, Pane permalink menu and provider dispatch; Labonair Git services, GitGraph, Source Control history, and Workspace ProjectDiff route.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Static routes do not establish UI state, actual hosting-provider outcomes, or clipboard/browser behavior.
+Remaining migration edges: Git blame API and editor renderer; path-scoped history; ref-driven commit view; modified-file set semantics; host-provider registry/link safety; current-file preview routes; statusbar error reporting; and paired captures.
+Failed/unavailable gates: Rust, native runtime, and visual gates remain R07-000 exit gates.
+Next safe task: Classify and document Git file history/navigation, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify Git file history and navigation actions
+
+- Added [`action-classification-git-file-history.md`](../../docs/parity/action-classification-git-file-history.md) for two bound and six registered-unbound actions covering blame, bulk modified-file open, file history, ref-driven commit view, current-file navigation, and provider-backed permalinks.
+- Updated two bound and six unbound action rows, seven inline/blame setting effect rows, the parity packet index/count, Git and Git Graph capability crosswalks, normative parity summary, and this task record.
+- Focused pinned-source audit confirmed Blame toggles the Editor blame gutter; OpenModifiedFiles opens cached status entries classified as modified; FileHistory targets the selected GitPanel row or active Editor file and opens/reuses a path-scoped GitGraph; ViewCommit uses a ref modal and CommitView; OpenFileAtHead/ViewFile open project files in preview; permalink actions resolve a host URL and open/copy it.
+- Labonair has repository History and GitGraph views plus Commit-source ProjectDiff, but the Git contracts contain no blame, path-scoped log, arbitrary-ref CommitView, bulk modified-file open, or permalink provider operation. No matching local file action routes were found.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative documents and 207 Markdown files), `python3 scripts/verify.py --scope docs`, and `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active). Focused action/settings/crosswalk checks passed for two bound, six registered-unbound, and seven related settings rows; table shape passed for all 15 affected rows.
+- Rust gates, native blame/history/ref/permalink behavior, statusbar error recovery, and paired visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
+- Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.

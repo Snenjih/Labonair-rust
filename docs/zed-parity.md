@@ -414,6 +414,12 @@ review dispatch. Labonair has WorkingTree/Commit ProjectDiff display routes,
 but no diff-base or comparison-ref contract, split staged/unstaged sources, or
 branch-review route; native diff states and paired macOS acceptance remain
 open. The independent
+[`Git file history and navigation action crosswalk`](parity/action-classification-git-file-history.md)
+records blame/settings, modified-file bulk open, path-scoped history, ref-based
+CommitView, current-file navigation, and provider-backed file permalinks.
+Labonair has repository history/graph and commit-diff display, but no blame,
+path-history, ref-entry CommitView, bulk-open, or permalink route; native
+interaction and paired macOS acceptance remain open. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

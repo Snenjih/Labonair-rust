@@ -31,6 +31,7 @@ source-side research. It records current evidence without claiming parity.
   related registered-unbound actions), five Git remote-sync actions (plus two
   related registered-unbound actions), three Git branch selection/rename
   actions, two Git diff/review actions (plus eight related registered-unbound
+  actions), two Git file/history actions (plus six related registered-unbound
   actions), one Editor Go to Line action,
   one File Finder action, two Workspace Open/OpenFiles actions, one Workspace
   New Window action,
@@ -113,6 +114,9 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-git-diff-review.md`](action-classification-git-diff-review.md) —
   independently stated configured/HEAD/branch diffs, staged and unstaged
   views, active-file diff, diff-base persistence, and Agent branch review.
+- [`action-classification-git-file-history.md`](action-classification-git-file-history.md) —
+  independently stated blame, bulk modified-file opening, path history, ref
+  commit view, project-file navigation, and Git-host permalink actions.
 - [`action-classification-workspace-open.md`](action-classification-workspace-open.md) —
   independently stated intent, Workspace/Editor ownership, distinct general
   Open and platform Open Files routes, related Settings targets, and runtime
