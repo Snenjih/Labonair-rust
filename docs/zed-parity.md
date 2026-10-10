@@ -463,7 +463,14 @@ navigation, selected-file splits, ignored-file visibility, project-root
 removal, and Explorer-to-Transfers download routing. Its declared
 `explorerShowHiddenByDefault` value has no Explorer consumer. Any future
 transfer progress must use the statusbar notification center under Labonair's
-no-toast contract. Paired native macOS acceptance remains open. The
+no-toast contract. Paired native macOS acceptance remains open. The independent
+[bound ProjectPanel action crosswalk](parity/action-classification-project-panel-bound-actions.md)
+classifies 20 default-macOS-bound file, tree, clipboard, undo/redo, scoped-search,
+marked-file comparison, reveal, and focus actions. It records the 41 macOS-profile,
+20 Linux/Windows-profile, and 10 Vim/Helix bindings in this action subset, three
+preview/auto-open Settings effects, and Labonair's local Explorer/Workspace gaps.
+Native dispatch, file recovery, Settings save/reload, and paired macOS visuals remain
+open. The
 independent
 [`Outline and OutlinePanel action crosswalk`](parity/action-classification-outline-panel-actions.md)
 classifies the searchable Editor Outline picker, five default-macOS-bound

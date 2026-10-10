@@ -4758,6 +4758,54 @@ Next safe task: Classify and document the Git commit lifecycle packet, then cont
 - Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
 
+## Pre-change contract — default-bound ProjectPanel actions
+
+```text
+Request: Classify the 20 default-macOS-bound ProjectPanel action IDs against the pinned reference, all platform/profile maps, related Settings, and Labonair Explorer/Workspace/Editor/Search routes.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: CompareMarkedFiles; Copy, Cut, Paste, Duplicate; Delete, Trash, Undo, Redo; NewFile, NewDirectory, Rename; NewSearchInDirectory; Open and RevealInFileManager; CollapseAllEntries, CollapseSelectedEntry, ExpandAllEntries, ExpandSelectedEntry; ToggleFocus. Audit the corresponding 41 macOS-profile entries over 16 IDs, 20 shared Linux/Windows-profile entries over 14 IDs, and 10 bound Vim/Helix entries over 10 IDs; link the existing ProjectPanel unbound and path-copy classifications; classify preview/open and create/paste Settings; update action rows, parity index/counts, Explorer crosswalk, normative summary, and this task.
+Out of scope: Implementing or changing Explorer/Workspace/Search/Editor actions, filesystem mutation/undo behavior, keymaps, Settings schema, command or panel registries, dependencies, or UI; duplicating the ProjectPanel unbound or path-copy packets; claiming runtime or visual parity; R07-001 acceptance and R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned ProjectPanel, Project/Worktree file operations, Workspace preview and FileDiffView, Search NewSearchInDirectory, ProjectPanel/PreviewTabs Settings, and macOS/Linux/Windows plus profile keymaps; Labonair panel-explorer, explorer-host, workspace Explorer/Editor/search/diff routes, Settings, and notification center.
+Owner module: Pinned ProjectPanel owns tree selection, file-operation action behavior, and its undo manager with Workspace action adapters; Pinned Search owns the scoped query; Labonair Editor owns search query/result models, Workspace owns SearchOverlay presentation, and Explorer supplies no selected-directory input route. Workspace also owns tab preview, diff surface, panel focus, and cross-surface routing. Labonair Explorer owns its tree-local clipboard and filesystem operations; Filesystem owns file mutation primitives; Workspace owns tabs, panel focus, and notifications; Editor owns document history and current-buffer editing; Search owns search state.
+Canonical capability crates: Current Labonair routes are in labonair-panel-explorer, labonair-explorer-host, labonair-filesystem, labonair-workspace, labonair-editor, and labonair-settings; no separate Search crate, typed ProjectPanel action contract, or Explorer undo manager exists.
+Canonical user entry point: Pinned focused ProjectPanel tree, marked-file selection, and keyboard action context. Labonair entry points are Explorer dock toolbar/context menus and its custom tree key handler, plus existing Workspace Editor/preview/search surfaces; these are not registrations for the pinned typed action IDs.
+Alternate entry points: Atom, JetBrains, Sublime Text, TextMate, and Vim/Helix keymap overlays; local Explorer uses Space/Enter open/preview, Cmd/Ctrl+C/X/V app-local copy buffer, create toolbar/context menu, inline rename, and confirmed Delete; CopyPath remains separately classified.
+Public typed contract: Existing ExplorerHost current-file/open-file routes, Workspace view/panel/search routes, Editor document actions, and Filesystem mutation helpers. No ProjectPanel action contract, multi-mark compare API, or Explorer transaction-history contract is added.
+Events: No new events. Classify the pinned OpenedEntry/SplitEntry, Search NewSearchInDirectory, Workspace/FileDiff, and current Labonair Workspace/Explorer routes only.
+Registry contributions: No new action, command, palette provider, panel, key binding, or registry. Fill the 20 existing ACT-MACOS-project_panel rows and corresponding three Settings effects; use existing overlay catalogs and link the ProjectPanel unbound/path-copy packets.
+Allowed dependency changes: None.
+Removal condition for temporary code: Not applicable; no compatibility code.
+State owner: Pinned ProjectPanel owns selected/marked rows and in-memory undo/redo history; Workspace owns preview/active item and focus. Labonair Explorer owns tree selection, edit mode, and app-local clipboard; Editor alone owns text-buffer undo/redo. Filesystem operations persist as file changes.
+Persistence owner: Pinned on_create/on_paste and enable_preview_from_project_panel values are dynamic USER Settings; file mutations persist, while selections, internal clipboard, and ProjectPanel undo history are transient. Labonair has no matching preview preference or Explorer filesystem undo history.
+Settings and scope: Link SET-window-layout-preview-tabs-enable-preview-from-project-panel, SET-panels-project-panel-auto-open-on-create, and SET-panels-project-panel-auto-open-on-paste with defaults true. Open behavior uses the preview setting; create/paste may open one created/pasted file. Labonair Space preview/Enter permanent open and create/paste routes do not expose those same settings.
+Migration impact: None in this documentation slice.
+Commands and keymap entries: Default macOS has 20 bound ProjectPanel action IDs with platform alternatives in the default registers. Existing overlay registers preserve 41 macOS-profile, 20 shared Linux/Windows-profile, and 10 Vim/Helix entries in scope, including Delete versus Trash arguments and profile-specific Open/Rename/selection chords. Static keymap evidence does not prove native registration or dispatch.
+Notifications: Pinned removal and paste/copy failures can emit status toasts; Labonair filesystem failures use the statusbar Notification Center. Do not add a toast route.
+UI-kit components: No UI edits or controls. Future reusable controls use labonair-ui-kit.
+User workflow: Open or expand a selected row; collapse/expand the whole tree; compare marked files; copy/cut/paste or duplicate files and directories; create and rename entries; trash recoverably or delete permanently; undo/redo supported tree file operations; search within the selected directory; reveal a path; and move focus to the ProjectPanel.
+Failure/cancellation/retry behavior: Cover no selection, root/invalid entries, active inline editing, single/multiple selection, prompt cancellation, dirty buffers, partial delete/trash failure, excluded/read-only/remote paths, clipboard contents from OS versus app, recursive paste targets, filename collisions, undo history/concurrent changes, duplicate/create/rename collisions, empty root-search target, one/zero/more-than-two marked files, and preview/auto-open Settings toggles. Pinned runtime effects remain unobserved.
+Security boundary: File actions operate only on selected eligible worktree entries; external clipboard paths and reveal targets must remain path-validated by their owning capability. No secrets or file contents are persisted by this documentation work.
+Performance budget: No runtime or performance claim. File operations, search walks, clipboard payload processing, and undo work remain off the GPUI foreground thread.
+Implementation order: Requirements packet only. Audit ProjectPanel action handlers, file-operation/undo contracts, default and profile keymaps, Settings effects, local Explorer/Workspace routes, then update the action register, packet index, Explorer crosswalk, normative summary, and this task.
+Focused unit tests: Not applicable to this documentation-only change; no tests requested or run.
+Contract/integration tests: No runtime or contract changed.
+Persistence/migration tests: Not applicable; record the pinned Settings and file/undo state lifetimes.
+Command/surface tests: Not applicable; dispatch remains pending.
+Visual states: No UI changes. Native ProjectPanel selection, marks, preview, rename/create rows, prompts, diff, undo/redo state, and search transitions remain acceptance requirements.
+Security/negative tests: Not applicable; future external-path paste/reveal routes must validate ownership and path type.
+Performance measurement: Not applicable.
+Workspace gates: Diff check, documentation checker, docs/agents/knowledge/settings verifiers, active queue check, action-row shape/ID audit, profile overlay counts, Settings links, and focused pinned/local route audit.
+Documentation updates: One bound ProjectPanel action packet; 20 action rows; three linked Settings effects; packet index/count, Explorer feature crosswalk, normative parity summary, and this task record.
+Current status: Static ProjectPanel action, file-operation, undo, Settings, overlay, and local Explorer route classification complete; focused audit and required documentation/queue gates pass.
+Target status: Static intent, owners, settings, default/profile bindings, local equivalents, and gaps classified for all 20 actions; native dispatch, file-state recovery, and paired macOS visual acceptance remain open.
+Evidence links: Pinned project_panel/src/project_panel.rs, project_panel_settings.rs, undo.rs, workspace/item.rs, settings/default.json, default and profile keymaps; Labonair crates/panel-explorer/src/panel_explorer.rs, explorer-host, Workspace/Editor/Search routes, and existing ProjectPanel/path-copy action packets.
+Known limitations: Same-session source analysis and independently authored requirements are redevelopment, not separated-room clean-room implementation. Static keymap tables do not establish macOS dispatch. Source inspection does not establish native prompts, file-operation recovery, Settings persistence, or visual parity.
+Remaining migration edges: No typed ProjectPanel actions; no marked-file compare route; multi-selection clipboard semantics differ; no recoverable Explorer trash or filesystem undo/redo; no Explorer-scoped directory search or profile bindings; preview/create/paste Settings differ; file action outcomes and macOS visuals remain unverified.
+Failed/unavailable gates: Rust, native runtime, keyboard/action dispatch, filesystem recovery, Settings save/reload, and paired visual gates remain R07-000 exit gates.
+Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+```
+
 ## Pre-change contract — Git remote synchronization actions
 
 ```text
@@ -5356,4 +5404,16 @@ Next safe task: Continue R07-000 action/workflow classification; do not begin R0
 - Focused static audit passed for six default-bound rows, 13 unbound rows, seven unbound Vim/Helix entries across six IDs, two additional default-bound profile entries, four Settings effects, and the `editorShowOutline` Keep row.
 - Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative documents and 213 Markdown files), `python3 scripts/verify.py --scope docs`, `--scope agents`, `--scope knowledge`, and `--scope settings`, plus `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active). The generated Settings fingerprint is fresh.
 - No Rust build, test, native keyboard/action dispatch, Settings save/reload, or visual check was run for this documentation-only slice. They remain R07-000 exit gates. Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+
+## Progress — classify default-bound ProjectPanel actions
+
+- Added the bound ProjectPanel packet covering 20 default-macOS action IDs: selected/all collapse and expansion, open/focus/reveal, compare-marked-files, copy/cut/paste/duplicate, create/rename, delete/trash, undo/redo, and directory-scoped search.
+- Populated all 20 action requirement rows with pinned semantics, current Labonair owner/routes, and explicit pending native evidence. The packet distinguishes system file clipboard paths from Explorer's app-local copy buffer, permanent Delete from undoable Trash, Editor text history from filesystem history, and local SearchOverlay project scope from a selected-directory filter.
+- Recorded the 41 macOS-profile bindings across 16 IDs, 20 shared Linux/Windows-profile bindings across 14 IDs, and ten conditional Vim/Helix bindings. Linked the 25 registered-unbound ProjectPanel actions and the separate path-copy classification.
+- Classified the preview-from-ProjectPanel, auto-open-on-create, and auto-open-on-paste Settings effects with defaults and current Labonair gaps.
+- Focused static audit passed for 20 bound action rows and packet rows, all expected owner/routes, 41/16 macOS-profile entries/IDs, 20/14 Linux/Windows entries/IDs, ten Vim/Helix entries/IDs, and three linked Settings effects.
+- Passed git diff --check, python3 scripts/check_documentation.py (43 normative documents and 214 Markdown files), verify scopes docs, agents, knowledge, and settings, and check_rework_queue.py (46 tasks; R07-000 remains earliest active).
+- No Rust build/test, native action dispatch, file-operation recovery, Settings save/reload, or visual check was run for this documentation-only slice. They remain R07-000 exit gates. Same-session source analysis and independently authored requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
