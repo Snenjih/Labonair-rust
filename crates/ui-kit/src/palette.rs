@@ -30,6 +30,8 @@ use crate::theme::UiTheme;
 pub struct Palette {
     /// `--background`.
     pub bg: Hsla,
+    /// `--toolbar-background` (the titlebar and inactive tab-strip surface).
+    pub toolbar_bg: Hsla,
     /// `--foreground`.
     pub fg: Hsla,
     /// `--muted-foreground` (the "secondary text" colour).
@@ -114,6 +116,7 @@ impl Palette {
         let status = &theme.theme().status;
         Self {
             bg: core.background,
+            toolbar_bg: theme.theme().surface.toolbar,
             fg: core.foreground,
             muted: core.muted_foreground,
             border: core.border,
@@ -182,6 +185,7 @@ mod tests {
         let theme = TestTheme(Theme::dark());
         let c = Palette::from_theme(&theme);
         assert_eq!(c.fg, theme.0.core.foreground);
+        assert_eq!(c.toolbar_bg, theme.0.surface.toolbar);
         assert_eq!(c.border, theme.0.core.border);
         assert_eq!(c.warning, theme.0.status.warning);
         assert_eq!(c.radius.sm, theme.0.radius.sm);

@@ -15,8 +15,8 @@ last_verified = "2026-10-09"
 
 [[surface]]
 id = "shell.titlebar"
-state_status = { normal = "Pending", "focused tab" = "Pending", "multiple tabs" = "Pending", "narrow window" = "Pending", "zen mode" = "Pending" }
-next_action = "Capture the titlebar and tab states with the exact native bundle."
+state_status = { normal = "Pending", "focused tab" = "Pending", "multiple tabs" = "Pending", "tab hover" = "Pending", "close hover" = "Pending", "preview tab" = "Pending", "dirty tab" = "Pending", "tab rename" = "Pending", "tab context menu" = "Pending", "navigation disabled" = "Pending", "narrow window" = "Pending", "zen mode" = "Pending", "tabs in sidebar" = "Pending" }
+next_action = "Capture paired titlebar, tab hover/preview/rename/context-menu, navigation, narrow, Zen Mode, and sidebar-placement states with the exact native bundle."
 
 [[surface]]
 id = "shell.global-menu"

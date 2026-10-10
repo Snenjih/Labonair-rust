@@ -73,7 +73,7 @@ gpui::actions!(
     ]
 );
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -143,8 +143,9 @@ use labonair_settings::content::general::StartupTab;
 use labonair_settings::content::terminal::CursorStyle as PrefCursorStyle;
 use labonair_settings::{ConnectionsSettings, GeneralSettings, Settings as _, TerminalSettings};
 use labonair_ui_kit::{
-    caret, context_menu, divider, h_stack, indicator, tab_item, Axis, BlinkCursor, ButtonSize,
-    ButtonVariant, IconName, IndicatorSize, MenuItem, Palette, SubmenuHoverSource, TabLayout,
+    caret, context_menu, divider, h_stack, icon_button_builder, indicator, tab_item, Axis,
+    BlinkCursor, ButtonSize, ButtonVariant, IconButtonShape, IconName, IndicatorSize, MenuItem,
+    Palette, SubmenuHoverSource, TabLayout,
 };
 
 /// Interval for draining backend SSH events into the workspace.
@@ -357,7 +358,7 @@ const HANDLE: f32 = 6.0;
 /// Height of `AppShell`'s titlebar. The tab strip lives inside it, so the
 /// tab / new-tab menus (rendered via the window-anchored `context_menu`
 /// primitive) drop from the bar's bottom edge instead of the pointer's `y`.
-const TITLEBAR_OFFSET: f32 = 40.0;
+const TITLEBAR_OFFSET: f32 = 32.0;
 
 /// The new-tab dropdown's two host submenus.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -590,6 +591,8 @@ pub struct Workspace {
     next_pane_id: PaneId,
     /// Tab id whose close is awaiting unsaved-changes confirmation.
     confirm_close: Option<u64>,
+    /// Remaining tabs in a confirmed close-left/right/others/all operation.
+    pending_close: VecDeque<u64>,
     /// Open tab context menu: `(tab id, anchor position)`.
     context_menu: Option<(u64, gpui::Point<gpui::Pixels>)>,
     /// Anchor position of the open "+" new-tab dropdown, if any.
@@ -852,6 +855,7 @@ impl Workspace {
             pending_open: Vec::new(),
             next_pane_id: 1,
             confirm_close: None,
+            pending_close: VecDeque::new(),
             context_menu: None,
             new_tab_menu: None,
             new_tab_submenu: None,
@@ -2989,22 +2993,57 @@ impl Workspace {
     /// Request closing a tab. Editor tabs with unsaved changes first ask for
     /// confirmation; everything else closes immediately, sessions torn down.
     fn request_close(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let kind = self.tabs.read(cx).get(id).map(|t| t.kind);
-        let needs_confirm = self
-            .tabs
+        if self.close_requires_confirmation(id, cx) && self.confirm_close != Some(id) {
+            self.confirm_close = Some(id);
+            window.focus(&self.focus_handle);
+            cx.notify();
+            return;
+        }
+        self.do_close(id, window, cx);
+    }
+
+    fn close_requires_confirmation(&self, id: u64, cx: &App) -> bool {
+        let kind = self.tabs.read(cx).get(id).map(|tab| tab.kind);
+        self.tabs
             .read(cx)
             .get(id)
             .map(Tab::needs_close_confirm)
             .unwrap_or(false)
             || (kind == Some(TabKind::Workspace)
                 && terminal_settings(cx).confirm_close_terminal_tab()
-                && self.tab_has_running_shell(id, cx));
-        if needs_confirm && self.confirm_close != Some(id) {
-            self.confirm_close = Some(id);
-            cx.notify();
-            return;
+                && self.tab_has_running_shell(id, cx))
+    }
+
+    fn request_close_many(&mut self, ids: Vec<u64>, window: &mut Window, cx: &mut Context<Self>) {
+        self.pending_close = ids.into_iter().collect();
+        self.advance_pending_close(window, cx);
+    }
+
+    fn advance_pending_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        while let Some(id) = self.pending_close.pop_front() {
+            if self.tabs.read(cx).get(id).is_none() {
+                continue;
+            }
+            if self.close_requires_confirmation(id, cx) {
+                self.confirm_close = Some(id);
+                window.focus(&self.focus_handle);
+                cx.notify();
+                return;
+            }
+            self.do_close(id, window, cx);
         }
+    }
+
+    fn confirm_close(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         self.do_close(id, window, cx);
+        self.advance_pending_close(window, cx);
+    }
+
+    fn cancel_pending_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.confirm_close = None;
+        self.pending_close.clear();
+        self.focus_active(window, cx);
+        cx.notify();
     }
 
     /// Whether *any* open pane — terminal or SSH — still has a live shell.
@@ -3060,31 +3099,83 @@ impl Workspace {
     }
 
     fn close_others(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let removed = self.tabs.update(cx, |s, cx| s.close_others(id, cx));
-        for tab in &removed {
-            self.retire_tab(tab, cx);
-        }
-        self.confirm_close = None;
-        self.focus_active(window, cx);
+        let Some(space_id) = self.tabs.read(cx).get(id).map(|tab| tab.space_id) else {
+            return;
+        };
+        let ids = self
+            .tabs
+            .read(cx)
+            .tabs_in_space(space_id)
+            .into_iter()
+            .filter(|tab| tab.id != id)
+            .map(|tab| tab.id)
+            .collect();
+        self.request_close_many(ids, window, cx);
     }
 
-    /// Close every tab (tab context menu "Close All"). Routed through
-    /// `request_close` per tab so unsaved editors still prompt; the workspace
-    /// is left showing its empty surface.
-    fn close_all_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let ids: Vec<u64> = self.tabs.read(cx).tabs().iter().map(|t| t.id).collect();
-        for id in ids {
-            self.request_close(id, window, cx);
-        }
+    /// Close tabs in one Space sequentially so each dirty editor can be
+    /// confirmed before the next item is removed.
+    fn close_all_tabs(&mut self, space_id: SpaceId, window: &mut Window, cx: &mut Context<Self>) {
+        let ids = self
+            .tabs
+            .read(cx)
+            .tabs_in_space(space_id)
+            .into_iter()
+            .map(|tab| tab.id)
+            .collect();
+        self.request_close_many(ids, window, cx);
     }
 
-    fn close_by_kind(&mut self, kind: TabKind, window: &mut Window, cx: &mut Context<Self>) {
-        let removed = self.tabs.update(cx, |s, cx| s.close_by_kind(kind, cx));
-        for tab in &removed {
-            self.retire_tab(tab, cx);
-        }
-        self.confirm_close = None;
-        self.focus_active(window, cx);
+    fn close_by_kind(
+        &mut self,
+        space_id: SpaceId,
+        kind: TabKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let ids = self
+            .tabs
+            .read(cx)
+            .tabs_in_space(space_id)
+            .into_iter()
+            .filter(|tab| tab.kind == kind)
+            .map(|tab| tab.id)
+            .collect();
+        self.request_close_many(ids, window, cx);
+    }
+
+    fn close_tabs_to_side(
+        &mut self,
+        id: u64,
+        close_right: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(space_id) = self.tabs.read(cx).get(id).map(|tab| tab.space_id) else {
+            return;
+        };
+        let tabs = self.tabs.read(cx).tabs_in_space(space_id);
+        let Some(index) = tabs.iter().position(|tab| tab.id == id) else {
+            return;
+        };
+        let ids = if close_right {
+            tabs.iter().skip(index + 1).map(|tab| tab.id).collect()
+        } else {
+            tabs.iter().take(index).map(|tab| tab.id).collect()
+        };
+        self.request_close_many(ids, window, cx);
+    }
+
+    fn close_clean_tabs(&mut self, space_id: SpaceId, window: &mut Window, cx: &mut Context<Self>) {
+        let ids = self
+            .tabs
+            .read(cx)
+            .tabs_in_space(space_id)
+            .into_iter()
+            .filter(|tab| !tab.dirty)
+            .map(|tab| tab.id)
+            .collect();
+        self.request_close_many(ids, window, cx);
     }
 
     /// Activate a tab by id and move focus into it — used by the header
@@ -5156,13 +5247,16 @@ impl Workspace {
         };
 
         let view = cx.entity();
-        let row = tab_item(format!("workspace-tab-{id}"), c, label.clone())
+        let mut tab_item = tab_item(format!("workspace-tab-{id}"), c, label.clone());
+        if sidebar || tab.kind != TabKind::Editor {
+            tab_item = tab_item.leading(tab.kind.indicator());
+        }
+        let row = tab_item
             .layout(if sidebar {
                 TabLayout::Vertical
             } else {
                 TabLayout::Horizontal
             })
-            .leading(tab.kind.indicator())
             .selected(active)
             .dirty(tab.kind == TabKind::Editor && tab.dirty)
             .peek(tab.kind == TabKind::Editor && tab.peek)
@@ -5177,6 +5271,18 @@ impl Workspace {
                 let view = view.clone();
                 move |forward, window, app| {
                     view.update(app, |this, cx| this.cycle_from_tab(id, forward, window, cx));
+                }
+            })
+            .on_double_click({
+                let view = view.clone();
+                move |window, app| {
+                    view.update(app, |this, cx| {
+                        if this.tabs.read(cx).get(id).is_some_and(|tab| tab.peek) {
+                            this.tabs
+                                .update(cx, |store, cx| store.set_peek(id, false, cx));
+                        }
+                        this.begin_tab_rename(id, window, cx);
+                    });
                 }
             })
             .on_close(move |window, app| {
@@ -5252,14 +5358,70 @@ impl Workspace {
             .collect();
 
         let active_space = self.spaces.read(cx).active().cloned();
+        let can_navigate = tabs.len() > 1;
+        let workspace = cx.entity();
+        let previous = icon_button_builder("tab-previous", c, IconName::ArrowLeft)
+            .size(ButtonSize::IconLg)
+            .shape(IconButtonShape::Square)
+            .disabled(!can_navigate)
+            .tooltip("Previous Tab")
+            .render()
+            .when(can_navigate, |button| {
+                button.on_click({
+                    let workspace = workspace.clone();
+                    move |_, window, app| {
+                        workspace.update(app, |this, cx| this.cycle(false, window, cx));
+                    }
+                })
+            });
+        let next = icon_button_builder("tab-next", c, IconName::ArrowRight)
+            .size(ButtonSize::IconLg)
+            .shape(IconButtonShape::Square)
+            .disabled(!can_navigate)
+            .tooltip("Next Tab")
+            .render()
+            .when(can_navigate, |button| {
+                button.on_click({
+                    let workspace = workspace.clone();
+                    move |_, window, app| {
+                        workspace.update(app, |this, cx| this.cycle(true, window, cx));
+                    }
+                })
+            });
+        let new_tab = icon_button_builder("tab-new", c, IconName::PlusBold)
+            .size(ButtonSize::IconSm)
+            .shape(IconButtonShape::Square)
+            .tooltip("New Tab")
+            .render()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
+                    this.new_tab_menu = Some(point(ev.position.x, px(TITLEBAR_OFFSET)));
+                    this.new_tab_submenu = None;
+                    this.context_menu = None;
+                    cx.notify();
+                }),
+            );
 
         div()
             .flex()
             .items_center()
             .gap_1()
-            .h(px(28.0))
+            .h(px(32.0))
             .w_full()
             .flex_shrink_0()
+            .bg(c.toolbar_bg)
+            .child(
+                div()
+                    .id("tab-navigation")
+                    .flex()
+                    .items_center()
+                    .h_full()
+                    .border_r_1()
+                    .border_color(border)
+                    .child(previous)
+                    .child(next),
+            )
             .child(
                 div()
                     .id("spaces-trigger")
@@ -5299,35 +5461,13 @@ impl Workspace {
                     .id("tab-strip")
                     .flex()
                     .items_center()
-                    .gap_0p5()
+                    .gap_0()
                     .min_w_0()
+                    .h_full()
                     .overflow_x_scroll()
                     .children(tabs.iter().map(|t| self.render_tab(t, false, cx))),
             )
-            .child(
-                div()
-                    .id("tab-new")
-                    .flex_shrink_0()
-                    .size(px(28.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_md()
-                    .bg(c.muted_bg)
-                    .text_color(muted)
-                    .cursor_pointer()
-                    .hover(|s| s.bg(border).text_color(fg))
-                    .child(IconName::PlusBold.svg(muted).size(px(15.0)))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
-                            this.new_tab_menu = Some(point(ev.position.x, px(TITLEBAR_OFFSET)));
-                            this.new_tab_submenu = None;
-                            this.context_menu = None;
-                            cx.notify();
-                        }),
-                    ),
-            )
+            .child(new_tab)
     }
 
     /// The vertical tab list shown in the Tabs sidebar panel when
@@ -5895,9 +6035,8 @@ impl Workspace {
                                 .hover(|s| s.bg(border).text_color(fg))
                                 .child("Cancel")
                                 .on_click(cx.listener(
-                                    |this, _: &ClickEvent, _w, cx| {
-                                        this.confirm_close = None;
-                                        cx.notify();
+                                    |this, _: &ClickEvent, window, cx| {
+                                        this.cancel_pending_close(window, cx);
                                     },
                                 )),
                             )
@@ -5914,7 +6053,7 @@ impl Workspace {
                                 .child("Discard")
                                 .on_click(cx.listener(
                                     move |this, _: &ClickEvent, window, cx| {
-                                        this.do_close(id, window, cx);
+                                        this.confirm_close(id, window, cx);
                                     },
                                 )),
                             ),
@@ -6807,7 +6946,22 @@ impl Workspace {
         let plural = kind.map(|k| k.plural_label().to_string());
         let grant_target = self.mcp_grant_target(id, cx);
         let is_granted = self.agent_access.read(cx).is_granted(id);
-        let multi = self.tabs.read(cx).len() > 1;
+        let space_id = tab
+            .as_ref()
+            .map(|tab| tab.space_id)
+            .unwrap_or_else(|| self.spaces.read(cx).active_id());
+        let space_tabs: Vec<Tab> = self
+            .tabs
+            .read(cx)
+            .tabs_in_space(space_id)
+            .into_iter()
+            .cloned()
+            .collect();
+        let tab_index = space_tabs.iter().position(|tab| tab.id == id).unwrap_or(0);
+        let multi = space_tabs.len() > 1;
+        let can_close_left = tab_index > 0;
+        let can_close_right = tab_index + 1 < space_tabs.len();
+        let has_clean_tabs = space_tabs.iter().any(|tab| !tab.dirty);
         let view = cx.entity();
 
         let mut items: Vec<MenuItem> = Vec::new();
@@ -6849,37 +7003,6 @@ impl Workspace {
                 }),
         );
         items.push(MenuItem::separator());
-        if multi {
-            items.push(MenuItem::new("others", "Close Others").on_click({
-                let v = view.clone();
-                move |_, w, cx| {
-                    v.update(cx, |this, cx| {
-                        this.context_menu = None;
-                        this.close_others(id, w, cx)
-                    })
-                }
-            }));
-            items.push(MenuItem::new("all", "Close All").on_click({
-                let v = view.clone();
-                move |_, w, cx| {
-                    v.update(cx, |this, cx| {
-                        this.context_menu = None;
-                        this.close_all_tabs(w, cx)
-                    })
-                }
-            }));
-            if let (Some(k), Some(pl)) = (kind, plural) {
-                items.push(MenuItem::new("kind", format!("Close All {pl}")).on_click({
-                    let v = view.clone();
-                    move |_, w, cx| {
-                        v.update(cx, |this, cx| {
-                            this.context_menu = None;
-                            this.close_by_kind(k, w, cx)
-                        })
-                    }
-                }));
-            }
-        }
         // T20-001: `MenuItem::keybind` renders the item's live binding as
         // `Kbd` chips, resolved through the user's `keymap.json` overrides.
         let close_keys = cx
@@ -6899,6 +7022,80 @@ impl Workspace {
                     }
                 }),
         );
+        items.push(
+            MenuItem::new("others", "Close Others")
+                .disabled(!multi)
+                .on_click({
+                    let v = view.clone();
+                    move |_, w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.context_menu = None;
+                            this.close_others(id, w, cx)
+                        })
+                    }
+                }),
+        );
+        items.push(
+            MenuItem::new("left", "Close Left")
+                .disabled(!can_close_left)
+                .on_click({
+                    let v = view.clone();
+                    move |_, w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.context_menu = None;
+                            this.close_tabs_to_side(id, false, w, cx)
+                        })
+                    }
+                }),
+        );
+        items.push(
+            MenuItem::new("right", "Close Right")
+                .disabled(!can_close_right)
+                .on_click({
+                    let v = view.clone();
+                    move |_, w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.context_menu = None;
+                            this.close_tabs_to_side(id, true, w, cx)
+                        })
+                    }
+                }),
+        );
+        items.push(
+            MenuItem::new("clean", "Close Clean")
+                .disabled(!has_clean_tabs)
+                .on_click({
+                    let v = view.clone();
+                    move |_, w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.context_menu = None;
+                            this.close_clean_tabs(space_id, w, cx)
+                        })
+                    }
+                }),
+        );
+        items.push(MenuItem::new("all", "Close All").on_click({
+            let v = view.clone();
+            move |_, w, cx| {
+                v.update(cx, |this, cx| {
+                    this.context_menu = None;
+                    this.close_all_tabs(space_id, w, cx)
+                })
+            }
+        }));
+        if multi {
+            if let (Some(k), Some(pl)) = (kind, plural) {
+                items.push(MenuItem::new("kind", format!("Close All {pl}")).on_click({
+                    let v = view.clone();
+                    move |_, w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.context_menu = None;
+                            this.close_by_kind(space_id, k, w, cx)
+                        })
+                    }
+                }));
+            }
+        }
         if let Some((session_id, label, gkind, host_id)) = grant_target {
             items.push(MenuItem::separator());
             items.push(
@@ -7292,6 +7489,11 @@ impl Workspace {
     fn on_key_down(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let ks = &ev.keystroke;
         let m = &ks.modifiers;
+        if self.confirm_close.is_some() && ks.key == "escape" {
+            self.cancel_pending_close(window, cx);
+            cx.stop_propagation();
+            return;
+        }
         // Legacy direct handling retained for tab cycling until every
         // workspace navigation action is dispatched through the keymap.
         if !m.platform || m.control || m.alt {

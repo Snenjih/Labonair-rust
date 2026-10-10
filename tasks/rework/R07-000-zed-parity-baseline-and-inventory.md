@@ -650,6 +650,40 @@ the shared UI kit and Settings owner. Native visual evidence remains pending.
   documentation checker still reports the 21 existing links into the removed
   `reference-src/` tree; the active rework queue check passes.
 
+## Progress record — 2026-10-10 — Titlebar Editor-tab parity
+
+- Inspected the user-supplied Zed tab-row image and the pinned `3569541` source.
+  The image shows a flat dark strip, separate back/forward controls, content-
+  sized file tabs, muted inactive labels, and an italic active preview. Native
+  reference launch is unavailable in this session because the computer-control
+  runtime has no `getApp` function and reports no app windows.
+- Added the source-side comparison at
+  [`../../docs/reports/zed-titlebar-tabbar-analysis-2026-10-10.md`](../../docs/reports/zed-titlebar-tabbar-analysis-2026-10-10.md)
+  and the independent behavior/acceptance packet at
+  [`../../docs/parity/titlebar-tab-strip.md`](../../docs/parity/titlebar-tab-strip.md).
+  This is recorded as an independent rewrite by one contributor, not a
+  separated-room implementation.
+- Change contract: Workspace (`labonair-workspace`) owns tab order, active
+  Space, focus, close policy, and context actions; Shell (`labonair-shell`)
+  owns permanent titlebar placement, global menu, and window gestures;
+  `labonair-ui-kit` owns reusable horizontal tab/button/menu chrome. Existing
+  `TabStore`, `TabKind`, `TabData`, `ActiveTabChanged`, and `TitlebarEvent`
+  contracts remain canonical. No dependency, settings, persistence, registry,
+  or notification changes are planned. Reuse existing Previous/Next Tab
+  commands, close lifecycle, tab-menu owner actions, and theme tokens.
+- UI-kit/theme work: use toolbar/background/border/foreground/muted/accent roles
+  from `Palette`; leave vertical tab rows unchanged. Workspace work: retain
+  Spaces, new-tab menu, global menu, preview/dirty state, drag reorder, and
+  existing keyboard routes; double-click promotes previews and enters inline
+  rename. Add navigation affordances and complete the current-Space
+  close-left/right/clean menu workflow with sequential dirty-tab confirmations.
+  No Editor internals or new keymap commands are required.
+- Evidence plan: UI-kit tab and Workspace tab-state coverage, Rust format/check/
+  clippy/test gates, catalog/queue/documentation checks, and exact native visual
+  captures for hover, preview, dirty, rename, context menu, navigation, narrow,
+  Zen, and sidebar states. Visual evidence remains Pending until a native
+  Labonair window can be captured.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

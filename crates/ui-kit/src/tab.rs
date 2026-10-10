@@ -41,6 +41,7 @@ pub struct TabItemBuilder {
     busy: bool,
     peek: bool,
     activate: Option<TabAction>,
+    double_click: Option<TabAction>,
     navigate: Option<TabNavigation>,
     close: Option<TabAction>,
 }
@@ -65,6 +66,7 @@ pub fn tab_item(
         busy: false,
         peek: false,
         activate: None,
+        double_click: None,
         navigate: None,
         close: None,
     }
@@ -119,6 +121,12 @@ impl TabItemBuilder {
         self
     }
 
+    /// Handle a pointer double-click after the tab is activated.
+    pub fn on_double_click(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.double_click = Some(Rc::new(handler));
+        self
+    }
+
     /// Move to the adjacent tab. `true` means next/right/down; `false` means
     /// previous/left/up, with the key pair selected from `layout`.
     pub fn on_navigate(mut self, handler: impl Fn(bool, &mut Window, &mut App) + 'static) -> Self {
@@ -146,30 +154,52 @@ impl TabItemBuilder {
             busy,
             peek,
             activate,
+            double_click,
             navigate,
             close,
         } = self;
 
+        let horizontal = layout == TabLayout::Horizontal;
         let mut row = div()
             .id(id.clone())
+            .group("tab_item")
             .flex()
             .flex_row()
             .items_center()
-            .gap(palette.space(6.0))
-            .h(palette.space(28.0))
-            .px(palette.space(8.0))
-            .rounded(px(palette.radius.md))
-            .text_size(palette.control_space(12.0))
+            .gap(palette.space(if horizontal { 8.0 } else { 6.0 }))
+            .h(palette.space(if horizontal { 32.0 } else { 28.0 }))
+            .px(palette.space(if horizontal { 12.0 } else { 8.0 }))
+            .rounded(if horizontal {
+                px(0.0)
+            } else {
+                px(palette.radius.md)
+            })
+            .text_size(palette.control_space(if horizontal { 13.0 } else { 12.0 }))
             .text_color(if selected { palette.fg } else { palette.muted })
             .when(layout == TabLayout::Vertical, |row| {
                 row.w_full().flex_shrink_0()
             })
-            .when(layout == TabLayout::Horizontal, |row| {
-                row.flex_shrink_0().max_w(palette.space(240.0))
+            .when(horizontal, |row| {
+                row.relative()
+                    .flex_shrink_0()
+                    .max_w(palette.space(240.0))
+                    .border_b_1()
+                    .border_r_1()
+                    .border_color(palette.border)
             })
-            .when(selected, |row| row.bg(palette.selected_fill))
+            .when(selected, |row| {
+                if horizontal {
+                    row.bg(palette.bg).border_color(palette.bg)
+                } else {
+                    row.bg(palette.selected_fill)
+                }
+            })
             .when(!selected && !disabled, |row| {
-                row.hover(|style| style.bg(palette.border))
+                if horizontal {
+                    row
+                } else {
+                    row.hover(|style| style.bg(palette.border))
+                }
             })
             .when(!disabled, |row| {
                 row.cursor_pointer()
@@ -230,6 +260,11 @@ impl TabItemBuilder {
                     cx.stop_propagation();
                     close(window, cx);
                 }
+            })
+            .when(horizontal, |button| {
+                button
+                    .invisible()
+                    .group_hover("tab_item", |style| style.visible())
             });
             row = row.child(close_button);
         }
@@ -237,7 +272,14 @@ impl TabItemBuilder {
         if !disabled {
             if let Some(activate) = activate.as_ref() {
                 let click_activate = activate.clone();
-                row = row.on_click(move |_, window, cx| click_activate(window, cx));
+                row = row.on_click(move |event, window, cx| {
+                    click_activate(window, cx);
+                    if event.click_count() > 1 {
+                        if let Some(double_click) = &double_click {
+                            double_click(window, cx);
+                        }
+                    }
+                });
             }
         }
         if !disabled && (activate.is_some() || navigate.is_some()) {
@@ -258,6 +300,18 @@ impl TabItemBuilder {
                     navigate(direction, window, cx);
                 }
             });
+        }
+
+        if horizontal {
+            row = row.child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .right_0()
+                    .bottom_0()
+                    .w(px(1.0))
+                    .bg(palette.border),
+            );
         }
 
         row
@@ -291,6 +345,7 @@ mod tests {
                         .busy(true)
                         .peek(true)
                         .on_activate(|_, _| {})
+                        .on_double_click(|_, _| {})
                         .on_navigate(|_, _, _| {})
                         .on_close(|_, _| {})
                         .render();

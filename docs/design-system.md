@@ -84,6 +84,14 @@ activation. Workspace keeps tab ordering, drag/drop, persistence, rename, and
 close decisions in its owner; those behaviors extend the shared row instead
 of replacing its styling.
 
+Horizontal titlebar tabs use a flat, contiguous 32-pixel base row with content-
+sized widths, one-pixel separators, muted inactive text, and an active surface
+that joins the workspace below. The bar and inactive tabs use the toolbar
+surface; the active tab uses the application background. These are existing
+theme roles captured by `Palette`; the tab view adds no literal colors. The
+horizontal close action appears on tab hover. Vertical tabs retain their
+full-row selected fill, rounded shape, and always-available close action.
+
 Reusable controls expose a real disabled state: preserve their normal geometry,
 remove activation and keyboard focus, and use the shared disabled treatment.
 The select trigger and text-field surface have disabled variants alongside

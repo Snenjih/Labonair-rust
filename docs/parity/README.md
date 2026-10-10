@@ -11,12 +11,18 @@ source-side research. It records current evidence without claiming parity.
 - [`feature-crosswalk.md`](feature-crosswalk.md) — draft user-workflow coverage
   map with proposed/current owners and explicit missing areas. It is not an
   exhaustive action or settings inventory yet.
+- [`titlebar-tab-strip.md`](titlebar-tab-strip.md) — independent titlebar tab
+  appearance, input/state matrix, ownership, and evidence packet.
 - [`settings-crosswalk.md`](settings-crosswalk.md) — independent Settings
   page-to-owner map and implementation order; its field-level inventory is
   still incomplete.
 - [`../reports/zed-parity-settings-analysis-2026-10-09.md`](../reports/zed-parity-settings-analysis-2026-10-09.md)
   — research-side Settings source and commit review. Do not use this report as
   an implementation brief.
+- [`../reports/zed-titlebar-tabbar-analysis-2026-10-10.md`](../reports/zed-titlebar-tabbar-analysis-2026-10-10.md)
+  — source-side analysis of the supplied Editor tab-bar reference and current
+  Labonair titlebar. The implementation packet above is the user-facing
+  requirements record.
 - [`../zed-parity.md`](../zed-parity.md) — normative target, clean-room rules,
   required feature-record fields, and exit criteria.
 

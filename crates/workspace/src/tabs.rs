@@ -349,11 +349,17 @@ impl TabStore {
         let idx = self.tabs.iter().position(|t| t.id == id)?;
         let removed = self.tabs.remove(idx);
         if self.active_id == id {
-            let next = if self.tabs.is_empty() {
-                0
-            } else {
-                self.tabs[idx.saturating_sub(1).min(self.tabs.len() - 1)].id
-            };
+            let space_index = self.tabs[..idx]
+                .iter()
+                .filter(|tab| tab.space_id == removed.space_id)
+                .count();
+            let next = self
+                .tabs
+                .iter()
+                .filter(|tab| tab.space_id == removed.space_id)
+                .nth(space_index.saturating_sub(1))
+                .map(|tab| tab.id)
+                .unwrap_or(0);
             self.active_id = next;
             cx.emit(ActiveTabChanged(next));
         }
@@ -569,6 +575,24 @@ mod tests {
                 s.set_active(c, cx);
                 s.close(c, cx);
                 assert_eq!(s.active_id(), a);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn closing_last_active_tab_does_not_activate_another_space(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                let default_tab = s.open(TabKind::Workspace, ws(1), cx);
+                s.set_current_space(42);
+                let other_space_tab = s.open(TabKind::Editor, TabData::default(), cx);
+
+                s.close(other_space_tab, cx);
+
+                assert_eq!(s.active_id(), 0);
+                assert_eq!(s.get(default_tab).unwrap().space_id, DEFAULT_SPACE_ID);
+                assert!(s.active().is_none());
             });
         });
     }

@@ -12,9 +12,9 @@ context = "global and active workspace"
 command_ids = ["OpenCommandPalette", "OpenSettings", "OpenHosts", "OpenProject", "OpenShortcuts", "ChangeAppTheme"]
 settings = ["appearance", "window and workspace titlebar values"]
 notifications = ["Delegates operation failures to the shared notification registry"]
-visual_states = ["normal", "focused tab", "multiple tabs", "narrow window", "zen mode"]
-source_files = ["crates/shell/src/titlebar.rs", "crates/shell/src/menu.rs"]
-tests = ["crates/shell/src/commands.rs", "crates/workspace/src/tabs.rs"]
+visual_states = ["normal", "focused tab", "multiple tabs", "tab hover", "close hover", "preview tab", "dirty tab", "tab rename", "tab context menu", "navigation disabled", "narrow window", "zen mode", "tabs in sidebar"]
+source_files = ["crates/shell/src/titlebar.rs", "crates/shell/src/menu.rs", "crates/workspace/src/workspace.rs"]
+tests = ["crates/shell/src/commands.rs", "crates/workspace/src/tabs.rs", "crates/ui-kit/src/tab.rs"]
 evidence = ["Pending: native titlebar capture matrix"]
 status = "partial"
 

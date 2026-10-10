@@ -37,7 +37,7 @@ use labonair_ui_kit::{popover_menu, IconName, MenuItem, Palette};
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
 
-const HEADER_H: f32 = 40.0;
+const HEADER_H: f32 = 32.0;
 
 /// Navigation requested by the titlebar's single global menu. The titlebar
 /// emits intent only; the shell composition root connects it to the owning
