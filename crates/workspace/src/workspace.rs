@@ -143,8 +143,8 @@ use labonair_settings::content::general::StartupTab;
 use labonair_settings::content::terminal::CursorStyle as PrefCursorStyle;
 use labonair_settings::{ConnectionsSettings, GeneralSettings, Settings as _, TerminalSettings};
 use labonair_ui_kit::{
-    caret, context_menu, divider, h_stack, indicator, Axis, BlinkCursor, ButtonSize, ButtonVariant,
-    IconName, IndicatorSize, MenuItem, Palette, SubmenuHoverSource,
+    caret, context_menu, divider, h_stack, indicator, tab_item, Axis, BlinkCursor, ButtonSize,
+    ButtonVariant, IconName, IndicatorSize, MenuItem, Palette, SubmenuHoverSource, TabLayout,
 };
 
 /// Interval for draining backend SSH events into the workspace.
@@ -290,9 +290,9 @@ fn loading_btn(
     fg: gpui::Hsla,
 ) -> gpui::Stateful<gpui::Div> {
     let variant = if primary {
-        ButtonVariant::Default
+        ButtonVariant::Filled
     } else {
-        ButtonVariant::Outline
+        ButtonVariant::Outlined
     };
     let base = labonair_ui_kit::button_no_hover(id, c, variant, ButtonSize::Xs).child(label);
     if primary {
@@ -2676,6 +2676,18 @@ impl Workspace {
     /// Cycle to the next (`forward`) or previous tab.
     pub fn cycle(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.cycle_tab(forward, window, cx);
+    }
+
+    fn cycle_from_tab(
+        &mut self,
+        source_id: u64,
+        forward: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(target_id) = self.tabs.read(cx).adjacent_in_space(source_id, forward) {
+            self.select_tab(target_id, window, cx);
+        }
     }
 
     /// Jump to the tab at position `index` (0-based). No-op when no tab holds
@@ -5083,18 +5095,10 @@ impl Workspace {
     /// indicator); `false` is the horizontal titlebar strip.
     fn render_tab(&self, tab: &Tab, sidebar: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
-        let (fg, muted, border, primary, selected_fill) = (
-            theme.foreground(),
-            theme.muted_foreground(),
-            theme.border(),
-            theme.primary(),
-            theme.selected_fill(),
-        );
+        let fg = theme.foreground();
+        let c = Palette::from_theme(theme);
         let id = tab.id;
         let active = self.tabs.read(cx).active_id() == id;
-        // Every tab is closable now — closing the last one just leaves the
-        // empty-workspace surface (T17-009).
-        let closable = true;
         let label = SharedString::from(tab.label());
 
         // D4 — tab-entrance animation (`@keyframes labonair-tab-in` in the
@@ -5123,95 +5127,62 @@ impl Workspace {
             dur_base
         };
 
-        // T20-003: the tab row (this `close_btn` and the tab `div()` below)
-        // is the app's central, highest-traffic UI element — drag-and-drop
-        // source, inline-rename text field, active/dirty/peek states, and a
-        // right-click menu all live on the same node. No `ui-kit` primitive
-        // (`ListItem`'s hover/selected model, `button()`'s fixed padding
-        // scale) reproduces this exact shape without a visible regression in
-        // the single most-seen control in the app; documented exception.
-        let close_btn = div()
-            .id(("tab-close", id))
-            .px_1()
-            .rounded_sm()
-            .text_color(muted)
-            .hover(|s| s.bg(border).text_color(fg))
-            .child("\u{2715}")
-            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                cx.stop_propagation();
-                this.request_close(id, window, cx);
-            }));
-
-        div()
-            .id(("tab", id))
-            .flex()
-            .items_center()
-            .gap_1p5()
-            .h(px(28.0))
-            .px_2()
-            .when(sidebar, |d| d.w_full().flex_shrink_0())
-            .rounded_md()
-            .text_xs()
-            .whitespace_nowrap()
-            .cursor_pointer()
-            .text_color(if active { fg } else { muted })
-            .when(active, |d| d.bg(selected_fill))
-            .when(!active, |d| d.hover(|s| s.bg(border)))
-            .child(div().child(tab.kind.indicator().svg(muted)))
-            .child(
-                match self.rename_tab.as_ref().filter(|(rid, _)| *rid == id) {
-                    Some((_, buf)) => div()
-                        .track_focus(&self.rename_focus)
-                        .key_context("TabRename")
-                        .on_key_down(cx.listener(Self::on_rename_key))
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseDownEvent, window, cx| {
-                                // Explicit re-focus, not just `stop_propagation` — GPUI's
-                                // automatic focus-on-click for `track_focus` and this
-                                // listener share the same mouse-down dispatch pass, and
-                                // `stop_propagation` aborts it before the automatic
-                                // focus transfer runs, silently killing click-to-refocus.
-                                window.focus(&this.rename_focus);
-                                cx.stop_propagation();
-                            }),
-                        )
-                        .min_w(px(80.0))
-                        .max_w(px(180.0))
-                        .px_1()
-                        .rounded_sm()
-                        .border_1()
-                        .border_color(primary)
-                        .flex()
-                        .items_center()
-                        .child(SharedString::from(buf.clone()))
-                        .when(self.rename_blink.read(cx).visible(), |d| {
-                            d.child(caret(fg, 12.0))
-                        }),
-                    None => div()
-                        .when(sidebar, |d| d.flex_1().min_w_0())
-                        .when(!sidebar, |d| d.max_w(px(180.0)))
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .when(tab.kind == TabKind::Editor && tab.peek, |d| d.italic())
-                        .child(label.clone()),
-                },
-            )
-            .when(tab.kind == TabKind::Editor && tab.dirty, |d| {
-                d.child(indicator(IndicatorSize::Xs, fg.opacity(0.7)))
-            })
-            .when(closable, |d| d.child(close_btn))
-            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                this.select_tab(id, window, cx);
-            }))
-            .when(closable, |d| {
-                d.on_mouse_down(
-                    MouseButton::Middle,
-                    cx.listener(move |this, _: &MouseDownEvent, window, cx| {
-                        this.request_close(id, window, cx);
+        let label_content = match self.rename_tab.as_ref().filter(|(rid, _)| *rid == id) {
+            Some((_, buf)) => div()
+                .track_focus(&self.rename_focus)
+                .key_context("TabRename")
+                .on_key_down(cx.listener(Self::on_rename_key))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseDownEvent, window, cx| {
+                        window.focus(&this.rename_focus);
+                        cx.stop_propagation();
                     }),
                 )
+                .min_w(px(80.0))
+                .max_w(px(180.0))
+                .px_1()
+                .rounded_sm()
+                .border_1()
+                .border_color(theme.primary())
+                .flex()
+                .items_center()
+                .child(SharedString::from(buf.clone()))
+                .when(self.rename_blink.read(cx).visible(), |d| {
+                    d.child(caret(fg, 12.0))
+                })
+                .into_any_element(),
+            None => div().child(label.clone()).into_any_element(),
+        };
+
+        let view = cx.entity();
+        let row = tab_item(format!("workspace-tab-{id}"), c, label.clone())
+            .layout(if sidebar {
+                TabLayout::Vertical
+            } else {
+                TabLayout::Horizontal
             })
+            .leading(tab.kind.indicator())
+            .selected(active)
+            .dirty(tab.kind == TabKind::Editor && tab.dirty)
+            .peek(tab.kind == TabKind::Editor && tab.peek)
+            .label_content(label_content)
+            .on_activate({
+                let view = view.clone();
+                move |window, app| {
+                    view.update(app, |this, cx| this.select_tab(id, window, cx));
+                }
+            })
+            .on_navigate({
+                let view = view.clone();
+                move |forward, window, app| {
+                    view.update(app, |this, cx| this.cycle_from_tab(id, forward, window, cx));
+                }
+            })
+            .on_close(move |window, app| {
+                view.update(app, |this, cx| this.request_close(id, window, cx));
+            })
+            .render()
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
@@ -5222,6 +5193,12 @@ impl Workspace {
                     };
                     this.context_menu = Some((id, point(ev.position.x, y)));
                     cx.notify();
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Middle,
+                cx.listener(move |this, _: &MouseDownEvent, window, cx| {
+                    this.request_close(id, window, cx);
                 }),
             )
             .on_drag(
@@ -5250,7 +5227,8 @@ impl Workspace {
                 ("tab-in", id),
                 Animation::new(tab_in_dur).with_easing(move |t| ease.eval(t)),
                 |el, delta| el.opacity(delta),
-            )
+            );
+        row
     }
 
     /// The tab strip. Rendered inside `AppShell`'s single overlay titlebar
@@ -5910,7 +5888,7 @@ impl Workspace {
                                 labonair_ui_kit::button_no_hover(
                                     "confirm-cancel",
                                     c,
-                                    ButtonVariant::Ghost,
+                                    ButtonVariant::Subtle,
                                     ButtonSize::Sm,
                                 )
                                 .text_color(muted)
@@ -5927,7 +5905,7 @@ impl Workspace {
                                 labonair_ui_kit::button_no_hover(
                                     "confirm-discard",
                                     c,
-                                    ButtonVariant::Default,
+                                    ButtonVariant::Subtle,
                                     ButtonSize::Sm,
                                 )
                                 .bg(accent)

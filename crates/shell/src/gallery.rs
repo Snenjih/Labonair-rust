@@ -31,11 +31,18 @@ use gpui_component::Root;
 use labonair_theme::{theme_store, ThemePreference, ThemeStore};
 
 use labonair_ui_kit::{
-    banner, button, checkbox, disclosure, divider, h_stack, icon_toggle_button, indicator, kbd_row,
-    keybinding_hint, list_header, menu_card_preview, number_field, segmented_control,
-    select_trigger, toggle_base, Axis, ButtonSize, ButtonVariant, IconName, IndicatorSize,
-    ListItem, MenuItem, Palette, SegmentSize, SegmentVariant, Severity, ToggleSize, ToggleVariant,
+    banner, button, checkbox, disclosure, divider, h_stack, icon_button, icon_toggle_button,
+    indicator, kbd_row, keybinding_hint, list_header, menu_card_preview, number_field,
+    segmented_control, select_trigger, slider, tab_item, toggle_base, Axis, ButtonSize,
+    ButtonVariant, IconButtonShape, IconName, IndicatorSize, ListItem, MenuItem, Palette,
+    SegmentSize, SegmentVariant, Severity, SliderState, TabLayout, ToggleSize, ToggleVariant,
 };
+
+fn noop_tab_activate(_: &mut Window, _: &mut App) {}
+
+fn noop_tab_navigate(_: bool, _: &mut Window, _: &mut App) {}
+
+fn noop_tab_close(_: &mut Window, _: &mut App) {}
 
 /// The gallery view. Holds only the handful of caller-owned flags the
 /// interactive primitives need (`Disclosure`, `SegmentedControl`,
@@ -46,17 +53,26 @@ pub struct Gallery {
     segment: SharedString,
     number: f64,
     checkbox_on: bool,
+    slider: Entity<SliderState>,
 }
 
 impl Gallery {
     pub fn new(theme: Entity<ThemeStore>, cx: &mut Context<Self>) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        let slider = cx.new(|_| {
+            SliderState::new()
+                .min(0.0)
+                .max(100.0)
+                .step(1.0)
+                .default_value(42.0)
+        });
         Self {
             theme,
             disclosure_open: true,
             segment: "outline".into(),
             number: 12.0,
             checkbox_on: true,
+            slider,
         }
     }
 }
@@ -133,7 +149,9 @@ impl Render for Gallery {
                             .child(self.render_list(c))
                             .child(self.render_disclosure(c, cx))
                             .child(self.render_segmented(c, cx))
+                            .child(self.render_tabs(c))
                             .child(self.render_number(c, cx))
+                            .child(self.render_slider(c))
                             .child(self.render_select(c))
                             .child(self.render_banner(c))
                             .child(self.render_kbd(c))
@@ -145,11 +163,19 @@ impl Render for Gallery {
 }
 
 impl Gallery {
+    fn render_slider(&self, c: Palette) -> impl IntoElement {
+        section(
+            "Slider",
+            c,
+            row("0..100", c, slider(&self.slider, c).w(px(220.0))),
+        )
+    }
+
     fn render_header(&self, c: Palette, cx: &mut Context<Self>) -> impl IntoElement {
         let pref = self.theme.read(cx).preference();
         let switch = |label: &'static str, id: &'static str, p: ThemePreference| {
             let active = pref == p;
-            button(id, c, ButtonVariant::Outline, ButtonSize::Sm)
+            button(id, c, ButtonVariant::Outlined, ButtonSize::Sm)
                 .when(active, |b| b.bg(c.accent).text_color(c.accent_fg))
                 .child(label)
                 .on_click(cx.listener(move |this: &mut Gallery, _, _w, cx| {
@@ -193,18 +219,20 @@ impl Gallery {
 
     fn render_buttons(&self, c: Palette) -> impl IntoElement {
         let variants = [
-            (ButtonVariant::Default, "Default"),
-            (ButtonVariant::Outline, "Outline"),
-            (ButtonVariant::Secondary, "Secondary"),
-            (ButtonVariant::Ghost, "Ghost"),
-            (ButtonVariant::Destructive, "Destructive"),
+            (ButtonVariant::Subtle, "Subtle"),
+            (ButtonVariant::Filled, "Filled"),
+            (ButtonVariant::Outlined, "Outlined"),
+            (ButtonVariant::OutlinedGhost, "Outlined Ghost"),
+            (ButtonVariant::TintedError, "Tinted Error"),
             (ButtonVariant::Link, "Link"),
+            (ButtonVariant::Transparent, "Transparent"),
         ];
         let sizes = [
-            (ButtonSize::Xs, "Xs"),
-            (ButtonSize::Sm, "Sm"),
-            (ButtonSize::Default, "Md"),
-            (ButtonSize::Lg, "Lg"),
+            (ButtonSize::None, "None"),
+            (ButtonSize::Xs, "Compact"),
+            (ButtonSize::Default, "Default"),
+            (ButtonSize::Sm, "Medium"),
+            (ButtonSize::Lg, "Large"),
         ];
         let mut body = div().flex().flex_col().gap_2();
         for (v, vname) in variants {
@@ -217,34 +245,76 @@ impl Gallery {
             }
             body = body.child(row(vname, c, r));
         }
-        // Icon sizes + disabled-look (Link handler dropped by opacity only in
-        // the real primitive on `disabled`, which `button` does not model — so
-        // the disabled column here is a manual dim to show intent).
+        // Icon sizes, shapes, selected state, indicator, and inert state.
         let icons = h_stack()
             .flex_wrap()
             .gap_2()
+            .child(icon_button(
+                "btn-icon-xs",
+                c,
+                IconName::Plus,
+                ButtonVariant::Outlined,
+                ButtonSize::IconXs,
+            ))
+            .child(icon_button(
+                "btn-icon-sm",
+                c,
+                IconName::Plus,
+                ButtonVariant::Outlined,
+                ButtonSize::IconSm,
+            ))
+            .child(icon_button(
+                "btn-icon-md",
+                c,
+                IconName::Plus,
+                ButtonVariant::Outlined,
+                ButtonSize::Icon,
+            ))
+            .child(icon_button(
+                "btn-icon-lg",
+                c,
+                IconName::Plus,
+                ButtonVariant::Outlined,
+                ButtonSize::IconLg,
+            ))
+            .child(icon_button(
+                "btn-icon-none",
+                c,
+                IconName::Plus,
+                ButtonVariant::Outlined,
+                ButtonSize::IconNone,
+            ))
             .child(
-                button("btn-icon-xs", c, ButtonVariant::Outline, ButtonSize::IconXs)
-                    .child(IconName::Plus.svg(c.fg).size(px(12.0))),
+                labonair_ui_kit::icon_button_builder("btn-icon-wide", c, IconName::Plus)
+                    .variant(ButtonVariant::Outlined)
+                    .size(ButtonSize::Sm)
+                    .shape(IconButtonShape::Wide)
+                    .tooltip("Wide icon button")
+                    .render(),
             )
             .child(
-                button("btn-icon-sm", c, ButtonVariant::Outline, ButtonSize::IconSm)
-                    .child(IconName::Plus.svg(c.fg).size(px(14.0))),
+                labonair_ui_kit::icon_button_builder("btn-icon-selected", c, IconName::PanelLeft)
+                    .selected(true)
+                    .tooltip("Selected panel")
+                    .render(),
             )
             .child(
-                button("btn-icon-md", c, ButtonVariant::Outline, ButtonSize::Icon)
-                    .child(IconName::Plus.svg(c.fg).size(px(16.0))),
+                labonair_ui_kit::icon_button_builder("btn-icon-indicator", c, IconName::Bell)
+                    .indicator(labonair_ui_kit::IndicatorSize::Xs, c.warning)
+                    .indicator_border_color(c.card)
+                    .tooltip("Notifications")
+                    .render(),
             )
             .child(
-                button("btn-icon-lg", c, ButtonVariant::Outline, ButtonSize::IconLg)
-                    .child(IconName::Plus.svg(c.fg).size(px(18.0))),
-            )
-            .child(
-                button("btn-disabled", c, ButtonVariant::Default, ButtonSize::Sm)
-                    .opacity(labonair_ui_kit::DISABLED_OPACITY)
-                    .child("Disabled"),
+                labonair_ui_kit::button_disabled(
+                    "btn-disabled",
+                    c,
+                    ButtonVariant::Subtle,
+                    ButtonSize::Sm,
+                )
+                .child("Disabled"),
             );
-        body = body.child(row("Icon / disabled", c, icons));
+        body = body.child(row("Icon states and shapes", c, icons));
         section("Button", c, body)
     }
 
@@ -454,6 +524,72 @@ impl Gallery {
                 .gap_2()
                 .child(row("stateful", c, live))
                 .child(variants),
+        )
+    }
+
+    fn render_tabs(&self, c: Palette) -> impl IntoElement {
+        let horizontal = h_stack()
+            .gap_1()
+            .child(
+                tab_item("gallery-tab-editor", c, "src/main.rs")
+                    .leading(IconName::SquarePen)
+                    .selected(true)
+                    .dirty(true)
+                    .on_activate(noop_tab_activate)
+                    .on_navigate(noop_tab_navigate)
+                    .on_close(noop_tab_close)
+                    .render(),
+            )
+            .child(
+                tab_item("gallery-tab-preview", c, "README.md")
+                    .leading(IconName::FileText)
+                    .busy(true)
+                    .peek(true)
+                    .on_activate(noop_tab_activate)
+                    .on_navigate(noop_tab_navigate)
+                    .on_close(noop_tab_close)
+                    .render(),
+            )
+            .child(
+                tab_item("gallery-tab-disabled", c, "Unavailable")
+                    .leading(IconName::File)
+                    .disabled(true)
+                    .render(),
+            );
+        let vertical = div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .w(px(280.0))
+            .child(
+                tab_item("gallery-tab-sidebar-editor", c, "src/main.rs")
+                    .layout(TabLayout::Vertical)
+                    .leading(IconName::SquarePen)
+                    .selected(true)
+                    .dirty(true)
+                    .on_activate(noop_tab_activate)
+                    .on_navigate(noop_tab_navigate)
+                    .on_close(noop_tab_close)
+                    .render(),
+            )
+            .child(
+                tab_item("gallery-tab-sidebar-terminal", c, "Terminal")
+                    .layout(TabLayout::Vertical)
+                    .leading(IconName::ToolTerminal)
+                    .on_activate(noop_tab_activate)
+                    .on_navigate(noop_tab_navigate)
+                    .on_close(noop_tab_close)
+                    .render(),
+            );
+        section(
+            "TabItem",
+            c,
+            div()
+                .flex()
+                .flex_col()
+                .gap_3()
+                .child(row("horizontal", c, horizontal))
+                .child(row("vertical", c, vertical)),
         )
     }
 

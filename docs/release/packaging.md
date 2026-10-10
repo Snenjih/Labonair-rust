@@ -18,3 +18,7 @@ cargo build --release -p labonair
 Never commit signing keys, notarization profiles, updater private keys, or
 bearer tokens. Package evidence records the exact target, artifact digest,
 smoke command, signing result, and any intentional unsigned state.
+
+The macOS bundle registers the `labonair` URL scheme for Settings field links;
+keep that declaration in `packaging/macos/Info.plist` aligned with the native
+open-URL handler in `crates/app` and the route contract in `docs/settings.md`.

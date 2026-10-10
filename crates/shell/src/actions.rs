@@ -21,7 +21,7 @@ use labonair_workspace::{file_finder::FileFinderView, search_overlay::SearchOver
 
 use crate::app_shell::AppShell;
 use crate::menu;
-use crate::modals::{CommandPaletteModal, UpdaterModal};
+use crate::modals::{BackgroundSettingsModal, CommandPaletteModal, UpdaterModal};
 
 fn register_snapshot(registry: &mut SubmenuRegistry, snapshot: SubmenuSnapshot) {
     registry
@@ -98,6 +98,17 @@ impl AppShell {
                     None => p.open(window, cx),
                 });
                 CommandPaletteModal::new(palette.clone(), cx)
+            });
+        });
+    }
+
+    /// Open the Background owner's editor through the app's modal layer.
+    pub(crate) fn show_background_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let background = self.background.clone();
+        let theme = self.theme.clone();
+        self.modal_layer.update(cx, |layer, cx| {
+            layer.open_modal(window, cx, move |window, cx| {
+                BackgroundSettingsModal::new(background, theme, window, cx)
             });
         });
     }

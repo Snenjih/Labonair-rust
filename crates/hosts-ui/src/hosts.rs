@@ -40,8 +40,9 @@ use tokio::runtime::Handle as TokioHandle;
 use crate::theme::ThemeStore;
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
-    caret, checkbox, context_menu, indicator, BlinkCursor, IconName, IndicatorSize, ListItem,
-    MenuItem, Palette,
+    caret, checkbox, context_menu, indicator, search_clear_button, search_field, search_input,
+    text_field, text_field_surface, text_input, BlinkCursor, IconName, IndicatorSize, InputEvent,
+    InputState, ListItem, MenuItem, Palette, TextFieldState,
 };
 
 /// Connection status + the active-tunnel row shape moved to the leaf
@@ -565,6 +566,38 @@ impl HostForm {
             HostField::TunnelRemotePort(i) => &mut self.tunnels[i].remote_port,
         }
     }
+
+    fn field(&self, f: HostField) -> &str {
+        match f {
+            HostField::Name => &self.name,
+            HostField::Address => &self.address,
+            HostField::Port => &self.port,
+            HostField::Username => &self.username,
+            HostField::KeyPath => &self.key_path,
+            HostField::DefaultPath => &self.default_path,
+            HostField::DefaultPathSftp => &self.default_path_sftp,
+            HostField::Password => &self.password,
+            HostField::SudoPassword => &self.sudo_password,
+            HostField::KeepAliveInterval => &self.keep_alive_interval,
+            HostField::KeepAliveTries => &self.keep_alive_tries,
+            HostField::Notes => &self.notes,
+            HostField::TunnelLocalPort(i) => self
+                .tunnels
+                .get(i)
+                .map(|tunnel| tunnel.local_port.as_str())
+                .unwrap_or(&self.scratch),
+            HostField::TunnelRemoteHost(i) => self
+                .tunnels
+                .get(i)
+                .map(|tunnel| tunnel.remote_host.as_str())
+                .unwrap_or(&self.scratch),
+            HostField::TunnelRemotePort(i) => self
+                .tunnels
+                .get(i)
+                .map(|tunnel| tunnel.remote_port.as_str())
+                .unwrap_or(&self.scratch),
+        }
+    }
 }
 
 /// New-credential draft inside the credential manager.
@@ -665,17 +698,14 @@ impl SaveState {
 }
 
 /// Which hand-rolled focus region currently owns keyboard input — tracked by
-/// the `cx.on_focus`/`cx.on_blur` listeners wired once in `render()`, so the
-/// caret-rendering call sites don't need a `Window` reference to tell real
-/// window focus apart from a field merely being the *logical* edit target
-/// (`HostForm::focus`, `group_rename`, …).
+/// the `cx.on_focus`/`cx.on_blur` listeners wired once in `render()` for the
+/// remaining string-backed drafts and rename fields.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FocusRegion {
     Form,
     Cred,
     Group,
     GroupRename,
-    Search,
 }
 
 pub struct HostManagerView {
@@ -695,6 +725,9 @@ pub struct HostManagerView {
     active_tunnels: Vec<ActiveTunnelRow>,
     form: Option<HostForm>,
     form_focus: FocusHandle,
+    form_input: Option<Entity<InputState>>,
+    _form_input_subscription: Option<Subscription>,
+    form_input_focused: bool,
     creds_open: bool,
     cred_draft: Option<CredDraft>,
     cred_focus: FocusHandle,
@@ -715,7 +748,9 @@ pub struct HostManagerView {
     // ── master/detail state (T16-014) ──────────────────────────────────────
     /// Left-pane search / quick-connect box.
     search: String,
-    search_focus: FocusHandle,
+    search_input: Option<Entity<InputState>>,
+    _search_input_subscription: Option<Subscription>,
+    search_input_focused: bool,
     sort: HostSort,
     /// `true` = card grid, `false` = list.
     grid_view: bool,
@@ -789,6 +824,9 @@ impl HostManagerView {
             active_tunnels: Vec::new(),
             form: None,
             form_focus: cx.focus_handle(),
+            form_input: None,
+            _form_input_subscription: None,
+            form_input_focused: false,
             creds_open: false,
             cred_draft: None,
             cred_focus: cx.focus_handle(),
@@ -801,7 +839,9 @@ impl HostManagerView {
             group_rename: None,
             group_rename_focus: cx.focus_handle(),
             search: String::new(),
-            search_focus: cx.focus_handle(),
+            search_input: None,
+            _search_input_subscription: None,
+            search_input_focused: false,
             sort: HostSort::LastConnected,
             grid_view: false,
             group_filter: None,
@@ -997,6 +1037,89 @@ impl HostManagerView {
         });
     }
 
+    fn clear_form_input(&mut self) {
+        self.form_input = None;
+        self._form_input_subscription = None;
+        self.form_input_focused = false;
+    }
+
+    fn ensure_form_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(form) = self.form.as_ref() else {
+            self.clear_form_input();
+            return;
+        };
+        if self.form_input.is_some() {
+            return;
+        }
+
+        let field = form.focus;
+        let value = form.field(field).to_string();
+        let masked = matches!(field, HostField::Password | HostField::SudoPassword);
+        let input = cx.new(|cx| {
+            let mut state = text_field(window, cx).masked(masked);
+            if !value.is_empty() {
+                state.set_value(value, window, cx);
+            }
+            state
+        });
+        let subscription =
+            cx.subscribe(&input, |this, input, event: &InputEvent, cx| match event {
+                InputEvent::Change => {
+                    let value = input.read(cx).value().to_string();
+                    let field = this.form.as_ref().map(|form| form.focus);
+                    let changed = if let (Some(form), Some(field)) = (this.form.as_mut(), field) {
+                        if form.field(field) != value {
+                            *form.field_mut(field) = value;
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+                    if changed {
+                        this.schedule_autosave(cx);
+                    }
+                }
+                InputEvent::Focus => {
+                    this.form_input_focused = true;
+                    cx.notify();
+                }
+                InputEvent::Blur => {
+                    this.form_input_focused = false;
+                    cx.notify();
+                }
+                InputEvent::PressEnter { .. } => {
+                    this.submit_form(false, cx);
+                    cx.stop_propagation();
+                }
+            });
+        self.form_input = Some(input.clone());
+        self._form_input_subscription = Some(subscription);
+        input.update(cx, |state, cx| state.focus(window, cx));
+    }
+
+    fn focus_form_field(&mut self, field: HostField, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(form) = self.form.as_mut() else {
+            return;
+        };
+        form.focus = field;
+        let value = form.field(field).to_string();
+        let masked = matches!(field, HostField::Password | HostField::SudoPassword);
+        if let Some(input) = self.form_input.clone() {
+            input.update(cx, |state, cx| {
+                state.set_masked(masked, window, cx);
+                if state.value() != value {
+                    state.set_value(value, window, cx);
+                }
+                state.focus(window, cx);
+            });
+        } else {
+            window.focus(&self.form_focus);
+        }
+        cx.notify();
+    }
+
     // ── mutations ───────────────────────────────────────────────────────────
 
     /// Debounced autosave: bump the generation, mark the form dirty, and after
@@ -1039,6 +1162,9 @@ impl HostManagerView {
                 None => return,
             }
         };
+        if !keep_form {
+            self.clear_form_input();
+        }
         if keep_form {
             self.save_state = SaveState::Saving;
         }
@@ -1256,6 +1382,7 @@ impl HostManagerView {
     fn delete_host(&mut self, id: String, cx: &mut Context<Self>) {
         if self.form.as_ref().and_then(|f| f.editing_id.as_deref()) == Some(id.as_str()) {
             self.form = None;
+            self.clear_form_input();
             self.save_state = SaveState::Idle;
         }
         let database = self.database.clone();
@@ -1945,32 +2072,16 @@ impl HostManagerView {
     }
 
     fn on_form_key(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
-        let ks = &ev.keystroke;
-        match ks.key.as_str() {
-            "escape" => {
-                // Flush a pending autosave before closing.
-                if self.save_state == SaveState::Pending {
-                    self.submit_form(true, cx);
-                }
-                self.form = None;
-                self.save_state = SaveState::Idle;
+        if ev.keystroke.key.as_str() == "escape" {
+            if self.save_state == SaveState::Pending {
+                self.submit_form(true, cx);
             }
-            "enter" => self.submit_form(false, cx),
-            _ => {
-                let changed = if let Some(form) = self.form.as_mut() {
-                    let f = form.focus;
-                    Self::edit_str(form.field_mut(f), ks)
-                } else {
-                    false
-                };
-                if changed {
-                    self.schedule_autosave(cx);
-                    self.blink.update(cx, |b, cx| b.pause(cx));
-                }
-            }
+            self.form = None;
+            self.clear_form_input();
+            self.save_state = SaveState::Idle;
+            cx.stop_propagation();
+            cx.notify();
         }
-        cx.stop_propagation();
-        cx.notify();
     }
 
     fn on_cred_key(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
@@ -2012,22 +2123,47 @@ impl HostManagerView {
     }
 
     fn on_search_key(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
-        let ks = &ev.keystroke;
-        match ks.key.as_str() {
-            "escape" => self.search.clear(),
-            "enter" => {
-                if let Some((u, h, p)) = self.quick_connect_target() {
-                    self.quick_connect(u, h, p, cx);
+        if ev.keystroke.key == "escape" {
+            if !self.search.is_empty() {
+                self.search.clear();
+                if let Some(input) = self.search_input.clone() {
+                    input.update(cx, |state, cx| state.set_value(String::new(), _w, cx));
                 }
+                cx.notify();
             }
-            _ => {
-                if Self::edit_str(&mut self.search, ks) {
-                    self.blink.update(cx, |b, cx| b.pause(cx));
-                }
-            }
+            cx.stop_propagation();
         }
-        cx.stop_propagation();
-        cx.notify();
+    }
+
+    fn ensure_search_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_input.is_some() {
+            return;
+        }
+        let input =
+            cx.new(|cx| text_field(window, cx).placeholder("Find a host or type user@hostname…"));
+        let subscription =
+            cx.subscribe(&input, |this, input, event: &InputEvent, cx| match event {
+                InputEvent::Change => {
+                    this.search = input.read(cx).value().to_string();
+                    cx.notify();
+                }
+                InputEvent::Focus => {
+                    this.search_input_focused = true;
+                    cx.notify();
+                }
+                InputEvent::Blur => {
+                    this.search_input_focused = false;
+                    cx.notify();
+                }
+                InputEvent::PressEnter { .. } => {
+                    if let Some((user, host, port)) = this.quick_connect_target() {
+                        this.quick_connect(user, host, port, cx);
+                    }
+                    cx.stop_propagation();
+                }
+            });
+        self.search_input = Some(input);
+        self._search_input_subscription = Some(subscription);
     }
 }
 
@@ -2060,9 +2196,9 @@ impl HostManagerView {
         _cx: &App,
     ) -> gpui::Stateful<gpui::Div> {
         let variant = if primary {
-            labonair_ui_kit::ButtonVariant::Default
+            labonair_ui_kit::ButtonVariant::Filled
         } else {
-            labonair_ui_kit::ButtonVariant::Outline
+            labonair_ui_kit::ButtonVariant::Outlined
         };
         labonair_ui_kit::button(id, *p, variant, labonair_ui_kit::ButtonSize::Xs)
             .child(label.into())
@@ -2072,6 +2208,7 @@ impl HostManagerView {
 
     /// Load `host` into the detail-pane form.
     fn select_host(&mut self, host: &Host, w: &mut Window, cx: &mut Context<Self>) {
+        self.clear_form_input();
         self.form = Some(HostForm::from_host(
             host,
             &self.groups,
@@ -2261,16 +2398,6 @@ impl HostManagerView {
         row.into_any_element()
     }
 
-    /// T20-003 documented exception: this and `tunnel_field` render the
-    /// host-form's fields via a single view-level `on_key_down` router
-    /// (`on_form_key`) keyed by `HostField`, not per-field `InputState`
-    /// entities. Swapping to `labonair_ui_kit`'s real `text_field`/
-    /// `field_input` (an `Entity<InputState>` per field, created in `new`
-    /// with a `Window`) would mean rearchitecting the whole multi-field form
-    /// — out of scope for a surgical, behavior-preserving migration of this
-    /// one view. Left hand-rolled; a dedicated follow-up task (mirroring the
-    /// AI composer's own separate `InputState` migration) is the right home
-    /// for it.
     fn labelled_field(
         &self,
         label: &'static str,
@@ -2280,34 +2407,35 @@ impl HostManagerView {
         p: &Palette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let content = if state.active {
+            self.form_input
+                .as_ref()
+                .map(|input| text_input(input, *p).into_any_element())
+                .unwrap_or_else(|| Self::static_field_value(value, state, p))
+        } else {
+            Self::static_field_value(value, state, p)
+        };
+        let field_state = if state.active && self.form_input_focused {
+            TextFieldState::Focused
+        } else {
+            TextFieldState::Normal
+        };
         div()
             .flex()
             .flex_col()
             .gap_0p5()
             .child(div().text_xs().text_color(p.muted).child(label))
             .child(
-                div()
-                    .id(SharedString::from(format!("field-{label}")))
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .bg(p.bg)
-                    .border_1()
-                    .border_color(if state.active { p.accent } else { p.border })
-                    .text_sm()
-                    .text_color(p.fg)
-                    .cursor_text()
-                    .flex()
-                    .items_center()
-                    .child(SharedString::from(value.to_string()))
-                    .when(state.show_caret, |d| d.child(caret(p.fg, 14.0)))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
-                        if let Some(f) = this.form.as_mut() {
-                            f.focus = field;
-                        }
-                        w.focus(&this.form_focus);
-                        cx.notify();
-                    })),
+                text_field_surface(
+                    SharedString::from(format!("field-{label}")),
+                    *p,
+                    field_state,
+                    content,
+                )
+                .cursor_text()
+                .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+                    this.focus_form_field(field, w, cx);
+                })),
             )
     }
 
@@ -2320,29 +2448,37 @@ impl HostManagerView {
         p: &Palette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        div()
-            .id(SharedString::from(id))
+        let content = if state.active {
+            self.form_input
+                .as_ref()
+                .map(|input| text_input(input, *p).into_any_element())
+                .unwrap_or_else(|| Self::static_field_value(value, state, p))
+        } else {
+            Self::static_field_value(value, state, p)
+        };
+        let field_state = if state.active && self.form_input_focused {
+            TextFieldState::Focused
+        } else {
+            TextFieldState::Normal
+        };
+        text_field_surface(SharedString::from(id), *p, field_state, content)
             .flex_1()
-            .px_2()
-            .py_1()
-            .rounded_md()
-            .bg(p.bg)
-            .border_1()
-            .border_color(if state.active { p.accent } else { p.border })
+            .cursor_text()
+            .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+                this.focus_form_field(field, w, cx);
+            }))
+    }
+
+    fn static_field_value(value: &str, state: FieldRenderState, p: &Palette) -> gpui::AnyElement {
+        div()
+            .w_full()
             .text_sm()
             .text_color(p.fg)
-            .cursor_text()
             .flex()
             .items_center()
             .child(SharedString::from(value.to_string()))
             .when(state.show_caret, |d| d.child(caret(p.fg, 14.0)))
-            .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
-                if let Some(f) = this.form.as_mut() {
-                    f.focus = field;
-                }
-                w.focus(&this.form_focus);
-                cx.notify();
-            }))
+            .into_any_element()
     }
 
     fn render_tunnels_section(
@@ -2412,7 +2548,7 @@ impl HostManagerView {
                         labonair_ui_kit::button(
                             SharedString::from(format!("tun-del-{i}")),
                             *p,
-                            labonair_ui_kit::ButtonVariant::Outline,
+                            labonair_ui_kit::ButtonVariant::Outlined,
                             labonair_ui_kit::ButtonSize::Xs,
                         )
                         .child("Remove tunnel")
@@ -2585,6 +2721,7 @@ impl HostManagerView {
                             this.submit_form(true, cx);
                         }
                         this.form = None;
+                        this.clear_form_input();
                         this.save_state = SaveState::Idle;
                         cx.notify();
                     })),
@@ -3564,7 +3701,6 @@ impl Render for HostManagerView {
                 (self.cred_focus.clone(), FocusRegion::Cred),
                 (self.group_focus.clone(), FocusRegion::Group),
                 (self.group_rename_focus.clone(), FocusRegion::GroupRename),
-                (self.search_focus.clone(), FocusRegion::Search),
             ] {
                 self._blink_focus_subs
                     .push(cx.on_focus(&handle, window, move |this, _w, cx| {
@@ -3580,49 +3716,45 @@ impl Render for HostManagerView {
                     }));
             }
         }
+        self.ensure_search_input(window, cx);
+        self.ensure_form_input(window, cx);
         let p = self.palette(cx);
         let accent = p.accent;
         let p_card = p.card;
         let visible = self.visible_hosts();
         let quick = self.quick_connect_target();
-        let search_focused = self.search_focus.is_focused(window);
+        let search_focused = self.search_input_focused;
         let blink_visible = self.blink.read(cx).visible();
 
         // ── left pane: search + quick-connect suggestion ──────────────────
-        let mut search_text = div().flex_1().flex().items_center().text_xs();
-        if !self.search.is_empty() {
-            search_text = search_text.child(
-                div()
-                    .text_color(p.fg)
-                    .child(SharedString::from(self.search.clone())),
-            );
-        }
-        if search_focused && blink_visible {
-            search_text = search_text.child(labonair_ui_kit::caret(p.fg, 12.0));
-        }
-        if self.search.is_empty() {
-            search_text = search_text.child(
-                div()
-                    .when(search_focused, |d| d.pl(px(4.0)))
-                    .text_color(p.muted)
-                    .child("Find a host or type user@hostname\u{2026}"),
-            );
-        }
-        let search_box = div()
-            .track_focus(&self.search_focus)
-            .key_context("HostSearch")
-            .on_key_down(cx.listener(Self::on_search_key))
-            .flex()
-            .items_center()
-            .gap_1()
-            .px_2()
-            .py_1()
-            .rounded_md()
-            .bg(p.card)
-            .border_1()
-            .border_color(p.border)
-            .child(IconName::Search.svg(p.muted).size(px(12.0)))
-            .child(search_text);
+        let clear_button = (!self.search.is_empty()).then(|| {
+            search_clear_button(
+                "host-search-clear",
+                p,
+                cx.listener(|this, _: &ClickEvent, window, cx| {
+                    this.search.clear();
+                    if let Some(input) = this.search_input.clone() {
+                        input.update(cx, |state, cx| state.set_value(String::new(), window, cx));
+                    }
+                    cx.notify();
+                }),
+            )
+            .into_any_element()
+        });
+        let search_box = search_field(
+            "host-search",
+            p,
+            search_focused,
+            search_input(
+                self.search_input
+                    .as_ref()
+                    .expect("search input initialized"),
+                p,
+            ),
+            clear_button,
+        )
+        .key_context("HostSearch")
+        .on_key_down(cx.listener(Self::on_search_key));
 
         let quick_card = quick.clone().map(|(user, host, port)| {
             ListItem::new("quick-connect", p.fg, p.muted, p.border)
@@ -3650,6 +3782,7 @@ impl Render for HostManagerView {
             .child(
                 self.btn("new-host", "New Host", &p, true, cx)
                     .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
+                        this.clear_form_input();
                         this.form = Some(HostForm::blank());
                         this.save_state = SaveState::Idle;
                         w.focus(&this.form_focus);

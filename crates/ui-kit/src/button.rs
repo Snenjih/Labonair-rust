@@ -1,78 +1,135 @@
-//! Shared `Button` primitive.
+//! Shared button primitive.
 //!
-//! 1:1 port of `reference-src/src/components/ui/button.tsx` (`buttonVariants`
-//! cva): six variants, eight sizes, pill radius (`rounded-4xl` ==
-//! `radius.xl4`), transparent border, `disabled:opacity-50`. Replaces the
-//! ad-hoc `btn` / `tool_btn` / `step_btn` helpers scattered across the views.
+//! Buttons use one compact geometry scale, four corner radii, and explicit
+//! surface treatments. Feature crates choose an appearance and size; the
+//! shared primitive supplies hover, pressed, focused, and disabled
+//! states.
 
-use gpui::{div, px, Div, InteractiveElement, Stateful, StyleRefinement, Styled};
+use gpui::{
+    div, prelude::FluentBuilder, px, transparent_black, Div, InteractiveElement, Stateful,
+    StatefulInteractiveElement, StyleRefinement, Styled,
+};
 
 use crate::palette::Palette;
 
-/// `disabled:opacity-50` from the cva base.
+/// Opacity used by small disabled controls that do not have a button surface.
 pub const DISABLED_OPACITY: f32 = 0.5;
 
-/// cva `variant` — see `button.tsx:12-24`.
+/// Surface treatment for a button.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum ButtonVariant {
+    /// Transparent at rest, with a neutral hover and pressed surface.
     #[default]
-    Default,
-    Outline,
-    Secondary,
-    Ghost,
-    Destructive,
+    Subtle,
+    /// A raised surface for actions that need more emphasis.
+    Filled,
+    /// A visible border around the normal surface.
+    Outlined,
+    /// A visible border around a transparent surface.
+    OutlinedGhost,
+    /// Error-tinted surface for destructive actions.
+    TintedError,
+    /// Foreground-only action with an underline on hover.
     Link,
+    /// Transparent foreground-only control.
+    Transparent,
 }
 
-/// cva `size` — see `button.tsx:25-34`.
+/// Shared button heights. Values use the app font scale and UI density.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum ButtonSize {
+    /// 22 logical pixels at the reference UI font size.
     #[default]
     Default,
+    /// 18 logical pixels at the reference UI font size.
     Xs,
+    /// 28 logical pixels at the reference UI font size.
     Sm,
+    /// 32 logical pixels at the reference UI font size.
     Lg,
+    /// 16 logical pixels at the reference UI font size.
+    None,
     Icon,
     IconXs,
     IconSm,
     IconLg,
+    IconNone,
 }
 
 impl ButtonSize {
-    /// Height in px (`h-9` / `h-6` / `h-8` / `h-10` / `size-*`).
     fn height(self) -> f32 {
         match self {
-            ButtonSize::Default | ButtonSize::Icon => 36.0,
-            ButtonSize::Xs | ButtonSize::IconXs => 24.0,
-            ButtonSize::Sm | ButtonSize::IconSm => 32.0,
-            ButtonSize::Lg | ButtonSize::IconLg => 40.0,
+            ButtonSize::Default | ButtonSize::Icon => 22.0,
+            ButtonSize::Xs | ButtonSize::IconXs => 18.0,
+            ButtonSize::Sm | ButtonSize::IconSm => 28.0,
+            ButtonSize::Lg | ButtonSize::IconLg => 32.0,
+            ButtonSize::None | ButtonSize::IconNone => 16.0,
         }
     }
 
-    /// Horizontal padding in px (`px-3` / `px-2.5` / `px-4`); `None` for the
-    /// square icon sizes (`size-*`, width == height).
-    fn px(self) -> Option<f32> {
+    fn horizontal_padding(self) -> f32 {
         match self {
-            ButtonSize::Default | ButtonSize::Sm => Some(12.0),
-            ButtonSize::Xs => Some(10.0),
-            ButtonSize::Lg => Some(16.0),
-            ButtonSize::Icon | ButtonSize::IconXs | ButtonSize::IconSm | ButtonSize::IconLg => None,
+            ButtonSize::Default | ButtonSize::Xs => 4.0,
+            ButtonSize::Sm | ButtonSize::Lg => 8.0,
+            ButtonSize::None => 0.0,
+            ButtonSize::Icon
+            | ButtonSize::IconXs
+            | ButtonSize::IconSm
+            | ButtonSize::IconLg
+            | ButtonSize::IconNone => 0.0,
         }
     }
 
-    /// Font size in px (`text-sm` default, `text-xs` for `xs`).
-    fn text(self) -> f32 {
+    fn label_size(self) -> f32 {
         match self {
-            ButtonSize::Xs | ButtonSize::IconXs => 12.0,
-            _ => 14.0,
+            ButtonSize::Xs | ButtonSize::IconXs | ButtonSize::None | ButtonSize::IconNone => 11.0,
+            ButtonSize::Default | ButtonSize::Sm | ButtonSize::Icon | ButtonSize::IconSm => 13.0,
+            ButtonSize::Lg | ButtonSize::IconLg => 14.0,
         }
+    }
+
+    pub(crate) fn icon_size(self) -> f32 {
+        match self {
+            ButtonSize::Xs | ButtonSize::IconXs | ButtonSize::None | ButtonSize::IconNone => 12.0,
+            ButtonSize::Default | ButtonSize::Sm | ButtonSize::Icon | ButtonSize::IconSm => 14.0,
+            ButtonSize::Lg | ButtonSize::IconLg => 16.0,
+        }
+    }
+
+    pub(crate) fn square(self) -> Self {
+        match self {
+            ButtonSize::Default | ButtonSize::Icon => ButtonSize::Icon,
+            ButtonSize::Xs | ButtonSize::IconXs => ButtonSize::IconXs,
+            ButtonSize::Sm | ButtonSize::IconSm => ButtonSize::IconSm,
+            ButtonSize::Lg | ButtonSize::IconLg => ButtonSize::IconLg,
+            ButtonSize::None | ButtonSize::IconNone => ButtonSize::IconNone,
+        }
+    }
+
+    pub(crate) fn wide(self) -> Self {
+        match self {
+            ButtonSize::Default | ButtonSize::Icon => ButtonSize::Default,
+            ButtonSize::Xs | ButtonSize::IconXs => ButtonSize::Xs,
+            ButtonSize::Sm | ButtonSize::IconSm => ButtonSize::Sm,
+            ButtonSize::Lg | ButtonSize::IconLg => ButtonSize::Lg,
+            ButtonSize::None | ButtonSize::IconNone => ButtonSize::None,
+        }
+    }
+
+    fn is_icon(self) -> bool {
+        matches!(
+            self,
+            ButtonSize::Icon
+                | ButtonSize::IconXs
+                | ButtonSize::IconSm
+                | ButtonSize::IconLg
+                | ButtonSize::IconNone
+        )
     }
 }
 
-/// Builds the base, pre-styled button element. Callers add `.child(..)` for the
-/// label/icon and `.on_click(..)` for the handler, mirroring the existing
-/// `btn`-helper call sites. Comes with the per-variant hover style baked in; use
-/// [`button_no_hover`] when the call site sets its own `.hover(..)`.
+/// Builds a button with the shared appearance and hover state. Callers add
+/// children and an activation handler.
 pub fn button(
     id: impl Into<gpui::ElementId>,
     c: Palette,
@@ -82,18 +139,36 @@ pub fn button(
     button_no_hover(id, c, variant, size).hover(variant_hover(variant, c))
 }
 
-/// Same geometry and variant paint as [`button`] but without the baked-in hover
-/// style, for the toolbar call sites that apply their own `.hover(..)` (calling
-/// `.hover()` twice panics with "hover style already set" in debug builds).
+/// Same shared geometry and focus/pressed behavior without a hover handler.
+/// Use when a caller composes a custom hover state.
 pub fn button_no_hover(
     id: impl Into<gpui::ElementId>,
     c: Palette,
     variant: ButtonVariant,
     size: ButtonSize,
 ) -> Stateful<Div> {
-    let radius = c.radius.xl4;
-    let h = size.height();
+    button_surface(id, c, variant, size, false)
+}
 
+/// Builds an inert button with the enabled control's geometry and a disabled
+/// palette treatment. Callers add only presentational children.
+pub fn button_disabled(
+    id: impl Into<gpui::ElementId>,
+    c: Palette,
+    variant: ButtonVariant,
+    size: ButtonSize,
+) -> Stateful<Div> {
+    button_surface(id, c, variant, size, true)
+}
+
+fn button_surface(
+    id: impl Into<gpui::ElementId>,
+    c: Palette,
+    variant: ButtonVariant,
+    size: ButtonSize,
+    disabled: bool,
+) -> Stateful<Div> {
+    let height = c.control_space(size.height());
     let mut el = div()
         .id(id)
         .flex()
@@ -101,44 +176,94 @@ pub fn button_no_hover(
         .flex_shrink_0()
         .items_center()
         .justify_center()
-        .gap(c.space(6.0))
-        .h(c.space(h))
-        .rounded(px(radius))
-        .border_1()
-        .border_color(gpui::transparent_black())
-        .text_size(px(size.text()))
-        .cursor_pointer();
+        .gap(c.control_space(4.0))
+        .h(height)
+        .rounded(px(c.radius.sm))
+        .text_size(px(size.label_size() * c.ui_font_scale))
+        .when(size.is_icon(), |button| button.w(height))
+        .when(!size.is_icon(), |button| {
+            button.px(c.control_space(size.horizontal_padding()))
+        });
 
-    el = match size.px() {
-        Some(p) => el.px(c.space(p)),
-        None => el.w(c.space(h)),
-    };
+    el = apply_variant(el, variant, c);
 
-    apply_variant(el, variant, c)
+    if disabled {
+        disabled_style(el, variant, c)
+            .tab_index(-1)
+            .cursor_default()
+    } else {
+        el.tab_index(0)
+            .cursor_pointer()
+            .focus(|style| focus_style(style, variant, c))
+            .active(|style| active_style(style, variant, c))
+    }
 }
 
 fn apply_variant(el: Stateful<Div>, variant: ButtonVariant, c: Palette) -> Stateful<Div> {
     match variant {
-        ButtonVariant::Default => el.bg(c.primary).text_color(c.primary_fg),
-        ButtonVariant::Outline => el.border_color(c.border).bg(c.bg).text_color(c.fg),
-        ButtonVariant::Secondary => el.bg(c.secondary).text_color(c.secondary_fg),
-        ButtonVariant::Ghost => el.text_color(c.fg),
-        ButtonVariant::Destructive => el.bg(c.destructive.opacity(0.1)).text_color(c.destructive),
-        ButtonVariant::Link => el.text_color(c.primary),
+        ButtonVariant::Subtle => el.bg(transparent_black()).text_color(c.fg),
+        ButtonVariant::Filled => el.bg(c.card).text_color(c.fg),
+        ButtonVariant::Outlined => el
+            .border_1()
+            .border_color(c.border)
+            .bg(c.bg)
+            .text_color(c.fg),
+        ButtonVariant::OutlinedGhost => el
+            .border_1()
+            .border_color(c.border)
+            .bg(transparent_black())
+            .text_color(c.fg),
+        ButtonVariant::TintedError => el.bg(c.error.opacity(0.12)).text_color(c.error),
+        ButtonVariant::Link => el.bg(transparent_black()).text_color(c.primary),
+        ButtonVariant::Transparent => el.bg(transparent_black()).text_color(c.muted),
     }
 }
 
-/// The per-variant hover style baked into [`button`] — see `button.tsx` cva.
+fn disabled_style(el: Stateful<Div>, variant: ButtonVariant, c: Palette) -> Stateful<Div> {
+    match variant {
+        ButtonVariant::Outlined => el.border_color(c.border).text_color(c.muted),
+        ButtonVariant::OutlinedGhost => {
+            el.border_color(c.border).bg(c.muted_bg).text_color(c.muted)
+        }
+        ButtonVariant::TintedError => el.bg(c.muted_bg).text_color(c.muted),
+        ButtonVariant::Subtle
+        | ButtonVariant::Filled
+        | ButtonVariant::Link
+        | ButtonVariant::Transparent => el.text_color(c.muted),
+    }
+}
+
 fn variant_hover(
     variant: ButtonVariant,
     c: Palette,
 ) -> impl Fn(StyleRefinement) -> StyleRefinement {
-    move |s| match variant {
-        ButtonVariant::Default => s.bg(c.primary.opacity(0.8)),
-        ButtonVariant::Outline | ButtonVariant::Ghost => s.bg(c.muted_bg),
-        ButtonVariant::Secondary => s.bg(c.secondary.opacity(0.8)),
-        ButtonVariant::Destructive => s.bg(c.destructive.opacity(0.2)),
-        ButtonVariant::Link => s.underline(),
+    move |style| match variant {
+        ButtonVariant::Subtle | ButtonVariant::OutlinedGhost => style.bg(c.accent),
+        ButtonVariant::Filled | ButtonVariant::Outlined => style.bg(c.muted_bg),
+        ButtonVariant::TintedError => style.bg(c.error.opacity(0.2)),
+        ButtonVariant::Link => style.underline(),
+        ButtonVariant::Transparent => style.text_color(c.fg),
+    }
+}
+
+fn focus_style(style: StyleRefinement, variant: ButtonVariant, c: Palette) -> StyleRefinement {
+    if matches!(
+        variant,
+        ButtonVariant::Outlined | ButtonVariant::OutlinedGhost
+    ) {
+        style.border_color(c.ring)
+    } else {
+        variant_hover(variant, c)(style)
+    }
+}
+
+fn active_style(style: StyleRefinement, variant: ButtonVariant, c: Palette) -> StyleRefinement {
+    match variant {
+        ButtonVariant::Subtle | ButtonVariant::OutlinedGhost => style.bg(c.border),
+        ButtonVariant::Filled | ButtonVariant::Outlined => style.bg(c.accent),
+        ButtonVariant::TintedError => style.bg(c.error.opacity(0.24)),
+        ButtonVariant::Link => style.underline(),
+        ButtonVariant::Transparent => style.text_color(c.fg),
     }
 }
 
@@ -148,34 +273,42 @@ mod tests {
     use crate::test_support::test_palette;
 
     #[test]
-    fn builds_every_variant_and_size() {
+    fn every_appearance_builds_at_every_shared_size() {
         let c = test_palette();
-        for v in [
-            ButtonVariant::Default,
-            ButtonVariant::Outline,
-            ButtonVariant::Secondary,
-            ButtonVariant::Ghost,
-            ButtonVariant::Destructive,
+        for variant in [
+            ButtonVariant::Subtle,
+            ButtonVariant::Filled,
+            ButtonVariant::Outlined,
+            ButtonVariant::OutlinedGhost,
+            ButtonVariant::TintedError,
             ButtonVariant::Link,
+            ButtonVariant::Transparent,
         ] {
-            for s in [
+            for size in [
                 ButtonSize::Default,
                 ButtonSize::Xs,
                 ButtonSize::Sm,
                 ButtonSize::Lg,
+                ButtonSize::None,
                 ButtonSize::Icon,
                 ButtonSize::IconXs,
                 ButtonSize::IconSm,
                 ButtonSize::IconLg,
+                ButtonSize::IconNone,
             ] {
-                // Smoke test: the builder must not panic for any combination.
-                let _ = button("btn", c, v, s);
+                let _ = button("enabled", c, variant, size);
+                let _ = button_no_hover("no-hover", c, variant, size);
+                let _ = button_disabled("disabled", c, variant, size);
             }
         }
     }
 
     #[test]
-    fn pill_radius_matches_reference_radius_4xl() {
-        assert!((test_palette().radius.xl4 - 13.0).abs() < 1e-6);
+    fn shared_sizes_match_the_reference_control_scale() {
+        assert_eq!(ButtonSize::Lg.height(), 32.0);
+        assert_eq!(ButtonSize::Sm.height(), 28.0);
+        assert_eq!(ButtonSize::Default.height(), 22.0);
+        assert_eq!(ButtonSize::Xs.height(), 18.0);
+        assert_eq!(ButtonSize::None.height(), 16.0);
     }
 }

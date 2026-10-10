@@ -22,6 +22,10 @@ mod window;
 #[cfg(test)]
 mod tests;
 
-pub use services::{ServiceFuture, SettingsServices, SystemFontService};
+pub use services::{
+    ServiceFuture, SettingsFileTarget, SettingsServices, SettingsSurface,
+    SettingsSurfaceContribution, SettingsSurfaceId, SettingsSurfacePage, SettingsSurfaceRegistry,
+    SystemFontService,
+};
 pub use view::SettingsView;
-pub use window::{open_settings_window, set_settings_deps};
+pub use window::{open_settings_deep_link, open_settings_window, set_settings_deps};

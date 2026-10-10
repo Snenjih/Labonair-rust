@@ -28,6 +28,17 @@
 	<true/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.labonair.rust.settings</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>labonair</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSHumanReadableCopyright</key>
 	<string>Labonair contributors. Licensed under the MIT License.</string>
 	<key>CFBundleDocumentTypes</key>

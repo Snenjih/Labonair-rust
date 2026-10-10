@@ -33,11 +33,12 @@ editor, not a general application-management window.
 9. **Removal is complete.** Removing a field requires checking defaults,
    migrations, serialization, UI metadata, command IDs, tests, and documentation.
 
-10. **Dense native navigation.** The Settings rail is one UI-kit tree with the
-    seven canonical value categories. Root selection and disclosure are
-    separate actions; section children are scroll anchors, not management
-    pages. The current category is expanded on entry and all other categories
-    remain collapsed until disclosed.
+10. **Dense native navigation.** The Settings rail is one UI-kit tree over the
+    owner-backed pages in the [Settings crosswalk](parity/settings-crosswalk.md).
+    Root selection and disclosure are separate actions; section children are
+    scroll anchors, not management pages. Pages start collapsed; selecting a
+    root does not disclose its section anchors. Search results and deep links
+    expand the page when they need to reveal a specific section.
 11. **Explicit persistence scope.** The header's User/Project selector is the
     only scope choice for a Settings edit. A Project choice is available only
     with an active project; the Settings owner enforces the project whitelist,
@@ -53,3 +54,27 @@ editor, not a general application-management window.
     accessibility roles or ARIA-style names/values; do not describe this as
     screen-reader parity. Revisit semantic roles and announcements when the
     native accessibility API becomes available.
+
+14. **Unavailable project values are visibly inert.** In Project scope, fields
+    outside the project-settings whitelist keep their displayed value and
+    explanatory description, but their control cannot be focused or activated.
+    Commit or cancel an active edit against its original scope before switching
+    the write target; never defer a predictable whitelist failure until after
+    the user attempts to change a value.
+
+15. **Navigation is independent of persistence.** A page descriptor owns its
+    stable key, title, slug, field placements, and persisted-group fallbacks.
+    Rows and search routes resolve by full JSON field path. One field has one
+    canonical Settings editor; explicit cross-page placement wins over a
+    persisted-group fallback. New fields remain reachable through their
+    owning page's fallback until their deliberate placement is recorded.
+
+16. **Modified values identify their source.** Show the reset action beside the
+    setting title and identify whether the effective override comes from User
+    or Project settings. Reset clears that layer's sparse override so the next
+    lower-precedence value takes effect.
+
+17. **Setting links resolve to fields.** A JSON-backed row may copy a
+    `labonair://settings/<json-path>` link. Opening a known link selects the
+    owning page, scrolls to the field, and briefly highlights it; an unknown
+    path must not open an unrelated Settings page.

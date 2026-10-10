@@ -94,13 +94,6 @@ impl AnyField {
     pub fn area(&self) -> &'static str {
         self.json_path.split('.').next().unwrap_or("")
     }
-
-    /// The local (leaf) key — the last `json_path` segment, matching the old
-    /// `FIELDS`/`SECTION_GROUPS` table's bare camelCase keys, so the existing
-    /// curated section groupings (`pages.rs`) can look fields up by it.
-    pub fn local_key(&self) -> &'static str {
-        self.json_path.rsplit('.').next().unwrap_or(self.json_path)
-    }
 }
 
 macro_rules! meta {

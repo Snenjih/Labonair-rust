@@ -55,9 +55,9 @@ use labonair_transfers::TransferDirection;
 
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{
-    button, caret, context_menu, divider, icon_for_path, icon_toggle_button, tree_row, Axis,
-    BlinkCursor, ButtonSize, ButtonVariant, Density, IconName, MenuClick, MenuItem, Palette,
-    Tooltip, TreeRowState,
+    button, caret, context_menu, dialog_surface, divider, icon_for_path, icon_toggle_button,
+    modal_overlay, tree_row, Axis, BlinkCursor, ButtonSize, ButtonVariant, Density, IconName,
+    MenuClick, MenuItem, Palette, Tooltip, TreeRowState,
 };
 
 /// A menu action against the SFTP view (wrapped into a [`MenuClick`]).
@@ -2157,7 +2157,7 @@ impl SftpView {
                 button(
                     "sftp-remote-term",
                     c.palette,
-                    ButtonVariant::Ghost,
+                    ButtonVariant::Subtle,
                     ButtonSize::Xs,
                 )
                 .child(IconName::Terminal.svg(c.muted).size(px(13.0)))
@@ -2491,7 +2491,7 @@ impl SftpView {
         cx: &mut Context<Self>,
         handler: impl Fn(&mut Self, Side, &mut Context<Self>) + 'static,
     ) -> impl IntoElement {
-        button(id, c.palette, ButtonVariant::Ghost, ButtonSize::IconXs)
+        button(id, c.palette, ButtonVariant::Subtle, ButtonSize::IconXs)
             .child(glyph)
             .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| handler(this, side, cx)))
     }
@@ -2881,7 +2881,7 @@ impl SftpView {
                 button(
                     "sftp-retry",
                     c.palette,
-                    ButtonVariant::Outline,
+                    ButtonVariant::Outlined,
                     ButtonSize::Xs,
                 )
                 .child("Retry")
@@ -3140,9 +3140,10 @@ impl SftpView {
                         .when(active && dialog_focused, |d| d.child(caret(c.fg, 14.0))),
                 )
         };
-        overlay()
+        modal_overlay("sftp-perm-overlay")
             .child(
-                dialog_card("sftp-perm-dialog", c)
+                dialog_surface("sftp-perm-dialog", c.palette)
+                    .w(px(360.0))
                     .track_focus(&self.dialog_focus)
                     .on_key_down(
                         cx.listener(|this, ev: &KeyDownEvent, _w, cx| this.on_perm_key(ev, cx)),
@@ -3229,9 +3230,10 @@ impl SftpView {
                         },
                     )))
             };
-        overlay()
+        modal_overlay("sftp-props-overlay")
             .child(
-                dialog_card("sftp-props-dialog", c)
+                dialog_surface("sftp-props-dialog", c.palette)
+                    .w(px(360.0))
                     .child(div().text_sm().child(SharedString::from(format!(
                         "Properties \u{2014} {}",
                         e.name
@@ -3592,32 +3594,6 @@ fn text_center(msg: &str, color: gpui::Hsla) -> gpui::AnyElement {
         .into_any_element()
 }
 
-fn overlay() -> gpui::Div {
-    div()
-        .absolute()
-        .inset_0()
-        .flex()
-        .items_center()
-        .justify_center()
-        .bg(crate::theme::modal_scrim())
-}
-
-fn dialog_card(id: &'static str, c: Colors) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .w(px(360.0))
-        .flex()
-        .flex_col()
-        .gap_2()
-        .p_3()
-        .rounded_md()
-        .border_1()
-        .border_color(c.border)
-        .bg(c.card)
-        .text_color(c.fg)
-        .shadow_lg()
-}
-
 fn dialog_btn(
     id: &'static str,
     label: &'static str,
@@ -3625,9 +3601,9 @@ fn dialog_btn(
     primary: bool,
 ) -> gpui::Stateful<gpui::Div> {
     let variant = if primary {
-        ButtonVariant::Default
+        ButtonVariant::Filled
     } else {
-        ButtonVariant::Outline
+        ButtonVariant::Outlined
     };
     button(id, c.palette, variant, ButtonSize::Xs).child(label)
 }

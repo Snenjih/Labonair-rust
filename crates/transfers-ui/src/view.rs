@@ -35,8 +35,8 @@ use labonair_transfers::{
     TransferSnapshot, TransferStatus,
 };
 use labonair_ui_kit::{
-    button, caret, indicator, BlinkCursor, ButtonSize, ButtonVariant, IndicatorSize, ListItem,
-    Palette,
+    button, caret, dialog_surface, indicator, BlinkCursor, ButtonSize, ButtonVariant,
+    IndicatorSize, ListItem, Palette,
 };
 
 // ── pure helpers (unit-tested) ─────────────────────────────────────────────
@@ -541,7 +541,7 @@ impl TransfersView {
                 button(
                     "transfers-clear",
                     c.palette,
-                    ButtonVariant::Ghost,
+                    ButtonVariant::Subtle,
                     ButtonSize::Xs,
                 )
                 .child("Clear completed")
@@ -616,7 +616,7 @@ impl TransfersView {
                 button(
                     SharedString::from(format!("transfer-logtoggle-{}", id_log)),
                     c.palette,
-                    ButtonVariant::Ghost,
+                    ButtonVariant::Subtle,
                     ButtonSize::IconXs,
                 )
                 .child(if log_open { "\u{25B4}" } else { "\u{25BE}" })
@@ -633,7 +633,7 @@ impl TransfersView {
                 button(
                     SharedString::from(format!("transfer-cancel-{}", id_cancel)),
                     c.palette,
-                    ButtonVariant::Ghost,
+                    ButtonVariant::Subtle,
                     ButtonSize::IconXs,
                 )
                 .child("\u{2715}")
@@ -786,20 +786,11 @@ impl TransfersView {
                 .w(px(420.0))
                 .bg(labonair_theme::store::modal_scrim())
                 .child(
-                    div()
-                        .id("transfer-modal")
+                    dialog_surface("transfer-modal", c.palette)
                         .track_focus(&self.dialog_focus)
                         .w(px(420.0))
-                        .flex()
-                        .flex_col()
-                        .gap_3()
-                        .p_4()
-                        .rounded_md()
-                        .border_1()
-                        .border_color(c.border)
-                        .bg(c.card)
-                        .text_color(c.fg)
-                        .shadow_lg()
+                        .gap(c.palette.space(12.0))
+                        .p(c.palette.space(16.0))
                         .child(body),
                 )
                 .into_any_element(),
@@ -995,9 +986,9 @@ fn btn(
     primary: bool,
 ) -> gpui::Stateful<gpui::Div> {
     let variant = if primary {
-        ButtonVariant::Default
+        ButtonVariant::Filled
     } else {
-        ButtonVariant::Outline
+        ButtonVariant::Outlined
     };
     button(id, c.palette, variant, ButtonSize::Xs).child(label)
 }

@@ -95,7 +95,7 @@ and are never lost through a deserialize/serialize round trip.
 |---|---|
 | `labonair-gpui-ext` | GPUI helpers and small shared primitives. |
 | `labonair-theme-tokens` | Design tokens (`Theme`, `RadiusScale`, `ThemeMetrics`, `ActiveTheme`, colour structs, `IconThemeContent`) and the `UiTheme` accessor contract. A leaf below `ui-kit`; the Themes *feature* crate (`labonair-theme`) depends on it, not the reverse. |
-| `labonair-ui-kit` | Buttons, inputs, lists, dropdowns, dialogs, icons, badges, disclosure, tabs, empty states, and other reusable components. Renders against `labonair-theme-tokens`; it does not depend on the Themes feature crate. |
+| `labonair-ui-kit` | Buttons, inputs, lists, dropdowns, dialogs, icons, badges, disclosure, sliders, tabs, empty states, and other reusable components. Renders against `labonair-theme-tokens`; it does not depend on the Themes feature crate. |
 | `labonair-filesystem` | Local filesystem abstractions and watchers. |
 | `labonair-errors` | Structured, UI-free domain error contract and recovery metadata. |
 | `labonair-events` | UI-free in-process transport primitives for adapter-level events; it owns no product event vocabulary or application state. |
@@ -114,13 +114,13 @@ boundary.
 
 | Module | Canonical capability crate | Existing sibling crates | Ownership boundary |
 |---|---|---|---|
-| Settings | `labonair-settings` | `labonair-settings-content`, `labonair-settings-json`, `labonair-settings-macros`, `labonair-settings-ui` | Typed values, layered persistence, and value-only settings UI. |
-| Keymap | `labonair-keymap` | `labonair-keymap-ui` | Binding descriptors, file data, resolution, conflicts, and a presentation adapter; no feature behavior. |
+| Settings | `labonair-settings` | `labonair-settings-content`, `labonair-settings-json`, `labonair-settings-macros`, `labonair-settings-ui` | Typed values, layered persistence, Settings surface registry contract, and value-only settings UI. |
+| Keymap | `labonair-keymap` | `labonair-keymap-ui` | Binding descriptors, file data, resolution, conflicts, and a presentation adapter; no feature behavior. The UI registers its Settings link through the public Settings surface contract. |
 | Command palette | `labonair-command-palette-core` | `labonair-command-palette`, `labonair-command-palette-runtime` | UI-free command registry contract; the UI sibling owns search/navigation and submenu presentation, while the runtime sibling carries owner-provided GPUI handlers. |
 | Notifications | `labonair-notifications-core` | `labonair-notifications` | Notification registry/state and its GPUI statusbar presentation. |
-| Themes | `labonair-theme` | `labonair-theme-ui` | Built-in color and icon-theme registries, preview, and selection. `labonair-theme-ui` owns the settings→`ThemeStore` application policy and the palette preview/activate handler so `labonair-theme` keeps no `labonair-settings` dependency. |
+| Themes | `labonair-theme` | `labonair-theme-ui` | Built-in color and icon-theme registries, preview, and selection. `labonair-theme-ui` owns the settings→`ThemeStore` application policy, Settings-link registration, and the palette preview/activate handler so `labonair-theme` keeps no `labonair-settings` dependency. |
 | Workspace | `labonair-workspace` | none; panel crates are separate capabilities | Workspace identity, tabs, panes, focus, layout, and session orchestration. |
-| Backgrounds | `labonair-background` | none yet | Background-image persistence and rendering; settings values are consumed through the settings store, but Settings UI does not own the capability. |
+| Backgrounds | `labonair-background` | owner UI is in `labonair-background` | Background-image settings, file catalog, persistence, decoding, and rendering; the owner UI depends on `labonair-ui-kit` for shared sliders, buttons, text fields, and segmented controls. Appearance links to this surface without duplicating its state. |
 
 ### Product modules
 
@@ -178,6 +178,10 @@ receivers; shell composition supplies the named integration adapters, and
 Workspace owns only the GPUI bridges and feature reaction. No Workspace code
 subscribes to a transport adapter directly; the shared raw transport is owned
 by `labonair-events` and remains hidden behind the composition boundary.
+
+Capability UI modules register their Settings links through the typed
+`labonair-settings::SettingsSurfaceRegistry` contract. The composition root
+supplies the window/workspace callbacks; it does not own feature row metadata.
 
 The current repository does not yet match every ownership boundary in this
 map. The migration is tracked in [`rework-roadmap.md`](rework-roadmap.md), and
@@ -280,6 +284,10 @@ serialize a feature's private state into Settings as a shortcut.
 Feature crates own feature-specific views. `labonair-ui-kit` owns reusable visual and interaction primitives. A feature must use the kit for buttons, dropdowns, lists, menus, inputs, badges, popovers, dialogs, and standard rows.
 
 Feature-specific components may compose kit components, but may not fork their styling locally. New shared behavior is added to the kit first, with a documented API and a component test.
+
+`modal_overlay` and `dialog_surface` are the shared modal scrim and dialog
+card frame. They standardize placement and visual treatment only; focus,
+dismissal, validation, and decisions stay with the dialog's owning feature.
 
 The UI kit is a component boundary, not a product module. It may provide
 generic buttons, inputs, lists, menus, dropdowns, dialogs, badges, tabs,

@@ -23,8 +23,9 @@ use labonair_editor::{
     SearchOptions, SearchQuery, SearchScope,
 };
 use labonair_ui_kit::{
-    button, field_input, text_field, ButtonSize, ButtonVariant, InputEvent, InputState, ListItem,
-    Palette, DISABLED_OPACITY,
+    button, button_disabled, search_field, search_input, text_field, text_field_surface,
+    text_input, ButtonSize, ButtonVariant, InputEvent, InputState, ListItem, Palette,
+    TextFieldState,
 };
 use std::sync::Mutex;
 
@@ -300,7 +301,7 @@ impl ModalView for SearchOverlay {
 }
 
 impl Render for SearchOverlay {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
         let palette = Palette::from_theme(theme);
         let unavailable = self.target == SearchTarget::Unavailable;
@@ -397,6 +398,98 @@ impl Render for SearchOverlay {
                 .collect::<Vec<_>>()
         });
         let replace_input = self.replace_input.clone();
+        let search_focused = self.input.read(cx).focus_handle(cx).is_focused(window);
+        let replace_focused = replace_input
+            .as_ref()
+            .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
+        let previous_button = if has_matches {
+            button(
+                "search-prev",
+                palette,
+                ButtonVariant::Subtle,
+                ButtonSize::Xs,
+            )
+            .child("↑")
+            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                if this.count.1 > 0 && this.error.is_none() {
+                    this.step(false, cx)
+                }
+            }))
+        } else {
+            button_disabled(
+                "search-prev",
+                palette,
+                ButtonVariant::Subtle,
+                ButtonSize::Xs,
+            )
+            .child("↑")
+        };
+        let next_button = if has_matches {
+            button(
+                "search-next",
+                palette,
+                ButtonVariant::Subtle,
+                ButtonSize::Xs,
+            )
+            .child("↓")
+            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                if this.count.1 > 0 && this.error.is_none() {
+                    this.step(true, cx)
+                }
+            }))
+        } else {
+            button_disabled(
+                "search-next",
+                palette,
+                ButtonVariant::Subtle,
+                ButtonSize::Xs,
+            )
+            .child("↓")
+        };
+        let replace_one_button = if can_replace {
+            button(
+                "search-replace-one",
+                palette,
+                ButtonVariant::Outlined,
+                ButtonSize::Xs,
+            )
+            .child("Replace")
+            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                if this.count.1 > 0 && this.error.is_none() {
+                    this.replace_one(cx)
+                }
+            }))
+        } else {
+            button_disabled(
+                "search-replace-one",
+                palette,
+                ButtonVariant::Outlined,
+                ButtonSize::Xs,
+            )
+            .child("Replace")
+        };
+        let replace_all_button = if can_replace {
+            button(
+                "search-replace-all",
+                palette,
+                ButtonVariant::OutlinedGhost,
+                ButtonSize::Xs,
+            )
+            .child("All")
+            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                if this.count.1 > 0 && this.error.is_none() {
+                    this.replace_all(cx)
+                }
+            }))
+        } else {
+            button_disabled(
+                "search-replace-all",
+                palette,
+                ButtonVariant::OutlinedGhost,
+                ButtonSize::Xs,
+            )
+            .child("All")
+        };
         div()
             .id("search-overlay")
             .absolute()
@@ -429,22 +522,34 @@ impl Render for SearchOverlay {
                         .flex()
                         .items_center()
                         .gap_1()
-                        .child(field_input(&self.input).w(px(220.0)))
                         .child(
-                            button("search-case", palette, ButtonVariant::Ghost, ButtonSize::Xs)
-                                .child(case_label)
-                                .on_click(
-                                    cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                        this.toggle_case(cx)
-                                    }),
-                                ),
+                            search_field(
+                                "search-overlay-query",
+                                palette,
+                                search_focused,
+                                search_input(&self.input, palette),
+                                None,
+                            )
+                            .w(px(248.0)),
+                        )
+                        .child(
+                            button(
+                                "search-case",
+                                palette,
+                                ButtonVariant::Subtle,
+                                ButtonSize::Xs,
+                            )
+                            .child(case_label)
+                            .on_click(
+                                cx.listener(|this, _: &ClickEvent, _w, cx| this.toggle_case(cx)),
+                            ),
                         )
                         .when(editor, |d| {
                             d.child(
                                 button(
                                     "search-scope-file",
                                     palette,
-                                    ButtonVariant::Ghost,
+                                    ButtonVariant::Subtle,
                                     ButtonSize::Xs,
                                 )
                                 .child("File")
@@ -462,7 +567,7 @@ impl Render for SearchOverlay {
                                 button(
                                     "search-scope-project",
                                     palette,
-                                    ButtonVariant::Ghost,
+                                    ButtonVariant::Subtle,
                                     ButtonSize::Xs,
                                 )
                                 .child("Project")
@@ -481,7 +586,7 @@ impl Render for SearchOverlay {
                                     button(
                                         "search-regex",
                                         palette,
-                                        ButtonVariant::Ghost,
+                                        ButtonVariant::Subtle,
                                         ButtonSize::Xs,
                                     )
                                     .child(".*")
@@ -504,7 +609,7 @@ impl Render for SearchOverlay {
                                     button(
                                         "search-word",
                                         palette,
-                                        ButtonVariant::Ghost,
+                                        ButtonVariant::Subtle,
                                         ButtonSize::Xs,
                                     )
                                     .child("Word")
@@ -527,7 +632,7 @@ impl Render for SearchOverlay {
                                     button(
                                         "search-multiline",
                                         palette,
-                                        ButtonVariant::Ghost,
+                                        ButtonVariant::Subtle,
                                         ButtonSize::Xs,
                                     )
                                     .child("Multi")
@@ -552,7 +657,7 @@ impl Render for SearchOverlay {
                                         button(
                                             "search-wrap",
                                             palette,
-                                            ButtonVariant::Ghost,
+                                            ButtonVariant::Subtle,
                                             ButtonSize::Xs,
                                         )
                                         .child("Wrap")
@@ -583,30 +688,8 @@ impl Render for SearchOverlay {
                                 })
                                 .child(count_label.clone()),
                         )
-                        .child(
-                            button("search-prev", palette, ButtonVariant::Ghost, ButtonSize::Xs)
-                                .child("↑")
-                                .when(!has_matches, |d| {
-                                    d.opacity(DISABLED_OPACITY).cursor_default()
-                                })
-                                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                    if this.count.1 > 0 && this.error.is_none() {
-                                        this.step(false, cx)
-                                    }
-                                })),
-                        )
-                        .child(
-                            button("search-next", palette, ButtonVariant::Ghost, ButtonSize::Xs)
-                                .child("↓")
-                                .when(!has_matches, |d| {
-                                    d.opacity(DISABLED_OPACITY).cursor_default()
-                                })
-                                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                    if this.count.1 > 0 && this.error.is_none() {
-                                        this.step(true, cx)
-                                    }
-                                })),
-                        ),
+                        .child(previous_button)
+                        .child(next_button),
                 )
             })
             .when(editor, |d| {
@@ -618,47 +701,24 @@ impl Render for SearchOverlay {
                         .child(
                             replace_input
                                 .as_ref()
-                                .map(|input| field_input(input).w(px(220.0)).into_any_element())
+                                .map(|input| {
+                                    text_field_surface(
+                                        "search-overlay-replace-input",
+                                        palette,
+                                        if replace_focused {
+                                            TextFieldState::Focused
+                                        } else {
+                                            TextFieldState::Normal
+                                        },
+                                        text_input(input, palette),
+                                    )
+                                    .w(px(220.0))
+                                    .into_any_element()
+                                })
                                 .unwrap_or_else(|| div().into_any_element()),
                         )
-                        .child(
-                            button(
-                                "search-replace-one",
-                                palette,
-                                ButtonVariant::Outline,
-                                ButtonSize::Xs,
-                            )
-                            .child("Replace")
-                            .when(!can_replace, |d| {
-                                d.opacity(DISABLED_OPACITY).cursor_default()
-                            })
-                            .on_click(cx.listener(
-                                |this, _: &ClickEvent, _w, cx| {
-                                    if this.count.1 > 0 && this.error.is_none() {
-                                        this.replace_one(cx)
-                                    }
-                                },
-                            )),
-                        )
-                        .child(
-                            button(
-                                "search-replace-all",
-                                palette,
-                                ButtonVariant::Secondary,
-                                ButtonSize::Xs,
-                            )
-                            .child("All")
-                            .when(!can_replace, |d| {
-                                d.opacity(DISABLED_OPACITY).cursor_default()
-                            })
-                            .on_click(cx.listener(
-                                |this, _: &ClickEvent, _w, cx| {
-                                    if this.count.1 > 0 && this.error.is_none() {
-                                        this.replace_all(cx)
-                                    }
-                                },
-                            )),
-                        ),
+                        .child(replace_one_button)
+                        .child(replace_all_button),
                 )
             })
             .when(self.scope == SearchScope::Project, |d| {
@@ -706,7 +766,7 @@ impl Render for SearchOverlay {
                 button(
                     "search-close",
                     palette,
-                    ButtonVariant::Ghost,
+                    ButtonVariant::Subtle,
                     ButtonSize::IconXs,
                 )
                 .child("×")

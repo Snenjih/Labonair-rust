@@ -7,11 +7,10 @@
 //! plus the private `step_btn`/`slider_track` helpers in `view.rs`), each with
 //! its own clamping.
 //!
-//! Reference: `reference-src/src/components/ui/input-group.tsx` +
-//! `slider.tsx` (bounded numeric input with stepper affordances). Zed has no
-//! direct equivalent — its settings use `NumericStepper`
+//! Zed's settings use `NumericStepper`
 //! (`zed-refrence/zed/crates/ui/src/components/numeric_stepper.rs`), which this
-//! follows in shape (decrement / value / increment).
+//! follows in shape (decrement / value / increment). The optional track is a
+//! Labonair control variant and remains hidden for Settings rows.
 //!
 //! ```ignore
 //! number_field("font-size", c, cur, 8.0, 32.0, 1.0)
@@ -27,7 +26,7 @@ use gpui::{
 };
 
 use crate::palette::Palette;
-use crate::text_field::{field_input, InputState};
+use crate::text_field::{text_input, InputState};
 use crate::DISABLED_OPACITY;
 
 /// Apply `delta` to `value`, clamp into `min..=max` and round away the binary
@@ -154,7 +153,7 @@ impl NumberField {
         let c = self.c;
         let next = self.stepped(direction);
         let at_bound = (next - self.value).abs() < f64::EPSILON;
-        let inert = self.disabled || at_bound;
+        let inert = self.disabled || at_bound || self.on_change.is_none();
         let handler = self.on_change.clone();
         div()
             .id(SharedString::from(format!("{}-{tag}", self.id)))
@@ -169,11 +168,22 @@ impl NumberField {
             .text_color(c.fg)
             .when(inert, |d| d.opacity(DISABLED_OPACITY))
             .when(!inert, |d| {
-                d.cursor_pointer().hover(move |s| s.bg(c.border))
+                d.cursor_pointer()
+                    .hover(move |s| s.bg(c.border))
+                    .when(handler.is_some(), |d| {
+                        d.tab_index(0)
+                            .focus(|style| style.border_1().border_color(c.ring))
+                    })
             })
             .child(glyph)
             .when(!inert, move |d| match handler {
-                Some(h) => d.on_click(move |_: &ClickEvent, w, cx| h(&next, w, cx)),
+                Some(h) => d
+                    .on_click(move |_: &ClickEvent, w, cx| h(&next, w, cx))
+                    .on_key_down(|event, _window, cx| {
+                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                            cx.stop_propagation();
+                        }
+                    }),
                 None => d,
             })
             .into_any_element()
@@ -209,22 +219,22 @@ impl IntoElement for NumberField {
             .text_center()
             .text_color(c.fg);
         if let Some(editor) = self.editor.as_ref() {
-            value = value.child(
-                field_input(editor)
-                    .appearance(false)
-                    .bordered(false)
-                    .focus_bordered(false)
-                    .w_full()
-                    .text_center()
-                    .text_size(px(12.0)),
-            );
+            value = value.child(text_input(editor, c).text_center());
         } else {
             value = value.child(label);
         }
-        if !self.disabled {
+        if !self.disabled && self.editor.is_none() {
             if let Some(on_edit) = self.on_edit.as_ref() {
                 let on_edit = on_edit.clone();
-                value = value.on_click(move |_, window, cx| on_edit(window, cx));
+                value = value
+                    .tab_index(0)
+                    .focus(|style| style.border_1().border_color(c.ring))
+                    .on_click(move |_, window, cx| on_edit(window, cx))
+                    .on_key_down(|event, _window, cx| {
+                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                            cx.stop_propagation();
+                        }
+                    });
             }
         }
 

@@ -49,8 +49,10 @@ use crate::theme::ThemeStore;
 use labonair_notifications::{notification_center, Notification};
 use labonair_snippets_host::SnippetExecutionHost;
 use labonair_ui_kit::{
-    button, context_menu, disclosure, icon_toggle_button, list_header, segmented_control,
-    BlinkCursor, ButtonSize, ButtonVariant, IconName, ListItem, MenuItem, Palette,
+    button, context_menu, dialog_surface, disclosure, icon_toggle_button, list_header,
+    modal_overlay, segmented_control, text_area_surface, text_field, text_field_surface_sized,
+    text_input, BlinkCursor, ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem,
+    MenuItem, Palette, TextFieldSize, TextFieldState,
 };
 
 /// Build the Snippets contribution for the workspace-owned panel registry.
@@ -353,7 +355,7 @@ impl ExecMode {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Field {
     Name,
     Description,
@@ -439,6 +441,7 @@ struct Colors {
     card: gpui::Hsla,
     accent: gpui::Hsla,
     error: gpui::Hsla,
+    palette: Palette,
 }
 
 /// Backend → view snippet-run events, forwarded off the broadcast bus.
@@ -472,6 +475,8 @@ pub struct SnippetsView {
     collapsed_groups: HashSet<String>,
     /// `Some` while the create/edit form is on screen.
     form: Option<FormState>,
+    form_inputs: HashMap<Field, Entity<InputState>>,
+    _form_input_subscriptions: Vec<Subscription>,
     adding_group: bool,
     group_name_buf: String,
     active_field: Option<Field>,
@@ -558,6 +563,8 @@ impl SnippetsView {
             search_open: false,
             collapsed_groups: HashSet::new(),
             form: None,
+            form_inputs: HashMap::new(),
+            _form_input_subscriptions: Vec::new(),
             adding_group: false,
             group_name_buf: String::new(),
             active_field: None,
@@ -711,8 +718,7 @@ impl SnippetsView {
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| {
-                this.form = None;
-                this.active_field = None;
+                this.set_form(None);
                 this.reload(cx);
             });
         })
@@ -727,7 +733,7 @@ impl SnippetsView {
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| {
-                this.form = None;
+                this.set_form(None);
                 this.reload(cx);
             });
         })
@@ -1082,20 +1088,98 @@ impl SnippetsView {
         });
     }
 
+    fn set_form(&mut self, form: Option<FormState>) {
+        self.form = form;
+        self.active_field = None;
+        self.form_inputs.clear();
+        self._form_input_subscriptions.clear();
+    }
+
+    fn ensure_form_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(form) = self.form.as_ref() else {
+            return;
+        };
+        let fields = [
+            (Field::Name, form.name.clone(), "e.g. Deploy"),
+            (Field::Description, form.description.clone(), "Optional"),
+            (Field::Command, form.command.clone(), "Enter command…"),
+            (
+                Field::WorkingDir,
+                form.working_dir.clone(),
+                "Inherit from terminal",
+            ),
+        ];
+
+        for (field, value, placeholder) in fields {
+            if let Some(input) = self.form_inputs.get(&field).cloned() {
+                let current = input.read(cx).value().to_string();
+                if current != value && self.active_field != Some(field) {
+                    input.update(cx, |state, cx| state.set_value(value, window, cx));
+                }
+                continue;
+            }
+
+            let input = cx.new(|cx| {
+                let mut state = text_field(window, cx).placeholder(placeholder);
+                if field == Field::Command {
+                    state = state.multi_line(true).auto_grow(2, 8);
+                }
+                if !value.is_empty() {
+                    state.set_value(value, window, cx);
+                }
+                state
+            });
+            let subscription =
+                cx.subscribe(
+                    &input,
+                    move |this, input, event: &InputEvent, cx| match event {
+                        InputEvent::Change => {
+                            let value = input.read(cx).value().to_string();
+                            if let Some(form) = this.form.as_mut() {
+                                match field {
+                                    Field::Name => form.name = value,
+                                    Field::Description => form.description = value,
+                                    Field::Command => form.command = value,
+                                    Field::WorkingDir => form.working_dir = value,
+                                    _ => {}
+                                }
+                            }
+                            cx.notify();
+                        }
+                        InputEvent::Focus => {
+                            this.active_field = Some(field);
+                            cx.notify();
+                        }
+                        InputEvent::Blur => {
+                            if this.active_field == Some(field) {
+                                this.active_field = None;
+                                cx.notify();
+                            }
+                        }
+                        InputEvent::PressEnter { .. } => {
+                            if field != Field::Command {
+                                this.save_form(cx);
+                                cx.stop_propagation();
+                            }
+                        }
+                    },
+                );
+            self.form_inputs.insert(field, input);
+            self._form_input_subscriptions.push(subscription);
+        }
+    }
+
     // ── key handling ──────────────────────────────────────────────────────
 
     fn field_buf_mut(&mut self, f: Field) -> Option<&mut String> {
         match f {
             Field::Search => Some(&mut self.query),
             Field::GroupName => Some(&mut self.group_name_buf),
-            Field::Name => self.form.as_mut().map(|x| &mut x.name),
-            Field::Description => self.form.as_mut().map(|x| &mut x.description),
-            Field::Command => self.form.as_mut().map(|x| &mut x.command),
-            Field::WorkingDir => self.form.as_mut().map(|x| &mut x.working_dir),
             Field::VarValue => self
                 .var_prompt
                 .as_mut()
                 .and_then(|p| p.values.get_mut(p.active).map(|(_, v)| v)),
+            Field::Name | Field::Description | Field::Command | Field::WorkingDir => None,
             Field::Host => None,
         }
     }
@@ -1104,6 +1188,12 @@ impl SnippetsView {
         let Some(field) = self.active_field else {
             return;
         };
+        if matches!(
+            field,
+            Field::Name | Field::Description | Field::Command | Field::WorkingDir
+        ) {
+            return;
+        }
         let ks = &ev.keystroke;
         match ks.key.as_str() {
             "escape" => {
@@ -1144,7 +1234,6 @@ impl SnippetsView {
                         p.active += 1;
                     }
                 }
-                Field::Name | Field::Description | Field::WorkingDir => self.save_form(cx),
                 _ => {}
             },
             "tab" => {
@@ -1193,18 +1282,12 @@ impl SnippetsView {
             card: t.card(),
             accent: t.accent(),
             error: t.status_error(),
+            palette: Palette::from_theme(t),
         }
     }
 
-    /// T20-003 documented exception: every field this renders (name,
-    /// description, command, working dir, search, group name, the
-    /// var-prompt value) is driven by the single view-level `on_key_down`
-    /// router (`on_key`, keyed by `Field`), not a per-field `InputState`
-    /// entity. Swapping to `labonair_ui_kit::text_field`/`field_input` would
-    /// mean rearchitecting the whole multi-field form and prompt/host-picker
-    /// flows — out of scope for a surgical, behavior-preserving migration of
-    /// this view, and the same call the hosts-ui migration made for its own
-    /// `labelled_field`/`tunnel_field`.
+    /// Text editing is still routed by the view-level `on_key` handler, keyed
+    /// by `Field`; the UI kit owns the shared field surface and compact size.
     fn text_field(
         &self,
         id: &'static str,
@@ -1217,34 +1300,55 @@ impl SnippetsView {
         let active = self.active_field == Some(field);
         let empty = value.is_empty();
         let show_caret = active && self.blink.read(cx).visible();
-        div()
-            .id(id)
-            .w_full()
-            .min_h(px(22.0))
-            .px(px(6.0))
-            .py(px(3.0))
-            .flex()
-            .items_center()
-            .rounded_sm()
-            .border_1()
-            .border_color(if active { c.accent } else { c.border })
-            .bg(c.bg)
-            .text_size(px(11.0))
-            .text_color(if empty { c.muted } else { c.fg })
-            .whitespace_normal()
-            .child(SharedString::from(if empty {
-                placeholder.to_string()
+        text_field_surface_sized(
+            id,
+            c.palette,
+            if active {
+                TextFieldState::Focused
             } else {
-                value.to_string()
-            }))
-            .when(show_caret, |d| d.child(labonair_ui_kit::caret(c.fg, 12.0)))
-            .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
-                cx.stop_propagation();
-                this.active_field = Some(field);
-                w.focus(&this.focus);
-                this.blink.update(cx, |b, cx| b.pause(cx));
-                cx.notify();
-            }))
+                TextFieldState::Normal
+            },
+            TextFieldSize::Compact,
+            div()
+                .w_full()
+                .min_w_0()
+                .flex()
+                .items_center()
+                .text_size(px(11.0))
+                .text_color(if empty { c.muted } else { c.fg })
+                .whitespace_normal()
+                .child(SharedString::from(if empty {
+                    placeholder.to_string()
+                } else {
+                    value.to_string()
+                }))
+                .when(show_caret, |d| d.child(labonair_ui_kit::caret(c.fg, 12.0))),
+        )
+        .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+            cx.stop_propagation();
+            this.active_field = Some(field);
+            w.focus(&this.focus);
+            this.blink.update(cx, |b, cx| b.pause(cx));
+            cx.notify();
+        }))
+    }
+
+    fn form_text_field(&self, id: &'static str, field: Field, c: &Colors) -> gpui::AnyElement {
+        let Some(input) = self.form_inputs.get(&field) else {
+            return div().into_any_element();
+        };
+        let state = if self.active_field == Some(field) {
+            TextFieldState::Focused
+        } else {
+            TextFieldState::Normal
+        };
+        let editor = text_input(input, c.palette);
+        if field == Field::Command {
+            text_area_surface(id, c.palette, state, editor).into_any_element()
+        } else {
+            text_field_surface_sized(id, c.palette, state, TextFieldSize::Compact, editor)
+                .into_any_element()
+        }
     }
 
     /// Thin wrapper over the shared [`labonair_ui_kit::button`] builder
@@ -1260,9 +1364,9 @@ impl SnippetsView {
     ) -> gpui::AnyElement {
         let p = Palette::from_theme(self.theme.read(cx));
         let variant = if primary {
-            ButtonVariant::Default
+            ButtonVariant::Filled
         } else {
-            ButtonVariant::Outline
+            ButtonVariant::Outlined
         };
         button(id, p, variant, ButtonSize::Xs)
             .child(label.into())
@@ -1333,7 +1437,7 @@ impl SnippetsView {
                         true,
                         cx,
                         |this, _w, cx| {
-                            this.form = Some(FormState::empty());
+                            this.set_form(Some(FormState::empty()));
                             cx.notify();
                         },
                     )),
@@ -1382,7 +1486,7 @@ impl SnippetsView {
                         button(
                             SharedString::from(format!("snip-grp-del-{gid}")),
                             p,
-                            ButtonVariant::Destructive,
+                            ButtonVariant::TintedError,
                             ButtonSize::IconXs,
                         )
                         .child(IconName::X.svg(p.destructive).size(px(10.0)))
@@ -1551,7 +1655,7 @@ impl SnippetsView {
                         button(
                             SharedString::from(format!("snip-up-{}", s.id)),
                             p,
-                            ButtonVariant::Ghost,
+                            ButtonVariant::Subtle,
                             ButtonSize::IconXs,
                         )
                         .child("\u{25B2}")
@@ -1565,7 +1669,7 @@ impl SnippetsView {
                         button(
                             SharedString::from(format!("snip-down-{}", s.id)),
                             p,
-                            ButtonVariant::Ghost,
+                            ButtonVariant::Subtle,
                             ButtonSize::IconXs,
                         )
                         .child("\u{25BC}")
@@ -1579,13 +1683,13 @@ impl SnippetsView {
                         button(
                             SharedString::from(format!("snip-edit-{}", s.id)),
                             p,
-                            ButtonVariant::Ghost,
+                            ButtonVariant::Subtle,
                             ButtonSize::IconXs,
                         )
                         .child(IconName::Pencil.svg(p.muted).size(px(11.0)))
                         .on_click(cx.listener(
                             move |this, _: &ClickEvent, _w, cx| {
-                                this.form = Some(FormState::from_snippet(&s_edit));
+                                this.set_form(Some(FormState::from_snippet(&s_edit)));
                                 cx.notify();
                             },
                         )),
@@ -1594,7 +1698,7 @@ impl SnippetsView {
                         button(
                             SharedString::from(format!("snip-dup-{}", s.id)),
                             p,
-                            ButtonVariant::Ghost,
+                            ButtonVariant::Subtle,
                             ButtonSize::IconXs,
                         )
                         .child(IconName::Copy.svg(p.muted).size(px(11.0)))
@@ -1608,7 +1712,7 @@ impl SnippetsView {
                         button(
                             SharedString::from(format!("snip-del-{}", s.id)),
                             p,
-                            ButtonVariant::Destructive,
+                            ButtonVariant::TintedError,
                             ButtonSize::IconXs,
                         )
                         .child(IconName::Trash.svg(p.destructive).size(px(11.0)))
@@ -1674,25 +1778,11 @@ impl SnippetsView {
                     })),
             )
             .child(label(c, "Name"))
-            .child(self.text_field("snip-f-name", Field::Name, &form.name, "e.g. Deploy", c, cx))
+            .child(self.form_text_field("snip-f-name", Field::Name, c))
             .child(label(c, "Description"))
-            .child(self.text_field(
-                "snip-f-desc",
-                Field::Description,
-                &form.description,
-                "Optional",
-                c,
-                cx,
-            ))
+            .child(self.form_text_field("snip-f-desc", Field::Description, c))
             .child(label(c, "Command"))
-            .child(self.text_field(
-                "snip-f-cmd",
-                Field::Command,
-                &form.command,
-                "Enter command\u{2026}",
-                c,
-                cx,
-            ));
+            .child(self.form_text_field("snip-f-cmd", Field::Command, c));
 
         // Group picker (chips).
         body = body.child(label(c, "Group")).child(
@@ -1790,14 +1880,9 @@ impl SnippetsView {
         );
 
         if !form.target_ssh {
-            body = body.child(label(c, "Working Dir")).child(self.text_field(
-                "snip-f-wd",
-                Field::WorkingDir,
-                &form.working_dir,
-                "Inherit from terminal",
-                c,
-                cx,
-            ));
+            body = body
+                .child(label(c, "Working Dir"))
+                .child(self.form_text_field("snip-f-wd", Field::WorkingDir, c));
         }
 
         let footer = div()
@@ -1814,8 +1899,7 @@ impl SnippetsView {
                 false,
                 cx,
                 |this, _w, cx| {
-                    this.form = None;
-                    this.active_field = None;
+                    this.set_form(None);
                     cx.notify();
                 },
             ))
@@ -2030,24 +2114,10 @@ impl SnippetsView {
         on_confirm: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
         on_cancel: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> gpui::AnyElement {
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(crate::theme::modal_scrim())
+        modal_overlay("snippet-modal-overlay")
             .child(
-                div()
+                dialog_surface("snippet-modal", c.palette)
                     .w(px(280.0))
-                    .flex()
-                    .flex_col()
-                    .gap(px(8.0))
-                    .p(px(12.0))
-                    .rounded_md()
-                    .border_1()
-                    .border_color(c.border)
-                    .bg(c.card)
                     .child(
                         div()
                             .text_size(px(12.0))
@@ -2239,7 +2309,7 @@ impl SnippetsView {
                                 button(
                                     "snip-log-close",
                                     p,
-                                    ButtonVariant::Ghost,
+                                    ButtonVariant::Subtle,
                                     ButtonSize::IconXs,
                                 )
                                 .child(IconName::X.svg(p.muted).size(px(10.0)))
@@ -2299,6 +2369,7 @@ impl Render for SnippetsView {
                 }));
         }
         let c = self.colors(cx);
+        self.ensure_form_inputs(window, cx);
         let p = Palette::from_theme(self.theme.read(cx));
 
         let header = div()
@@ -2339,10 +2410,10 @@ impl Render for SnippetsView {
                 ),
             )
             .child(
-                button("snip-new", p, ButtonVariant::Ghost, ButtonSize::IconXs)
+                button("snip-new", p, ButtonVariant::Subtle, ButtonSize::IconXs)
                     .child(IconName::Plus.svg(p.muted))
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        this.form = Some(FormState::empty());
+                        this.set_form(Some(FormState::empty()));
                         cx.notify();
                     })),
             );
@@ -2434,7 +2505,7 @@ impl SnippetsView {
                         let s = s.clone();
                         v.update(cx, |this, cx| {
                             this.menu = None;
-                            this.form = Some(FormState::from_snippet(&s));
+                            this.set_form(Some(FormState::from_snippet(&s)));
                             cx.notify();
                         })
                     }

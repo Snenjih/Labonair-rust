@@ -600,7 +600,11 @@ pub(crate) fn bootstrap(
     );
     crate::keymap_loader::reload_and_apply(cx, &command_registry);
     crate::keymap_loader::watch(cx, command_registry.clone());
-    set_settings_deps(settings_services(), tokio.clone(), cx);
+    set_settings_deps(
+        settings_services(cx.entity(), window.window_handle()),
+        tokio.clone(),
+        cx,
+    );
     // Snippets no longer holds the workspace entity (R08-003): it runs
     // snippets through this narrow execution-host contract wired to the
     // active Workspace.

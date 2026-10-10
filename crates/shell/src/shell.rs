@@ -51,6 +51,11 @@ pub use labonair_notifications::init as init_notifications;
 pub use labonair_settings::init as init_settings;
 pub use labonair_theme::{init_fonts, init_theme};
 
+/// Forward native deep-links from the app bootstrap to the owning feature.
+pub fn handle_open_url(url: &str, cx: &mut gpui::App) -> bool {
+    labonair_settings_ui::open_settings_deep_link(url, cx)
+}
+
 /// Run the one-time import of legacy Settings layout values into the
 /// workspace-owned layout file. The app bootstrap exposes this through the
 /// shell so the entrypoint does not need a direct dependency on Workspace.

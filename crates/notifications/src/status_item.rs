@@ -193,7 +193,7 @@ impl StatusItem for NotificationsStatusItem {
                         labonair_ui_kit::button_no_hover(
                             "bar-notif-clear",
                             palette,
-                            ButtonVariant::Ghost,
+                            ButtonVariant::Subtle,
                             ButtonSize::Xs,
                         )
                         .text_color(muted)

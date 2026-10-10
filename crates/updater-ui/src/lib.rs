@@ -502,9 +502,9 @@ impl UpdaterView {
     ) -> gpui::AnyElement {
         let p = Palette::from_theme(self.theme.read(cx));
         let variant = if primary {
-            ButtonVariant::Default
+            ButtonVariant::Filled
         } else {
-            ButtonVariant::Outline
+            ButtonVariant::Outlined
         };
         button(id, p, variant, ButtonSize::Xs)
             .child(label)

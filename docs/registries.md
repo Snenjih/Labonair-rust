@@ -163,6 +163,26 @@ Downloading and user-authored theme extensions are
 deferred until a concrete workflow and owner exist; they are not part of the
 registry contract.
 
+## Settings owner-surface registry
+
+`labonair-settings` owns the startup-scoped `SettingsSurfaceRegistry` contract
+for capability-owned Settings links. Owner UI modules define and register
+their own contributions through that contract. Each contribution contains a
+stable `SettingsSurfaceId`, searchable row metadata, Settings page placement,
+and an open callback. IDs are unique within the Settings surface namespace;
+duplicate IDs, empty metadata, and conflicting page metadata are rejected.
+Contributions are static for the application lifetime, and consumers receive
+an immutable metadata snapshot used by both navigation and search. Opening a
+contribution delegates to its canonical capability surface; Settings owns no
+linked feature's state or persistence. The registry itself has no persistence
+or refresh behavior.
+
+The composition root invokes each owner's registration function and injects
+the live window/workspace callback needed to open its surface. It does not
+maintain a parallel list of Settings row metadata or feature-specific search
+and rendering logic. Adding a contribution does not require changing the
+Settings renderer.
+
 ## Panel and status-item registries
 
 Panels register identity, title, icon, supported docks, and a view factory. Status items register identity, placement metadata, badge behavior, and a view factory. The shell provides the host surface; feature modules own their content and actions.

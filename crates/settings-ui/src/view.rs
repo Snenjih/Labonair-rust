@@ -1,5 +1,5 @@
 //! The `SettingsView` entity: its state struct, construction, lifecycle,
-//! keyboard handling, the AREAS-driven navigation (T19-004: disclosure
+//! keyboard handling, the page-driven navigation (T19-004: disclosure
 //! sections + scroll-spy + sub-pages + custom top-level chrome, replacing the
 //! old flat `CATEGORIES` sidebar), and the small render helpers + `Palette`.
 //! The large per-pane render code lives in the sibling `panes/*` modules
@@ -7,52 +7,79 @@
 
 pub use gpui::prelude::FluentBuilder;
 pub use gpui::{
-    canvas, div, list, px, App, AppContext, Bounds, ClickEvent, Context, Entity, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, KeyDownEvent, ListAlignment, ListState,
-    ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, Window,
+    canvas, div, list, px, App, AppContext, Bounds, ClickEvent, ClipboardItem, Context, Entity,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, ListAlignment,
+    ListOffset, ListState, ParentElement, Pixels, Point, Render, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Window,
 };
 pub use serde_json::Value;
 pub use tokio::runtime::Handle as TokioHandle;
 
-pub use labonair_filesystem::paths::config_dir;
 pub use labonair_notifications::{notification_center, Notification};
 pub use labonair_settings::{enqueue_user_settings_write, Settings as _, SettingsStore};
-pub use labonair_settings_content::areas::AREAS;
 pub use labonair_theme::ThemeStore;
 pub use labonair_ui_kit::{
-    button, checkbox, field_input, h_stack, keybinding_hint, number_field, select_popover,
-    select_trigger, text_field, tree_row, v_stack, ButtonSize, ButtonVariant, IconName, InputEvent,
-    InputState, Palette, SelectOption, Switch, TreeRowState,
+    button, checkbox, h_stack, icon_button_builder, keybinding_hint, number_field,
+    search_clear_button, search_field, search_input, segmented_control, select_popover,
+    select_trigger, select_trigger_disabled, text_field, text_field_surface, text_input, tree_row,
+    v_stack, ButtonSize, ButtonVariant, IconButtonShape, IconName, InputEvent, InputState, Palette,
+    SegmentSize, SegmentVariant, SelectOption, SelectPopoverAnchor, Switch, TextFieldState,
+    TreeRowState, DISABLED_OPACITY,
 };
 
 pub(crate) use crate::apply::*;
 pub(crate) use crate::pages::*;
 pub(crate) use crate::schema::*;
 pub(crate) use crate::search::{SearchIndex, SearchRow, SearchTarget};
-pub(crate) use crate::services::{SettingsServices, SystemFontService};
+pub(crate) use crate::services::{SettingsFileTarget, SettingsServices, SettingsSurfaceId};
 pub(crate) use crate::window::*;
 
 use std::collections::{HashMap, HashSet};
 
-/// Which layer supplies a field's effective value, for the origin badge
-/// (`docs/settings-guidelines.md` rule 5). A thin display-only mirror of
-/// `labonair_settings::SettingsLayer` — kept separate so this crate never has
-/// to match on `SettingsLayer::Project(WorktreeId)`/`Language(String)`'s
-/// payloads just to render three words.
+const SELECT_MENU_PAGE_SIZE: usize = 10;
+
+fn select_menu_next_index(current: usize, len: usize, key: &str) -> Option<usize> {
+    let last = len.checked_sub(1)?;
+    Some(match key {
+        "up" => {
+            if current == 0 {
+                last
+            } else {
+                current - 1
+            }
+        }
+        "down" => {
+            if current >= last {
+                0
+            } else {
+                current + 1
+            }
+        }
+        "home" => 0,
+        "end" => last,
+        "pageup" => current.saturating_sub(SELECT_MENU_PAGE_SIZE),
+        "pagedown" => current.saturating_add(SELECT_MENU_PAGE_SIZE).min(last),
+        _ => return None,
+    })
+}
+
+/// Which Settings layer supplies a field's effective value. A thin display-
+/// only mirror of `labonair_settings::SettingsLayer` — kept separate so this
+/// crate never has to match on `SettingsLayer::Project(WorktreeId)` or other
+/// payloads just to show where an override came from.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OriginBadge {
+pub(crate) enum SettingSource {
     Default,
     User,
     Project,
 }
 
-impl OriginBadge {
-    pub(crate) fn label(self) -> &'static str {
+impl SettingSource {
+    pub(crate) fn modified_in(self) -> Option<&'static str> {
         match self {
-            OriginBadge::Default => "Default",
-            OriginBadge::User => "User",
-            OriginBadge::Project => "Project",
+            Self::Default => None,
+            Self::User => Some("user settings"),
+            Self::Project => Some("project settings"),
         }
     }
 }
@@ -68,13 +95,6 @@ pub(crate) enum SettingsScope {
 }
 
 impl SettingsScope {
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            SettingsScope::User => "User",
-            SettingsScope::Project => "Project",
-        }
-    }
-
     pub(crate) fn token(self) -> &'static str {
         match self {
             SettingsScope::User => "user",
@@ -89,9 +109,14 @@ impl SettingsScope {
             _ => None,
         }
     }
-}
 
-pub(crate) const SETTINGS_SCOPE_KEY: &str = "__settings_scope";
+    fn file_target(self) -> SettingsFileTarget {
+        match self {
+            SettingsScope::User => SettingsFileTarget::User,
+            SettingsScope::Project => SettingsFileTarget::Project,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) struct NavigationTarget {
@@ -117,10 +142,10 @@ impl NavigationTarget {
 
 pub struct SettingsView {
     pub(crate) theme: Entity<ThemeStore>,
-    pub(crate) font_service: std::sync::Arc<dyn SystemFontService>,
+    pub(crate) services: SettingsServices,
     pub(crate) tokio: TokioHandle,
     pub(crate) open: bool,
-    /// Index into `AREAS` / `self.pages` — the active top-level category.
+    /// Index into `self.pages` — the active visible Settings category.
     pub(crate) active_area: usize,
     /// Index into `self.pages[active_area].sub_pages`, when a `SubPageLink`
     /// has been followed (rule 1).
@@ -150,6 +175,8 @@ pub struct SettingsView {
     /// An open `Select` dropdown (json_path + anchor position + options),
     /// drawn as a deferred floating layer so it escapes the scroll clip.
     pub(crate) dropdown: Option<SelectMenu>,
+    /// Virtualized options for the active select/font picker.
+    pub(crate) select_list: ListState,
     /// Each select trigger's window-space bounds from the last paint, keyed by
     /// `json_path`. The open dropdown anchors to `bounds.bottom_left()` so it
     /// drops from the trigger, not from wherever inside it the click landed.
@@ -164,7 +191,7 @@ pub struct SettingsView {
     // ── T19-004: generated settings UI ──────────────────────────────────
     /// Every generated field (`crate::schema::all_fields()`), computed once.
     pub(crate) all_fields: Vec<AnyField>,
-    /// Every top-level page (`crate::pages::pages()`), in `AREAS` order.
+    /// Visible field and capability pages composed from the owner registry.
     pub(crate) pages: Vec<SettingsPage>,
     /// Top-level sidebar rows whose sub-section list is expanded
     /// (`docs/architecture.md` §8.3 deviation). Toggled only by the row's
@@ -192,6 +219,8 @@ pub struct SettingsView {
     pub(crate) search_results: Vec<SearchRow>,
     /// Index into `search_results` for keyboard navigation.
     pub(crate) search_selected: usize,
+    /// The setting path whose Labonair deep-link was most recently copied.
+    pub(crate) last_copied_link_path: Option<&'static str>,
     /// A field's `json_path` currently pulsing (jumped-to via search),
     /// cleared by a short timer.
     pub(crate) highlight: Option<&'static str>,
@@ -231,7 +260,7 @@ impl SettingsView {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
         // The layered `SettingsStore` (T19-002/003) notifies on every write —
         // including ones this window did not make itself (e.g. a project
-        // `.labonair/settings.json` edit) — so origin badges / values stay
+        // `.labonair/settings.json` edit) — so override sources / values stay
         // live without a bespoke observer list.
         if cx.has_global::<SettingsStore>() {
             cx.observe_global::<SettingsStore>(|this, cx| {
@@ -243,19 +272,30 @@ impl SettingsView {
         // Deep-link: jump to the requested area/section slug when another
         // part of the app asks for one while this window is open.
         cx.observe_global::<SettingsTarget>(|this, cx| {
-            if let Some(SettingsTarget(Some(slug))) = cx.try_global::<SettingsTarget>().copied() {
-                this.navigate_to_slug(slug);
-                this.search.clear();
-                cx.notify();
+            match cx
+                .try_global::<SettingsTarget>()
+                .cloned()
+                .unwrap_or_default()
+            {
+                SettingsTarget::Home => {}
+                SettingsTarget::Page(slug) => {
+                    this.navigate_to_slug(slug);
+                    this.search.clear();
+                    cx.notify();
+                }
+                SettingsTarget::Field(path) => {
+                    this.navigate_to_json_path(&path, cx);
+                }
             }
         })
         .detach();
         let all_fields = all_fields();
-        let pages = pages();
-        let search_index = SearchIndex::build(&all_fields);
+        let surfaces = services.surfaces();
+        let pages = pages(&surfaces);
+        let search_index = SearchIndex::build(&all_fields, &pages, &surfaces);
         Self {
             theme,
-            font_service: services.fonts,
+            services,
             tokio,
             open: false,
             active_area: 0,
@@ -273,6 +313,7 @@ impl SettingsView {
             _number_input_subscription: None,
             windowed: false,
             dropdown: None,
+            select_list: ListState::new(0, ListAlignment::Top, px(320.0)),
             select_bounds: HashMap::new(),
             system_fonts: Vec::new(),
             font_loading: false,
@@ -291,6 +332,7 @@ impl SettingsView {
             search_index,
             search_results: Vec::new(),
             search_selected: 0,
+            last_copied_link_path: None,
             highlight: None,
             highlight_token: 0,
             pending_scroll: None,
@@ -306,9 +348,6 @@ impl SettingsView {
         self.open = true;
         self.cancel_text_input(cx);
         self.cancel_number_input(cx);
-        if self.expanded_areas.is_empty() {
-            self.expanded_areas.insert(self.active_area);
-        }
         self.scope = SettingsScope::User;
         self.search.clear();
         self.search_results.clear();
@@ -524,7 +563,8 @@ impl SettingsView {
     pub(crate) fn go_to_area(&mut self, i: usize, cx: &mut Context<Self>) {
         self.active_area = i;
         self.active_subpage = None;
-        self.expanded_areas.insert(i);
+        // Root activation selects the page; only its disclosure control opens
+        // the section anchors, as in the Settings navigation contract.
         self.search.clear();
         cx.notify();
     }
@@ -551,13 +591,13 @@ impl SettingsView {
 
     fn visible_navigation_targets(&self) -> Vec<NavigationTarget> {
         let mut targets = Vec::new();
-        for (area, _) in AREAS.iter().enumerate() {
-            targets.push(NavigationTarget::area(area));
-            if self.expanded_areas.contains(&area) {
+        for page in 0..self.pages.len() {
+            targets.push(NavigationTarget::area(page));
+            if self.expanded_areas.contains(&page) {
                 targets.extend(
-                    self.section_labels_for_area(area)
+                    self.section_labels_for_area(page)
                         .into_iter()
-                        .map(|section| NavigationTarget::section(area, section)),
+                        .map(|section| NavigationTarget::section(page, section)),
                 );
             }
         }
@@ -650,11 +690,10 @@ impl SettingsView {
                 }
             }
         }
-        let area = &AREAS[area_idx];
         if matches!(
             self.pages.get(area_idx).map(|p| &p.body),
             Some(PageBody::Generated(_))
-        ) && !crate::pages::leftover_fields(area.target_module, &self.all_fields).is_empty()
+        ) && !crate::pages::leftover_fields(area_idx, &self.pages, &self.all_fields).is_empty()
         {
             out.push("Other");
         }
@@ -680,6 +719,16 @@ impl SettingsView {
             );
             return;
         }
+        if scope == self.scope {
+            return;
+        }
+        // Commit active editors before changing the write target. A keystroke
+        // entered in User scope must never be saved into Project scope merely
+        // because the user changed the selector before the blur event arrived.
+        self.commit_active_text_input(cx);
+        if let (Some(key), Some(input)) = (self.number_input_key, self.number_input.clone()) {
+            self.commit_number_input(key, input.read(cx).value().to_string(), cx);
+        }
         self.scope = scope;
         self.dropdown = None;
         cx.notify();
@@ -695,22 +744,14 @@ impl SettingsView {
     pub(crate) fn refresh_search_results(&mut self) {
         self.search_results = crate::search::search(&self.search_index, &self.search, 50);
         for row in &self.search_results {
-            let SearchTarget::Field(index) = row.target;
-            if let Some(field) = self.all_fields.get(index) {
-                if let Some(area) = AREAS
-                    .iter()
-                    .position(|area| area.target_module == field.area())
-                {
-                    self.expanded_areas.insert(area);
-                }
-            }
+            self.expanded_areas.insert(row.page_index);
         }
         if self.search_selected >= self.search_results.len() {
             self.search_selected = self.search_results.len().saturating_sub(1);
         }
     }
 
-    /// Enter/click on a search result: navigate to its area (+ sub-page),
+    /// Enter/click on a search result: navigate to its category (+ sub-page),
     /// clear the query, and schedule a scroll-to + highlight pulse once the
     /// target page has rendered (`render_generated_body` consumes
     /// `pending_scroll`).
@@ -720,30 +761,52 @@ impl SettingsView {
                 let Some(field) = self.all_fields.get(idx).copied() else {
                     return;
                 };
-                let Some(area_index) = AREAS.iter().position(|a| a.target_module == field.area())
+                let Some(location) =
+                    crate::pages::section_label_for_field(&self.pages, field.json_path)
+                        .or_else(|| crate::pages::field_location(&self.pages, &field))
                 else {
                     return;
                 };
-                let subpage_index = match section_label_for_field(field.area(), field.local_key()) {
-                    Some(("", _)) => None,
-                    Some((slug, _)) => self.pages[area_index]
+                self.active_area = location.page_index;
+                self.active_subpage = location.sub_page_slug.and_then(|slug| {
+                    self.pages[location.page_index]
                         .sub_pages
                         .iter()
-                        .position(|sp| sp.slug == slug),
-                    // Not placed by any curated group — falls through to
-                    // the trailing "Other" section on the area's main page.
-                    None => None,
-                };
-                self.active_area = area_index;
-                self.active_subpage = subpage_index;
-                self.expanded_areas.insert(area_index);
+                        .position(|page| page.slug == slug)
+                });
+                self.expanded_areas.insert(location.page_index);
+                self.scroll_to_section = location.section;
                 self.pending_scroll = Some(field.json_path);
                 self.set_highlight(field.json_path, cx);
+            }
+            SearchTarget::OwnerSurface(surface) => {
+                if let Err(error) = self.services.open_surface(surface, cx) {
+                    tracing::error!("could not open Settings surface: {error}");
+                }
             }
         }
         self.search.clear();
         self.search_results.clear();
         self.search_selected = 0;
+        cx.notify();
+    }
+
+    pub(crate) fn navigate_to_json_path(&mut self, path: &str, cx: &mut Context<Self>) {
+        let Some(index) = self
+            .all_fields
+            .iter()
+            .position(|field| field.json_path == path)
+        else {
+            return;
+        };
+        self.activate_search_hit(SearchTarget::Field(index), cx);
+    }
+
+    pub(crate) fn copy_setting_link(&mut self, path: &'static str, cx: &mut Context<Self>) {
+        cx.write_to_clipboard(ClipboardItem::new_string(format!(
+            "labonair://settings/{path}"
+        )));
+        self.last_copied_link_path = Some(path);
         cx.notify();
     }
 
@@ -782,13 +845,13 @@ impl SettingsView {
     }
 
     /// Which layer supplies `field`'s effective value (rule 5).
-    pub(crate) fn field_origin(&self, field: &AnyField, cx: &App) -> OriginBadge {
+    pub(crate) fn field_source(&self, field: &AnyField, cx: &App) -> SettingSource {
         match cx.try_global::<SettingsStore>() {
-            None => OriginBadge::Default,
+            None => SettingSource::Default,
             Some(store) => match store.source_of(field.json_path) {
-                labonair_settings::SettingsLayer::Default => OriginBadge::Default,
-                labonair_settings::SettingsLayer::Project(_) => OriginBadge::Project,
-                _ => OriginBadge::User,
+                labonair_settings::SettingsLayer::Default => SettingSource::Default,
+                labonair_settings::SettingsLayer::Project(_) => SettingSource::Project,
+                _ => SettingSource::User,
             },
         }
     }
@@ -852,10 +915,10 @@ impl SettingsView {
             return;
         }
         let clear = field.clear;
-        let scope = match self.field_origin(field, cx) {
-            OriginBadge::Project => SettingsScope::Project,
-            OriginBadge::User => SettingsScope::User,
-            OriginBadge::Default => self.scope,
+        let scope = match self.field_source(field, cx) {
+            SettingSource::Project => SettingsScope::Project,
+            SettingSource::User => SettingsScope::User,
+            SettingSource::Default => self.scope,
         };
         let result = match scope {
             SettingsScope::User => cx
@@ -1029,7 +1092,11 @@ impl SettingsView {
                             }
                             cx.notify();
                         }
-                        InputEvent::PressEnter { .. } | InputEvent::Blur => {
+                        InputEvent::PressEnter { .. } => {
+                            this.commit_text_input(key, input.read(cx).value().to_string(), cx);
+                            cx.stop_propagation();
+                        }
+                        InputEvent::Blur => {
                             this.commit_text_input(key, input.read(cx).value().to_string(), cx);
                         }
                         _ => {}
@@ -1163,7 +1230,11 @@ impl SettingsView {
             cx.subscribe(
                 &input,
                 move |this, input, event: &InputEvent, cx| match event {
-                    InputEvent::PressEnter { .. } | InputEvent::Blur => {
+                    InputEvent::PressEnter { .. } => {
+                        this.commit_number_input(key, input.read(cx).value().to_string(), cx);
+                        cx.stop_propagation();
+                    }
+                    InputEvent::Blur => {
                         this.commit_number_input(key, input.read(cx).value().to_string(), cx);
                     }
                     _ => {}
@@ -1249,16 +1320,18 @@ impl SettingsView {
                     cx.notify();
                     return;
                 }
-                "up" | "down" => {
+                "up" | "down" | "home" | "end" | "pageup" | "pagedown" => {
+                    let mut highlighted = None;
                     if let Some(menu) = self.dropdown.as_mut() {
-                        let len = menu.options.len();
-                        if len > 0 {
-                            menu.highlighted = if key == "up" {
-                                (menu.highlighted + len - 1) % len
-                            } else {
-                                (menu.highlighted + 1) % len
-                            };
+                        if let Some(index) =
+                            select_menu_next_index(menu.highlighted, menu.options.len(), key)
+                        {
+                            menu.highlighted = index;
+                            highlighted = Some(index);
                         }
+                    }
+                    if let Some(highlighted) = highlighted {
+                        self.select_list.scroll_to_reveal_item(highlighted);
                     }
                     cx.stop_propagation();
                     cx.notify();
@@ -1273,18 +1346,12 @@ impl SettingsView {
                         cx.notify();
                         return;
                     };
-                    if menu.key == SETTINGS_SCOPE_KEY {
-                        if let Some(scope) = SettingsScope::from_token(token.as_ref()) {
-                            self.set_scope(scope, cx);
-                        }
+                    let value = if menu.default_sentinel.as_ref() == Some(&token) {
+                        String::new()
                     } else {
-                        let value = if menu.default_sentinel.as_ref() == Some(&token) {
-                            String::new()
-                        } else {
-                            token.to_string()
-                        };
-                        self.set_field_value(menu.key, Value::String(value), cx);
-                    }
+                        token.to_string()
+                    };
+                    self.set_field_value(menu.key, Value::String(value), cx);
                     cx.stop_propagation();
                     return;
                 }
@@ -1380,7 +1447,8 @@ impl SettingsView {
     fn render_area_navigation(
         &mut self,
         i: usize,
-        area: &labonair_settings_content::areas::AreaMeta,
+        page_key: &'static str,
+        page_title: &'static str,
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
@@ -1396,9 +1464,9 @@ impl SettingsView {
             ..Default::default()
         };
         let mut row = tree_row(
-            SharedString::from(format!("settings-area-{}", area.key)),
+            SharedString::from(format!("settings-area-{}", page_key)),
             *c,
-            area.title,
+            page_title,
         )
         .label_tint(c.sidebar_fg)
         .state(state)
@@ -1534,71 +1602,50 @@ impl Render for SettingsView {
         // always act on what's currently on screen (cheap — ~200 entries).
         self.refresh_search_results();
 
-        let mut search_box = div()
-            .id("settings-search")
-            .mb_2()
-            .px(c.space(8.0))
-            .py(c.space(4.0))
-            .flex()
-            .items_center()
-            .gap(c.space(6.0))
-            .rounded(px(c.radius.sm))
-            .border_1()
-            .border_color(if searching { c.accent } else { c.border })
-            .bg(c.input)
-            .child(IconName::Search.svg(c.muted).size(px(13.0)))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .children(self.search_input.as_ref().map(|input| {
-                        field_input(input)
-                            .appearance(false)
-                            .bordered(false)
-                            .focus_bordered(false)
-                            .w_full()
-                            .text_size(px(12.0))
-                    })),
-            );
-        if searching {
-            search_box = search_box.child(
-                button(
+        let search_editor = self
+            .search_input
+            .as_ref()
+            .map(|input| search_input(input, c).into_any_element())
+            .unwrap_or_else(|| div().into_any_element());
+        let clear_button = if searching {
+            Some(
+                search_clear_button(
                     "settings-clear-search",
                     c,
-                    ButtonVariant::Ghost,
-                    ButtonSize::IconXs,
+                    cx.listener(|this, _: &ClickEvent, _window, cx| {
+                        this.search.clear();
+                        this.search_results.clear();
+                        this.search_selected = 0;
+                        cx.notify();
+                    }),
                 )
-                .tab_index(0)
-                .focus(|style| style.border_1().border_color(c.ring))
-                .child(IconName::X.svg(c.muted).size(px(11.0)))
-                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                    this.search.clear();
-                    this.search_results.clear();
-                    this.search_selected = 0;
-                    cx.notify();
-                }))
-                .on_key_down(cx.listener(
-                    |this, event: &KeyDownEvent, _window, cx| {
-                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                            this.search.clear();
-                            this.search_results.clear();
-                            this.search_selected = 0;
-                            cx.stop_propagation();
-                            cx.notify();
-                        }
-                    },
-                )),
-            );
-        }
+                .into_any_element(),
+            )
+        } else {
+            None
+        };
+        let search_box = search_field(
+            "settings-search",
+            c,
+            self.search_input_focused,
+            search_editor,
+            clear_button,
+        )
+        // The sidebar's 2-unit flex gap contributes to this separation, so a
+        // 10-unit explicit margin keeps the total at 12 units.
+        .mb(c.space(10.0));
 
-        // The canonical seven Settings areas are the only root navigation
-        // entries. Management surfaces such as Hosts, Themes and Keymap have
-        // their own owning-module entry points and never become fake Settings
-        // categories.
-        let sidebar_items: Vec<_> = AREAS
+        // Categories with no owner-backed values remain in the parity
+        // crosswalk until their capability provides a real Settings surface.
+        let sidebar_pages: Vec<_> = self
+            .pages
             .iter()
+            .map(|page| (page.key, page.title))
+            .collect();
+        let sidebar_items: Vec<_> = sidebar_pages
+            .into_iter()
             .enumerate()
-            .map(|(i, area)| self.render_area_navigation(i, area, &c, cx))
+            .map(|(i, (key, title))| self.render_area_navigation(i, key, title, &c, cx))
             .collect();
         let sidebar_body = div()
             .id("settings-sidebar-list")
@@ -1618,9 +1665,9 @@ impl Render for SettingsView {
             .flex()
             .flex_col()
             .gap(c.space(2.0))
-            .px(c.space(8.0))
-            .pt(c.space(if self.windowed { 30.0 } else { 8.0 }))
-            .pb(c.space(8.0))
+            .px(c.space(10.0))
+            .pt(c.space(if self.windowed { 40.0 } else { 10.0 }))
+            .pb(c.space(10.0))
             .overflow_hidden()
             // `docs/settings-guidelines.md`: the nav rail sits on its own
             // `--sidebar` surface, distinct from the `--card` content area.
@@ -1671,8 +1718,7 @@ impl Render for SettingsView {
             .text_color(c.fg)
             .on_key_down(cx.listener(Self::on_key))
             .child(content)
-            .children(self.render_dropdown(&c, cx))
-            .children(self.render_scope_dropdown(&c, cx));
+            .children(self.render_dropdown(&c, cx));
 
         if windowed {
             return card.size_full().into_any_element();
@@ -1709,7 +1755,7 @@ impl SettingsView {
     /// button: the traffic lights close the window
     /// (`docs/architecture.md` §8.3).
     pub(crate) fn render_header(&self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let area = &AREAS[self.active_area];
+        let page = &self.pages[self.active_area];
         let crumb: Option<gpui::AnyElement> = self.active_subpage.map(|i| {
             let sub_title = self.pages[self.active_area].sub_pages[i].title;
             div()
@@ -1720,88 +1766,47 @@ impl SettingsView {
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .text_size(px(12.5))
                 .child(
-                    button(
-                        "settings-back",
-                        *c,
-                        ButtonVariant::Ghost,
-                        ButtonSize::IconXs,
-                    )
-                    .tab_index(0)
-                    .focus(|style| style.border_1().border_color(c.ring))
-                    .child("\u{2190}")
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        this.go_back_to_main_page(cx);
-                    }))
-                    .on_key_down(cx.listener(
-                        |this, event: &KeyDownEvent, _w, cx| {
+                    icon_button_builder("settings-back", *c, IconName::ArrowLeft)
+                        .variant(ButtonVariant::Subtle)
+                        .size(ButtonSize::IconXs)
+                        .shape(IconButtonShape::Square)
+                        .tooltip("Back to settings category")
+                        .render()
+                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                            this.go_back_to_main_page(cx);
+                        }))
+                        .on_key_down(cx.listener(|this, event: &KeyDownEvent, _w, cx| {
                             if matches!(event.keystroke.key.as_str(), "enter" | "space") {
                                 this.go_back_to_main_page(cx);
                                 cx.stop_propagation();
                             }
-                        },
-                    )),
+                        })),
                 )
                 .child(SharedString::from(format!(
                     "{} \u{203A} {}",
-                    area.title, sub_title
+                    page.title, sub_title
                 )))
                 .into_any_element()
         });
-        let scope_open = self
-            .dropdown
-            .as_ref()
-            .is_some_and(|menu| menu.key == SETTINGS_SCOPE_KEY);
-        let mut scope_options = vec![(SharedString::from("user"), SharedString::from("User"))];
-        if cx
+        let has_project = cx
             .try_global::<SettingsStore>()
-            .is_some_and(|store| store.project_root().is_some())
-        {
-            scope_options.push((SharedString::from("project"), SharedString::from("Project")));
-        }
-        let scope_options_for_click = scope_options.clone();
-        let scope_options_for_key = scope_options.clone();
-        let scope_selected_index = usize::from(self.scope == SettingsScope::Project)
-            .min(scope_options.len().saturating_sub(1));
-        let scope_trigger = select_trigger(
-            "settings-scope",
-            *c,
-            SharedString::from(self.scope.label()),
-            scope_open,
-        )
-        .min_w(px(112.0))
-        .relative()
-        .child(self.select_bounds_probe(SETTINGS_SCOPE_KEY, cx))
-        .on_click(cx.listener(move |this, event: &ClickEvent, _window, cx| {
-            if this
-                .dropdown
-                .as_ref()
-                .is_some_and(|menu| menu.key == SETTINGS_SCOPE_KEY)
-            {
-                this.dropdown = None;
-            } else {
-                this.dropdown = Some(SelectMenu {
-                    key: SETTINGS_SCOPE_KEY,
-                    options: scope_options_for_click.clone(),
-                    at: this.select_anchor(SETTINGS_SCOPE_KEY, event.position()),
-                    default_sentinel: None,
-                    highlighted: scope_selected_index,
-                });
-            }
-            cx.notify();
-        }))
-        .on_key_down(cx.listener(move |this, event: &KeyDownEvent, _window, cx| {
-            if matches!(event.keystroke.key.as_str(), "enter" | "space" | "down") {
-                this.dropdown = Some(SelectMenu {
-                    key: SETTINGS_SCOPE_KEY,
-                    options: scope_options_for_key.clone(),
-                    at: this.select_anchor(SETTINGS_SCOPE_KEY, Point::default()),
-                    default_sentinel: None,
-                    highlighted: scope_selected_index,
-                });
-                cx.stop_propagation();
-                cx.notify();
-            }
-        }));
+            .is_some_and(|store| store.project_root().is_some());
+        let scope_segments = if has_project {
+            segmented_control("settings-scope", *c, self.scope.token())
+                .segment("user", "User")
+                .segment("project", "Project")
+        } else {
+            segmented_control("settings-scope", *c, self.scope.token()).segment("user", "User")
+        };
+        let view = cx.entity();
+        let scope_control = scope_segments
+            .variant(SegmentVariant::Outline)
+            .size(SegmentSize::Sm)
+            .on_select(move |key, _window, app| {
+                if let Some(scope) = SettingsScope::from_token(key.as_ref()) {
+                    view.update(app, |this, cx| this.set_scope(scope, cx));
+                }
+            });
         let scope = self.scope;
         let json_label = match scope {
             SettingsScope::User => "Edit in config.json",
@@ -1811,8 +1816,8 @@ impl SettingsView {
             .flex_1()
             .min_w_0()
             .items_center()
-            .gap(c.space(8.0))
-            .child(scope_trigger)
+            .gap(c.space(12.0))
+            .child(scope_control)
             .children(crumb);
 
         div()
@@ -1829,53 +1834,58 @@ impl SettingsView {
                 button(
                     "settings-open-json",
                     *c,
-                    ButtonVariant::Outline,
-                    ButtonSize::Xs,
+                    ButtonVariant::Outlined,
+                    ButtonSize::Sm,
                 )
                 .tab_index(0)
                 .focus(|style| style.border_1().border_color(c.ring))
                 .child(json_label)
-                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                    let path = match this.scope {
-                        SettingsScope::User => Some(config_dir().join("config.json")),
-                        SettingsScope::Project => cx
-                            .try_global::<SettingsStore>()
-                            .and_then(|store| store.project_settings_path()),
-                    };
-                    if let Some(path) = path {
-                        cx.reveal_path(&path);
-                    } else {
-                        this.notify_error(
-                            cx,
-                            "Project settings unavailable",
-                            "Open a project before opening project settings.json.".to_string(),
-                        );
-                    }
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.services
+                        .open_settings_file(this.scope.file_target(), window, cx);
                 }))
                 .on_key_down(cx.listener(
-                    move |this, event: &KeyDownEvent, _w, cx| {
+                    move |this, event: &KeyDownEvent, window, cx| {
                         if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                            let path = match this.scope {
-                                SettingsScope::User => Some(config_dir().join("config.json")),
-                                SettingsScope::Project => cx
-                                    .try_global::<SettingsStore>()
-                                    .and_then(|store| store.project_settings_path()),
-                            };
-                            if let Some(path) = path {
-                                cx.reveal_path(&path);
-                            } else {
-                                this.notify_error(
-                                    cx,
-                                    "Project settings unavailable",
-                                    "Open a project before opening project settings.json."
-                                        .to_string(),
-                                );
-                            }
+                            this.services
+                                .open_settings_file(this.scope.file_target(), window, cx);
                             cx.stop_propagation();
                         }
                     },
                 )),
             )
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod select_menu_navigation_tests {
+    use super::select_menu_next_index;
+
+    #[test]
+    fn selection_navigation_wraps_and_jumps_by_boundaries_and_pages() {
+        assert_eq!(select_menu_next_index(0, 3, "up"), Some(2));
+        assert_eq!(select_menu_next_index(2, 3, "down"), Some(0));
+        assert_eq!(select_menu_next_index(2, 12, "home"), Some(0));
+        assert_eq!(select_menu_next_index(2, 12, "end"), Some(11));
+        assert_eq!(select_menu_next_index(8, 12, "pageup"), Some(0));
+        assert_eq!(select_menu_next_index(3, 12, "pagedown"), Some(11));
+        assert_eq!(select_menu_next_index(0, 0, "down"), None);
+        assert_eq!(select_menu_next_index(0, 3, "left"), None);
+    }
+}
+
+#[cfg(test)]
+mod setting_source_tests {
+    use super::SettingSource;
+
+    #[test]
+    fn only_overrides_have_a_modified_source_label() {
+        assert_eq!(SettingSource::Default.modified_in(), None);
+        assert_eq!(SettingSource::User.modified_in(), Some("user settings"));
+        assert_eq!(
+            SettingSource::Project.modified_in(),
+            Some("project settings")
+        );
     }
 }

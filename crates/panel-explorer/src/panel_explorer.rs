@@ -58,8 +58,10 @@ use crate::theme::ThemeStore;
 use labonair_explorer_host::ExplorerHost;
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
-    button, chevron_icon_path, context_menu, icon_for_path, svg_path, tree_row, ButtonSize,
-    ButtonVariant, IconName, InputEvent, InputState, MenuClick, MenuItem, Palette, TreeRowState,
+    button, chevron_icon_path, context_menu, dialog_surface, icon_for_path, modal_overlay,
+    search_clear_button, search_field, search_input, svg_path, text_field_surface, text_input,
+    tree_row, ButtonSize, ButtonVariant, IconName, InputEvent, InputState, MenuClick, MenuItem,
+    Palette, TextFieldState, TreeRowState,
 };
 
 /// A menu action expressed against the view + window (wrapped into a
@@ -1760,7 +1762,7 @@ struct Colors {
 }
 
 impl Render for ExplorerView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let _span =
             tracing::trace_span!(target: "labonair::perf", "render", view = "explorer_panel")
                 .entered();
@@ -1848,7 +1850,7 @@ impl Render for ExplorerView {
                 button(
                     "search",
                     c.palette,
-                    ButtonVariant::Ghost,
+                    ButtonVariant::Subtle,
                     ButtonSize::IconXs,
                 )
                 .child(IconName::Search.svg(c.muted).size(px(13.0)))
@@ -1867,7 +1869,7 @@ impl Render for ExplorerView {
                     button(
                         "explorer-new-file",
                         c.palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::IconXs,
                     )
                     .child(IconName::File.svg(c.muted).size(px(13.0)))
@@ -1881,7 +1883,7 @@ impl Render for ExplorerView {
                     button(
                         "explorer-new-folder",
                         c.palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::IconXs,
                     )
                     .child(IconName::Folder.svg(c.muted).size(px(13.0)))
@@ -1895,7 +1897,7 @@ impl Render for ExplorerView {
                     button(
                         "explorer-refresh",
                         c.palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::IconXs,
                     )
                     .child(IconName::Refresh.svg(c.muted).size(px(13.0)))
@@ -1909,7 +1911,7 @@ impl Render for ExplorerView {
                     button(
                         "explorer-toggle-hidden",
                         c.palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::IconXs,
                     )
                     .child(
@@ -1930,7 +1932,7 @@ impl Render for ExplorerView {
                 button(
                     "explorer-overflow",
                     c.palette,
-                    ButtonVariant::Ghost,
+                    ButtonVariant::Subtle,
                     ButtonSize::IconXs,
                 )
                 .child(IconName::Ellipsis.svg(c.muted).size(px(13.0)))
@@ -1944,7 +1946,7 @@ impl Render for ExplorerView {
             );
         }
 
-        let search = self.render_search(c, cx);
+        let search = self.render_search(c, window, cx);
 
         let root_drop = root.clone();
         let root_ext = root.clone();
@@ -2141,47 +2143,40 @@ impl ExplorerView {
     /// Reference-aligned compact search strip. The native tree is already
     /// lazy-loaded, so filtering the loaded rows is instantaneous and does
     /// not turn a toolbar gesture into filesystem I/O.
-    fn render_search(&self, c: Colors, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+    fn render_search(
+        &self,
+        c: Colors,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
         if !self.search_open {
             return None;
         }
         let field = self.search_field.as_ref()?.clone();
         let has_query = !field.read(cx).value().trim().is_empty();
         let clear = has_query.then(|| {
-            button(
+            search_clear_button(
                 "clear-search",
                 c.palette,
-                ButtonVariant::Ghost,
-                ButtonSize::IconXs,
+                cx.listener(|this, _: &ClickEvent, window, cx| this.clear_search(window, cx)),
             )
-            .child(IconName::X.svg(c.muted).size(px(11.0)))
-            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| this.clear_search(window, cx)))
+            .into_any_element()
         });
+        let focused = field.read(cx).focus_handle(cx).is_focused(window);
 
         Some(
-            div()
-                .relative()
-                .flex()
-                .flex_row()
-                .items_center()
-                .mx_2()
-                .my(px(6.0))
-                .h(px(28.0))
-                .overflow_hidden()
-                .rounded_sm()
-                .border_1()
-                .border_color(c.border)
-                .bg(c.card)
-                .child(IconName::Search.svg(c.muted).size(px(13.0)).ml(px(7.0)))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .px_1()
-                        .child(labonair_ui_kit::field_input(&field)),
-                )
-                .children(clear)
-                .into_any_element(),
+            search_field(
+                "explorer-search",
+                c.palette,
+                focused,
+                search_input(&field, c.palette),
+                clear,
+            )
+            .w_full()
+            .items_center()
+            .mx_2()
+            .my(px(6.0))
+            .into_any_element(),
         )
     }
 
@@ -2425,7 +2420,7 @@ impl ExplorerView {
                     button(
                         "clip-clear",
                         c.palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::Xs,
                     )
                     .child("Clear")
@@ -2634,69 +2629,54 @@ impl ExplorerView {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(crate::theme::modal_scrim())
-            .child(
-                div()
-                    .w(px(240.0))
-                    .p_3()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(c.border)
-                    .bg(c.card)
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(c.fg)
-                            .child(SharedString::from(format!(
-                                "Delete \u{201C}{name}\u{201D}?"
-                            ))),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .justify_end()
-                            .gap_2()
-                            .child(
-                                button(
-                                    "del-cancel",
-                                    c.palette,
-                                    ButtonVariant::Outline,
-                                    ButtonSize::Sm,
-                                )
-                                .child("Cancel")
-                                .on_click(cx.listener(
-                                    |this, _: &ClickEvent, _window, cx| {
-                                        this.confirm_delete = None;
-                                        cx.notify();
-                                    },
-                                )),
+        modal_overlay("explorer-delete-overlay").child(
+            dialog_surface("explorer-delete-dialog", c.palette)
+                .w(px(240.0))
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(c.fg)
+                        .child(SharedString::from(format!(
+                            "Delete \u{201C}{name}\u{201D}?"
+                        ))),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .justify_end()
+                        .gap_2()
+                        .child(
+                            button(
+                                "del-cancel",
+                                c.palette,
+                                ButtonVariant::Outlined,
+                                ButtonSize::Sm,
                             )
-                            .child(
-                                button(
-                                    "del-ok",
-                                    c.palette,
-                                    ButtonVariant::Destructive,
-                                    ButtonSize::Sm,
-                                )
-                                .child("Delete")
-                                .on_click(cx.listener(
-                                    |this, _: &ClickEvent, _window, cx| {
-                                        this.confirm_delete_now(cx);
-                                    },
-                                )),
-                            ),
-                    ),
-            )
+                            .child("Cancel")
+                            .on_click(cx.listener(
+                                |this, _: &ClickEvent, _window, cx| {
+                                    this.confirm_delete = None;
+                                    cx.notify();
+                                },
+                            )),
+                        )
+                        .child(
+                            button(
+                                "del-ok",
+                                c.palette,
+                                ButtonVariant::TintedError,
+                                ButtonSize::Sm,
+                            )
+                            .child("Delete")
+                            .on_click(cx.listener(
+                                |this, _: &ClickEvent, _window, cx| {
+                                    this.confirm_delete_now(cx);
+                                },
+                            )),
+                        ),
+                ),
+        )
     }
 }
 
@@ -2719,7 +2699,7 @@ fn text_row(depth: usize, row_h: Pixels, text: &str, color: Hsla) -> gpui::AnyEl
 fn inline_input_row(
     depth: usize,
     row_h: Pixels,
-    accent: Hsla,
+    palette: Palette,
     view: &Entity<ExplorerView>,
     field: &Option<Entity<InputState>>,
 ) -> gpui::AnyElement {
@@ -2740,13 +2720,14 @@ fn inline_input_row(
         });
     if let Some(field) = field {
         row = row.child(
-            div()
-                .flex_1()
-                .text_sm()
-                .rounded_sm()
-                .border_1()
-                .border_color(accent)
-                .child(labonair_ui_kit::field_input(field)),
+            text_field_surface(
+                "explorer-inline-input",
+                palette,
+                TextFieldState::Focused,
+                text_input(field, palette),
+            )
+            .flex_1()
+            .h(row_h),
         );
     }
     row.into_any_element()
@@ -2766,10 +2747,10 @@ fn explorer_row_element(
     let row_h = c.palette.density_tokens().tree_row_height();
     match data {
         ExplorerRowData::PendingCreate { depth } => {
-            inline_input_row(depth + 1, row_h, c.accent, view, edit_field)
+            inline_input_row(depth + 1, row_h, c.palette, view, edit_field)
         }
         ExplorerRowData::Rename { depth } => {
-            inline_input_row(*depth, row_h, c.accent, view, edit_field)
+            inline_input_row(*depth, row_h, c.palette, view, edit_field)
         }
         ExplorerRowData::Loading { depth } => text_row(*depth, row_h, "Loading\u{2026}", c.muted),
         ExplorerRowData::LoadMore { parent, depth } => {

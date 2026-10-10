@@ -27,15 +27,37 @@ use labonair_keymap::{
     runtime,
 };
 use labonair_notifications::{notification_center, Notification};
+use labonair_settings::{
+    SettingsSurface, SettingsSurfaceContribution, SettingsSurfaceId, SettingsSurfacePage,
+    SettingsSurfaceRegistry,
+};
 use labonair_theme::ThemeStore;
 use labonair_ui_kit::{
-    banner, button, disclosure, field_input, kbd_row, popover, segmented_control, ButtonSize,
-    ButtonVariant, IconName, InputEvent, InputState, ListItem, Palette, SegmentVariant, Severity,
+    banner, button, disclosure, kbd_row, popover, segmented_control, text_field_surface,
+    text_input, ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem, Palette,
+    SegmentVariant, Severity, TextFieldState,
 };
 
 /// Composition callback that opens the raw user `keymap.json` document. Its
 /// tab lifecycle belongs to the workspace, so the owner injects it.
 pub type OpenRawCallback = Box<dyn FnMut(&mut Window, &mut App) + 'static>;
+
+/// Contribute the Keymap-owned editor to the pinned Settings navigation.
+pub fn register_settings_surfaces(
+    registry: &mut SettingsSurfaceRegistry,
+    open_keymap: impl Fn(&mut App) + 'static,
+) -> Result<(), String> {
+    registry.register(SettingsSurfaceContribution::new(
+        SettingsSurface::new(
+            SettingsSurfaceId::new("keymap"),
+            "Keyboard shortcuts",
+            "Browse and edit the shortcuts provided by Labonair.",
+            "Open keymap editor…",
+            SettingsSurfacePage::new_page("keymap", "Keymap", "Keyboard shortcuts", 2),
+        ),
+        open_keymap,
+    ))
+}
 
 const GLOBAL_KEY: &str = "__global__";
 const MAX_CHORD_KEYSTROKES: usize = 3;
@@ -956,7 +978,7 @@ fn binding_button(
     button(
         ("keymap-binding", matched_index * 8 + binding_index),
         palette,
-        ButtonVariant::Ghost,
+        ButtonVariant::Subtle,
         ButtonSize::Xs,
     )
     .child(kbd_row(chord_chips(&chord), palette))
@@ -993,9 +1015,9 @@ fn add_binding_button(
         ("keymap-add", matched_index),
         palette,
         if unbound {
-            ButtonVariant::Outline
+            ButtonVariant::Outlined
         } else {
-            ButtonVariant::Ghost
+            ButtonVariant::Subtle
         },
         ButtonSize::Xs,
     )
@@ -1020,7 +1042,12 @@ fn add_binding_button(
 }
 
 impl KeymapManagementView {
-    fn render_editor(&self, palette: Palette, cx: &mut Context<Self>) -> Option<AnyElement> {
+    fn render_editor(
+        &self,
+        palette: Palette,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let editor = self.editor.as_ref()?;
         let candidate = self.candidate_binding(cx);
 
@@ -1106,13 +1133,19 @@ impl KeymapManagementView {
         );
 
         if let Some(input) = &editor.text_input {
+            let state = if input.read(cx).focus_handle(cx).is_focused(window) {
+                TextFieldState::Focused
+            } else {
+                TextFieldState::Normal
+            };
             card = card.child(
-                div()
-                    .h(px(30.0))
-                    .border_1()
-                    .border_color(palette.border)
-                    .rounded(px(5.0))
-                    .child(field_input(input)),
+                text_field_surface(
+                    "keymap-manual-binding",
+                    palette,
+                    state,
+                    text_input(input, palette),
+                )
+                .h(px(34.0)),
             );
         }
 
@@ -1127,9 +1160,9 @@ impl KeymapManagementView {
                         "keymap-record",
                         palette,
                         if editor.recording {
-                            ButtonVariant::Default
+                            ButtonVariant::TintedError
                         } else {
-                            ButtonVariant::Outline
+                            ButtonVariant::Outlined
                         },
                         ButtonSize::Xs,
                     )
@@ -1154,7 +1187,7 @@ impl KeymapManagementView {
                     button(
                         "keymap-manual",
                         palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::Xs,
                     )
                     .child(if editor.text_input.is_some() {
@@ -1218,7 +1251,7 @@ impl KeymapManagementView {
                         button(
                             "keymap-reset",
                             palette,
-                            ButtonVariant::Ghost,
+                            ButtonVariant::Subtle,
                             ButtonSize::Xs,
                         )
                         .child("Reset")
@@ -1241,7 +1274,7 @@ impl KeymapManagementView {
                     button(
                         "keymap-save",
                         palette,
-                        ButtonVariant::Default,
+                        ButtonVariant::Filled,
                         ButtonSize::Xs,
                     )
                     .child(if editor.saving { "Saving…" } else { "Save" })
@@ -1256,7 +1289,7 @@ impl KeymapManagementView {
                         button(
                             "keymap-unbind",
                             palette,
-                            ButtonVariant::Outline,
+                            ButtonVariant::Outlined,
                             ButtonSize::Xs,
                         )
                         .child("Unbind")
@@ -1271,7 +1304,7 @@ impl KeymapManagementView {
                     button(
                         "keymap-cancel",
                         palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::Xs,
                     )
                     .child("Cancel")
@@ -1297,7 +1330,7 @@ impl KeymapManagementView {
 }
 
 impl Render for KeymapManagementView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = Palette::from_theme(self.theme.read(cx));
 
         let header = div()
@@ -1325,7 +1358,7 @@ impl Render for KeymapManagementView {
                 button(
                     "keymap-edit-json",
                     palette,
-                    ButtonVariant::Outline,
+                    ButtonVariant::Outlined,
                     ButtonSize::Sm,
                 )
                 .child("Edit keymap.json")
@@ -1436,7 +1469,7 @@ impl Render for KeymapManagementView {
                         button(
                             "keymap-open-diagnostics",
                             palette,
-                            ButtonVariant::Ghost,
+                            ButtonVariant::Subtle,
                             ButtonSize::Xs,
                         )
                         .child("Open keymap.json")
@@ -1534,7 +1567,8 @@ impl Render for KeymapManagementView {
             div().flex().flex_1().into_any_element()
         };
 
-        root.child(body).children(self.render_editor(palette, cx))
+        root.child(body)
+            .children(self.render_editor(palette, window, cx))
     }
 }
 
@@ -1587,6 +1621,15 @@ fn empty_message(filter: RowFilter) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keymap_settings_surface_is_registered_by_its_owner() {
+        let mut registry = SettingsSurfaceRegistry::default();
+        register_settings_surfaces(&mut registry, |_| {}).unwrap();
+        let surface = registry.surface(SettingsSurfaceId::new("keymap")).unwrap();
+        assert_eq!(surface.page.slug, "keymap");
+        assert_eq!(surface.page.insert_at, Some(2));
+    }
 
     #[test]
     fn keymap_view_type_is_ui_owned() {

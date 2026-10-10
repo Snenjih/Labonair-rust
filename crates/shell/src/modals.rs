@@ -11,10 +11,11 @@
 //! anywhere else.
 
 use gpui::{
-    App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement, Render,
-    Subscription, Window,
+    App, AppContext, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable,
+    IntoElement, Render, Subscription, Window,
 };
 use labonair_command_palette::CommandPalette;
+use labonair_notifications::{notification_center, Notification};
 
 use crate::theme::ThemeStore;
 use crate::updater::UpdaterView;
@@ -100,5 +101,64 @@ impl labonair_workspace::modal_layer::ModalView for UpdaterModal {
 
     fn render_bare(&self) -> bool {
         true
+    }
+}
+
+pub(crate) struct BackgroundSettingsModal {
+    inner: Entity<labonair_background::BackgroundSettingsView>,
+    focus: FocusHandle,
+    _dismiss: Subscription,
+}
+
+impl BackgroundSettingsModal {
+    pub(crate) fn new(
+        background: Entity<labonair_background::BackgroundStore>,
+        theme: Entity<ThemeStore>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let inner = cx.new(|cx| {
+            labonair_background::BackgroundSettingsView::new(
+                background,
+                theme,
+                window,
+                cx,
+                |message, app| {
+                    notification_center(app).update(app, |center, cx| {
+                        center.push_action_result(
+                            Notification::error("Background", "Operation failed").details(message),
+                            cx,
+                        );
+                    });
+                },
+            )
+        });
+        let focus = inner.read(cx).focus_handle(cx);
+        let dismiss = cx.subscribe(&inner, |_, _, _: &DismissEvent, cx| cx.emit(DismissEvent));
+        Self {
+            inner,
+            focus,
+            _dismiss: dismiss,
+        }
+    }
+}
+
+impl EventEmitter<DismissEvent> for BackgroundSettingsModal {}
+
+impl Focusable for BackgroundSettingsModal {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus.clone()
+    }
+}
+
+impl Render for BackgroundSettingsModal {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        self.inner.clone()
+    }
+}
+
+impl labonair_workspace::modal_layer::ModalView for BackgroundSettingsModal {
+    fn on_dismiss(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.inner.update(cx, |view, cx| view.flush_pending(cx));
     }
 }

@@ -14,21 +14,25 @@
 //! Rendering mirrors the reference implementation: the image sits in an
 //! absolutely-positioned, non-interactive overlay at a halved opacity so the UI
 //! and terminal text stay readable at any slider value. Settings value fields
-//! are edited by the Settings capability; this module owns image storage,
-//! decoding, and rendering.
+//! values, editor, image storage, decoding, and rendering.
 
+mod settings_view;
 mod storage;
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, Mutex,
+};
 
 use gpui::{
-    div, img, prelude::*, AnyElement, Context, Entity, Global, Image, ImageFormat, ObjectFit,
-    PathPromptOptions, Styled,
+    div, img, prelude::*, AnyElement, Context, Entity, EventEmitter, Global, Image, ImageFormat,
+    ObjectFit, PathPromptOptions, Styled,
 };
 use image::ImageEncoder;
 
+pub use settings_view::BackgroundSettingsView;
 pub use storage::{
     background_delete, background_import, background_settings_load, background_settings_save,
     backgrounds_dir, backgrounds_list, BackgroundInfo, BackgroundSettings,
@@ -40,6 +44,33 @@ pub use storage::{background_read_data_url, BackgroundFit, BackgroundTarget};
 /// [`host`]. Keeping this crate the sole owner of image storage, decoding,
 /// and rendering policy while `workspace` never depends on it (B02).
 pub use labonair_background_host::{BackgroundHost, BackgroundPulse, LayerScope};
+
+/// Contribute the Background-owned image editor to Settings navigation.
+pub fn register_settings_surfaces(
+    registry: &mut labonair_settings::SettingsSurfaceRegistry,
+    open_backgrounds: impl Fn(&mut gpui::App) + 'static,
+) -> Result<(), String> {
+    use labonair_settings::{
+        SettingsSurface, SettingsSurfaceContribution, SettingsSurfaceId, SettingsSurfacePage,
+    };
+
+    registry.register(SettingsSurfaceContribution::new(
+        SettingsSurface::new(
+            SettingsSurfaceId::new("backgrounds"),
+            "Background image",
+            "Choose a background image and adjust its appearance.",
+            "Choose background…",
+            SettingsSurfacePage::section("appearance", "Appearance", "Background"),
+        ),
+        open_backgrounds,
+    ))
+}
+
+/// User-visible failures emitted by the Background owner.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BackgroundEvent {
+    Error(String),
+}
 
 /// Longest edge (px) an imported image is kept at; larger images are
 /// downscaled once at load time so a 6000px wallpaper doesn't cost a huge GPU
@@ -55,22 +86,38 @@ const OPACITY_RENDER_FACTOR: f32 = 0.5;
 /// entity and exposed app-wide via [`GlobalBackground`].
 pub struct BackgroundStore {
     settings: BackgroundSettings,
+    available_images: Vec<storage::BackgroundInfo>,
     /// Decoded + processed image, ready to hand to `img()`.
     image: Option<Arc<Image>>,
     /// `(filename, blur)` the cached `image` was built from.
     key: Option<(String, u8)>,
+    pending_key: Option<(String, u8)>,
+    image_epoch: u64,
+    save_sequence: Arc<AtomicU64>,
+    save_lock: Arc<Mutex<()>>,
 }
 
 impl BackgroundStore {
     /// Loads the persisted settings and decodes the selected image (if any).
     pub fn new() -> Self {
-        let mut store = Self {
-            settings: background_settings_load(),
-            image: None,
-            key: None,
-        };
+        let mut store = Self::empty();
+        store.settings = background_settings_load();
+        store.available_images = backgrounds_list().unwrap_or_default();
         store.rebuild_image();
         store
+    }
+
+    fn empty() -> Self {
+        Self {
+            settings: BackgroundSettings::default(),
+            available_images: Vec::new(),
+            image: None,
+            key: None,
+            pending_key: None,
+            image_epoch: 0,
+            save_sequence: Arc::new(AtomicU64::new(0)),
+            save_lock: Arc::new(Mutex::new(())),
+        }
     }
 
     /// The current settings (read-only).
@@ -80,7 +127,12 @@ impl BackgroundStore {
 
     /// Every background image currently in the app-data `backgrounds/` dir.
     pub fn available(&self) -> Vec<BackgroundInfo> {
-        backgrounds_list().unwrap_or_default()
+        self.available_images.clone()
+    }
+
+    /// Whether the selected image is currently being decoded or processed.
+    pub fn is_loading(&self) -> bool {
+        self.pending_key.is_some()
     }
 
     // --- mutators (persist + notify) -----------------------------------
@@ -130,19 +182,38 @@ impl BackgroundStore {
     /// Copies an image into the app-data `backgrounds/` dir and selects it.
     pub fn import(&mut self, source: PathBuf, cx: &mut Context<Self>) -> Result<String, String> {
         let info = background_import(source.to_string_lossy().to_string())?;
+        Ok(self.select_imported(info, cx))
+    }
+
+    pub(crate) fn select_imported(
+        &mut self,
+        info: BackgroundInfo,
+        cx: &mut Context<Self>,
+    ) -> String {
+        self.available_images
+            .retain(|item| item.filename != info.filename);
+        self.available_images.push(info.clone());
+        self.available_images
+            .sort_by(|left, right| left.filename.cmp(&right.filename));
         self.set_image(info.filename.clone(), cx);
-        Ok(info.filename)
+        info.filename
     }
 
     /// Deletes an image file; clears the selection if it was the active one.
     pub fn delete(&mut self, filename: &str, cx: &mut Context<Self>) -> Result<(), String> {
         background_delete(filename.to_string())?;
+        self.forget_deleted(filename, cx);
+        Ok(())
+    }
+
+    pub(crate) fn forget_deleted(&mut self, filename: &str, cx: &mut Context<Self>) {
+        self.available_images
+            .retain(|item| item.filename != filename);
         if self.settings.background_image == filename {
             self.set_image("", cx);
         } else {
             cx.notify();
         }
-        Ok(())
     }
 
     /// Opens the native file picker and imports the chosen image.
@@ -156,10 +227,17 @@ impl BackgroundStore {
         cx.spawn(async move |this, cx| {
             if let Ok(Ok(Some(paths))) = receiver.await {
                 if let Some(path) = paths.into_iter().next() {
-                    let _ = this.update(cx, |this, cx| {
-                        if let Err(err) = this.import(path, cx) {
-                            eprintln!("labonair-ui: background import failed: {err}");
+                    let imported = cx
+                        .background_executor()
+                        .spawn(async move { background_import(path.to_string_lossy().to_string()) })
+                        .await;
+                    let _ = this.update(cx, |this, cx| match imported {
+                        Ok(info) => {
+                            this.select_imported(info, cx);
                         }
+                        Err(message) => cx.emit(BackgroundEvent::Error(format!(
+                            "Could not import background image: {message}"
+                        ))),
                     });
                 }
             }
@@ -221,9 +299,91 @@ impl BackgroundStore {
     // --- internals --------------------------------------------------
 
     fn apply(&mut self, cx: &mut Context<Self>) {
-        let _ = background_settings_save(&self.settings);
-        self.rebuild_image();
+        self.persist_settings(cx);
+        self.rebuild_image_async(cx);
         cx.notify();
+    }
+
+    fn persist_settings(&self, cx: &mut Context<Self>) {
+        let settings = self.settings.clone();
+        let sequence = self.save_sequence.fetch_add(1, Ordering::SeqCst) + 1;
+        let save_sequence = self.save_sequence.clone();
+        let save_lock = self.save_lock.clone();
+        let save = cx.background_executor().spawn(async move {
+            let _guard = save_lock
+                .lock()
+                .map_err(|_| "background settings save lock was poisoned".to_string())?;
+            if save_sequence.load(Ordering::SeqCst) != sequence {
+                return Ok(());
+            }
+            background_settings_save(&settings)
+        });
+        cx.spawn(async move |this, cx| {
+            if let Err(message) = save.await {
+                let _ = this.update(cx, |_, cx| {
+                    cx.emit(BackgroundEvent::Error(format!(
+                        "Could not save background settings: {message}"
+                    )));
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn rebuild_image_async(&mut self, cx: &mut Context<Self>) {
+        if self.settings.background_image.is_empty() {
+            self.image_epoch = self.image_epoch.wrapping_add(1);
+            self.pending_key = None;
+            self.image = None;
+            self.key = None;
+            return;
+        }
+
+        let key = (
+            self.settings.background_image.clone(),
+            self.settings.background_blur,
+        );
+        if self.key.as_ref() == Some(&key) || self.pending_key.as_ref() == Some(&key) {
+            return;
+        }
+
+        self.image_epoch = self.image_epoch.wrapping_add(1);
+        let epoch = self.image_epoch;
+        self.pending_key = Some(key.clone());
+        self.image = None;
+        let job = cx
+            .background_executor()
+            .spawn(async move { load_processed_image(&key.0, key.1) });
+        cx.spawn(async move |this, cx| {
+            let result = job.await;
+            let _ = this.update(cx, |this, cx| {
+                if this.image_epoch != epoch {
+                    return;
+                }
+                this.pending_key = None;
+                match result {
+                    Ok(image) => {
+                        this.image = Some(Arc::new(image));
+                        this.key = Some((
+                            this.settings.background_image.clone(),
+                            this.settings.background_blur,
+                        ));
+                    }
+                    Err(message) => {
+                        let filename = this.settings.background_image.clone();
+                        this.image = None;
+                        this.key = None;
+                        this.settings.background_image.clear();
+                        this.persist_settings(cx);
+                        cx.emit(BackgroundEvent::Error(format!(
+                            "Could not load background image '{filename}': {message}"
+                        )));
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn rebuild_image(&mut self) {
@@ -258,6 +418,8 @@ impl BackgroundStore {
         }
     }
 }
+
+impl EventEmitter<BackgroundEvent> for BackgroundStore {}
 
 impl Default for BackgroundStore {
     fn default() -> Self {
@@ -356,7 +518,28 @@ impl Global for GlobalBackground {}
 
 /// Creates the [`BackgroundStore`] and installs it as [`GlobalBackground`].
 pub fn init(cx: &mut gpui::App) -> Entity<BackgroundStore> {
-    let store = cx.new(|_| BackgroundStore::new());
+    let store = cx.new(|_| BackgroundStore::empty());
+    let load_store = store.clone();
+    cx.spawn(async move |cx| {
+        let (settings, images) = cx
+            .background_executor()
+            .spawn(async move {
+                (
+                    background_settings_load(),
+                    backgrounds_list().unwrap_or_default(),
+                )
+            })
+            .await;
+        let _ = cx.update(|cx| {
+            load_store.update(cx, |store, cx| {
+                store.settings = settings;
+                store.available_images = images;
+                store.rebuild_image_async(cx);
+                cx.notify();
+            });
+        });
+    })
+    .detach();
     cx.set_global(GlobalBackground(store.clone()));
     store
 }
@@ -385,6 +568,17 @@ pub fn host(store: &Entity<BackgroundStore>, cx: &mut gpui::App) -> BackgroundHo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn background_settings_surface_is_registered_by_its_owner() {
+        let mut registry = labonair_settings::SettingsSurfaceRegistry::default();
+        register_settings_surfaces(&mut registry, |_| {}).unwrap();
+        let surface = registry
+            .surface(labonair_settings::SettingsSurfaceId::new("backgrounds"))
+            .unwrap();
+        assert_eq!(surface.page.slug, "appearance");
+        assert_eq!(surface.page.section, "Background");
+    }
 
     #[test]
     fn tile_and_cover_map_to_object_fit_cover() {

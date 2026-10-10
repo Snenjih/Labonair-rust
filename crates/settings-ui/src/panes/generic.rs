@@ -7,8 +7,9 @@
 //! Part of `SettingsView` — see `crate::view`.
 
 use crate::view::*;
+use gpui_component::Disableable;
 use labonair_settings_content::file_manager::{default_sftp_columns, SftpColumn};
-use labonair_ui_kit::DISABLED_OPACITY;
+use labonair_ui_kit::icon_button_builder;
 
 /// Parse a stored `sftpColumns` JSON value into an ordered, de-duplicated
 /// column list, falling back to the shipped default when absent/unparseable.
@@ -27,6 +28,11 @@ fn sftp_visible_columns(value: Option<&Value>) -> Vec<SftpColumn> {
     out
 }
 
+fn field_disabled_in_scope(scope: SettingsScope, json_path: &str) -> bool {
+    scope == SettingsScope::Project
+        && !labonair_settings::project::is_project_setting_allowed(json_path)
+}
+
 impl SettingsView {
     /// Load system fonts off the UI thread for the shared `FontFamily` field
     /// renderer. Font selection is a Settings value; the picker itself is
@@ -37,7 +43,8 @@ impl SettingsView {
         }
         self.font_loading = true;
         self.font_error = None;
-        let service = self.font_service.clone();
+        cx.notify();
+        let service = self.services.fonts.clone();
         let task = self.tokio.spawn(async move { service.list().await });
         cx.spawn(async move |this, cx| match task.await {
             Ok(Ok(mut names)) => {
@@ -74,15 +81,18 @@ impl SettingsView {
     /// clipped by the scroll area, with a transparent full-window backdrop
     /// that dismisses it. `menu.key` is a field's `json_path`.
     pub(crate) fn render_dropdown(
-        &self,
+        &mut self,
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
         let menu = self.dropdown.as_ref()?;
-        if menu.key == SETTINGS_SCOPE_KEY {
-            return None;
-        }
         let json_path = menu.key;
+        let anchor = menu.at;
+        let options: Vec<SelectOption> = menu.options.clone();
+        let highlighted = menu
+            .options
+            .get(menu.highlighted)
+            .map(|(token, _)| token.clone());
         let sentinel = menu.default_sentinel.clone();
         let stored = self
             .field_by_path(json_path)
@@ -94,19 +104,10 @@ impl SettingsView {
         } else {
             SharedString::from(stored)
         };
-        // T20-001: the anchored option list is the shared `Select` primitive
-        // (`select_popover`) — same `deferred` + `anchored().snap_to_window()`
-        // layer, one implementation.
-        let options: Vec<SelectOption> = menu.options.clone();
-        let highlighted = menu
-            .options
-            .get(menu.highlighted)
-            .map(|(token, _)| token.clone())
-            .unwrap_or_else(|| cur.clone());
+        let highlighted = highlighted.unwrap_or(cur);
         let view = cx.entity();
         Some(select_popover(
-            "settings-dropdown",
-            menu.at,
+            SelectPopoverAnchor::new("settings-dropdown", anchor, self.select_list.clone()),
             *c,
             &options,
             highlighted.as_ref(),
@@ -135,54 +136,13 @@ impl SettingsView {
         ))
     }
 
-    pub(crate) fn render_scope_dropdown(
-        &self,
-        c: &Palette,
-        cx: &mut Context<Self>,
-    ) -> Option<gpui::AnyElement> {
-        let menu = self.dropdown.as_ref()?;
-        if menu.key != SETTINGS_SCOPE_KEY {
-            return None;
-        }
-        let view = cx.entity();
-        let options = menu.options.clone();
-        Some(select_popover(
-            "settings-scope-dropdown",
-            menu.at,
-            *c,
-            &options,
-            menu.options
-                .get(menu.highlighted)
-                .map(|(token, _)| token.as_ref())
-                .unwrap_or_else(|| self.scope.token()),
-            {
-                let view = view.clone();
-                move |_window, cx| {
-                    view.update(cx, |this, cx| {
-                        this.dropdown = None;
-                        cx.notify();
-                    });
-                }
-            },
-            move |token, _window, cx| {
-                let token = token.clone();
-                view.update(cx, |this, cx| {
-                    this.dropdown = None;
-                    if let Some(scope) = SettingsScope::from_token(token.as_ref()) {
-                        this.set_scope(scope, cx);
-                    }
-                });
-            },
-        ))
-    }
-
-    /// Render one generated field row: label/description + origin badge +
+    /// Render one generated field row: label/description + modified source +
     /// reset (rule 5) + a control chosen by `FieldControl` (rule 3's
     /// renderer registry — `bool → Switch`, numeric → stepper, `enum`/closed
     /// `String` → dropdown, `String` → text input, anything else → the raw
     /// JSON fallback).
     ///
-    /// `origin` + `value` are passed in already computed: the batch renderers
+    /// `source` + `value` are passed in already computed: the batch renderers
     /// (`render_generated_body` and the search list) resolve the field inside
     /// the virtualized row callback, so only visible rows query the store.
     /// An invisible overlay that records a select trigger's window-space
@@ -222,15 +182,88 @@ impl SettingsView {
             .unwrap_or(click)
     }
 
+    fn open_select_dropdown(
+        &mut self,
+        json_path: &'static str,
+        options: Vec<SelectOption>,
+        default_sentinel: Option<SharedString>,
+        highlighted: usize,
+        fallback: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        let option_count = options.len();
+        self.dropdown = Some(SelectMenu {
+            key: json_path,
+            options,
+            at: self.select_anchor(json_path, fallback),
+            default_sentinel,
+            highlighted,
+        });
+        self.select_list.reset(option_count);
+        self.select_list.scroll_to(ListOffset {
+            item_ix: highlighted,
+            offset_in_item: px(0.0),
+        });
+        cx.notify();
+    }
+
+    fn activate_select_trigger(
+        &mut self,
+        json_path: &'static str,
+        event: &ClickEvent,
+        options: Vec<SelectOption>,
+        default_sentinel: Option<SharedString>,
+        highlighted: usize,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .dropdown
+            .as_ref()
+            .is_some_and(|menu| menu.key == json_path)
+        {
+            if matches!(event, ClickEvent::Keyboard(_)) {
+                let selected = self.dropdown.take().and_then(|menu| {
+                    menu.options
+                        .get(menu.highlighted)
+                        .cloned()
+                        .map(|(token, _)| (token, menu.default_sentinel))
+                });
+                if let Some((token, sentinel)) = selected {
+                    let value = if sentinel.as_ref() == Some(&token) {
+                        String::new()
+                    } else {
+                        token.to_string()
+                    };
+                    self.set_field_value(json_path, Value::String(value), cx);
+                }
+            } else {
+                self.dropdown = None;
+            }
+            cx.notify();
+            return;
+        }
+
+        self.open_select_dropdown(
+            json_path,
+            options,
+            default_sentinel,
+            highlighted,
+            event.position(),
+            cx,
+        );
+    }
+
     fn render_field(
         &self,
         field: &AnyField,
-        origin: OriginBadge,
+        source: SettingSource,
         value: Option<Value>,
+        decoration: SettingsRowDecoration,
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let json_path = field.json_path;
+        let field_disabled = field_disabled_in_scope(self.scope, json_path);
         let control = match field.control {
             FieldControl::Switch => {
                 let on = value.as_ref().and_then(|v| v.as_bool()).unwrap_or(false);
@@ -239,31 +272,44 @@ impl SettingsView {
                 // global `Theme::primary`, which `apply_prefs_to_theme`
                 // (`theme-ui/src/apply.rs`) keeps synced to this app's
                 // `core.primary` token on every theme/settings apply.
-                div()
+                let switch = Switch::new(SharedString::from(format!("sw-{json_path}")))
+                    .checked(on)
+                    .disabled(field_disabled);
+                let switch = if field_disabled {
+                    switch
+                } else {
+                    switch.on_click(cx.listener(move |this, _: &bool, _w, cx| {
+                        if let Some(f) = this.field_by_path(json_path).copied() {
+                            this.toggle_bool(&f, cx);
+                        }
+                    }))
+                };
+                let surface = div()
                     .id(SharedString::from(format!("settings-switch-{json_path}")))
                     .rounded(px(c.radius.sm))
                     .border_1()
                     .border_color(gpui::transparent_black())
-                    .tab_index(0)
-                    .focus(|style| style.border_1().border_color(c.ring))
-                    .child(
-                        Switch::new(SharedString::from(format!("sw-{json_path}")))
-                            .checked(on)
-                            .on_click(cx.listener(move |this, _: &bool, _w, cx| {
+                    .child(switch);
+                if field_disabled {
+                    surface
+                        .tab_index(-1)
+                        .cursor_default()
+                        .opacity(DISABLED_OPACITY)
+                        .into_any_element()
+                } else {
+                    surface
+                        .tab_index(0)
+                        .focus(|style| style.border_1().border_color(c.ring))
+                        .on_key_down(cx.listener(move |this, event: &KeyDownEvent, _w, cx| {
+                            if matches!(event.keystroke.key.as_str(), "enter" | "space") {
                                 if let Some(f) = this.field_by_path(json_path).copied() {
                                     this.toggle_bool(&f, cx);
                                 }
-                            })),
-                    )
-                    .on_key_down(cx.listener(move |this, event: &KeyDownEvent, _w, cx| {
-                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                            if let Some(f) = this.field_by_path(json_path).copied() {
-                                this.toggle_bool(&f, cx);
+                                cx.stop_propagation();
                             }
-                            cx.stop_propagation();
-                        }
-                    }))
-                    .into_any_element()
+                        }))
+                        .into_any_element()
+                }
             }
             // T20-001: both numeric controls are the shared `NumberField`
             // primitive now — it owns the stepper chrome, the filled track and
@@ -281,6 +327,7 @@ impl SettingsView {
                     max as f64,
                     step as f64,
                 )
+                .disabled(field_disabled)
                 .track(false)
                 .editor(editor)
                 .on_edit({
@@ -316,6 +363,7 @@ impl SettingsView {
                     max_centi as f64 / 100.0,
                     step_centi as f64 / 100.0,
                 )
+                .disabled(field_disabled)
                 .decimals(2)
                 .track(false)
                 .editor(editor)
@@ -347,52 +395,68 @@ impl SettingsView {
                     .iter()
                     .position(|(token, _)| *token == cur)
                     .unwrap_or(0);
+                let options: Vec<SelectOption> = opts
+                    .iter()
+                    .map(|(token, label)| (SharedString::from(*token), SharedString::from(*label)))
+                    .collect();
+                let keyboard_options = options.clone();
                 let is_open = self.dropdown.as_ref().is_some_and(|d| d.key == json_path);
-                // T20-001: shared `Select` trigger.
-                select_trigger(
-                    SharedString::from(format!("sel-{json_path}")),
-                    *c,
-                    SharedString::from(label.to_string()),
-                    is_open,
-                )
-                .relative()
-                .child(self.select_bounds_probe(json_path, cx))
-                .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
-                    if this.dropdown.as_ref().is_some_and(|d| d.key == json_path) {
-                        this.dropdown = None;
-                    } else {
-                        this.dropdown = Some(SelectMenu {
-                            key: json_path,
-                            options: opts
-                                .iter()
-                                .map(|(t, l)| (SharedString::from(*t), SharedString::from(*l)))
-                                .collect(),
-                            at: this.select_anchor(json_path, ev.position()),
-                            default_sentinel: None,
-                            highlighted: selected_index,
-                        });
-                    }
-                    cx.notify();
-                }))
-                .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _w, cx| {
-                    if matches!(ev.keystroke.key.as_str(), "enter" | "space" | "down") {
-                        this.dropdown = Some(SelectMenu {
-                            key: json_path,
-                            options: opts
-                                .iter()
-                                .map(|(token, label)| {
-                                    (SharedString::from(*token), SharedString::from(*label))
-                                })
-                                .collect(),
-                            at: this.select_anchor(json_path, Point::default()),
-                            default_sentinel: None,
-                            highlighted: selected_index,
-                        });
-                        cx.stop_propagation();
-                        cx.notify();
-                    }
-                }))
-                .into_any_element()
+                let trigger = if field_disabled {
+                    select_trigger_disabled(
+                        SharedString::from(format!("sel-{json_path}")),
+                        *c,
+                        SharedString::from(label.to_string()),
+                    )
+                    .into_any_element()
+                } else {
+                    select_trigger(
+                        SharedString::from(format!("sel-{json_path}")),
+                        *c,
+                        SharedString::from(label.to_string()),
+                        is_open,
+                    )
+                    .relative()
+                    .child(self.select_bounds_probe(json_path, cx))
+                    .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
+                        this.activate_select_trigger(
+                            json_path,
+                            ev,
+                            options.clone(),
+                            None,
+                            selected_index,
+                            cx,
+                        );
+                    }))
+                    .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _w, cx| {
+                        let key = ev.keystroke.key.as_str();
+                        if matches!(key, "enter" | "space") {
+                            cx.stop_propagation();
+                        } else if matches!(key, "up" | "down")
+                            && this
+                                .dropdown
+                                .as_ref()
+                                .is_none_or(|menu| menu.key != json_path)
+                        {
+                            let highlighted = if key == "up" && !keyboard_options.is_empty() {
+                                (selected_index + keyboard_options.len() - 1)
+                                    % keyboard_options.len()
+                            } else {
+                                selected_index
+                            };
+                            this.open_select_dropdown(
+                                json_path,
+                                keyboard_options.clone(),
+                                None,
+                                highlighted,
+                                Point::default(),
+                                cx,
+                            );
+                            cx.stop_propagation();
+                        }
+                    }))
+                    .into_any_element()
+                };
+                trigger
             }
             FieldControl::FontFamily => {
                 let cur = value
@@ -412,7 +476,6 @@ impl SettingsView {
                     cur.clone()
                 };
                 let fonts = self.system_fonts.clone();
-                let key_fonts = fonts.clone();
                 let selected_font_index = if cur.is_empty() {
                     0
                 } else {
@@ -422,52 +485,98 @@ impl SettingsView {
                         .map(|index| index + 1)
                         .unwrap_or(0)
                 };
-                select_trigger(
-                    SharedString::from(format!("font-{json_path}")),
-                    *c,
-                    SharedString::from(label),
-                    is_open,
-                )
-                .min_w(px(200.0))
-                .relative()
-                .child(self.select_bounds_probe(json_path, cx))
-                .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
-                    if this.dropdown.as_ref().is_some_and(|d| d.key == json_path) {
-                        this.dropdown = None;
-                    } else {
-                        let sentinel = SharedString::from("(default)");
-                        let mut options = vec![(sentinel.clone(), sentinel.clone())];
-                        options.extend(fonts.iter().map(|f| (f.clone(), f.clone())));
-                        this.dropdown = Some(SelectMenu {
-                            key: json_path,
-                            options,
-                            at: this.select_anchor(json_path, ev.position()),
-                            default_sentinel: Some(sentinel),
-                            highlighted: selected_font_index,
-                        });
-                    }
-                    cx.notify();
-                }))
-                .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _w, cx| {
-                    if matches!(ev.keystroke.key.as_str(), "enter" | "space" | "down") {
-                        let sentinel = SharedString::from("(default)");
-                        let mut options = vec![(sentinel.clone(), sentinel.clone())];
-                        options.extend(key_fonts.iter().map(|font| (font.clone(), font.clone())));
-                        this.dropdown = Some(SelectMenu {
-                            key: json_path,
-                            options,
-                            at: this.select_anchor(json_path, Point::default()),
-                            default_sentinel: Some(sentinel),
-                            highlighted: selected_font_index,
-                        });
-                        cx.stop_propagation();
-                        cx.notify();
-                    }
-                }))
-                .into_any_element()
+                let sentinel = SharedString::from("(default)");
+                let click_sentinel = sentinel.clone();
+                let key_sentinel = sentinel.clone();
+                let mut options = vec![(sentinel.clone(), sentinel.clone())];
+                options.extend(fonts.iter().map(|font| (font.clone(), font.clone())));
+                let keyboard_options = options.clone();
+                let mut trigger = if field_disabled {
+                    select_trigger_disabled(
+                        SharedString::from(format!("font-{json_path}")),
+                        *c,
+                        SharedString::from(label),
+                    )
+                } else {
+                    select_trigger(
+                        SharedString::from(format!("font-{json_path}")),
+                        *c,
+                        SharedString::from(label),
+                        is_open,
+                    )
+                }
+                .min_w(px(200.0));
+                if !field_disabled {
+                    trigger = trigger
+                        .relative()
+                        .child(self.select_bounds_probe(json_path, cx))
+                        .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
+                            this.activate_select_trigger(
+                                json_path,
+                                ev,
+                                options.clone(),
+                                Some(click_sentinel.clone()),
+                                selected_font_index,
+                                cx,
+                            );
+                        }))
+                        .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _w, cx| {
+                            let key = ev.keystroke.key.as_str();
+                            if matches!(key, "enter" | "space") {
+                                cx.stop_propagation();
+                            } else if matches!(key, "up" | "down")
+                                && this
+                                    .dropdown
+                                    .as_ref()
+                                    .is_none_or(|menu| menu.key != json_path)
+                            {
+                                let highlighted = if key == "up" && !keyboard_options.is_empty() {
+                                    (selected_font_index + keyboard_options.len() - 1)
+                                        % keyboard_options.len()
+                                } else {
+                                    selected_font_index
+                                };
+                                this.open_select_dropdown(
+                                    json_path,
+                                    keyboard_options.clone(),
+                                    Some(key_sentinel.clone()),
+                                    highlighted,
+                                    Point::default(),
+                                    cx,
+                                );
+                                cx.stop_propagation();
+                            }
+                        }));
+                }
+                if self.font_error.is_some() {
+                    h_stack()
+                        .items_center()
+                        .gap(c.space(4.0))
+                        .child(trigger)
+                        .child(
+                            button(
+                                SharedString::from(format!("font-retry-{json_path}")),
+                                *c,
+                                ButtonVariant::Subtle,
+                                ButtonSize::Xs,
+                            )
+                            .child("Retry")
+                            .on_click(cx.listener(
+                                |this, _: &ClickEvent, _w, cx| {
+                                    this.font_error = None;
+                                    this.load_system_fonts(cx);
+                                },
+                            )),
+                        )
+                        .into_any_element()
+                } else {
+                    trigger.into_any_element()
+                }
             }
-            FieldControl::Text => self.render_text_control(json_path, value, c, cx),
-            FieldControl::SftpColumns => self.render_sftp_columns_control(json_path, value, c, cx),
+            FieldControl::Text => self.render_text_control(json_path, value, field_disabled, c, cx),
+            FieldControl::SftpColumns => {
+                self.render_sftp_columns_control(json_path, value, field_disabled, c, cx)
+            }
         };
         let control = if let Some(unit) = field.meta.unit {
             div()
@@ -481,7 +590,7 @@ impl SettingsView {
             control
         };
 
-        let non_default = origin != OriginBadge::Default;
+        let modified_in = source.modified_in();
         // T19-007: a search jump briefly pulses the target row so the user
         // can find it among a page's other fields.
         let highlighted = self.highlight == Some(json_path);
@@ -491,41 +600,100 @@ impl SettingsView {
         // a nested card, matching the native settings design direction.
         let row = div()
             .id(SharedString::from(format!("field-row-{json_path}")))
+            .group("settings-field-row")
             .flex()
             .w_full()
             .min_w_0()
             .items_center()
             .justify_between()
             .gap(c.space(24.0))
-            .py(c.space(8.0))
-            .border_b_1()
-            .border_color(c.border)
+            .pt(c.control_space(16.0))
+            .pb(c.control_space(if decoration.section_end { 40.0 } else { 16.0 }))
+            .when(decoration.bottom_divider, |row| {
+                row.border_b_1().border_color(c.border)
+            })
             .when(highlighted, |d| d.bg(c.selected_fill.opacity(0.7)));
 
-        let mut title_row = h_stack().gap_1p5().child(
+        let mut title_row = h_stack().items_center().gap(c.space(6.0)).child(
             div()
                 .text_color(c.fg)
                 .text_size(px(13.0))
                 .child(SharedString::from(field.meta.title)),
         );
-        if non_default {
-            title_row = title_row.child(
-                div()
-                    .px_1()
-                    .rounded_sm()
-                    .text_size(px(9.0))
-                    .text_color(c.muted)
-                    .border_1()
-                    .border_color(c.border)
-                    .child(origin.label()),
-            );
+        if let Some(modified_in) = modified_in {
+            title_row = title_row
+                .child(
+                    icon_button_builder(
+                        SharedString::from(format!("reset-{json_path}")),
+                        *c,
+                        IconName::Undo,
+                    )
+                    .variant(ButtonVariant::Subtle)
+                    .size(ButtonSize::IconXs)
+                    .shape(IconButtonShape::Square)
+                    .tooltip("Reset to default")
+                    .render()
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        this.reset_field(json_path, cx);
+                    }))
+                    .on_key_down(cx.listener(
+                        move |this, event: &KeyDownEvent, _window, cx| {
+                            if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                                this.reset_field(json_path, cx);
+                                cx.stop_propagation();
+                            }
+                        },
+                    )),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(c.muted)
+                        .child(SharedString::from(format!("— Modified in {modified_in}"))),
+                );
         }
 
+        let copied_link = self.last_copied_link_path == Some(json_path);
+        let copy_link = icon_button_builder(
+            SharedString::from(format!("copy-link-{json_path}")),
+            *c,
+            if copied_link {
+                IconName::Check
+            } else {
+                IconName::Link
+            },
+        )
+        .variant(ButtonVariant::Subtle)
+        .size(ButtonSize::IconXs)
+        .shape(IconButtonShape::Square)
+        .icon_color(if copied_link { c.success } else { c.muted })
+        .tooltip("Copy Link")
+        .render()
+        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+            this.copy_setting_link(json_path, cx);
+        }))
+        .on_key_down(cx.listener(move |this, event: &KeyDownEvent, _window, cx| {
+            if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                this.copy_setting_link(json_path, cx);
+                cx.stop_propagation();
+            }
+        }))
+        .invisible()
+        .group_hover("settings-field-row", |style| style.visible());
+
         let mut info = v_stack()
+            .relative()
             .gap(c.space(4.0))
             .flex_1()
             .min_w_0()
             .max_w(gpui::relative(0.66))
+            .child(
+                div()
+                    .absolute()
+                    .top(px(0.0))
+                    .left(px(-24.0))
+                    .child(copy_link),
+            )
             .child(title_row)
             .child(
                 div()
@@ -541,34 +709,16 @@ impl SettingsView {
                     .child(hint),
             );
         }
-
-        let mut actions = h_stack().items_center().gap(c.space(8.0)).child(control);
-        if non_default {
-            actions = actions.child(
-                // Keep reset beside the value control in the trailing action
-                // cluster, so all field actions share the same right edge.
-                button(
-                    SharedString::from(format!("reset-{json_path}")),
-                    *c,
-                    ButtonVariant::Ghost,
-                    ButtonSize::IconXs,
-                )
-                .tab_index(0)
-                .focus(|style| style.border_1().border_color(c.ring))
-                .child(IconName::Refresh.svg(c.muted).size(px(12.0)))
-                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                    this.reset_field(json_path, cx);
-                }))
-                .on_key_down(cx.listener(
-                    move |this, event: &KeyDownEvent, _w, cx| {
-                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                            this.reset_field(json_path, cx);
-                            cx.stop_propagation();
-                        }
-                    },
-                )),
+        if field_disabled {
+            info = info.child(
+                div()
+                    .text_size(px(11.0))
+                    .text_color(c.muted)
+                    .child("Unavailable in Project settings."),
             );
         }
+
+        let actions = h_stack().items_center().gap(c.space(8.0)).child(control);
         row.child(info)
             .child(div().ml_auto().flex_shrink_0().child(actions))
             .into_any_element()
@@ -581,41 +731,43 @@ impl SettingsView {
         &self,
         json_path: &'static str,
         _value: Option<Value>,
+        disabled: bool,
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let Some(input) = self.text_inputs.get(json_path) else {
             return div()
-                .w(c.space(220.0))
+                .min_w(c.control_space(256.0))
                 .text_color(c.muted)
                 .child("(input unavailable)")
                 .into_any_element();
         };
         let focused = self.text_input_key == Some(json_path);
-        div()
-            .id(SharedString::from(format!("txt-{json_path}")))
-            .w(c.space(220.0))
-            .px(c.space(8.0))
-            .py(c.space(4.0))
-            .min_h(px(32.0))
-            .flex()
-            .items_center()
-            .rounded(px(c.radius.sm))
-            .border_1()
-            .border_color(if focused { c.ring } else { c.border })
-            .bg(c.input)
-            .child(
-                field_input(input)
-                    .appearance(false)
-                    .bordered(false)
-                    .focus_bordered(false)
-                    .w_full()
-                    .text_size(px(12.0)),
-            )
-            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                this.begin_text_edit(json_path, window, cx);
-            }))
-            .into_any_element()
+        let field = text_field_surface(
+            SharedString::from(format!("txt-{json_path}")),
+            *c,
+            if disabled {
+                TextFieldState::Disabled
+            } else if focused {
+                TextFieldState::Focused
+            } else {
+                TextFieldState::Normal
+            },
+            text_input(input, *c)
+                .disabled(disabled)
+                .tab_index(if disabled { -1 } else { 0 })
+                .text_color(if disabled { c.muted } else { c.fg }),
+        )
+        .min_w(c.control_space(256.0));
+        if disabled {
+            field.into_any_element()
+        } else {
+            field
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.begin_text_edit(json_path, window, cx);
+                }))
+                .into_any_element()
+        }
     }
 
     /// Ordered visible-column editor for the SFTP browser
@@ -626,6 +778,7 @@ impl SettingsView {
         &self,
         json_path: &'static str,
         value: Option<Value>,
+        disabled: bool,
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
@@ -652,39 +805,23 @@ impl SettingsView {
                     col.label(),
                     if delta < 0 { "up" } else { "down" }
                 ));
-                let mut b = button(
-                    SharedString::from(format!("{id}-{}", col.token())),
-                    *c,
-                    ButtonVariant::Ghost,
-                    ButtonSize::IconXs,
-                )
-                .child(
-                    icon.svg(if enabled { c.fg } else { c.muted })
-                        .size(px(12.0)),
-                );
+                let enabled = enabled && !disabled;
+                let button_id = SharedString::from(format!("{id}-{}", col.token()));
+                let mut button = icon_button_builder(button_id, *c, icon)
+                    .variant(ButtonVariant::Subtle)
+                    .size(ButtonSize::IconXs)
+                    .shape(IconButtonShape::Square)
+                    .disabled(!enabled);
                 if enabled {
-                    b = b
-                        .tab_index(0)
-                        .focus(|style| style.border_1().border_color(c.ring))
-                        .tooltip(move |window, cx| {
-                            labonair_ui_kit::Tooltip::new(tooltip.clone()).build(window, cx)
-                        })
+                    button = button.tooltip(tooltip);
+                    button
+                        .render()
                         .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                             this.sftp_columns_move(json_path, col, delta, cx);
-                        }));
-                    b = b.on_key_down(cx.listener(move |this, event: &KeyDownEvent, _w, cx| {
-                        let key = event.keystroke.key.as_str();
-                        let activate = matches!(key, "enter" | "space");
-                        if activate {
-                            this.sftp_columns_move(json_path, col, delta, cx);
-                            cx.stop_propagation();
-                            cx.notify();
-                        }
-                    }));
+                        }))
                 } else {
-                    b = b.opacity(DISABLED_OPACITY);
+                    button.render()
                 }
-                b
             };
 
             stack = stack.child(
@@ -698,6 +835,7 @@ impl SettingsView {
                             is_visible,
                         )
                         .label(col.label())
+                        .disabled(disabled)
                         .on_click(cx.listener(
                             move |this, checked: &bool, _w, cx| {
                                 this.sftp_columns_toggle(json_path, col, *checked, cx);
@@ -788,15 +926,21 @@ impl SettingsView {
     fn render_search_body(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
         let query = self.search.trim().to_owned();
         let mut content_rows = Vec::new();
-        let mut last_area = None;
+        let mut last_page = None;
         for row in self.search_results.clone() {
-            if last_area != Some(row.area_title) {
-                last_area = Some(row.area_title);
-                content_rows.push(ContentRow::Header(row.area_title));
+            if last_page != Some(row.page_index) {
+                last_page = Some(row.page_index);
+                content_rows.push(ContentRow::Header(row.page_title));
             }
-            let SearchTarget::Field(index) = row.target;
-            if let Some(field) = self.all_fields.get(index).copied() {
-                content_rows.push(ContentRow::Field(field));
+            match row.target {
+                SearchTarget::Field(index) => {
+                    if let Some(field) = self.all_fields.get(index).copied() {
+                        content_rows.push(ContentRow::Field(field));
+                    }
+                }
+                SearchTarget::OwnerSurface(surface) => {
+                    content_rows.push(ContentRow::OwnerSurface(surface));
+                }
             }
         }
 
@@ -848,16 +992,22 @@ impl SettingsView {
         let rows = content_rows;
         let view = cx.entity();
         let palette = *c;
-        let list = list(list_state, move |index, _window, app| match rows[index] {
-            ContentRow::Header(label) => view.update(app, |this, cx| {
-                this.render_section_header(label, &palette, cx)
-            }),
-            ContentRow::Field(field) => view.update(app, |this, cx| {
-                let origin = this.field_origin(&field, cx);
-                let value = this.field_value(&field, cx);
-                this.render_field(&field, origin, value, &palette, cx)
-            }),
-            ContentRow::Title(_) => div().into_any_element(),
+        let list = list(list_state, move |index, _window, app| {
+            let decoration = settings_row_decoration(&rows, index);
+            match rows[index] {
+                ContentRow::Header(label) => view.update(app, |this, cx| {
+                    this.render_section_header(label, &palette, cx)
+                }),
+                ContentRow::Field(field) => view.update(app, |this, cx| {
+                    let source = this.field_source(&field, cx);
+                    let value = this.field_value(&field, cx);
+                    this.render_field(&field, source, value, decoration, &palette, cx)
+                }),
+                ContentRow::OwnerSurface(surface) => view.update(app, |this, cx| {
+                    this.render_owner_surface_row(surface, decoration, &palette, cx)
+                }),
+                ContentRow::Title(_) => div().into_any_element(),
+            }
         })
         .flex_1()
         .min_h_0();
@@ -879,17 +1029,14 @@ impl SettingsView {
     /// disclosure sections + a scroll-spy jump bar + a trailing "Other"
     /// fallback for any field not placed by a curated group.
     fn render_generated_body(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
-        // `self.pages[..].area` is the same `&'static AreaMeta` `AREAS[..]`
-        // would give — reading it through `pages` (rather than `AREAS`
-        // directly) keeps `SettingsPage::area` a real, exercised field.
-        let area = *self.pages[self.active_area].area;
+        let page = &self.pages[self.active_area];
         let PageBody::Generated(items) = self.active_body();
         let items: Vec<SettingsPageItemOwned> =
             items.iter().map(SettingsPageItemOwned::from).collect();
         let page_title = self
             .active_subpage
             .map(|index| self.pages[self.active_area].sub_pages[index].title)
-            .unwrap_or(area.title);
+            .unwrap_or(page.title);
         // Direct-child index of each section header within the scroll
         // container below — this is what `ListState::scroll_to_reveal_item`
         // addresses, so a sidebar sub-entry click (`scroll_to_section`) or a
@@ -901,10 +1048,10 @@ impl SettingsView {
         let pending_scroll = self.pending_scroll;
         let mut scroll_to_row: Option<usize> = None;
 
-        // The trailing "Other" fallback belongs on the area's main page only —
+        // The trailing "Other" fallback belongs on the category's main page only —
         // a sub-page shows just its own curated groups.
         let leftover: Vec<AnyField> = if self.active_subpage.is_none() {
-            leftover_fields(area.target_module, &self.all_fields)
+            leftover_fields(self.active_area, &self.pages, &self.all_fields)
                 .into_iter()
                 .copied()
                 .collect()
@@ -917,11 +1064,12 @@ impl SettingsView {
         let placed: Vec<Option<AnyField>> = items
             .iter()
             .map(|item| match item {
-                SettingsPageItemOwned::SectionHeader(_) => None,
-                SettingsPageItemOwned::Item(key) => self
+                SettingsPageItemOwned::SectionHeader(_)
+                | SettingsPageItemOwned::OwnerSurface(_) => None,
+                SettingsPageItemOwned::Item(path) => self
                     .all_fields
                     .iter()
-                    .find(|f| f.area() == area.target_module && f.local_key() == *key)
+                    .find(|field| field.json_path == *path)
                     .copied(),
             })
             .collect();
@@ -938,6 +1086,9 @@ impl SettingsView {
                     if let Some(field) = field {
                         resolved.push(ContentRow::Field(*field));
                     }
+                }
+                SettingsPageItemOwned::OwnerSurface(surface) => {
+                    resolved.push(ContentRow::OwnerSurface(*surface));
                 }
             }
         }
@@ -958,7 +1109,7 @@ impl SettingsView {
                         scroll_to_row = Some(index);
                     }
                 }
-                ContentRow::Title(_) => {}
+                ContentRow::Title(_) | ContentRow::OwnerSurface(_) => {}
             }
         }
 
@@ -984,22 +1135,28 @@ impl SettingsView {
         let rows = resolved;
         let view = cx.entity();
         let palette = *c;
-        let list = list(list_state, move |index, _window, app| match rows[index] {
-            ContentRow::Title(title) => div()
-                .pb(palette.space(20.0))
-                .text_size(px(22.0))
-                .font_weight(gpui::FontWeight::BOLD)
-                .text_color(palette.fg)
-                .child(SharedString::from(title))
-                .into_any_element(),
-            ContentRow::Header(label) => view.update(app, |this, cx| {
-                this.render_section_header(label, &palette, cx)
-            }),
-            ContentRow::Field(field) => view.update(app, |this, cx| {
-                let origin = this.field_origin(&field, cx);
-                let value = this.field_value(&field, cx);
-                this.render_field(&field, origin, value, &palette, cx)
-            }),
+        let list = list(list_state, move |index, _window, app| {
+            let decoration = settings_row_decoration(&rows, index);
+            match rows[index] {
+                ContentRow::Title(title) => div()
+                    .pb(palette.space(20.0))
+                    .text_size(px(22.0))
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .text_color(palette.fg)
+                    .child(SharedString::from(title))
+                    .into_any_element(),
+                ContentRow::Header(label) => view.update(app, |this, cx| {
+                    this.render_section_header(label, &palette, cx)
+                }),
+                ContentRow::Field(field) => view.update(app, |this, cx| {
+                    let source = this.field_source(&field, cx);
+                    let value = this.field_value(&field, cx);
+                    this.render_field(&field, source, value, decoration, &palette, cx)
+                }),
+                ContentRow::OwnerSurface(surface) => view.update(app, |this, cx| {
+                    this.render_owner_surface_row(surface, decoration, &palette, cx)
+                }),
+            }
         })
         .flex_1()
         .min_h_0();
@@ -1025,6 +1182,75 @@ impl SettingsView {
         }
     }
 
+    fn render_owner_surface_row(
+        &self,
+        id: SettingsSurfaceId,
+        decoration: SettingsRowDecoration,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let Some(surface) = self.services.surface(id) else {
+            tracing::error!(
+                "Settings page references an unregistered surface `{}`",
+                id.as_str()
+            );
+            return div().into_any_element();
+        };
+        let button_id = SharedString::from(format!("settings-surface-{}", id.as_str()));
+        let button = button(button_id, *c, ButtonVariant::OutlinedGhost, ButtonSize::Xs)
+            .child(surface.action_label)
+            .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                if let Err(error) = this.services.open_surface(id, cx) {
+                    tracing::error!("could not open Settings surface: {error}");
+                    this.notify_error(cx, "Settings", error);
+                }
+            }))
+            .on_key_down(cx.listener(move |this, event: &KeyDownEvent, _window, cx| {
+                if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                    if let Err(error) = this.services.open_surface(id, cx) {
+                        tracing::error!("could not open Settings surface: {error}");
+                        this.notify_error(cx, "Settings", error);
+                    }
+                    cx.stop_propagation();
+                }
+            }));
+
+        div()
+            .id(SharedString::from(format!("settings-row-{}", id.as_str())))
+            .flex()
+            .w_full()
+            .min_w_0()
+            .items_center()
+            .justify_between()
+            .gap(c.space(24.0))
+            .pt(c.control_space(16.0))
+            .pb(c.control_space(if decoration.section_end { 40.0 } else { 16.0 }))
+            .when(decoration.bottom_divider, |row| {
+                row.border_b_1().border_color(c.border)
+            })
+            .child(
+                v_stack()
+                    .gap(c.space(4.0))
+                    .flex_1()
+                    .min_w_0()
+                    .max_w(gpui::relative(0.66))
+                    .child(
+                        div()
+                            .text_color(c.fg)
+                            .text_size(px(13.0))
+                            .child(surface.title),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .text_color(c.muted)
+                            .child(surface.description),
+                    ),
+            )
+            .child(div().ml_auto().flex_shrink_0().child(button))
+            .into_any_element()
+    }
+
     /// A static section heading (`docs/architecture.md` §8.3 deviation from
     /// `settings-guidelines.md` rule 1: no longer a user-collapsible
     /// disclosure — the section list moved to the sidebar as scroll anchors).
@@ -1040,8 +1266,6 @@ impl SettingsView {
             .w_full()
             .items_center()
             .gap(c.space(8.0))
-            .pt(c.space(24.0))
-            .pb(c.space(4.0))
             .child(
                 div()
                     .text_size(px(13.0))
@@ -1063,6 +1287,23 @@ enum ContentRow {
     Title(&'static str),
     Header(&'static str),
     Field(AnyField),
+    OwnerSurface(SettingsSurfaceId),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SettingsRowDecoration {
+    bottom_divider: bool,
+    section_end: bool,
+}
+
+fn settings_row_decoration(rows: &[ContentRow], index: usize) -> SettingsRowDecoration {
+    let next_is_row = rows
+        .get(index + 1)
+        .is_some_and(|row| matches!(row, ContentRow::Field(_) | ContentRow::OwnerSurface(_)));
+    SettingsRowDecoration {
+        bottom_divider: next_is_row,
+        section_end: !next_is_row,
+    }
 }
 
 /// An owned mirror of `SettingsPageItem` (`&'static str`s only — cheap to
@@ -1071,6 +1312,7 @@ enum ContentRow {
 enum SettingsPageItemOwned {
     SectionHeader(&'static str),
     Item(&'static str),
+    OwnerSurface(SettingsSurfaceId),
 }
 
 impl From<&SettingsPageItem> for SettingsPageItemOwned {
@@ -1078,6 +1320,9 @@ impl From<&SettingsPageItem> for SettingsPageItemOwned {
         match item {
             SettingsPageItem::SectionHeader(s) => SettingsPageItemOwned::SectionHeader(s),
             SettingsPageItem::Item(s) => SettingsPageItemOwned::Item(s),
+            SettingsPageItem::OwnerSurface(surface) => {
+                SettingsPageItemOwned::OwnerSurface(*surface)
+            }
         }
     }
 }
@@ -1085,6 +1330,30 @@ impl From<&SettingsPageItem> for SettingsPageItemOwned {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_rows_divide_within_a_section_and_add_space_at_its_end() {
+        let rows = [
+            ContentRow::OwnerSurface(SettingsSurfaceId::new("first")),
+            ContentRow::OwnerSurface(SettingsSurfaceId::new("last")),
+            ContentRow::Header("Next section"),
+        ];
+
+        assert_eq!(
+            settings_row_decoration(&rows, 0),
+            SettingsRowDecoration {
+                bottom_divider: true,
+                section_end: false,
+            }
+        );
+        assert_eq!(
+            settings_row_decoration(&rows, 1),
+            SettingsRowDecoration {
+                bottom_divider: false,
+                section_end: true,
+            }
+        );
+    }
 
     #[test]
     fn sftp_column_values_are_filtered_and_deduplicated_in_order() {
@@ -1112,5 +1381,21 @@ mod tests {
             sftp_visible_columns(Some(&Value::String("invalid".to_owned()))),
             expected
         );
+    }
+
+    #[test]
+    fn project_scope_disables_only_fields_outside_the_project_whitelist() {
+        assert!(!field_disabled_in_scope(
+            SettingsScope::User,
+            "appearance.appFontSize"
+        ));
+        assert!(!field_disabled_in_scope(
+            SettingsScope::Project,
+            "general.restoreWindowState"
+        ));
+        assert!(field_disabled_in_scope(
+            SettingsScope::Project,
+            "appearance.appFontSize"
+        ));
     }
 }

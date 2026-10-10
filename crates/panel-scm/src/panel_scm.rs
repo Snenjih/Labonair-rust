@@ -26,15 +26,15 @@ pub(crate) mod theme {
 
 pub mod git_change_row;
 
-use std::sync::Arc;
 use std::time::Duration;
+use std::{collections::HashMap, sync::Arc};
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, uniform_list, App, AppContext, ClickEvent, ClipboardItem, Context, Entity,
     EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent,
     MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, Window,
+    Styled, Window,
 };
 use labonair_command_palette_core::{PaletteAction, SubmenuAction};
 use labonair_command_palette_runtime::PaletteActionHandlerRegistry;
@@ -46,9 +46,10 @@ use crate::git_change_row::{git_change_row, StageState};
 use crate::theme::ThemeStore;
 use labonair_notifications::{notification_center, notify_err, Notification};
 use labonair_ui_kit::{
-    caret, checkbox, context_menu, disclosure, field_input, h_stack, segmented_control,
-    BlinkCursor, ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem, MenuItem,
-    Palette, SegmentSize, SegmentVariant,
+    button_disabled, checkbox, context_menu, disclosure, h_stack, segmented_control,
+    text_area_surface, text_field, text_field_surface_sized, text_input, ButtonSize, ButtonVariant,
+    IconName, InputEvent, InputState, ListItem, MenuItem, Palette, SegmentSize, SegmentVariant,
+    TextFieldSize, TextFieldState,
 };
 
 /// Build the Source Control contribution for the workspace-owned panel registry.
@@ -779,7 +780,7 @@ fn git_list_element(
                 labonair_ui_kit::button_no_hover(
                     SharedString::from(format!("discard-{id}")),
                     c.palette,
-                    ButtonVariant::Ghost,
+                    ButtonVariant::Subtle,
                     ButtonSize::IconXs,
                 )
                 .text_color(c.muted)
@@ -847,9 +848,8 @@ fn git_list_element(
     }
 }
 
-/// Which hand-rolled text field currently receives key events (only one is
-/// ever active — the panel routes `on_key_down` to it via [`GitPanelView::on_field_key`]).
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// Which native text field currently receives key events.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Field {
     BranchFilter,
     NewBranchName,
@@ -963,6 +963,8 @@ pub struct GitPanelView {
     /// gpui-component's own focus border (`.focus_bordered(false)`) to blend
     /// into the panel, so this drives the composer's own focus ring instead.
     commit_input_focused: bool,
+    field_inputs: HashMap<Field, Entity<InputState>>,
+    _field_input_subscriptions: Vec<gpui::Subscription>,
     /// Seed text before the input exists (tests / first paint).
     commit_seed: String,
     commit_error: Option<String>,
@@ -1018,14 +1020,6 @@ pub struct GitPanelView {
     drop_confirm_stash: Option<(u32, String)>,
 
     active_field: Option<Field>,
-    /// Drives the caret blink for whichever hand-rolled field `active_field`
-    /// currently points at — only one is ever focused at a time.
-    blink: Entity<BlinkCursor>,
-    _blink_obs: Subscription,
-    /// `cx.on_focus`/`cx.on_blur` need a `Window`, which `new()` doesn't
-    /// have — wired lazily on first render instead.
-    blink_focus_wired: bool,
-    _blink_focus_subs: Vec<Subscription>,
 }
 
 impl Focusable for GitPanelView {
@@ -1067,8 +1061,6 @@ impl GitPanelView {
         })
         .detach();
 
-        let blink = cx.new(|_| BlinkCursor::new());
-        let _blink_obs = cx.observe(&blink, |_, _, cx| cx.notify());
         Self {
             git,
             tokio,
@@ -1095,6 +1087,8 @@ impl GitPanelView {
             pending_confirm: None,
             commit_input: None,
             commit_input_focused: false,
+            field_inputs: HashMap::new(),
+            _field_input_subscriptions: Vec::new(),
             commit_seed: String::new(),
             commit_error: None,
             amend: false,
@@ -1129,10 +1123,6 @@ impl GitPanelView {
             stash_msg: String::new(),
             drop_confirm_stash: None,
             active_field: None,
-            blink,
-            _blink_obs,
-            blink_focus_wired: false,
-            _blink_focus_subs: Vec::new(),
         }
     }
 
@@ -2092,7 +2082,70 @@ impl GitPanelView {
         );
     }
 
-    // ── hand-rolled text-field routing ─────────────────────────────────────
+    // ── field-backed text inputs ──────────────────────────────────────────
+
+    fn ensure_field_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        const FIELDS: &[(Field, &str)] = &[
+            (Field::BranchFilter, "Filter branches…"),
+            (Field::NewBranchName, "Branch name"),
+            (Field::NewBranchFrom, "Create from (branch or commit)"),
+            (Field::TagName, "Tag name"),
+            (Field::TagMessage, "Message (optional)"),
+            (Field::TagFrom, "Create from (branch or commit)"),
+            (Field::StashMsg, "Stash message (optional)"),
+            (Field::Rename, "New name"),
+        ];
+
+        for (field, placeholder) in FIELDS {
+            let value = self.field_value(*field).to_string();
+            if let Some(input) = self.field_inputs.get(field).cloned() {
+                if input.read(cx).value().as_ref() != value.as_str() {
+                    input.update(cx, |state, cx| state.set_value(value, window, cx));
+                }
+                continue;
+            }
+
+            let input = cx.new(|cx| {
+                let mut state = text_field(window, cx).placeholder(*placeholder);
+                if !value.is_empty() {
+                    state.set_value(value, window, cx);
+                }
+                state
+            });
+            let subscription =
+                cx.subscribe(
+                    &input,
+                    move |this, input, event: &InputEvent, cx| match event {
+                        InputEvent::Change => {
+                            let value = input.read(cx).value().to_string();
+                            *this.field_buf_mut(*field) = value;
+                            cx.notify();
+                        }
+                        InputEvent::Focus => {
+                            this.active_field = Some(*field);
+                            cx.notify();
+                        }
+                        InputEvent::Blur => {
+                            if this.active_field == Some(*field) {
+                                this.active_field = None;
+                                cx.notify();
+                            }
+                        }
+                        InputEvent::PressEnter { .. } => {}
+                    },
+                );
+            self.field_inputs.insert(*field, input);
+            self._field_input_subscriptions.push(subscription);
+        }
+    }
+
+    fn focus_text_field(&mut self, field: Field, window: &mut Window, cx: &mut Context<Self>) {
+        self.active_field = Some(field);
+        if let Some(input) = self.field_inputs.get(&field).cloned() {
+            input.update(cx, |state, cx| state.focus(window, cx));
+        }
+        cx.notify();
+    }
 
     fn field_buf_mut(&mut self, f: Field) -> &mut String {
         match f {
@@ -2150,7 +2203,7 @@ impl GitPanelView {
         self.active_field = None;
     }
 
-    fn on_field_key(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
+    fn on_field_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let Some(field) = self.active_field else {
             // No text field focused — drive History-tab list navigation.
             if self.mode == PanelMode::History && self.history_menu.is_none() {
@@ -2176,26 +2229,12 @@ impl GitPanelView {
         };
         let ks = &ev.keystroke;
         match ks.key.as_str() {
-            "escape" => self.cancel_field(field),
+            "escape" => {
+                self.cancel_field(field);
+                window.focus(&self.focus);
+            }
             "enter" => self.submit_field(field, cx),
-            "backspace" => {
-                self.field_buf_mut(field).pop();
-                self.blink.update(cx, |b, cx| b.pause(cx));
-            }
-            key => {
-                if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
-                    return;
-                }
-                let ch = ks
-                    .key_char
-                    .clone()
-                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
-                    .or_else(|| (key.chars().count() == 1).then(|| key.to_string()));
-                if let Some(ch) = ch {
-                    self.field_buf_mut(field).push_str(&ch);
-                    self.blink.update(cx, |b, cx| b.pause(cx));
-                }
-            }
+            _ => return,
         }
         cx.stop_propagation();
         cx.notify();
@@ -2289,7 +2328,7 @@ impl GitPanelView {
         cx: &mut Context<Self>,
         on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> gpui::Stateful<gpui::Div> {
-        labonair_ui_kit::button_no_hover(id, c.palette, ButtonVariant::Ghost, ButtonSize::Xs)
+        labonair_ui_kit::button_no_hover(id, c.palette, ButtonVariant::Subtle, ButtonSize::Xs)
             .text_color(c.muted)
             .hover(|s| s.bg(c.border).text_color(c.fg))
             .child(label.into())
@@ -2323,7 +2362,7 @@ impl GitPanelView {
         let branch_button = labonair_ui_kit::button_no_hover(
             "git-branch-toggle",
             c.palette,
-            ButtonVariant::Ghost,
+            ButtonVariant::Subtle,
             ButtonSize::Xs,
         )
         .flex_none()
@@ -2358,7 +2397,7 @@ impl GitPanelView {
         let push_menu = labonair_ui_kit::button_no_hover(
             "git-repo-menu",
             c.palette,
-            ButtonVariant::Outline,
+            ButtonVariant::Outlined,
             ButtonSize::IconXs,
         )
         .rounded(px(c.palette.radius.sm))
@@ -2436,12 +2475,7 @@ impl GitPanelView {
         let over_title = title_len > 72;
 
         let input_el: gpui::AnyElement = match &self.commit_input {
-            Some(input) => field_input(input)
-                .appearance(false)
-                .bordered(false)
-                .focus_bordered(false)
-                .h_full()
-                .into_any_element(),
+            Some(input) => text_input(input, c.palette).into_any_element(),
             None => div()
                 .id("git-commit-input-seed")
                 .flex_1()
@@ -2453,21 +2487,28 @@ impl GitPanelView {
         };
 
         let commit_label = SharedString::from(mode.label());
-        let mut commit_btn = labonair_ui_kit::button_no_hover(
-            "git-commit-btn",
-            c.palette,
-            ButtonVariant::Outline,
-            ButtonSize::Sm,
-        )
+        let mut commit_btn = if disabled_desc.is_some() {
+            button_disabled(
+                "git-commit-btn",
+                c.palette,
+                ButtonVariant::Outlined,
+                ButtonSize::Sm,
+            )
+        } else {
+            labonair_ui_kit::button_no_hover(
+                "git-commit-btn",
+                c.palette,
+                ButtonVariant::Outlined,
+                ButtonSize::Sm,
+            )
+        }
         .rounded(px(c.palette.radius.sm))
         .text_color(c.fg)
         .child(commit_label);
         if let Some(desc) = disabled_desc {
-            // No `on_click` → inert; dimmed + tooltip explains why.
+            // The shared disabled builder removes focus and pointer affordance.
             let desc = SharedString::from(desc);
             commit_btn = commit_btn
-                .opacity(0.5)
-                .cursor_default()
                 .tooltip(move |w, cx| labonair_ui_kit::Tooltip::new(desc.clone()).build(w, cx));
         } else {
             commit_btn = commit_btn.on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
@@ -2479,7 +2520,7 @@ impl GitPanelView {
         let commit_menu = labonair_ui_kit::button_no_hover(
             "git-commit-menu",
             c.palette,
-            ButtonVariant::Outline,
+            ButtonVariant::Outlined,
             ButtonSize::IconXs,
         )
         .rounded(px(c.palette.radius.sm))
@@ -2503,20 +2544,16 @@ impl GitPanelView {
                 px(150.0)
             })
             .gap(px(2.0))
-            .child(
-                div()
-                    .id("git-commit-box")
-                    .relative()
-                    .flex_1()
-                    .min_h(px(96.0))
-                    .border_1()
-                    .border_color(if self.commit_input_focused {
-                        c.accent
-                    } else {
-                        gpui::transparent_black()
-                    })
-                    .child(input_el),
-            )
+            .child(text_area_surface(
+                "git-commit-box",
+                c.palette,
+                if self.commit_input_focused {
+                    TextFieldState::Focused
+                } else {
+                    TextFieldState::Normal
+                },
+                input_el,
+            ))
             .when(over_title, |d| {
                 d.child(
                     div()
@@ -2547,7 +2584,7 @@ impl GitPanelView {
                         labonair_ui_kit::button_no_hover(
                             "git-commit-expand",
                             c.palette,
-                            ButtonVariant::Ghost,
+                            ButtonVariant::Subtle,
                             ButtonSize::IconXs,
                         )
                         .text_color(c.muted)
@@ -2568,47 +2605,31 @@ impl GitPanelView {
 
     // ── branch picker / stash rendering ────────────────────────────────────
 
-    /// A hand-rolled single-line text field (GPUI has no built-in text input
-    /// here — the panel routes key events to the [`Field`] marked active).
+    /// The UI kit owns the shared field surface and native editor behavior.
     fn text_field(
         &self,
         id: &'static str,
         field: Field,
-        placeholder: &'static str,
+        _placeholder: &'static str,
         c: Colors,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+        _cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let active = self.active_field == Some(field);
-        let value = self.field_value(field).to_string();
-        let empty = value.is_empty();
-        let show_caret = active && self.blink.read(cx).visible();
-        div()
-            .id(id)
-            .h(px(22.0))
-            .px(px(6.0))
-            .flex()
-            .items_center()
-            .overflow_hidden()
-            .whitespace_nowrap()
-            .rounded_sm()
-            .border_1()
-            .border_color(if active { c.accent } else { c.border })
-            .bg(c.bg)
-            .text_size(px(11.0))
-            .text_color(if empty { c.muted } else { c.fg })
-            .child(SharedString::from(if empty {
-                placeholder.to_string()
+        let Some(input) = self.field_inputs.get(&field) else {
+            return div().into_any_element();
+        };
+        text_field_surface_sized(
+            id,
+            c.palette,
+            if active {
+                TextFieldState::Focused
             } else {
-                value
-            }))
-            .when(show_caret, |d| d.child(caret(c.fg, 12.0)))
-            .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
-                cx.stop_propagation();
-                this.active_field = Some(field);
-                w.focus(&this.focus);
-                this.blink.update(cx, |b, cx| b.pause(cx));
-                cx.notify();
-            }))
+                TextFieldState::Normal
+            },
+            TextFieldSize::Compact,
+            text_input(input, c.palette),
+        )
+        .into_any_element()
     }
 
     fn confirm_bar(
@@ -2635,7 +2656,7 @@ impl GitPanelView {
                 labonair_ui_kit::button_no_hover(
                     id,
                     c.palette,
-                    ButtonVariant::Outline,
+                    ButtonVariant::Outlined,
                     ButtonSize::Xs,
                 )
                 .h(px(18.0))
@@ -2705,8 +2726,7 @@ impl GitPanelView {
                                     .map(|s| s.current_branch.clone())
                                     .unwrap_or_default(),
                             );
-                            this.active_field = Some(Field::NewBranchName);
-                            w.focus(&this.focus);
+                            this.focus_text_field(Field::NewBranchName, w, cx);
                         }
                         cx.notify();
                     },
@@ -2925,7 +2945,7 @@ impl GitPanelView {
                 labonair_ui_kit::button_no_hover(
                     SharedString::from(format!("git-branch-rn-{}", name)),
                     c.palette,
-                    ButtonVariant::Ghost,
+                    ButtonVariant::Subtle,
                     ButtonSize::IconXs,
                 )
                 .text_color(c.muted)
@@ -2935,8 +2955,7 @@ impl GitPanelView {
                     cx.stop_propagation();
                     this.rename_target = Some(rn_name.clone());
                     this.rename_buf = rn_name.clone();
-                    this.active_field = Some(Field::Rename);
-                    w.focus(&this.focus);
+                    this.focus_text_field(Field::Rename, w, cx);
                     cx.notify();
                 })),
             );
@@ -2945,7 +2964,7 @@ impl GitPanelView {
                     labonair_ui_kit::button_no_hover(
                         SharedString::from(format!("git-branch-del-{}", name)),
                         c.palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::IconXs,
                     )
                     .text_color(c.muted)
@@ -3066,7 +3085,7 @@ impl GitPanelView {
                     labonair_ui_kit::button_no_hover(
                         "git-tags-new",
                         c.palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::IconXs,
                     )
                     .text_color(c.muted)
@@ -3075,8 +3094,7 @@ impl GitPanelView {
                     .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
                         this.new_tag_open = true;
                         this.tags_collapsed = false;
-                        this.active_field = Some(Field::TagName);
-                        w.focus(&this.focus);
+                        this.focus_text_field(Field::TagName, w, cx);
                         cx.notify();
                     })),
                 ),
@@ -3179,7 +3197,7 @@ impl GitPanelView {
                     labonair_ui_kit::button_no_hover(
                         SharedString::from(format!("git-tag-push-{tag}")),
                         c.palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::IconXs,
                     )
                     .text_color(c.muted)
@@ -3195,7 +3213,7 @@ impl GitPanelView {
                     labonair_ui_kit::button_no_hover(
                         SharedString::from(format!("git-tag-del-{tag}")),
                         c.palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::IconXs,
                     )
                     .text_color(c.muted)
@@ -3262,7 +3280,7 @@ impl GitPanelView {
                     labonair_ui_kit::button_no_hover(
                         "git-stash-new",
                         c.palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::IconXs,
                     )
                     .text_color(c.muted)
@@ -3271,8 +3289,7 @@ impl GitPanelView {
                     .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
                         this.stash_form_open = true;
                         this.stash_collapsed = false;
-                        this.active_field = Some(Field::StashMsg);
-                        w.focus(&this.focus);
+                        this.focus_text_field(Field::StashMsg, w, cx);
                         cx.notify();
                     })),
                 ),
@@ -3349,7 +3366,7 @@ impl GitPanelView {
                     labonair_ui_kit::button_no_hover(
                         SharedString::from(format!("git-stash-apply-{}", e.index)),
                         c.palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::IconXs,
                     )
                     .text_color(c.muted)
@@ -3365,7 +3382,7 @@ impl GitPanelView {
                     labonair_ui_kit::button_no_hover(
                         SharedString::from(format!("git-stash-pop-{}", e.index)),
                         c.palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::IconXs,
                     )
                     .text_color(c.muted)
@@ -3381,7 +3398,7 @@ impl GitPanelView {
                     labonair_ui_kit::button_no_hover(
                         SharedString::from(format!("git-stash-drop-{}", e.index)),
                         c.palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::IconXs,
                     )
                     .text_color(c.muted)
@@ -3467,7 +3484,7 @@ impl GitPanelView {
         let view_diff = labonair_ui_kit::button_no_hover(
             "git-view-diff",
             c.palette,
-            ButtonVariant::Ghost,
+            ButtonVariant::Subtle,
             ButtonSize::Xs,
         )
         .text_color(c.fg)
@@ -3479,7 +3496,7 @@ impl GitPanelView {
         let view_options = labonair_ui_kit::button_no_hover(
             "git-view-options",
             c.palette,
-            ButtonVariant::Ghost,
+            ButtonVariant::Subtle,
             ButtonSize::IconXs,
         )
         .text_color(c.muted)
@@ -3512,7 +3529,7 @@ impl GitPanelView {
         let stage_menu = labonair_ui_kit::button_no_hover(
             "git-stage-menu",
             c.palette,
-            ButtonVariant::Outline,
+            ButtonVariant::Outlined,
             ButtonSize::IconXs,
         )
         .rounded(px(c.palette.radius.sm))
@@ -3915,20 +3932,6 @@ impl Render for GitPanelView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let _span =
             tracing::trace_span!(target: "labonair::perf", "render", view = "scm_panel").entered();
-        if !self.blink_focus_wired {
-            self.blink_focus_wired = true;
-            self._blink_focus_subs.push(cx.on_focus(
-                &self.focus.clone(),
-                window,
-                |this, _w, cx| {
-                    this.blink.update(cx, |b, cx| b.start(cx));
-                },
-            ));
-            self._blink_focus_subs
-                .push(cx.on_blur(&self.focus.clone(), window, |this, _w, cx| {
-                    this.blink.update(cx, |b, cx| b.stop(cx));
-                }));
-        }
         let c = self.colors(cx);
         self.ensure_commit_input(window, cx);
 
@@ -3944,6 +3947,7 @@ impl Render for GitPanelView {
         if !self.is_repo {
             return root.child(self.render_no_repo(c, cx));
         }
+        self.ensure_field_inputs(window, cx);
 
         // Panel-owned tab bar: Changes | History (two real information modes).
         let mode_key = match self.mode {

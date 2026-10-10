@@ -58,79 +58,97 @@ fn main() {
 
     tracing::info!("Labonair-rust starting");
 
-    Application::new()
-        .with_assets(labonair_shell::Assets)
-        .run(move |cx: &mut App| {
-            // Dock / cmd-tab icon for the un-bundled `cargo run` binary
-            // (a packaged `.app` uses the embedded `icon.icns` instead).
-            dock_icon::set_dock_icon();
-            labonair_shell::init_fonts(cx);
-            // T19-002: layered SettingsStore (default < user < …) — before
-            // the first render, before gpui-component so nothing built below
-            // can race a `XSettings::get(cx)` call against an unpopulated
-            // store.
-            labonair_shell::init_settings(cx);
-            gpui_component::init(cx);
-            let bounds = window_state::load()
-                .unwrap_or_else(|| Bounds::centered(None, size(px(1200.0), px(800.0)), cx));
-            let window = cx
-                .open_window(
-                    WindowOptions {
-                        window_bounds: Some(WindowBounds::Windowed(bounds)),
-                        titlebar: Some(TitlebarOptions {
-                            // Reference uses macOS `titleBarStyle: "Overlay"` +
-                            // `hiddenTitle: true`: one transparent overlay titlebar
-                            // with the traffic lights floating over the app's own
-                            // header. No OS-drawn title text.
-                            title: None,
-                            appears_transparent: true,
-                            // Vertically centre the 14px-tall traffic lights inside
-                            // the 40px custom header.
-                            traffic_light_position: Some(point(px(19.0), px((40.0 - 14.0) / 2.0))),
-                        }),
-                        window_min_size: Some(size(px(720.0), px(480.0))),
-                        ..Default::default()
-                    },
-                    move |window, cx| {
-                        let theme = labonair_shell::init_theme(window.appearance(), cx);
-                        window
-                            .observe_window_appearance({
-                                let theme = theme.clone();
-                                move |window, cx| {
-                                    let appearance = window.appearance();
-                                    theme.update(cx, |store, cx| {
-                                        store.set_system_appearance(appearance, cx)
-                                    });
-                                }
-                            })
-                            .detach();
-                        let background = labonair_shell::init_background(cx);
-                        let notifications = labonair_shell::init_notifications(cx);
-                        let composition = composition.clone();
-                        let tokio_handle = tokio_handle.clone();
-                        // The window's first layer must be a `gpui_component::Root`
-                        // so gpui-component primitives (Input, popovers, dialogs,
-                        // notifications) can reach their deferred render layers.
-                        let shell = cx.new(|cx| {
-                            AppShell::new(
-                                theme,
-                                background,
-                                notifications,
-                                composition,
-                                tokio_handle,
-                                window,
-                                cx,
-                            )
-                        });
-                        let shell_view: gpui::AnyView = shell.into();
-                        cx.new(|cx| Root::new(shell_view, window, cx))
-                    },
-                )
-                .expect("failed to open window");
-            labonair_shell::init_menus(cx);
-            cx.activate(true);
-            window
-                .update(cx, |_, window, _| window.activate_window())
-                .expect("failed to activate main window");
-        });
+    let (open_urls_tx, open_urls_rx) = tokio::sync::mpsc::unbounded_channel();
+    let application = Application::new().with_assets(labonair_shell::Assets);
+    application.on_open_urls(move |urls| {
+        let _ = open_urls_tx.send(urls);
+    });
+    application.run(move |cx: &mut App| {
+        // Dock / cmd-tab icon for the un-bundled `cargo run` binary
+        // (a packaged `.app` uses the embedded `icon.icns` instead).
+        dock_icon::set_dock_icon();
+        labonair_shell::init_fonts(cx);
+        // T19-002: layered SettingsStore (default < user < …) — before
+        // the first render, before gpui-component so nothing built below
+        // can race a `XSettings::get(cx)` call against an unpopulated
+        // store.
+        labonair_shell::init_settings(cx);
+        gpui_component::init(cx);
+        let bounds = window_state::load()
+            .unwrap_or_else(|| Bounds::centered(None, size(px(1200.0), px(800.0)), cx));
+        let window = cx
+            .open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    titlebar: Some(TitlebarOptions {
+                        // Reference uses macOS `titleBarStyle: "Overlay"` +
+                        // `hiddenTitle: true`: one transparent overlay titlebar
+                        // with the traffic lights floating over the app's own
+                        // header. No OS-drawn title text.
+                        title: None,
+                        appears_transparent: true,
+                        // Vertically centre the 14px-tall traffic lights inside
+                        // the 40px custom header.
+                        traffic_light_position: Some(point(px(19.0), px((40.0 - 14.0) / 2.0))),
+                    }),
+                    window_min_size: Some(size(px(720.0), px(480.0))),
+                    ..Default::default()
+                },
+                move |window, cx| {
+                    let theme = labonair_shell::init_theme(window.appearance(), cx);
+                    window
+                        .observe_window_appearance({
+                            let theme = theme.clone();
+                            move |window, cx| {
+                                let appearance = window.appearance();
+                                theme.update(cx, |store, cx| {
+                                    store.set_system_appearance(appearance, cx)
+                                });
+                            }
+                        })
+                        .detach();
+                    let background = labonair_shell::init_background(cx);
+                    let notifications = labonair_shell::init_notifications(cx);
+                    let composition = composition.clone();
+                    let tokio_handle = tokio_handle.clone();
+                    // The window's first layer must be a `gpui_component::Root`
+                    // so gpui-component primitives (Input, popovers, dialogs,
+                    // notifications) can reach their deferred render layers.
+                    let shell = cx.new(|cx| {
+                        AppShell::new(
+                            theme,
+                            background,
+                            notifications,
+                            composition,
+                            tokio_handle,
+                            window,
+                            cx,
+                        )
+                    });
+                    let shell_view: gpui::AnyView = shell.into();
+                    cx.new(|cx| Root::new(shell_view, window, cx))
+                },
+            )
+            .expect("failed to open window");
+        labonair_shell::init_menus(cx);
+        cx.activate(true);
+        window
+            .update(cx, |_, window, _| window.activate_window())
+            .expect("failed to activate main window");
+
+        let mut open_urls_rx = open_urls_rx;
+        cx.spawn(async move |cx| {
+            while let Some(urls) = open_urls_rx.recv().await {
+                let handled = cx.update(|cx| {
+                    urls.into_iter()
+                        .filter(|url| labonair_shell::handle_open_url(url, cx))
+                        .count()
+                });
+                if handled.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    });
 }

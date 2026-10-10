@@ -92,6 +92,8 @@ pub struct Palette {
     /// Feed spacing/size literals through [`Palette::space`] rather than
     /// multiplying by hand.
     pub density: f32,
+    /// UI-font rem scale used by controls whose dimensions track text size.
+    pub ui_font_scale: f32,
     /// The `--dur-fast` entrance-animation duration (see
     /// [`crate::animation::fade_in`]). Raw, un-clamped — `fade_in` applies the
     /// reduce-motion floor itself.
@@ -140,6 +142,7 @@ impl Palette {
             success: status.success,
             radius: theme.radius(),
             density: theme.metrics().density.spacing_scale(),
+            ui_font_scale: theme.metrics().ui_font_size / 16.0,
             dur_fast: theme.theme().animation.dur_fast,
             ease_premium: theme.theme().animation.ease_premium,
             reduce_motion: theme.metrics().reduce_motion,
@@ -153,6 +156,12 @@ impl Palette {
     /// stay as literals (`docs/architecture.md` §8.20).
     pub fn space(&self, value: f32) -> Pixels {
         px(value * self.density)
+    }
+
+    /// A control dimension scaled by both the UI density and the active UI
+    /// font size, matching rem-sized native controls.
+    pub fn control_space(&self, value: f32) -> Pixels {
+        px(value * self.density * self.ui_font_scale)
     }
 }
 
@@ -188,6 +197,15 @@ mod tests {
         assert_eq!(c.space(40.0), px(34.0));
         c.density = 1.15;
         assert_eq!(c.space(40.0), px(46.0));
+    }
+
+    #[test]
+    fn control_space_scales_with_density_and_ui_font_size() {
+        use gpui::px;
+        let mut c = Palette::from_theme(&TestTheme(Theme::dark()));
+        c.density = 0.85;
+        c.ui_font_scale = 1.25;
+        assert_eq!(c.control_space(32.0), px(34.0));
     }
 
     #[test]

@@ -13,11 +13,13 @@ inspection or successful build does not verify rendered parity.
 
 | Control | Record from the paired reference and Labonair captures |
 |---|---|
-| Button and icon button | Outer bounds, hit target, icon box, label baseline, horizontal/vertical padding, gap, border, radius, and default/hover/pressed/selected/focused/disabled states |
-| Text and search input | Bounds, height, text baseline, leading/trailing icons, placeholder, caret, selection, focus ring, validation state, and keyboard editing behavior |
+| Button and icon button | Outer bounds, hit target, icon box, wide/square shape, label baseline, horizontal/vertical padding, gap, border, radius, tooltip, indicator, and default/hover/pressed/selected/focused/disabled states |
+| Text and search input | Single-line and multiline bounds, height and growth, horizontal/vertical padding, radius, UI-font and density scaling, text baseline, leading/trailing icons, placeholder, caret, selection, focus ring, validation/disabled state, paste, IME, undo/redo, keyboard editing, and owner-specific Enter/newline behavior |
+| Slider and numeric field | Track and thumb bounds, value display and units, range limits, pointer adjustment, keyboard adjustment, focus, disabled behavior, and update/commit timing |
 | Select and menu item | Trigger bounds, popup bounds, row height, item padding, icon/label/shortcut columns, selected/checked/disabled/destructive states, nesting, and keyboard traversal |
-| List row and tab | Row/tab height, leading/trailing content, selected/focused/dirty/busy treatment, truncation, close target, reorder target, and overflow behavior |
-| Dialog and tooltip | Anchor or center alignment, viewport margins, maximum bounds, scrim, text wrapping, focus entry/return, dismissal, and action order |
+| List row, tab item, and tab strip | Row/tab height, horizontal/vertical geometry, leading/trailing content, selected/focused/dirty/busy/peek treatment, truncation, close hit target, arrow-key direction, reorder/drop target, and overflow behavior |
+| Settings value and owner-action row | Label/description wrapping, control alignment, modified-source label, reset placement beside the setting title, hover copy-link action and field deep-link destination, registered owner action destination, keyboard activation, disabled explanation, search match, 16-pixel top padding, 16-pixel inner-row bottom padding, 40-pixel section-end padding, and divider only between rows in one section |
+| Dialog and tooltip | Shared card geometry, anchor or center alignment, viewport margins, maximum bounds, scrim, text wrapping, focus entry/return, keyboard dismissal, and action order |
 | Divider and empty/loading/error view | Stroke and spacing; icon/text alignment; message width; progress treatment; actionable recovery; and stable layout while the state changes |
 
 Record measured values in logical points and device scale separately. Name the
@@ -53,6 +55,11 @@ reason:
   input methods.
 
 ## Workflow review
+
+For Settings owner actions, verify that one registered contribution supplies
+the row metadata, page placement, search terms, and canonical action. Check
+duplicate IDs and conflicting page metadata at registration time; the renderer
+must not need a feature-specific row or search branch.
 
 - Every visible action has an owner and a stable command identity where it is
   command-capable. Frequent actions have discoverable bindings; destructive

@@ -26,7 +26,10 @@ use labonair_settings::{
     EditorSettings, Settings as _, TerminalSettings, ThemeSettings, WorkspaceSettings,
 };
 use labonair_theme::{EditorThemeId, ThemePreference};
-use labonair_ui_kit::{fade_in, kbd, keybinding_hint, BlinkCursor, IconName, Palette, UiTheme};
+use labonair_ui_kit::{
+    fade_in, kbd, keybinding_hint, search_input, text_field, IconName, InputEvent, InputState,
+    Palette, UiTheme,
+};
 
 use crate::fuzzy::{match_score, SearchMode};
 use crate::KeybindDisplay;
@@ -520,12 +523,12 @@ pub struct CommandPalette<W, Th> {
     /// Navigation stack — `[Root]` at rest, pushed on drill-in.
     pages: Vec<Page>,
     query: String,
+    query_input: Option<Entity<InputState>>,
+    _query_input_subscription: Option<Subscription>,
     selected: usize,
     recent: Vec<CommandId>,
     data: PaletteData,
     focus: FocusHandle,
-    blink: Entity<BlinkCursor>,
-    _blink_sub: Subscription,
 }
 
 impl<W, Th> EventEmitter<PaletteEvent> for CommandPalette<W, Th>
@@ -550,20 +553,18 @@ where
     Th: UiTheme + 'static,
 {
     pub fn new(theme: Entity<Th>, workspace: Entity<W>, cx: &mut Context<Self>) -> Self {
-        let blink = cx.new(|_| BlinkCursor::new());
-        let _blink_sub = cx.observe(&blink, |_, _, cx| cx.notify());
         Self {
             theme,
             workspace,
             open: false,
             pages: vec![Page::Root],
             query: String::new(),
+            query_input: None,
+            _query_input_subscription: None,
             selected: 0,
             recent: recent::load(),
             data: PaletteData::default(),
             focus: cx.focus_handle(),
-            blink,
-            _blink_sub,
         }
     }
 
@@ -593,8 +594,7 @@ where
         self.pages = vec![Page::Root];
         self.query.clear();
         self.selected = 0;
-        window.focus(&self.focus);
-        self.blink.update(cx, |b, cx| b.start(cx));
+        self.reset_query_input(window, cx);
         cx.notify();
     }
 
@@ -604,6 +604,7 @@ where
         self.open(window, cx);
         if page != Page::Root {
             self.pages.push(page);
+            self.reset_query_input(window, cx);
             self.sync_theme_preview(cx);
         }
         cx.notify();
@@ -613,9 +614,10 @@ where
         let was_open = self.open;
         self.open = false;
         self.query.clear();
+        self.query_input = None;
+        self._query_input_subscription = None;
         self.pages = vec![Page::Root];
         self.selected = 0;
-        self.blink.update(cx, |b, cx| b.stop(cx));
         cx.emit(PaletteEvent::Action(PaletteAction::PreviewAppTheme(None)));
         cx.emit(PaletteEvent::Action(PaletteAction::PreviewIconTheme(None)));
         if was_open {
@@ -624,29 +626,60 @@ where
         cx.notify();
     }
 
-    fn navigate(&mut self, page: Page, cx: &mut Context<Self>) {
+    fn reset_query_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let placeholder = self.page().placeholder();
+        let input = cx.new(|cx| text_field(window, cx).placeholder(placeholder));
+        let subscription = cx.subscribe(&input, |this, input, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.query = input.read(cx).value().to_string();
+                this.selected = 0;
+                if this.open {
+                    this.sync_theme_preview(cx);
+                }
+                cx.notify();
+            }
+        });
+        input.update(cx, |input, cx| input.focus(window, cx));
+        self.query_input = Some(input);
+        self._query_input_subscription = Some(subscription);
+    }
+
+    fn set_query(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.query = query.to_string();
+        self.selected = 0;
+        if let Some(input) = self.query_input.clone() {
+            let value = query.to_string();
+            input.update(cx, move |input, cx| input.set_value(value, window, cx));
+        }
+        cx.notify();
+    }
+
+    fn navigate(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
         self.pages.push(page);
         self.query.clear();
         self.selected = 0;
+        self.reset_query_input(window, cx);
         self.sync_theme_preview(cx);
         cx.notify();
     }
 
-    fn go_back(&mut self, cx: &mut Context<Self>) {
+    fn go_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.pages.len() > 1 {
             self.pages.pop();
             self.query.clear();
             self.selected = 0;
+            self.reset_query_input(window, cx);
             self.sync_theme_preview(cx);
             cx.notify();
         }
     }
 
-    fn go_back_to(&mut self, index: usize, cx: &mut Context<Self>) {
+    fn go_back_to(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index + 1 < self.pages.len() {
             self.pages.truncate(index + 1);
             self.query.clear();
             self.selected = 0;
+            self.reset_query_input(window, cx);
             self.sync_theme_preview(cx);
             cx.notify();
         }
@@ -885,22 +918,22 @@ where
         let Some(key) = rows.get(self.selected).map(|r| r.key.clone()) else {
             return;
         };
-        self.dispatch(key, cx);
+        self.dispatch(key, _window, cx);
     }
 
     /// `Shift+Enter` — run the selected row's secondary action, if it has one.
-    fn run_secondary(&mut self, cx: &mut Context<Self>) {
+    fn run_secondary(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let rows = self.rows(cx);
         let Some(sec) = rows.get(self.selected).and_then(|r| r.secondary.clone()) else {
             return;
         };
-        self.dispatch(sec.key, cx);
+        self.dispatch(sec.key, window, cx);
     }
 
-    fn dispatch(&mut self, key: RowKey, cx: &mut Context<Self>) {
+    fn dispatch(&mut self, key: RowKey, window: &mut Window, cx: &mut Context<Self>) {
         match key {
             RowKey::Noop => {}
-            RowKey::Navigate(page) => self.navigate(page, cx),
+            RowKey::Navigate(page) => self.navigate(page, window, cx),
             RowKey::Command(id) => {
                 self.push_recent(id, cx);
                 self.close(cx);
@@ -985,60 +1018,32 @@ where
         match ks.key.as_str() {
             "escape" => {
                 if !self.query.is_empty() {
-                    self.query.clear();
-                    self.selected = 0;
-                    cx.notify();
+                    self.set_query("", window, cx);
                 } else if self.pages.len() > 1 {
-                    self.go_back(cx);
+                    self.go_back(window, cx);
                 } else {
                     self.close(cx);
                 }
             }
             "enter" => {
                 if ks.modifiers.shift {
-                    self.run_secondary(cx);
+                    self.run_secondary(window, cx);
                 } else {
                     self.run_selected(window, cx);
                 }
             }
-            "down" => {
-                if len > 0 {
-                    self.selected = (self.selected + 1) % len;
-                    cx.notify();
-                }
+            "down" if len > 0 => {
+                self.selected = (self.selected + 1) % len;
+                cx.notify();
             }
-            "up" => {
-                if len > 0 {
-                    self.selected = (self.selected + len - 1) % len;
-                    cx.notify();
-                }
+            "up" if len > 0 => {
+                self.selected = (self.selected + len - 1) % len;
+                cx.notify();
             }
-            "backspace" => {
-                if self.query.is_empty() && self.pages.len() > 1 {
-                    self.go_back(cx);
-                } else {
-                    self.query.pop();
-                    self.selected = 0;
-                    self.blink.update(cx, |b, cx| b.pause(cx));
-                    cx.notify();
-                }
+            "backspace" if self.query.is_empty() && self.pages.len() > 1 => {
+                self.go_back(window, cx);
             }
-            key => {
-                if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
-                    return;
-                }
-                let ch = ks
-                    .key_char
-                    .clone()
-                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
-                    .or_else(|| (key.chars().count() == 1).then(|| key.to_string()));
-                if let Some(ch) = ch {
-                    self.query.push_str(&ch);
-                    self.selected = 0;
-                    self.blink.update(cx, |b, cx| b.pause(cx));
-                    cx.notify();
-                }
-            }
+            _ => {}
         }
         if self.open {
             self.sync_theme_preview(cx);
@@ -1074,8 +1079,11 @@ where
     W: PaletteWorkspace + 'static,
     Th: UiTheme + 'static,
 {
-    fn focus_handle(&self, _cx: &App) -> FocusHandle {
-        self.focus.clone()
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
+        self.query_input
+            .as_ref()
+            .map(|input| input.read(cx).focus_handle(cx))
+            .unwrap_or_else(|| self.focus.clone())
     }
 }
 
@@ -1113,11 +1121,6 @@ where
         let chip_bg = t.muted();
 
         let page = self.page();
-        let (input_text, input_color) = if self.query.is_empty() {
-            (page.placeholder().to_string(), muted)
-        } else {
-            (self.query.clone(), fg)
-        };
 
         // Rows, with an optional "Recently Used" group prepended on Root.
         let mut rows = Vec::new();
@@ -1314,7 +1317,9 @@ where
                         .when(is_current, |d| d.bg(sel_fill))
                         .when(!is_current, |d| {
                             d.hover(|s| s.bg(hover_fill)).on_click(cx.listener(
-                                move |this, _: &ClickEvent, _w, cx| this.go_back_to(idx, cx),
+                                move |this, _: &ClickEvent, window, cx| {
+                                    this.go_back_to(idx, window, cx)
+                                },
                             ))
                         })
                         .child(SharedString::from(pg.label())),
@@ -1324,26 +1329,29 @@ where
         } else {
             header = header.child(IconName::Search.svg(muted));
         }
-        let mut input_row = div().flex_1().flex().items_center().text_size(px(15.0));
-        if !self.query.is_empty() {
-            input_row = input_row.child(
-                div()
-                    .text_color(fg)
-                    .child(SharedString::from(input_text.clone())),
-            );
-        }
-        if self.blink.read(cx).visible() {
-            input_row = input_row.child(labonair_ui_kit::caret(fg, 15.0));
-        }
-        if self.query.is_empty() {
-            input_row = input_row.child(
-                div()
-                    .pl(px(4.0))
-                    .text_color(input_color)
-                    .child(SharedString::from(input_text)),
-            );
-        }
-        header = header.child(input_row);
+        let query_input = self
+            .query_input
+            .as_ref()
+            .map(|input| {
+                search_input(input, c)
+                    .text_size(px(15.0))
+                    .into_any_element()
+            })
+            .unwrap_or_else(|| div().into_any_element());
+        let palette_focus = self
+            .query_input
+            .as_ref()
+            .map(|input| input.read(cx).focus_handle(cx))
+            .unwrap_or_else(|| self.focus.clone());
+        header = header.child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .h_full()
+                .flex()
+                .items_center()
+                .child(query_input),
+        );
 
         // ── footer ───────────────────────────────────────────────────────────
         let mut hints = div().flex().items_center().gap(px(12.0)).ml_auto();
@@ -1419,7 +1427,7 @@ where
             .items_start()
             .pt(top)
             .bg(modal_scrim())
-            .track_focus(&self.focus)
+            .track_focus(&palette_focus)
             .key_context("CommandPalette")
             .on_key_down(cx.listener(Self::on_key))
             .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {

@@ -12,8 +12,8 @@
 //! / background entities, so the next open rebuilds it losslessly.
 
 use gpui::{
-    point, px, size, App, AppContext, Bounds, Global, TitlebarOptions, WindowBounds, WindowHandle,
-    WindowKind, WindowOptions,
+    point, px, size, App, AppContext, Bounds, Global, SharedString, TitlebarOptions, WindowBounds,
+    WindowHandle, WindowKind, WindowOptions,
 };
 use gpui_component::Root;
 use tokio::runtime::Handle as TokioHandle;
@@ -40,13 +40,14 @@ pub(crate) struct SettingsWindowRef {
 
 impl Global for SettingsWindowRef {}
 
-/// The section a pending deep-link wants to show — an
-/// `labonair_settings_content::areas::AreaMeta::slug`, optionally followed by
-/// `/<sub-page slug>` (rule 7). `SettingsView` observes this global so an
-/// already-open window jumps to the requested slug
-/// (`SettingsView::navigate_to_slug`).
-#[derive(Clone, Copy, Default)]
-pub(crate) struct SettingsTarget(pub(crate) Option<&'static str>);
+/// The target a pending Settings deep-link wants to show.
+#[derive(Clone, Default)]
+pub(crate) enum SettingsTarget {
+    #[default]
+    Home,
+    Page(&'static str),
+    Field(SharedString),
+}
 
 impl Global for SettingsTarget {}
 
@@ -57,17 +58,11 @@ pub fn set_settings_deps(services: SettingsServices, tokio: TokioHandle, cx: &mu
     cx.set_global(SettingsDeps { services, tokio });
 }
 
-/// Window bounds: 1040 logical px wide, height = 80 % of the primary display
-/// clamped to `[580, 900]` — a straight port of `settings_window_size()` in
-/// `reference-src/src-tauri/src/lib.rs`, widened for the native two-column
-/// Settings surface.
+/// Scale the native Settings window from the same 900×750 logical baseline as
+/// the pinned macOS reference, using the active UI font size as its rem scale.
 fn settings_bounds(cx: &mut App) -> Bounds<gpui::Pixels> {
-    let display_h = cx
-        .primary_display()
-        .map(|d| f32::from(d.bounds().size.height))
-        .unwrap_or(1000.0);
-    let h = (display_h * 0.8).clamp(580.0, 900.0);
-    Bounds::centered(None, size(px(1040.0), px(h)), cx)
+    let ui_scale = labonair_theme::theme_store(cx).read(cx).ui_font_size() / 16.0;
+    Bounds::centered(None, size(px(900.0 * ui_scale), px(750.0 * ui_scale)), cx)
 }
 
 /// Open the settings window, or focus it if it is already open, optionally
@@ -76,7 +71,48 @@ fn settings_bounds(cx: &mut App) -> Bounds<gpui::Pixels> {
 /// open (GPUI 0.2.2 has no per-window hide); shared state lives in the
 /// `SettingsStore` / theme / background entities, so nothing is lost.
 pub fn open_settings_window(slug: Option<&'static str>, cx: &mut App) {
-    cx.set_global(SettingsTarget(slug));
+    open_settings_target(slug.map(SettingsTarget::Page).unwrap_or_default(), cx);
+}
+
+/// Open a Labonair Settings deep-link. Returns `false` for unrelated or
+/// unknown URLs so the application composition root can leave them to their
+/// owning handlers.
+pub fn open_settings_deep_link(url: &str, cx: &mut App) -> bool {
+    if matches!(url, "labonair://settings" | "labonair://settings/") {
+        open_settings_target(SettingsTarget::Home, cx);
+        return true;
+    }
+
+    let Some(path) = setting_path_from_url(url) else {
+        return false;
+    };
+    if !is_known_setting_path(path) {
+        return false;
+    }
+
+    open_settings_target(
+        SettingsTarget::Field(SharedString::from(path.to_owned())),
+        cx,
+    );
+    true
+}
+
+fn setting_path_from_url(url: &str) -> Option<&str> {
+    let path = url.strip_prefix("labonair://settings/")?;
+    if path.is_empty() || path.contains('/') || path.contains('?') || path.contains('#') {
+        return None;
+    }
+    Some(path)
+}
+
+fn is_known_setting_path(path: &str) -> bool {
+    crate::schema::all_fields()
+        .iter()
+        .any(|field| field.json_path == path)
+}
+
+fn open_settings_target(target: SettingsTarget, cx: &mut App) {
+    cx.set_global(target.clone());
 
     let existing = cx.try_global::<SettingsWindowRef>().and_then(|w| w.handle);
     if let Some(handle) = existing {
@@ -101,11 +137,11 @@ pub fn open_settings_window(slug: Option<&'static str>, cx: &mut App) {
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: Some(TitlebarOptions {
-                title: Some("Settings".into()),
+                title: Some("Labonair — Settings".into()),
                 appears_transparent: true,
-                traffic_light_position: Some(point(px(19.0), px((44.0 - 14.0) / 2.0))),
+                traffic_light_position: Some(point(px(12.0), px(12.0))),
             }),
-            window_min_size: Some(size(px(760.0), px(480.0))),
+            window_min_size: Some(size(px(626.0), px(240.0))),
             kind: WindowKind::Normal,
             is_movable: true,
             ..Default::default()
@@ -116,9 +152,14 @@ pub fn open_settings_window(slug: Option<&'static str>, cx: &mut App) {
                 let mut v = SettingsView::new(theme, deps.services.clone(), deps.tokio.clone(), cx);
                 v.windowed = true;
                 v.open = true;
-                if let Some(SettingsTarget(Some(slug))) = cx.try_global::<SettingsTarget>().copied()
+                match cx
+                    .try_global::<SettingsTarget>()
+                    .cloned()
+                    .unwrap_or_default()
                 {
-                    v.navigate_to_slug(slug);
+                    SettingsTarget::Home => {}
+                    SettingsTarget::Page(slug) => v.navigate_to_slug(slug),
+                    SettingsTarget::Field(path) => v.navigate_to_json_path(&path, cx),
                 }
                 v.publish_settings_diagnostics(cx);
                 v.load_system_fonts(cx);
@@ -138,5 +179,31 @@ pub fn open_settings_window(slug: Option<&'static str>, cx: &mut App) {
             cx.activate(true);
         }
         Err(e) => tracing::error!("failed to open settings window: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_known_setting_path, setting_path_from_url};
+
+    #[test]
+    fn settings_deep_links_accept_one_json_path() {
+        assert_eq!(
+            setting_path_from_url("labonair://settings/editor.tab_size"),
+            Some("editor.tab_size")
+        );
+        assert_eq!(setting_path_from_url("labonair://settings"), None);
+        assert_eq!(setting_path_from_url("labonair://settings/"), None);
+        assert_eq!(setting_path_from_url("labonair://settings/a/b"), None);
+        assert_eq!(
+            setting_path_from_url("https://example.com/editor.tab_size"),
+            None
+        );
+    }
+
+    #[test]
+    fn settings_deep_links_must_target_a_registered_field() {
+        assert!(is_known_setting_path("general.theme"));
+        assert!(!is_known_setting_path("general.unknown"));
     }
 }

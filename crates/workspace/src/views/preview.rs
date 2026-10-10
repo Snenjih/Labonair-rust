@@ -250,7 +250,7 @@ impl Render for PreviewView {
                     button(
                         "preview-open-external",
                         c,
-                        ButtonVariant::Outline,
+                        ButtonVariant::Outlined,
                         ButtonSize::Sm,
                     )
                     .on_click(cx.listener(|this, _: &ClickEvent, _, _| this.open_external()))
@@ -296,7 +296,7 @@ impl Render for PreviewView {
                         labonair_ui_kit::button_no_hover(
                             "preview-reload",
                             c,
-                            ButtonVariant::Ghost,
+                            ButtonVariant::Subtle,
                             ButtonSize::Xs,
                         )
                         .text_color(muted)
@@ -309,7 +309,7 @@ impl Render for PreviewView {
                             labonair_ui_kit::button_no_hover(
                                 "preview-external",
                                 c,
-                                ButtonVariant::Ghost,
+                                ButtonVariant::Subtle,
                                 ButtonSize::Xs,
                             )
                             .text_color(muted)

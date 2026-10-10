@@ -192,11 +192,11 @@ Follow [`zed-parity.md`](zed-parity.md) for the pinned baseline, clean-room
 boundary, complete feature inventory, universal UI checklist, Settings pilot,
 shared registries, universal tab model, and parity acceptance rules.
 
-The active inventory and specification task is
+The active implementation task is
 [`R07-000-zed-parity-baseline-and-inventory.md`](../tasks/rework/R07-000-zed-parity-baseline-and-inventory.md).
-It starts with the macOS Settings pilot and then builds the complete parity
-inventory. R07-001 product-surface acceptance follows this specification
-baseline. The existing R09 Editor tasks remain planned until the inventory
+It starts with shared UI-kit controls and the complete Settings surface, then
+continues through the rest of the parity inventory. R07-001 product-surface
+acceptance follows the implementation work. The existing R09 Editor tasks remain planned until the inventory
 assigns their place in the full dependency order; their implementation scope
 must align with the parity catalog before any R09 task starts.
 

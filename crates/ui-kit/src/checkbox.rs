@@ -121,14 +121,10 @@ impl IntoElement for Checkbox {
             .children(label)
             .when(!disabled, move |d| match handler {
                 Some(h) => d
-                    .on_click({
-                        let click_handler = h.clone();
-                        move |_: &ClickEvent, w, cx| click_handler(&next, w, cx)
-                    })
-                    .on_key_down(move |event, window, app| {
+                    .on_click(move |_: &ClickEvent, w, cx| h(&next, w, cx))
+                    .on_key_down(|event, _window, cx| {
                         if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                            h(&next, window, app);
-                            app.stop_propagation();
+                            cx.stop_propagation();
                         }
                     }),
                 None => d,

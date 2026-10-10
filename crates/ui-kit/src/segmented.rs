@@ -169,6 +169,7 @@ impl IntoElement for SegmentedControl {
         let selected = self.selected.clone();
         let handler = self.on_select.clone();
         let group_id = self.id.clone();
+        let keys: Vec<_> = self.segments.iter().map(|(key, _)| key.clone()).collect();
 
         let track = div()
             .flex()
@@ -184,54 +185,113 @@ impl IntoElement for SegmentedControl {
             })
             .when(disabled, |d| d.opacity(DISABLED_OPACITY));
 
-        track.children(self.segments.into_iter().map(move |(key, label)| {
-            let on = key == selected;
-            let handler = handler.clone();
-            let clicked = key.clone();
-            div()
-                .id(SharedString::from(format!("{group_id}-{key}")))
-                .flex()
-                .flex_shrink_0()
-                .when(variant == SegmentVariant::Flat, |d| d.flex_1())
-                .items_center()
-                .justify_center()
-                .h(c.space(size.height()))
-                .px(c.space(10.0))
-                .when(variant != SegmentVariant::Flat, |d| {
-                    d.rounded(px(c.radius.md))
-                })
-                .text_size(px(size.text()))
-                .text_color(if on { c.fg } else { c.muted })
-                .when(variant == SegmentVariant::Outline, |d| {
-                    d.border_1()
-                        .border_color(if on { c.accent } else { c.border })
-                })
-                .when(variant == SegmentVariant::Solid && on, |d| d.bg(c.bg))
-                .when(variant == SegmentVariant::Flat && on, |d| {
-                    d.border_b_1().border_color(c.fg)
-                })
-                .when(!disabled, |d| {
-                    d.cursor_pointer().hover(move |s| {
-                        if variant == SegmentVariant::Flat {
-                            s.bg(c.muted_bg.opacity(0.45))
-                        } else {
-                            s.bg(c.muted_bg)
-                        }
-                    })
-                })
-                .child(label)
-                .when(!disabled, move |d| match handler {
-                    Some(h) => d.on_click(move |_: &ClickEvent, w, cx| h(&clicked, w, cx)),
-                    None => d,
-                })
-        }))
+        track.children(
+            self.segments
+                .into_iter()
+                .enumerate()
+                .map(move |(index, (key, label))| {
+                    let on = key == selected;
+                    let click_handler = handler.clone();
+                    let key_handler = handler.clone();
+                    let clicked = key.clone();
+                    let key_list = keys.clone();
+                    div()
+                        .id(SharedString::from(format!("{group_id}-{key}")))
+                        .flex()
+                        .flex_shrink_0()
+                        .when(variant == SegmentVariant::Flat, |d| d.flex_1())
+                        .items_center()
+                        .justify_center()
+                        .h(c.space(size.height()))
+                        .px(c.space(10.0))
+                        .when(variant != SegmentVariant::Flat, |d| {
+                            d.rounded(px(c.radius.md))
+                        })
+                        .text_size(px(size.text()))
+                        .text_color(if on { c.fg } else { c.muted })
+                        .when(variant == SegmentVariant::Outline, |d| {
+                            d.border_1()
+                                .border_color(if on { c.accent } else { c.border })
+                        })
+                        .when(variant == SegmentVariant::Solid && on, |d| d.bg(c.bg))
+                        .when(variant == SegmentVariant::Flat && on, |d| {
+                            d.border_b_1().border_color(c.fg)
+                        })
+                        .when(!disabled, |d| {
+                            d.tab_index(0)
+                                .focus(|style| style.border_1().border_color(c.ring))
+                        })
+                        .when(!disabled, |d| {
+                            d.cursor_pointer().hover(move |s| {
+                                if variant == SegmentVariant::Flat {
+                                    s.bg(c.muted_bg.opacity(0.45))
+                                } else {
+                                    s.bg(c.muted_bg)
+                                }
+                            })
+                        })
+                        .child(label)
+                        .when(!disabled, move |d| match click_handler {
+                            Some(h) => d.on_click(move |_: &ClickEvent, w, cx| h(&clicked, w, cx)),
+                            None => d,
+                        })
+                        .when(!disabled, move |d| {
+                            d.on_key_down(move |event, window, cx| {
+                                let key = event.keystroke.key.as_str();
+                                if matches!(key, "enter" | "space") {
+                                    cx.stop_propagation();
+                                    return;
+                                }
+
+                                let forward = match key {
+                                    "right" => true,
+                                    "left" => false,
+                                    _ => return,
+                                };
+                                if let Some(next_index) =
+                                    adjacent_segment_index(index, key_list.len(), forward)
+                                {
+                                    if let Some(handler) = &key_handler {
+                                        handler(&key_list[next_index], window, cx);
+                                    }
+                                    if forward {
+                                        window.focus_next();
+                                    } else {
+                                        window.focus_prev();
+                                    }
+                                    cx.stop_propagation();
+                                }
+                            })
+                        })
+                }),
+        )
     }
+}
+
+fn adjacent_segment_index(index: usize, len: usize, forward: bool) -> Option<usize> {
+    if len == 0 || index >= len {
+        return None;
+    }
+    Some(if forward {
+        (index + 1) % len
+    } else {
+        (index + len - 1) % len
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support::test_palette;
+
+    #[test]
+    fn keyboard_navigation_wraps_between_segments() {
+        assert_eq!(adjacent_segment_index(0, 3, false), Some(2));
+        assert_eq!(adjacent_segment_index(2, 3, true), Some(0));
+        assert_eq!(adjacent_segment_index(1, 3, true), Some(2));
+        assert_eq!(adjacent_segment_index(3, 3, true), None);
+        assert_eq!(adjacent_segment_index(0, 0, true), None);
+    }
 
     #[test]
     fn reports_the_active_segment() {

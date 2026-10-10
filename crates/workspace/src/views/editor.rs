@@ -56,8 +56,9 @@ use crate::syntax_theme::EditorPalette;
 use crate::theme::ThemeStore;
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
-    banner, button, context_menu, field_input, text_field, ButtonSize, ButtonVariant, InputEvent,
-    InputState, ListItem, MenuItem, Palette, Severity, Tooltip,
+    banner, button, context_menu, text_field, text_field_surface, text_input, ButtonSize,
+    ButtonVariant, InputEvent, InputState, ListItem, MenuItem, Palette, Severity, TextFieldState,
+    Tooltip,
 };
 
 /// Editor → workspace notifications.
@@ -3632,7 +3633,7 @@ impl EditorView {
                                     button(
                                         "editor-git-discard-cancel",
                                         palette,
-                                        ButtonVariant::Ghost,
+                                        ButtonVariant::Subtle,
                                         ButtonSize::Sm,
                                     )
                                     .text_color(muted)
@@ -3647,7 +3648,7 @@ impl EditorView {
                                     button(
                                         "editor-git-discard-project-diff",
                                         palette,
-                                        ButtonVariant::Default,
+                                        ButtonVariant::Subtle,
                                         ButtonSize::Sm,
                                     )
                                     .bg(accent)
@@ -3679,14 +3680,17 @@ impl EditorView {
         banner(Severity::Warning, c)
             .child("This file changed on disk since you started editing.")
             .child(
-                button("conflict-reload", c, ButtonVariant::Outline, ButtonSize::Xs)
-                    .child("Reload (discard my changes)")
-                    .on_click(
-                        cx.listener(|this, _: &ClickEvent, _w, cx| this.reload_from_disk(cx)),
-                    ),
+                button(
+                    "conflict-reload",
+                    c,
+                    ButtonVariant::Outlined,
+                    ButtonSize::Xs,
+                )
+                .child("Reload (discard my changes)")
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.reload_from_disk(cx))),
             )
             .child(
-                button("conflict-keep", c, ButtonVariant::Outline, ButtonSize::Xs)
+                button("conflict-keep", c, ButtonVariant::Outlined, ButtonSize::Xs)
                     .child("Keep mine")
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                         match this.doc.keep_buffer() {
@@ -3797,7 +3801,7 @@ impl EditorView {
             button(
                 "file-state-retry",
                 palette,
-                ButtonVariant::Outline,
+                ButtonVariant::Outlined,
                 ButtonSize::Xs,
             )
             .child("Retry")
@@ -3880,7 +3884,7 @@ impl EditorView {
                     button(
                         "editor-recovery-restore",
                         palette,
-                        ButtonVariant::Default,
+                        ButtonVariant::Filled,
                         ButtonSize::Xs,
                     )
                     .child("Restore")
@@ -3894,7 +3898,7 @@ impl EditorView {
                     button(
                         "editor-recovery-discard",
                         palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::Xs,
                     )
                     .child("Discard")
@@ -4022,7 +4026,7 @@ impl EditorView {
         let close = button(
             ("editor-split-close", group_value),
             palette,
-            ButtonVariant::Ghost,
+            ButtonVariant::Subtle,
             ButtonSize::IconXs,
         )
         .child("×")
@@ -4106,7 +4110,7 @@ impl EditorView {
                         let close = button(
                             ("editor-split-close", group_value),
                             palette,
-                            ButtonVariant::Ghost,
+                            ButtonVariant::Subtle,
                             ButtonSize::IconXs,
                         )
                         .child("×")
@@ -4467,7 +4471,7 @@ impl EditorView {
             button(
                 ("editor-outline-symbol", index),
                 palette,
-                ButtonVariant::Ghost,
+                ButtonVariant::Subtle,
                 ButtonSize::Xs,
             )
             .w_full()
@@ -4676,7 +4680,7 @@ impl EditorView {
                     button(
                         ("editor-code-action-item", index),
                         palette,
-                        ButtonVariant::Ghost,
+                        ButtonVariant::Subtle,
                         ButtonSize::Xs,
                     )
                     .w_full()
@@ -4823,9 +4827,15 @@ impl EditorView {
         &self,
         input: &Entity<InputState>,
         palette: Palette,
+        window: &Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let input_for_submit = input.clone();
+        let field_state = if input.read(cx).focus_handle(cx).is_focused(window) {
+            TextFieldState::Focused
+        } else {
+            TextFieldState::Normal
+        };
         div()
             .absolute()
             .top(px(12.0))
@@ -4843,7 +4853,12 @@ impl EditorView {
                     .text_color(palette.muted)
                     .child("Rename symbol"),
             )
-            .child(field_input(input).w_full())
+            .child(text_field_surface(
+                "editor-rename-input",
+                palette,
+                field_state,
+                text_input(input, palette),
+            ))
             .child(
                 div()
                     .flex()
@@ -4854,7 +4869,7 @@ impl EditorView {
                         button(
                             "editor-rename-cancel",
                             palette,
-                            ButtonVariant::Ghost,
+                            ButtonVariant::Subtle,
                             ButtonSize::Xs,
                         )
                         .child("Cancel")
@@ -4868,7 +4883,7 @@ impl EditorView {
                         button(
                             "editor-rename-submit",
                             palette,
-                            ButtonVariant::Default,
+                            ButtonVariant::Filled,
                             ButtonSize::Xs,
                         )
                         .child("Rename")
@@ -5082,7 +5097,7 @@ impl Render for EditorView {
                         button(
                             ("editor-fold-marker", line),
                             ui_palette,
-                            ButtonVariant::Ghost,
+                            ButtonVariant::Subtle,
                             ButtonSize::IconXs,
                         )
                         .tab_index(0)
@@ -5563,7 +5578,7 @@ impl Render for EditorView {
             .children(
                 rename_input
                     .as_ref()
-                    .map(|input| self.render_rename_dialog(input, ui_palette, cx)),
+                    .map(|input| self.render_rename_dialog(input, ui_palette, window, cx)),
             )
             .children(self.render_hover_tooltip(cx))
             .children(self.render_git_context_menu(cx))

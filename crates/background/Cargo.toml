@@ -17,6 +17,8 @@ uuid = { workspace = true }
 labonair-filesystem = { path = "../filesystem" }
 labonair-theme = { path = "../theme" }
 labonair-background-host = { path = "../background-host" }
+labonair-ui-kit = { path = "../ui-kit" }
+labonair-settings = { path = "../settings" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

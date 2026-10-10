@@ -11,6 +11,9 @@ source-side research. It records current evidence without claiming parity.
 - [`feature-crosswalk.md`](feature-crosswalk.md) — draft user-workflow coverage
   map with proposed/current owners and explicit missing areas. It is not an
   exhaustive action or settings inventory yet.
+- [`settings-crosswalk.md`](settings-crosswalk.md) — independent Settings
+  page-to-owner map and implementation order; its field-level inventory is
+  still incomplete.
 - [`../reports/zed-parity-settings-analysis-2026-10-09.md`](../reports/zed-parity-settings-analysis-2026-10-09.md)
   — research-side Settings source and commit review. Do not use this report as
   an implementation brief.

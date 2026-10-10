@@ -233,6 +233,22 @@ impl TabStore {
             .collect()
     }
 
+    /// The adjacent tab in `source_id`'s Space, with wraparound.
+    pub fn adjacent_in_space(&self, source_id: u64, forward: bool) -> Option<u64> {
+        let source = self.get(source_id)?;
+        let tabs = self.tabs_in_space(source.space_id);
+        let index = tabs.iter().position(|tab| tab.id == source_id)?;
+        if tabs.len() < 2 {
+            return None;
+        }
+        let next = if forward {
+            (index + 1) % tabs.len()
+        } else {
+            (index + tabs.len() - 1) % tabs.len()
+        };
+        Some(tabs[next].id)
+    }
+
     pub fn active_id(&self) -> u64 {
         self.active_id
     }
@@ -319,29 +335,9 @@ impl TabStore {
     /// wrapping around. Scoped to one space so cycling never silently jumps
     /// you into a different project's Explorer/Git root (T20-008 Spaces).
     pub fn cycle(&mut self, forward: bool, cx: &mut Context<Self>) {
-        let Some(active) = self.tabs.iter().find(|t| t.id == self.active_id) else {
-            return;
-        };
-        let space_id = active.space_id;
-        let in_space: Vec<u64> = self
-            .tabs
-            .iter()
-            .filter(|t| t.space_id == space_id)
-            .map(|t| t.id)
-            .collect();
-        let Some(pos) = in_space.iter().position(|id| *id == self.active_id) else {
-            return;
-        };
-        let n = in_space.len();
-        if n <= 1 {
-            return;
+        if let Some(next) = self.adjacent_in_space(self.active_id, forward) {
+            self.set_active(next, cx);
         }
-        let next = if forward {
-            (pos + 1) % n
-        } else {
-            (pos + n - 1) % n
-        };
-        self.set_active(in_space[next], cx);
     }
 
     /// Close a tab. Any tab can be closed — closing the last one leaves the
@@ -624,6 +620,30 @@ mod tests {
                 assert_eq!(tab.space_id, 42);
                 assert_ne!(tab.id, previous);
                 assert_eq!(s.active_id(), first);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn adjacent_tab_navigation_wraps_inside_the_source_space(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                let first = s.open(TabKind::Workspace, ws(1), cx);
+                let second = s.open(TabKind::Editor, TabData::default(), cx);
+                let only = s.open(TabKind::Preview, TabData::default(), cx);
+
+                s.set_current_space(42);
+                let third = s.open(TabKind::Sftp, TabData::default(), cx);
+                let fourth = s.open(TabKind::GitGraph, TabData::default(), cx);
+
+                assert_eq!(s.adjacent_in_space(first, true), Some(second));
+                assert_eq!(s.adjacent_in_space(second, true), Some(only));
+                assert_eq!(s.adjacent_in_space(only, true), Some(first));
+                assert_eq!(s.adjacent_in_space(first, false), Some(only));
+                assert_eq!(s.adjacent_in_space(third, true), Some(fourth));
+                assert_eq!(s.adjacent_in_space(fourth, true), Some(third));
+                assert_eq!(s.adjacent_in_space(u64::MAX, true), None);
             });
         });
     }

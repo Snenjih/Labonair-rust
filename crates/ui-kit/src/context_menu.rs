@@ -31,17 +31,18 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gpui::{
-    anchored, canvas, deferred, div, point, prelude::FluentBuilder, px, AlignItems, AnimationExt,
-    AnyElement, App, Bounds, ClickEvent, Display, Edges, Element, GlobalElementId,
-    InspectorElementId, InteractiveElement, IntoElement, LayoutId, Length, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Point, Position, SharedString, Size,
-    StatefulInteractiveElement, Style, Styled, Window,
+    canvas, deferred, div, point, prelude::FluentBuilder, px, AlignItems, AnimationExt, AnyElement,
+    App, Bounds, ClickEvent, Display, Edges, Element, GlobalElementId, InspectorElementId,
+    InteractiveElement, IntoElement, KeyDownEvent, LayoutId, Length, MouseButton, MouseDownEvent,
+    ParentElement, Pixels, Point, Position, SharedString, Size, StatefulInteractiveElement, Style,
+    Styled, Window,
 };
 
 use super::IconName;
 use crate::animation::fade_in;
 use crate::kbd::kbd_row;
 use crate::palette::Palette;
+use crate::popover::anchored_popup;
 
 type Handler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
@@ -530,7 +531,22 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                 };
                 row = row.hover(move |s| s.bg(c.accent).text_color(hover_fg));
                 if let Some(h) = handler {
-                    row = row.on_click(move |ev, w, cx| h(ev, w, cx));
+                    row = row
+                        .tab_index(0)
+                        .focus(move |s| s.bg(c.accent).text_color(hover_fg))
+                        .on_click(move |ev, w, cx| h(ev, w, cx))
+                        .on_key_down(|event, window, cx| match event.keystroke.key.as_str() {
+                            "enter" | "space" => cx.stop_propagation(),
+                            "down" => {
+                                window.focus_next();
+                                cx.stop_propagation();
+                            }
+                            "up" => {
+                                window.focus_prev();
+                                cx.stop_propagation();
+                            }
+                            _ => {}
+                        });
                 }
             }
             let _ = depth;
@@ -614,7 +630,31 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
             row = match control {
                 Some(ctrl) => {
                     let on_hover = ctrl.on_hover.clone();
-                    row.on_hover(move |h, w, cx| on_hover(SubmenuHoverSource::Trigger, *h, w, cx))
+                    let on_key = ctrl.on_hover.clone();
+                    row.tab_index(0)
+                        .focus(|s| s.bg(c.accent).text_color(c.accent_fg))
+                        .on_hover(move |h, w, cx| on_hover(SubmenuHoverSource::Trigger, *h, w, cx))
+                        .on_key_down(
+                            move |event, window, cx| match event.keystroke.key.as_str() {
+                                "right" | "enter" | "space" => {
+                                    on_key(SubmenuHoverSource::Trigger, true, window, cx);
+                                    cx.stop_propagation();
+                                }
+                                "left" => {
+                                    on_key(SubmenuHoverSource::Trigger, false, window, cx);
+                                    cx.stop_propagation();
+                                }
+                                "down" => {
+                                    window.focus_next();
+                                    cx.stop_propagation();
+                                }
+                                "up" => {
+                                    window.focus_prev();
+                                    cx.stop_propagation();
+                                }
+                                _ => {}
+                            },
+                        )
                 }
                 None => row.group(group),
             };
@@ -665,6 +705,7 @@ pub fn context_menu(
     let dismiss = Rc::new(dismiss);
     let d2 = dismiss.clone();
     let d3 = dismiss.clone();
+    let d4 = dismiss.clone();
 
     // Open submenu flyouts record their rects here each frame so the dismiss
     // paths below can skip a press that landed inside a flyout (which paints
@@ -673,9 +714,9 @@ pub fn context_menu(
     let fb_out = flyouts.clone();
     let fb_left = flyouts.clone();
     let fb_right = flyouts.clone();
-    // `anchored().snap_to_window()` positions the card in *window* coordinates
+    // Shared anchored placement uses window coordinates
     // (the right-click `MouseDownEvent::position` is already window-space) and
-    // flips it back inside the viewport near an edge; `deferred(..)` lifts the
+    // keeps the same viewport margin near an edge; `deferred(..)` lifts the
     // whole overlay above every sibling so an ancestor's `overflow_hidden`
     // cannot clip it and it always paints on top. Previously this was a plain
     // `absolute().inset_0()` child of whatever view opened it, which made the
@@ -686,13 +727,21 @@ pub fn context_menu(
     // e.g. a 20px status-bar item) element opened the menu, so `inset_0` does
     // not actually cover the window and a click next to the menu would leave it
     // stuck open. The card, by contrast, always knows its own bounds.
-    let card = anchored().position(anchor).snap_to_window().child(
+    let card = anchored_popup(anchor, c).child(
         menu_card(c, items, flyouts)
             .on_mouse_down_out(move |ev, w, cx| {
                 if !in_flyout(&fb_out, ev.position) {
                     d3(w, cx)
                 }
             })
+            .on_key_down(
+                move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
+                    if event.keystroke.key.as_str() == "escape" {
+                        d4(window, cx);
+                        cx.stop_propagation();
+                    }
+                },
+            )
             .with_animation("context-menu-fade", fade_in(c), |el, delta| {
                 el.opacity(delta)
             }),
@@ -725,7 +774,7 @@ pub fn context_menu(
 }
 
 /// The same menu, opened from a *trigger* instead of a right-click: the card is
-/// `anchored().snap_to_window()` + `deferred(..)` so it cannot be clipped by an
+/// shared window-anchored placement + `deferred(..)` so it cannot be clipped by an
 /// ancestor's `overflow_hidden` and flips itself back into the window near an
 /// edge. This is radix' `DropdownMenu`/`PopoverMenu` (reference
 /// `components/ui/dropdown-menu.tsx`) as opposed to `ContextMenu`; Zed splits
@@ -749,18 +798,27 @@ pub fn popover_menu(
 ) -> AnyElement {
     let dismiss = Rc::new(dismiss);
     let d_out = dismiss.clone();
+    let d_escape = dismiss.clone();
 
     let flyouts: FlyoutBounds = Rc::new(RefCell::new(Vec::new()));
     let fb_out = flyouts.clone();
     let fb_bd = flyouts.clone();
 
-    let card = anchored().position(anchor).snap_to_window().child(
+    let card = anchored_popup(anchor, c).child(
         menu_card(c, items, flyouts)
             .on_mouse_down_out(move |ev, w, cx| {
                 if !in_flyout(&fb_out, ev.position) {
                     d_out(w, cx)
                 }
             })
+            .on_key_down(
+                move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
+                    if event.keystroke.key.as_str() == "escape" {
+                        d_escape(window, cx);
+                        cx.stop_propagation();
+                    }
+                },
+            )
             .with_animation("popover-menu-fade", fade_in(c), |el, delta| {
                 el.opacity(delta)
             }),

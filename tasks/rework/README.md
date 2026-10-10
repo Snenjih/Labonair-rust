@@ -57,12 +57,12 @@ Phases 0–6 are complete. R02-001 is the first bounded Phase 2 shell task and
 also connects the already-established theme registry to its intended palette
 surface. R02-002, R02-003, R03-001, R03-002, R04-001, R04-002, R05-001, and
 R06-001 are complete. R07-000 is now active as the clean-room parity
-specification task. It begins with a paired macOS Settings baseline and a
-review of the four earlier Settings attempts, then expands into the full
-pinned-reference inventory. It changes no product code. R07-001 follows it as
-the bounded product-surface acceptance audit; that audit may only create
-bounded follow-up tasks for discrepancies and must not silently expand the
-product scope. R07-002 is complete and records the
+implementation task. It starts with shared UI-kit controls and the complete
+Settings surface, then continues through the pinned-reference app surfaces.
+Settings work is the first runtime slice, not completion of the whole parity
+objective. R07-001 follows it as the bounded product-surface acceptance audit;
+that audit may only create bounded follow-up tasks for discrepancies and must
+not silently expand the product scope. R07-002 is complete and records the
 owner-registered dynamic palette action boundary that resolved one of those
 findings.
 

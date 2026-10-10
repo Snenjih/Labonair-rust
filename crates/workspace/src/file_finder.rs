@@ -18,8 +18,8 @@ use labonair_editor::{
 };
 use labonair_filesystem::grep::fs_glob;
 use labonair_ui_kit::{
-    banner, button, field_input, keybinding_hint, text_field, ButtonSize, ButtonVariant, IconName,
-    InputEvent, InputState, ListItem, Palette, Severity,
+    banner, button, keybinding_hint, search_clear_button, search_field, search_input, text_field,
+    ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem, Palette, Severity,
 };
 use tokio::task::{AbortHandle, JoinHandle};
 
@@ -253,7 +253,7 @@ impl ModalView for FileFinderView {
 }
 
 impl Render for FileFinderView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = Palette::from_theme(self.theme.read(cx));
         let snapshot = self.session.snapshot().clone();
         let error = match &snapshot.status {
@@ -323,11 +323,22 @@ impl Render for FileFinderView {
         let close_button = button(
             "file-finder-close",
             palette,
-            ButtonVariant::Ghost,
+            ButtonVariant::Subtle,
             ButtonSize::IconXs,
         )
         .child("×")
         .on_click(cx.listener(|_, _: &ClickEvent, _window, cx| cx.emit(DismissEvent)));
+        let clear_button = has_query.then(|| {
+            search_clear_button(
+                "file-finder-clear",
+                palette,
+                cx.listener(|this, _: &ClickEvent, window, cx| {
+                    this.clear_query(window, cx);
+                }),
+            )
+            .into_any_element()
+        });
+        let focused = self.input.read(cx).focus_handle(cx).is_focused(window);
 
         div()
             .id("file-finder")
@@ -351,23 +362,16 @@ impl Render for FileFinderView {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(field_input(&self.input).flex_1())
-                    .when(has_query, |d| {
-                        d.child(
-                            button(
-                                "file-finder-clear",
-                                palette,
-                                ButtonVariant::Ghost,
-                                ButtonSize::Xs,
-                            )
-                            .child("Clear")
-                            .on_click(cx.listener(
-                                |this, _: &ClickEvent, window, cx| {
-                                    this.clear_query(window, cx);
-                                },
-                            )),
+                    .child(
+                        search_field(
+                            "file-finder-search",
+                            palette,
+                            focused,
+                            search_input(&self.input, palette),
+                            clear_button,
                         )
-                    })
+                        .flex_1(),
+                    )
                     .child(close_button),
             )
             .when_some(error, |d, message| {

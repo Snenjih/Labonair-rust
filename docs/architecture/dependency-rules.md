@@ -31,6 +31,15 @@ interval.
 11. A transitional edge whose review interval has expired fails the
     architecture check until its owner records a fresh review.
 
+`labonair-background`, `labonair-theme-ui`, and `labonair-keymap-ui` may use
+the public `labonair-settings::SettingsSurfaceRegistry` contract to register
+their Settings entry points. These feature-level edges expose only Settings
+surface metadata and an owner callback; they do not grant access to Settings
+storage or another feature's private state. The composition root invokes those
+owner registration functions and injects the live window/workspace callback.
+`labonair-shell` therefore depends directly on `labonair-keymap-ui` to compose
+its registration function.
+
 ## Verification
 
 Run the narrow check while editing boundaries:

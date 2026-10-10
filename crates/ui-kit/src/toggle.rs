@@ -142,6 +142,8 @@ fn base(
         .when(!disabled, |d| {
             d.cursor_pointer()
                 .hover(move |s| s.bg(c.muted_bg).text_color(c.fg))
+                .tab_index(0)
+                .focus(|style| style.border_1().border_color(c.ring))
         })
 }
 

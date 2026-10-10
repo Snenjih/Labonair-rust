@@ -1,12 +1,10 @@
 //! `Select` / `EnumDropdown` — a trigger showing the current option plus the
 //! anchored list of the alternatives.
 //!
-//! Port of `reference-src/src/components/ui/select.tsx`: the trigger is
-//! `border-input bg-background rounded-md px-3` with a trailing chevron and an
-//! accent border while open; the content is a `bg-popover rounded-md border
-//! shadow-md` panel whose items are `rounded-sm px-2 focus:bg-accent`. Zed's
-//! counterpart is
-//! `zed-refrence/zed/crates/ui/src/components/dropdown_menu.rs`.
+//! The trigger and list use Labonair theme tokens, and the popup shares the
+//! same viewport-aware positioner as context menus and rich-content popovers.
+//! It is designed from the pinned reference's observable control states while
+//! keeping option ownership and selection with the calling feature.
 //!
 //! `gpui-component` ships a `select` module, but it styles itself from
 //! *its own* `cx.theme()` global — which the app never syncs to
@@ -22,20 +20,25 @@
 //! select_trigger("sel-font", c, current_label, is_open)
 //!     .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| this.open_menu(ev.position(), cx)))
 //! // once, at the view's top level (so it is not clipped by the scroll area):
-//! select_popover(menu.at, c, &menu.options, &current, dismiss, on_select)
+//! select_popover(
+//!     SelectPopoverAnchor::new("font", menu.at, list_state),
+//!     c, &menu.options, &current, dismiss, on_select,
+//! )
 //! ```
 
 use std::rc::Rc;
 
 use gpui::{
-    anchored, deferred, div, prelude::FluentBuilder, px, AnimationExt, AnyElement, App, ClickEvent,
-    Div, ElementId, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement,
+    deferred, div, list, prelude::FluentBuilder, px, AnimationExt, AnyElement, App, ClickEvent,
+    Div, ElementId, InteractiveElement, IntoElement, ListSizingBehavior, ListState, ParentElement,
     Pixels, Point, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
 };
 
 use crate::animation::fade_in;
 use crate::icon::IconName;
 use crate::palette::Palette;
+use crate::popover::anchored_popup;
+use crate::DISABLED_OPACITY;
 
 /// One `(token, label)` pair — the token is what gets stored, the label what is
 /// shown.
@@ -59,7 +62,50 @@ pub fn select_trigger(
     label: impl Into<SharedString>,
     open: bool,
 ) -> Stateful<Div> {
-    div()
+    select_trigger_with_state(id, c, label, open, false)
+}
+
+/// The inert visual state of a select trigger. Disabled triggers preserve the
+/// normal control geometry while dropping pointer affordance and keyboard
+/// focus.
+pub fn select_trigger_disabled(
+    id: impl Into<ElementId>,
+    c: Palette,
+    label: impl Into<SharedString>,
+) -> Stateful<Div> {
+    select_trigger_with_state(id, c, label, false, true)
+}
+
+/// Per-owner state required to render one anchored, virtualized select list.
+#[derive(Clone)]
+pub struct SelectPopoverAnchor {
+    id: SharedString,
+    position: Point<Pixels>,
+    list_state: ListState,
+}
+
+impl SelectPopoverAnchor {
+    pub fn new(
+        id: impl Into<SharedString>,
+        position: Point<Pixels>,
+        list_state: ListState,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            position,
+            list_state,
+        }
+    }
+}
+
+fn select_trigger_with_state(
+    id: impl Into<ElementId>,
+    c: Palette,
+    label: impl Into<SharedString>,
+    open: bool,
+    disabled: bool,
+) -> Stateful<Div> {
+    let mut trigger = div()
         .id(id)
         .min_w(c.space(160.0))
         .flex()
@@ -71,67 +117,86 @@ pub fn select_trigger(
         .rounded(px(c.radius.sm))
         .border_1()
         .border_color(if open { c.accent } else { c.border })
-        .bg(c.bg)
-        .text_color(c.fg)
+        .bg(if disabled { c.muted_bg } else { c.bg })
+        .text_color(if disabled { c.muted } else { c.fg })
         .text_size(px(11.5))
-        .cursor_pointer()
-        .tab_index(0)
-        .focus(|s| s.border_color(c.ring))
         .child(label.into())
-        .child(IconName::ChevronDown.svg(c.muted).size(px(12.0)))
+        .child(IconName::ChevronDown.svg(c.muted).size(px(12.0)));
+    trigger = if disabled {
+        trigger
+            .tab_index(-1)
+            .cursor_default()
+            .opacity(DISABLED_OPACITY)
+    } else {
+        trigger
+            .cursor_pointer()
+            .tab_index(0)
+            .focus(|s| s.border_color(c.ring))
+    };
+    trigger
 }
 
 /// The open options list, anchored at `anchor` (window coordinates — pass the
-/// click position or the trigger's bottom-left) with a dismissing backdrop.
+/// click position or the trigger's bottom-left) with outside-press dismissal.
 ///
-/// `deferred` + `anchored().snap_to_window()` so the list is neither clipped by
-/// an ancestor's `overflow_hidden` nor pushed off-screen near a window edge.
+/// `deferred` + shared window-anchored placement keeps the list out of ancestor
+/// clipping and preserves a consistent margin near each viewport edge. The
+/// caller owns `list_state`; rows are rendered virtually and the viewport is
+/// capped at 320 logical pixels.
 pub fn select_popover(
-    id: impl Into<SharedString>,
-    anchor: Point<Pixels>,
+    anchor: SelectPopoverAnchor,
     c: Palette,
     options: &[SelectOption],
     selected: &str,
     dismiss: impl Fn(&mut Window, &mut App) + 'static,
     on_select: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
-    let id = id.into();
+    let SelectPopoverAnchor {
+        id,
+        position,
+        list_state,
+    } = anchor;
     let dismiss = Rc::new(dismiss);
     let on_select = Rc::new(on_select);
 
-    let rows: Vec<_> = options
-        .iter()
-        .enumerate()
-        .map(|(i, (token, label))| {
-            let on = token.as_ref() == selected;
-            let token = token.clone();
-            let (dismiss, on_select) = (dismiss.clone(), on_select.clone());
-            div()
-                .id(SharedString::from(format!("{id}-opt-{i}")))
-                .w_full()
-                .px_2()
-                .py(c.space(4.0))
-                .rounded(px(c.radius.sm))
-                .text_size(px(11.5))
-                .text_color(if on { c.fg } else { c.muted })
-                .cursor_pointer()
-                .when(on, |d| d.bg(c.accent))
-                .when(!on, |d| d.hover(|s| s.bg(c.border)))
-                .child(label.clone())
-                .on_click(move |_: &ClickEvent, w, cx| {
-                    on_select(&token, w, cx);
-                    dismiss(w, cx);
-                })
-        })
-        .collect();
+    let selected = SharedString::from(selected.to_owned());
+    let row_dismiss = dismiss.clone();
+    let row_on_select = on_select.clone();
+    let row_id = id.clone();
+    let rows = options.to_vec();
+    let list = list(list_state, move |i, _, _| {
+        let (token, label) = rows[i].clone();
+        let on = token == selected;
+        let (dismiss, on_select) = (row_dismiss.clone(), row_on_select.clone());
+        div()
+            .id(SharedString::from(format!("{row_id}-opt-{i}")))
+            .w_full()
+            .px_2()
+            .py(c.space(4.0))
+            .rounded(px(c.radius.sm))
+            .text_size(px(11.5))
+            .text_color(if on { c.fg } else { c.muted })
+            .cursor_pointer()
+            .when(on, |d| d.bg(c.accent))
+            .when(!on, |d| d.hover(|s| s.bg(c.border)))
+            .child(label)
+            .on_click(move |_: &ClickEvent, w, cx| {
+                on_select(&token, w, cx);
+                dismiss(w, cx);
+                cx.stop_propagation();
+            })
+            .into_any_element()
+    })
+    .with_sizing_behavior(ListSizingBehavior::Infer)
+    .max_h(c.space(320.0))
+    .w_full();
 
-    let list = anchored().position(anchor).snap_to_window().child(
+    let outside_dismiss = dismiss.clone();
+    let list = anchored_popup(position, c).child(
         div()
             .id(SharedString::from(format!("{id}-list")))
             .occlude()
             .min_w(c.space(180.0))
-            .max_h(c.space(320.0))
-            .overflow_y_scroll()
             .flex()
             .flex_col()
             .p_1()
@@ -140,23 +205,12 @@ pub fn select_popover(
             .border_1()
             .border_color(c.border)
             .shadow_lg()
-            .children(rows)
+            .child(list)
+            .on_mouse_down_out(move |_, window, cx| outside_dismiss(window, cx))
             .with_animation("select-fade", fade_in(c), |el, delta| el.opacity(delta)),
     );
 
-    let backdrop_dismiss = dismiss.clone();
-    deferred(
-        div()
-            .absolute()
-            .inset_0()
-            .on_mouse_down(
-                MouseButton::Left,
-                move |_: &MouseDownEvent, w: &mut Window, cx: &mut App| backdrop_dismiss(w, cx),
-            )
-            .child(list),
-    )
-    .with_priority(200)
-    .into_any_element()
+    deferred(list).with_priority(200).into_any_element()
 }
 
 #[cfg(test)]
@@ -188,9 +242,13 @@ mod tests {
         for open in [true, false] {
             let _ = select_trigger("sel", c, "Block", open);
         }
+        let _ = select_trigger_disabled("sel-disabled", c, "Block");
         let _ = select_popover(
-            "sel",
-            Point::default(),
+            SelectPopoverAnchor::new(
+                "sel",
+                Point::default(),
+                ListState::new(opts().len(), gpui::ListAlignment::Top, px(320.0)),
+            ),
             c,
             &opts(),
             "bar",
@@ -198,6 +256,17 @@ mod tests {
             |_, _, _| {},
         );
         // An empty option list must not panic either.
-        let _ = select_popover("sel", Point::default(), c, &[], "", |_, _| {}, |_, _, _| {});
+        let _ = select_popover(
+            SelectPopoverAnchor::new(
+                "sel",
+                Point::default(),
+                ListState::new(0, gpui::ListAlignment::Top, px(320.0)),
+            ),
+            c,
+            &[],
+            "",
+            |_, _| {},
+            |_, _, _| {},
+        );
     }
 }

@@ -865,7 +865,7 @@ impl GitGraphView {
                         button(
                             "git-graph-refresh",
                             c.palette,
-                            ButtonVariant::Ghost,
+                            ButtonVariant::Subtle,
                             ButtonSize::IconXs,
                         )
                         .child(if self.loading {
@@ -1163,7 +1163,7 @@ impl GitGraphView {
                 button(
                     "git-graph-view-changes",
                     c.palette,
-                    ButtonVariant::Outline,
+                    ButtonVariant::Outlined,
                     ButtonSize::Xs,
                 )
                 .child(SharedString::from("View Changes"))
@@ -1213,7 +1213,7 @@ impl GitGraphView {
                         button(
                             "git-graph-detail-close",
                             c.palette,
-                            ButtonVariant::Ghost,
+                            ButtonVariant::Subtle,
                             ButtonSize::IconXs,
                         )
                         .child(IconName::X.svg(c.muted))
@@ -1655,7 +1655,7 @@ fn nav_btn(
     c: Colors,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
-    button(id, c.palette, ButtonVariant::Ghost, ButtonSize::Xs)
+    button(id, c.palette, ButtonVariant::Subtle, ButtonSize::Xs)
         .child(SharedString::from(label))
         .when(!enabled, |d| {
             d.opacity(labonair_ui_kit::DISABLED_OPACITY)
