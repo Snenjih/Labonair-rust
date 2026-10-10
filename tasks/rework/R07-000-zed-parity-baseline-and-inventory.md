@@ -1302,6 +1302,84 @@ R07-000 remains active.
   Linux host without `DISPLAY` or `WAYLAND_DISPLAY`. This work remains
   same-session independent redevelopment. R07-001 and R09 remain unstarted.
 
+## Pre-change contract — classify the default-macOS File Finder action
+
+Request: Independently state `file_finder::Toggle`'s user goal and map current
+Editor ownership, Workspace/Shell composition, settings, route, and evidence.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `ACT-MACOS-file_finder-Toggle`, its exact default binding/context,
+query/result workflow, repeat invocation, selection/open behavior, related
+settings, local route/tests, and pending runtime/visual acceptance.
+Out of scope: Implementing actions or settings, changing keymaps, starting
+R07-001/R09, or claiming native/macOS acceptance.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, settings-requirements.md, pinned action
+metadata, Editor and Workspace contracts, and the existing Open File route.
+Owner module: Editor owns matching/ranking/session state; Workspace owns the
+current UI adapter and file listing/open validation; Shell supplies modal
+composition only.
+Canonical capability crate: labonair-editor; current UI adapter is in
+labonair-workspace.
+Canonical user entry point: Current `CommandId::OpenFile` / File > Open File;
+the pinned Cmd+P direct action and repeat-selection behavior are not mapped.
+Public typed contract: FileFinderQuery, FileFinderCandidate, FileFinderResult,
+FileFinderSession/Snapshot/Status, and Workspace's validated candidate route.
+Events: None added.
+Registry contributions: None added; preserve the existing OpenFile command and
+record the missing one-to-one pinned action/key route.
+Allowed dependency changes: None.
+State and persistence: Query/results are transient; inspect history and
+preview behavior without adding persistence.
+Settings: Cross-reference the four existing target requirement IDs for ignored
+files, icons, active search focus, and preview tabs; add no values.
+Notifications and failure: Record current loading/empty/error, cancellation,
+stale-result, missing-root, and stale/deleted-file behavior.
+UI-kit: Existing shared search input, buttons, and list rows.
+Security and performance: Preserve workspace-root path validation, bounded
+listing/ranking, async I/O, and stale-generation rejection.
+Focused tests: Trace Editor model and Workspace adapter tests; distinguish
+them from action dispatch or modal interaction coverage.
+Visual evidence: Pending paired native macOS interaction and captures.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, action-ID/settings/test-trace audit.
+Documentation updates: File Finder action packet, action register, settings
+cross-reference, parity index/crosswalk, normative scope, and this progress.
+Known limitations: Same-session analysis/implementation is independent
+redevelopment, not separated-room clean-room work. Linux host has no display
+server or native capture.
+Next safe task: Continue with the next default-macOS action family while
+R07-000 remains active.
+
+## Progress record — 2026-10-10 — default-macOS File Finder action classification
+
+- Added [`../../docs/parity/action-classification-file-finder.md`](../../docs/parity/action-classification-file-finder.md)
+  with the independent file-picker goal, Editor/Workspace/Shell boundaries,
+  current route, related target Settings, local test evidence, and native
+  acceptance states for `ACT-MACOS-file_finder-Toggle`.
+- Preserved the pinned `Cmd+P` / Workspace binding in the action register and
+  mapped local `CommandId::OpenFile` / `Cmd+Shift+O` as a related route. The
+  packet identifies the direct key route, repeat selection behavior, recent
+  navigation history, setting wiring, and preview configuration gaps.
+- Cross-referenced the four target `USER`-scoped Settings IDs for ignored
+  files, file icons, active-item focus, and preview tabs. Their effects and
+  reset/reload behavior remain pending acceptance.
+- Test traceability records six Editor model tests, two Workspace adapter
+  tests, and one descriptor-ownership test as related evidence. None exercises
+  pinned `Cmd+P` dispatch or the complete modal workflow; no native
+  interaction or paired visual artifact exists for the action.
+- Linked the packet from the parity index, Editor workflow and command/keymap
+  crosswalks, and normative parity scope. The exact action-row, owner/route,
+  Settings-ID, and test-evidence audit passed.
+- Passed: `python3 scripts/check_documentation.py` (43 normative documents,
+  171 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active), and
+  `git diff --check`.
+- Not run for this documentation-only slice: Rust formatting, workspace check,
+  Clippy, and tests. They remain R07-000 exit gates. Pinned macOS dispatch,
+  native interaction, and paired visuals remain unavailable on this Linux
+  host without `DISPLAY` or `WAYLAND_DISPLAY`. Same-session work is independent
+  redevelopment; R07-001 and R09 remain unstarted.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

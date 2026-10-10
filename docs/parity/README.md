@@ -16,9 +16,9 @@ source-side research. It records current evidence without claiming parity.
   keymaps, with 2,731 binding/context records and four null entries. It records
   five deprecated-alias resolutions from the pinned Linux action registry.
   The 585 macOS IDs remain stable. Independent static intent and owner-route
-  packets currently cover 23 Search actions, 22 Pane actions, and one Editor
-  Go to Line action; pinned dispatch and native interaction acceptance remain
-  open for those and all other actions.
+  packets currently cover 23 Search actions, 22 Pane actions, one Editor Go
+  to Line action, and one File Finder action; pinned dispatch and native
+  interaction acceptance remain open for those and all other actions.
 - [`action-classification-search.md`](action-classification-search.md) —
   independently stated user goals, static Labonair owner routes, code coverage,
   and runtime/evidence gaps for 23 default-macOS Search-family actions. No
@@ -32,6 +32,10 @@ source-side research. It records current evidence without claiming parity.
   independently stated intent, Editor owner, current line-jump route, and
   evidence gap for the default-macOS Go to Line action. The arbitrary
   line/column prompt and its runtime acceptance remain open.
+- [`action-classification-file-finder.md`](action-classification-file-finder.md) —
+  independently stated intent, Editor/Workspace ownership, current Open File
+  route, related Settings targets, and runtime/evidence gaps for the single
+  default-macOS File Finder action.
 - [`keymap-overlay-requirements.md`](keymap-overlay-requirements.md) — stable
   IDs for 1,402 bindings across seven macOS base-profile overlays, conditional
   Vim/Helix bindings, and macOS-specific overrides. Profile behavior, action
