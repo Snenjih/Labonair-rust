@@ -298,6 +298,11 @@ records the focused-Editor Command Palette route, inactive commented `b`
 candidate (active `b` remains Parentheses), four literal bracket types,
 nearest-pair fallback, and missing local object action. Palette dispatch,
 platform behavior, and paired macOS acceptance remain open. The independent
+[`Vim AnyPair text-object crosswalk`](parity/action-classification-vim-any-pair.md)
+records the Helix-only shared `m` binding, language-query current-pair path,
+text-scanned next/previous selection, and missing local Helix/text-object
+owner route. Profile dispatch, per-language query results, and paired macOS
+acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and

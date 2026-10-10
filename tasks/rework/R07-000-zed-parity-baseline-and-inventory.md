@@ -6395,3 +6395,79 @@ Next safe task: Continue R07-000 action/workflow classification; do not begin R0
 - Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, palette invocation, profile load, key dispatch, text selection/edit, user-keymap persistence round trip, or paired visual evidence were run for this documentation-only slice.
 - Next safe task: Continue R07-000 with `vim::AnyPair`; do not begin R07-001 or R09.
 ~~~
+
+
+## Pre-change contract — Vim AnyPair text object
+
+~~~text
+Request: Classify ACT-REGISTRY-LINUX-vim-AnyPair, shared Helix-mode binding KEYBIND-VIM-HELIX-95e3d82eb63b, command-palette reachability, language-query pair matching, current-selection/next/previous object behavior, mode settings, and Labonair's Editor/Keymap gaps.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: `vim::AnyPair`; the shared `m` binding and its `helix_mode`/operator context; `SET-keymap-helix-mode`; `mim`/`mam` current-pair selection and conversion; Helix next/previous selection; pair query results and supported one-character delimiter families; local Editor, Keymap and command-palette routes; registered-action and keymap-binding rows; shared Linux/Windows layer note; packet index; `commands.keymap` and `editor.text` crosswalks; normative summary; this task record.
+Out of scope: Implementing Helix mode, bracket-query parsing, an AnyPair action, new key bindings/settings, or claiming runtime dispatch, query coverage, or visual parity; beginning R07-001 or R09.
+Active task: R07-000, earliest incomplete task in `tasks/rework/README.md`.
+Dependencies: Continue after the AnyBrackets classification; complete the action and binding inventory before R07-001.
+
+Owner module: Editor owns text-object matching and selection; Keymap owns the conditional binding and profile; the Command Palette owns generic action discoverability.
+Canonical capability crate: `labonair-editor`; optional command metadata and bindings belong to `labonair-keymap`.
+Sibling crates: Existing typed command-palette core/UI/runtime only if required for discoverability; no new crate.
+Canonical user entry point: With pinned `helix_mode` enabled, shared Vim/Helix keymap entry `m` invokes `vim::AnyPair` in object and Helix next/previous contexts (`mim`/`mam` are the documented current-pair workflows). The action is also available from the Command Palette when Vim/Helix is enabled and an Editor is focused, but plain Normal mode with no pending object cannot select a pair by itself.
+Alternate entry points: Pinned palette and a possible user binding. Native palette invocation, custom-binding precedence, and profile dispatch remain unverified.
+Public typed contract: Editor-owned object request that can return the innermost query-derived supported surround pair; Helix text-object behavior also exposes current, next, and previous ranges. No corresponding local typed action exists.
+Events: No cross-module event is required for Editor-owned selection; Keymap contributes one typed action binding.
+Registry contributions: Pinned Editor registers the AnyPair action; shared Keymap row KEYBIND-VIM-HELIX-95e3d82eb63b binds `m`; palette enumerates the focused Editor's available actions. Labonair has no action/command descriptor or Helix binding. Keep registration in Editor and the optional binding in Keymap.
+Allowed dependency changes: None.
+Removal condition for temporary code: None; this is an inventory change.
+
+State owner: Editor owns caret/selection, object-pending operator, and any edit; Keymap owns mode/profile and user override state.
+Persistence owner: Keymap and Settings own persisted mode/profile/user binding values; selections and query-derived ranges are transient.
+Settings and scope: Pinned `helix_mode` is user-scoped with a false default; `KEYBIND-VIM-HELIX-95e3d82eb63b` requires `helix_mode`. Vim Mode is separately user-scoped and false by default. Labonair has Editor-owned `editor.vimMode` but no Helix setting or layer loader; no new setting is implied.
+Migration impact: None in this docs-only slice. Future mode/profile integration must use existing Keymap file layering and Settings persistence.
+Commands: `m` is dispatched after `a`/`i` object intent or Helix next/previous intent when Helix mode is enabled. Pinned Vim keymap comments identify `mim`/`mam` as closest-pair inside/around selection. The palette action shares the AnyPair handler and requires an object or selection context to produce a range. The generic object-range arm ignores numeric `times`; Helix next/previous selectors accept no count.
+Default keymap: No platform-default `vim::AnyPair` binding. One shared Vim/Helix profile `m` binding, conditional on Helix mode, exists with stable ID KEYBIND-VIM-HELIX-95e3d82eb63b.
+Notifications: None; absent query/range is silent.
+UI-kit components: No new control; the existing palette and Keymap surfaces are used.
+User workflow: Enable Helix mode, focus an Editor, invoke `mim` or `mam` to select the closest query-derived pair inside or around; use the profile's Helix next/previous object operator context to select a subsequent/prior pair. Confirm behavior for the selected language and current selection state.
+Failure/cancellation/retry behavior: Current pair lookup returns no range when bracket queries are unavailable, no supported enclosing pair is found, or the query reports unsupported multi-character delimiters such as an HTML/XML tag. It does not use AnyBrackets' nearest-pair fallback for a cursor outside an enclosing query result. Helix next/previous selection scans boundary types. No current query range means no object selection/edit; preserve or characterize prior mode/selection transitions.
+Security boundary: None beyond ordinary local buffer editing.
+Performance budget: No local runtime work. Language bracket queries and directional scans must not block editor input on large buffers.
+
+Contract: Record the exact binding/context/setting ID, current versus directional pair sources, supported delimiters and query absence, selection conversion, command-palette preconditions, and Editor/Keymap ownership.
+Owner implementation: None; documentation-only.
+Composition adapter: None; document focused-Editor palette dispatch and shared conditional mode layer.
+Consumer changes: None.
+Command/surface contribution: Link the existing stable binding row to the independent action packet; no extra menu or default key.
+Obsolete path removed: None.
+
+Focused unit tests: N/A; documentation-only slice, and no tests are added or run.
+Contract/integration tests: Pending macOS Editor/Keymap acceptance for profile activation, `mim`/`mam`, query/no-query behavior, selection conversion, and next/previous operations.
+Persistence/migration tests: Pending Helix setting/profile selection save, reload, and reset acceptance; no persistence code changes here.
+Command/surface tests: Verify the shared `m` binding only under `helix_mode`, profile/context precedence, focused Editor palette entry, focus restoration, user override/conflict behavior, and absence from all platform defaults.
+Visual states: No UI change; paired native selection and palette evidence remain required.
+Security/negative tests: N/A beyond unsupported query, unsupported/malformed delimiters, no-enclosing-pair, and no-query states.
+Performance measurement: N/A for docs-only change; future current-pair queries and directional scans need large-buffer responsiveness measurements.
+Workspace gates: Diff check; docs, agents, knowledge, settings, active queue, documentation checker, and focused source/profile/local-route audit.
+Documentation updates: AnyPair packet; registered-action row; exact shared overlay row link; Linux/Windows layer summary; packet index; `commands.keymap` and `editor.text` crosswalks; normative parity summary; this task record.
+Current status: Pinned registration, active Helix-only keymap binding, query-backed pair behavior, directional selection path, setting scope, and local owner gap under static audit; documentation and gates pending.
+Target status: Distinguish AnyPair's language-query current selection from AnyBrackets' fixed delimiter scanning and nearest fallback without claiming query/platform/runtime acceptance.
+Evidence links: `zed-refrence/zed/crates/vim/src/object.rs`; `helix/object.rs`; `helix/boundary.rs`; `helix/select.rs`; `normal.rs`; `zed-refrence/zed/assets/keymaps/vim.json`; `docs/parity/keymap-overlay-requirements.md`; `docs/parity/settings-requirements.md`; `docs/capabilities.md`; `docs/registries.md`; `crates/editor/src/vim.rs`; `crates/keymap/src/command_provider.rs`.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Language query behavior and native interaction are not exercised here.
+Remaining migration edges: Labonair lacks Helix mode/profile composition, AnyPair action and range behavior, language-query integration, and AnyPair palette descriptor. The optional user binding, Helix current-selection conversion, directional behavior, and unsupported delimiter policy all need native acceptance.
+Failed/unavailable gates: Runtime query results across language grammars, macOS action registration, profile load/dispatch, custom user binding, persistence, text selection, Rust build, tests, and paired visual evidence were not run for this documentation-only slice and remain R07-000 exit gates.
+Next safe task: Continue R07-000 with `vim::AnyQuotes`; do not begin R07-001 or R09.
+~~~
+
+
+## Progress — classify Vim AnyPair text object
+
+~~~text
+- Added [action-classification-vim-any-pair.md](../../docs/parity/action-classification-vim-any-pair.md) for ACT-REGISTRY-LINUX-vim-AnyPair and KEYBIND-VIM-HELIX-95e3d82eb63b.
+- Recorded shared profile `m` binding with exact `helix_mode` and object/next/previous context; the profile comment identifies `mim` and `mam`. The action has no platform-default binding, and the same registered action is available through the focused-Editor Command Palette when Vim/Helix is enabled.
+- Classified language-query-backed current-pair lookup; single-character filtering through the eight supported surround-pair families; no-query, no-enclosing-pair, and multi-character-tag outcomes; Helix inside/around current-selection conversion; text-scanned next/previous pair selection; and ignored counts.
+- Distinguished AnyPair from AnyBrackets: current-pair lookup follows language bracket queries and has no nearest fallback, while AnyBrackets scans four literal bracket types and can fall back to a nearest candidate.
+- Mapped ownership to `labonair-editor`, mode/profile binding to `labonair-keymap`, and discoverability to the existing typed command-palette contract. Local Editor/Workspace/Keymap Rust search has no AnyPair or NearestPair implementation; no new setting, event, notification, or shell route is required.
+- Updated the registered-action row, stable shared overlay row, non-macOS layer summary, parity packet index, `commands.keymap` and `editor.text` crosswalks, normative parity summary, and this task record.
+- Focused audit found exactly one pinned keymap asset occurrence: the active `m` row in `vim.json`; no AnyPair implementation exists in local Editor, Workspace, or Keymap Rust. Linux registration and static profile presence do not prove macOS registration or native dispatch.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py`, and `python3 scripts/verify.py` scopes docs, agents, knowledge, settings, and queue. The checker reports 43 normative docs and 231 Markdown files; the queue remains at 46 tasks with R07-000 earliest active.
+- Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, profile load/dispatch, palette invocation, live language-query result, key dispatch, selection/edit, persistence round trip, or paired visual evidence were run for this documentation-only slice.
+- Next safe task: Continue R07-000 with `vim::AnyQuotes`; do not begin R07-001 or R09.
+~~~
