@@ -831,7 +831,7 @@ For every row, independently establish the user's goal and full invocation flow;
 | `ACT-REGISTRY-LINUX-zed-OpenZedUrl` | `zed::OpenZedUrl` | `zed: open zed url` | Present | Present | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-zed-RebuildDevExtension` | `zed::RebuildDevExtension` | `zed: rebuild dev extension` | Present | Present | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-zed-ReloadExtensions` | `zed::ReloadExtensions` | `zed: reload extensions` | Present | None | None | Pending | Pending | Pending |
-| `ACT-REGISTRY-LINUX-zed-ResetAllZoom` | `zed::ResetAllZoom` | `zed: reset all zoom` | Present | Present | None | Pending | Pending | Pending |
+| `ACT-REGISTRY-LINUX-zed-ResetAllZoom` | `zed::ResetAllZoom` | `zed: reset all zoom` | Present | Present | None | Reset UI, buffer, Agent UI, and Agent buffer sizes through View > Reset All Zoom with `persist:false`; Git Commit and Markdown Preview scopes are separate: [font-size increase and reset classification](action-classification-font-size-increase-reset.md) | Themes (`labonair-theme`) owns the four typography scopes; the existing View menu is the user entry point | The registered action and menu route have no Labonair handler; R08-002 removed the previous no-op Zoom routes | Pending (runtime interaction not observed) |
 | `ACT-REGISTRY-LINUX-zed-ResetDatabase` | `zed::ResetDatabase` | `zed: reset database` | Present | None | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-zed-RevealLogInFileManager` | `zed::RevealLogInFileManager` | `zed: reveal log in file manager` | Present | None | None | Pending | Pending | Pending |
 | `ACT-REGISTRY-LINUX-zed-ShowAll` | `zed::ShowAll` | `zed: show all` | Present | None | None | Pending | Pending | Pending |

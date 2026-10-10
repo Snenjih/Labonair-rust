@@ -3332,6 +3332,154 @@ reset action family; do not begin R07-001 or R09 early.
 - Next safe task: classify the separate buffer/UI font Increase and Reset
   actions within R07-000. R07-001 and R09 remain unstarted.
 
+## Pre-change contract — classify font-size increase and reset actions
+
+Request: Independently classify the bound buffer/UI font-size increase and
+reset actions and the View-menu-only Reset All Zoom action, including action
+arguments, context precedence, four-scope reset effects, settings, and the
+historical removal of Labonair's nonfunctional Zoom command routes.
+Request type: Requirements and action ownership inventory; no runtime change.
+In scope: `ACT-MACOS-zed-IncreaseBufferFontSize`,
+`ACT-MACOS-zed-IncreaseUiFontSize`, `ACT-MACOS-zed-ResetBufferFontSize`,
+`ACT-MACOS-zed-ResetUiFontSize`, and registered but default-keymap-unbound
+`ACT-REGISTRY-LINUX-zed-ResetAllZoom`; default macOS/Linux/Windows bindings,
+Onboarding/Welcome overrides, View > Zoom In/Reset Zoom/Reset All Zoom,
+transient and persistent argument behavior, the JetBrains persistent buffer
+increase override, and the existing appearance/agent font-size values.
+Out of scope: Implementing or restoring the removed `CommandId::Zoom*` route;
+changing menu, palette, or global chrome structure; Git Commit/Markdown
+Preview font actions; terminal-specific controls beyond buffer-size
+inheritance; R07-001/R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action/keymap and registered-action inventories; Themes
+typography state and adjustment ownership; Settings values and persistence;
+Keymap context precedence; the canonical global-menu contribution contract;
+the historical R08-002 removal record.
+Owner module and canonical crate: Themes (`labonair-theme`) owns shared buffer,
+UI, and Agent typography state and adjustment behavior. Settings
+(`labonair-settings`) owns configured values; `labonair-theme-ui` applies
+them to ThemeStore, and Editor, Terminal, and Agent UI consume their matching
+typography scopes. Keymap owns user bindings and context resolution. Keep
+the menu contribution in its existing global-menu owner/registry and do not
+move font behavior into the shell.
+Sibling crates: `labonair-theme-ui` adapts configured Settings values to
+ThemeStore; Editor, Terminal, and Agent UI consume the state without becoming
+additional typography owners. Canonical user entries are the global and
+scoped Keymap bindings and View > Zoom In, Reset Zoom, and Reset All Zoom.
+Canonical user entry point: View > Zoom In adjusts buffer text;
+View > Reset Zoom removes the transient buffer-size adjustment; View > Reset
+All Zoom removes transient UI, buffer, Agent UI, and Agent buffer adjustments.
+The global `cmd-=` / `cmd-+` and `ctrl-=` / `ctrl-+` bindings increase buffer
+text, and `cmd-0` / `ctrl-0` resets it. More-specific Onboarding and Welcome contexts
+route those same keys to UI-font actions. Default keymap arguments are
+`persist:false`. The macOS and Linux JetBrains Editor profile adds
+`Ctrl+>` with `persist:true` for buffer increase. Labonair has no working
+increase/reset action route; R08-002 removed the previous no-op Zoom
+commands, which must not be restored without a real typed handler.
+Public typed contract: Increase changes the effective selected font scope by
+one pixel, bounded to 6–100 px. A transient increase creates/updates a
+runtime override, refreshes open windows, and does not edit Settings. A
+persistent buffer increase writes the clamped size to the configured buffer
+setting. Reset with `persist:false` removes the matching runtime override and
+returns to the current configured base value; it does not force the built-in
+default. Reset with `persist:true` clears the matching user override so the
+configured fallback applies. Reset All follows the same distinction across
+UI, buffer, Agent UI, and Agent buffer scopes. Reset Zoom from the View menu
+targets buffer size only; Reset All is a separate registered action and menu
+item without a default key binding. UI-font key context overrides the global
+buffer action in Welcome and Onboarding.
+State and persistence: Pinned configured defaults are buffer 15 px, UI 16 px,
+Agent UI unset/inherited from UI, and Agent buffer 12 px. The terminal uses
+the shared buffer size unless its specific terminal size is set. The local
+Settings model exposes duplicate `appearance.appFontSize`,
+`appearance.bufferFontSize`, `editor.editorFontSize`, and terminal font paths,
+with different defaults/ranges and a ThemeStore bridge. Reconcile the
+canonical Labonair values and the distinct Agent scopes before implementation;
+do not add another size field or collapse an explicit terminal override.
+Events and registry contributions: Provide typed Themes-owned increase and
+reset operations; route default key bindings through Keymap's global versus
+Onboarding/Welcome contexts; expose the required actions through the existing
+menu contribution. Persistent changes use Settings' value owner. Do not add
+a general font-action registry for one owning module.
+Allowed dependency changes: None in this inventory slice; later implementation
+must preserve the acyclic crate graph. Removal condition for temporary code:
+None; keep the removed no-op Zoom command path absent rather than restoring
+it as compatibility.
+Notifications and failures: Transient changes do not perform I/O. A
+persistent settings failure must leave the displayed value truthful and
+provide recovery through the notification center; successful adjustments
+need no toast. Verify the pinned write failure behavior and local recovery
+route at runtime.
+UI-kit: Reuse the existing application menu and Settings field components;
+use UI-kit-backed controls only if the existing Settings UI exposes these
+values. Do not add local +/- controls to substitute for missing actions.
+Implementation order: Define the Themes adjustment/reset contract; reconcile
+canonical Settings values and persistence; adapt ThemeStore; update Editor,
+Terminal, and Agent consumers; contribute typed Keymap and menu routes; remove
+superseded value/action paths; add focused tests and native evidence.
+Focused inspection: Verify exact platform key/modifier routes and profile
+arguments; the global buffer vs scoped UI context dispatch; 1 px increase and
+6–100 px clamp; transient reset to configured base; persistent reset clearing
+the user override; four-scope Reset All; Terminal inheritance and explicit
+override; Agent UI/buffer inheritance; menu availability; live Settings
+changes; save failure/retry behavior; and that no removed no-op enum path is
+used.
+Visual evidence: Pending paired native macOS captures for increased and reset
+buffer/UI sizes, Settings base values before/after transient and persistent
+actions, all four Reset All scopes, Terminal inheritance/override, Agent
+scopes, Welcome/Onboarding context behavior, and narrow layout. Record exact
+build, OS, window bounds, theme, scale, focus/context, Settings values,
+keymap profile, and action `persist` argument.
+Workspace gates: Documentation checker, docs verification scope, active
+queue check, diff check, and focused action/context/argument/scope/settings/
+owner/current-route audit. Rust formatting, workspace check, Clippy, and
+tests remain R07-000 exit gates and are not run for this documentation-only
+slice.
+Security impact: N/A for requirements-only documentation; typography values
+contain no secrets and this slice introduces no permission boundary.
+Performance impact: No runtime change in this slice. Future transient changes
+should remain in memory and must not block GPUI; measure persistent I/O and
+multi-window refresh cost in the implementation.
+Documentation updates: Four bound action rows; the unbound ResetAllZoom
+catalog row; a standalone increase/reset classification packet; parity index;
+Keymap, Settings, Appearance, Editor, Terminal, and Agent crosswalks; the
+normative parity workflow; and this task's progress record. Preserve R08-002
+as historical evidence that the old Zoom identifiers were no-op paths; the
+active parity objective requires real behavior now.
+Known limitations: Same-session reference research and requirements writing
+are independent redevelopment, not separated-room clean-room implementation.
+Native dispatch, settings-write failure recovery, actual scope effects, and
+paired macOS captures remain unverified. R07-001 and R09 remain unstarted.
+Next safe task: Complete the increase/reset action-family classification and
+continue R07-000 with its remaining inventory; do not begin R07-001 or R09.
+
+## Progress record — 2026-10-10 — Font-size increase and reset classification
+
+- Added the independent requirements packet for the global buffer increase,
+  scoped UI increase, both scoped reset bindings, View > Zoom In/Reset Zoom,
+  and registered View > Reset All Zoom. It records transient and persistent
+  arguments, the JetBrains persistent buffer-increase override, the four
+  typography scopes reset by Reset All, and unaffected Git Commit/Markdown
+  Preview scopes.
+- Updated four bound action rows and the ResetAllZoom unbound-action row with
+  semantics, owner, current Labonair route, and runtime status; linked the
+  packet from the decrease packet, parity index, feature crosswalk, and
+  normative parity workflow. Updated this task with the full change contract.
+- Static pinned keymap/menu/action and Labonair Settings/Theme source review
+  only. Same-session research and packet authoring are independent
+  redevelopment, not separated-room clean-room implementation.
+- Passed: `git diff --check`, `python3 scripts/check_documentation.py`
+  (43 normative docs / 192 Markdown files), `python3 scripts/verify.py
+  --scope docs`, `python3 scripts/check_rework_queue.py` (46 tasks; R07-000
+  active), and the focused four-bound-row/ResetAllZoom scope, context,
+  argument, owner, and current-route audit.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, or tests. They remain R07-000 exit gates. Native action/menu
+  dispatch, rendered increase/reset effects, persistent-write recovery,
+  four-scope Reset All behavior, and paired macOS captures remain open.
+- Next safe task: Continue classifying R07-000's remaining action and
+  workflow inventory; do not begin R07-001 or R09.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified
