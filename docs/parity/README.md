@@ -29,8 +29,9 @@ source-side research. It records current evidence without claiming parity.
   staging actions (plus two related registered-unbound section actions), five
   Git restore/discard actions, six Git commit-lifecycle actions (plus three
   related registered-unbound actions), five Git remote-sync actions (plus three
-  related registered-unbound actions), four Git branch selection/rename/copy
-  actions, two Git diff/review actions (plus nine related registered-unbound
+  related registered-unbound actions), seven Git branch selection/rename/copy/
+  filter actions, twelve GitPanel actions, nine Git Graph actions, two Git
+  diff/review actions (plus nine related registered-unbound
   actions), two Git file/history actions (plus six related registered-unbound
   actions), three Git add/ignore registered-unbound actions, five Git
   repository/remote-management registered-unbound actions, one Editor Go to
@@ -111,8 +112,16 @@ source-side research. It records current evidence without claiming parity.
   independently stated fetch, pull/rebase, push/publish, force-with-lease,
   remote selection, upstream state, and current transport/UI mismatches.
 - [`action-classification-git-branch-selection.md`](action-classification-git-branch-selection.md) —
-  independently stated branch picker actions, branch selection/create,
-  rename argument behavior, and current Labonair dropdown/palette routes.
+  independently stated branch picker filters, branch selection/create, rename
+  argument behavior, branch-name clipboard action, and current Labonair
+  dropdown/palette routes.
+- [`action-classification-git-panel-actions.md`](action-classification-git-panel-actions.md) —
+  independently stated GitPanel close/toggle/menu, persisted view options,
+  transient co-author toggle, selected-entry staged/unstaged diff actions, and
+  current Source Control setting/route gaps.
+- [`action-classification-git-graph-actions.md`](action-classification-git-graph-actions.md) —
+  independently stated Git Graph open/search/commit navigation, selected SHA
+  and tag copy, CommitView, half-page selection, and changed-file layout actions.
 - [`action-classification-git-diff-review.md`](action-classification-git-diff-review.md) —
   independently stated configured/HEAD/branch diffs, staged and unstaged
   views, active-file diff, diff-base persistence, and Agent branch review.

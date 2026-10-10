@@ -5180,3 +5180,62 @@ Next safe task: Complete this Git action-classification addendum, then continue 
 - Rust gates, native action/clipboard/browser behavior, provider outcomes, LeaderAndFollower intent, and paired visual acceptance were not run for this documentation-only slice and remain R07-000 exit gates.
 - Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+## Pre-change contract — Git panel, Git Graph, and branch filter actions
+
+```text
+Request: Classify 24 registered-unbound branch-picker, GitPanel, and Git Graph actions against the pinned source and Labonair routes.
+Request type: R07-000 requirements inventory; documentation only.
+In scope: Three branch_picker filters (ShowAllBranches, ShowLocalBranches, ShowRemoteBranches); twelve git_panel actions (Close, OpenMenu, SetGroupByNone, SetGroupByStaging, SetGroupByStatus, SetSortByName, SetSortByPath, Toggle, ToggleFillCoAuthors, ToggleTreeView, ViewStagedChanges, ViewUnstagedChanges); nine git_graph actions (CopyCommitSha, CopyCommitTag, FocusSearch, Open, OpenAtCommit, OpenCommitView, ScrollDown, ScrollUp, ToggleChangedFilesView); Labonair Source Control/GitGraph/Workspace equivalents; related GitPanel settings and action rows.
+Out of scope: Implementing action routes, changing Git operations, adding key bindings, changing or adding settings, persistence, registries, notifications, dependencies, or UI; claiming runtime/visual parity; R07-001 acceptance and R09 work.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Git capability (`labonair-git`); Git Source Control (`labonair-panel-scm`); Git Graph (`labonair-panel-git-graph`); Workspace tabs/docks (`labonair-workspace`); Settings owner and existing `git_panel.*` values.
+
+Owner module: Git owns repository change/commit graph data, GitPanel and Git Graph behavior, and branch state. Workspace composes the panel and Git Graph tab; Settings owns persisted values. BranchPicker/GitPicker are pinned Git UI sub-surfaces, not new Labonair product owners.
+Canonical capability crates: `labonair-git`, `labonair-panel-scm`, `labonair-panel-git-graph`, and `labonair-workspace`; no crate changes proposed.
+Canonical user entry points: GitPanel action/menu context for panel state, SettingsStore-backed view options, branch list filter menu, Git Graph selection/search/context menu, and its Workspace tab. Labonair exposes Source Control and Git Graph through existing Workspace/panel routes but has no matching typed action dispatch for this set.
+Alternate entry points: GitPanel menu buttons and selected-file context menu; Git Graph commit-row context menu and Source Control `Open Git Graph` menu/command. Distinguish pointer routes from action IDs.
+Public typed contract: Existing `GitService`/`GitGraphService` and Workspace `ProjectDiffRequest`/GitGraph event routes remain unchanged. No branch-filter, graph-action, or GitPanel action contract is added.
+Events: Existing Labonair `ScmEvent::OpenGitGraph` and `GitGraphEvent::OpenCommitDiff` remain; no new events.
+Registry contributions: No new action, command, registry, or binding. Update 24 existing unbound action rows and preserve the documented-but-unhandled `git_panel::OpenMenu` distinction.
+Settings and scope: Pinned `git_panel.sort_by` (default `path`), `git_panel.group_by` (default `status`), and `git_panel.tree_view` (default `false`) are persisted user values updated by view-option actions. Sorting is offered only in flat view. `ToggleFillCoAuthors` changes per-panel transient commit state (initialized enabled); branch filters and Git Graph changed-file tree/flat mode are transient. Labonair's `scm_file_tree` is a separate existing setting and does not establish `git_panel.tree_view` parity.
+Persistence: GitPanel grouping/sort/tree settings update the SettingsStore file and are observed to rebuild visible entries. Co-author state, branch filter, and Git Graph changed-file mode are not persisted by the inspected routes. No persistence changes proposed.
+Migration impact: None in this slice. Future action parity must be owned by Git/Workspace and use the existing typed repository and diff contracts.
+Commands: The 24 action IDs enumerated above; no new command IDs.
+Default keymap: All 24 catalog rows are registered without a binding in the three default keymaps. Preserve those statuses; action discovery and native dispatch remain to verify.
+Notifications: No UI changes. Pinned Git errors and provider effects remain evidence only; Labonair messages continue through the statusbar notification owner.
+UI-kit components: No visual edits or controls. Any future controls must use `labonair-ui-kit`.
+User workflow: Filter branch lists to all/local/remote; close/toggle the GitPanel; select flat/tree, path/name sort, and none/status/staging grouping; optionally include co-author trailers in a commit; open staged/unstaged diffs for a selected GitPanel entry; search/navigate Git Graph commits; copy a selected SHA/tag; open Graph or a specific commit; open a selected CommitView; and toggle the changed-files layout. Leave `git_panel::OpenMenu` unresolved because no handler/call site was found despite its action description.
+Failure/cancellation/retry behavior: Cover missing panel/repository/selection, absent branch/tag, invalid/missing commit SHA, empty graph, no eligible collaborators, selected entry scope, picker filter query/empty results, settings save/reload, graph loading/error, and action declarations without a discovered route. Runtime effects remain unobserved.
+Security boundary: Clipboard actions write only the selected branch/commit/tag identity. Keep repository and commit resolution in Git; do not expose credentials or unrelated local paths.
+Performance budget: No runtime change. No performance claims.
+
+Implementation order: Requirements packets only. Extend the branch selection packet, add GitPanel and Git Graph action packets, then update the unbound catalog, settings effects, index, capability crosswalk, normative parity summary, and this task record.
+Focused unit tests: Not applicable to this documentation-only change.
+Contract/integration tests: No tests changed or run.
+Persistence/migration tests: Not applicable; persisted setting save/reload and transient state still require acceptance.
+Command/surface tests: Not applicable; no runtime change.
+Visual states: No visual changes. Native GitPanel view menu and diff routes, branch filters, Graph selection/search/context menu, selected commit detail, loading/empty/error states, and narrow layout remain acceptance requirements.
+Security/negative tests: Not applicable to this documentation-only change; future clipboard actions must verify exact contents and no-op cases.
+Performance measurement: Not applicable.
+Workspace gates: Diff check, documentation checker, docs verification scope, queue check, affected catalog table shape and counts, Settings ID links, and focused pinned action/handler/local route audit.
+Documentation updates: Three branch-picker action rows and existing branch packet; twelve GitPanel action rows and a new packet; nine Git Graph action rows and a new packet; three existing Settings effect notes; parity index/count, Git capability crosswalk, normative parity summary, and this task record.
+Current status: Pending focused action/source/local-route audit.
+Target status: Static workflow, setting, and Labonair-gap classifications complete for 24 actions; native dispatch and paired macOS evidence remain open.
+Evidence links: Pinned GitPanel registration/handlers/settings actions; BranchList/GitPicker filter handlers; GitGraph action handlers and commit context menu; Labonair Source Control, GitGraphView, Workspace command/tab routes, and settings source.
+Known limitations: Same-session source inspection and independently worded requirements are redevelopment, not separated-room clean-room implementation. Static evidence does not establish native action dispatch or visual parity.
+Remaining migration edges: OpenMenu declaration without handler/call site; parity dispatch for filters, GitPanel view/co-author/diff actions, and Git Graph clipboard/navigation actions; distinct `scm_file_tree` and `git_panel.tree_view`; runtime settings, selected-entry diff scope, and paired captures.
+Failed/unavailable gates: Rust, native runtime, and visual gates remain R07-000 exit gates.
+Next safe task: Complete this Git panel/graph/branch-filter classification, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify Git panel, Git Graph, and branch filter actions
+
+- Added GitPanel and Git Graph action packets for twelve and nine registered-unbound actions, and extended branch selection to cover ShowAllBranches, ShowLocalBranches, and ShowRemoteBranches. Updated all 24 catalog rows.
+- Pinned-source review confirmed Close/Toggle routes, persisted `git_panel.sort_by`, `git_panel.group_by`, and `git_panel.tree_view` effects, transient co-author and graph changed-file states, selected-entry staged/unstaged diff calls, and BranchList filter updates that retain the existing query. `git_panel::OpenMenu` is documented but has no discovered handler or call site.
+- Compared Labonair's `scm_file_tree` setting, fixed Source Control status sections, selected ProjectDiff route, Git Graph tab, pointer SHA copy, and Commit ProjectDiff route. No matching action dispatch, Git Graph tag copy, SHA-position argument, CommitView action, or selected staged/unstaged diff source was found.
+- Cross-referenced the three GitPanel setting IDs, parity packet counts, Git Source Control/Git Graph crosswalks, normative summary, and this task record.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative documents and 211 Markdown files), `python3 scripts/verify.py --scope docs`, and `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active). The focused 24-row catalog shape, action-ID, packet-count, and Settings-link audit passed.
+- Rust gates, native action dispatch, settings save/reload, clipboard effects, graph/branch interaction, and paired macOS visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
+- Same-session source inspection and independently worded requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.

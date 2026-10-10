@@ -404,11 +404,25 @@ Runtime and paired macOS acceptance remain open. The
 independent
 [`Git branch selection and rename action crosswalk`](parity/action-classification-git-branch-selection.md)
 records the shared GitPicker Branches destination for Switch and
-CheckoutBranch, the RenameBranch argument mismatch, and CopyBranchName's
-current-branch clipboard route. Labonair has separate dropdown and palette
-workflows but no branch-name clipboard route; native focus, checkout safety,
-rename argument handling, clipboard effects, and paired macOS acceptance
-remain open. The independent
+CheckoutBranch, the RenameBranch argument mismatch, CopyBranchName's
+current-branch clipboard route, and three BranchList All/Local/Remote filter
+actions. Labonair has separate dropdown and palette workflows with text
+filtering, but no branch-name clipboard route or explicit filter actions;
+native focus, checkout safety, rename handling, clipboard effects, and paired
+macOS acceptance remain open. The independent
+[`Git Panel action crosswalk`](parity/action-classification-git-panel-actions.md)
+classifies twelve panel actions, including Close/Toggle, an unresolved
+OpenMenu action declaration, persisted group/sort/tree view settings,
+transient co-author state, and selected-entry staged/unstaged diffs. Labonair
+has a separate `scm_file_tree` setting, fixed change sections, and ProjectDiff
+routes; action dispatch and paired macOS acceptance remain open. The
+independent
+[`Git Graph action crosswalk`](parity/action-classification-git-graph-actions.md)
+classifies nine actions for graph opening/commit positioning, search focus,
+SHA/tag copy, CommitView, half-page selection, and changed-file layout. Labonair
+has Git Graph, pointer hash-copy, commit details, and Commit ProjectDiff routes,
+but lacks matching typed actions, tag copy, SHA positioning, and CommitView
+dispatch; runtime and paired macOS acceptance remain open. The independent
 [`Git diff and review action crosswalk`](parity/action-classification-git-diff-review.md)
 records configured HEAD/default-branch diffs, selected-ref comparison,
 staged/unstaged and per-file views, diff-base persistence, and branch-to-Agent
