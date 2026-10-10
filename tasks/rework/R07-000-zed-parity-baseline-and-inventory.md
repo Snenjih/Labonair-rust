@@ -3913,6 +3913,113 @@ the remaining R07-000 inventory; do not begin R07-001 or R09.
 - Next safe task: Continue the remaining R07-000 action/workflow inventory;
   do not begin R07-001 or R09.
 
+## Pre-change contract — classify Extensions action
+
+Request: Classify the default `zed::Extensions` action, its Workspace context,
+platform bindings, menu/Welcome entry points, optional category/extension
+targets, view activation, and current Labonair route.
+Request type: Requirements and capability-entry inventory; no runtime change.
+In scope: `ACT-MACOS-zed-Extensions`, its macOS/Linux/Windows defaults, typed
+optional category and extension-ID parameters, Extensions page open/reuse
+behavior, related menu/Welcome/owner-contributed entry points, and the
+planned Extensions capability's current Labonair gap.
+Out of scope: Implementing an extension catalog, package install/update/remove
+lifecycle, marketplace service, trust or distribution policy, language server
+setup, Theme import, unbound extension administration actions, or R07-001/R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Default action/keymap inventory, `extensions` and
+`language.services` feature crosswalks, capability and feature lifecycle
+contracts, Workspace item entry, and shared UI-kit ownership.
+Owner module: Planned Extensions owns extension discovery/management and the
+Extensions page/action; Workspace hosts the page as an active-pane item;
+Keymap owns the Workspace-context binding. The canonical Labonair Extensions
+crate is unassigned and must be resolved before implementation. Current
+roadmap defers extension/distribution work until the core is stable; this
+packet records parity requirements without changing that disposition.
+Canonical capability crate: Planned Extensions owner; no crate assigned.
+Current `labonair-shell` remains a composition root and has no extension
+feature ownership.
+Canonical user entry points: Workspace `cmd-shift-x` on macOS and
+`ctrl-shift-x` on Linux/Windows; App menu and titlebar global menu; Welcome
+page's Explore Extensions. Category owners may dispatch the same typed action
+with a filter or extension ID, which delegates to the Extensions page.
+Public typed contract: Default `zed::Extensions` supplies no filter and no
+extension ID, opening the all-category page. Optional typed category filters
+select themes, icon themes, languages, grammars, language servers, context
+servers, snippets, or debug adapters; an optional ID focuses a specific
+extension. Open or reuse an Extensions page in the active pane and activate it.
+State and persistence: Opening the page does not change Settings or the
+installed-extension catalog. Search/filter and focused extension state belong
+to the Extensions view; persistence and restore behavior need verification.
+Installed extension state and distribution remain Extension-owner contracts.
+Events and registry contributions: Extensions owns catalog data and the
+shared manager. Before implementation, decide whether actual provider and
+consumer counts require a registry; use a direct typed contract for one
+provider/consumer. This inventory selects or adds no Labonair registry.
+Category-specific caller actions delegate to the same page action.
+Commands and default bindings: `cmd-shift-x` in Workspace on macOS;
+`ctrl-shift-x` in Workspace on Linux/Windows. The default action has no args.
+Settings: None identified for opening the page or selecting an extension.
+Notifications: Opening the view is local navigation; fetch/install failures
+belong to the planned Extensions workflow and must use the notification
+center where a passive message is appropriate.
+UI-kit: The future Extensions view must use shared search/input/list/menu and
+button primitives; Workspace hosts it but does not own extension state.
+Allowed dependency changes: None for this inventory. Compatibility code:
+none; do not treat the Theme JSON import adapter as an extension manager.
+Focused verification: Compare the action schema/defaults, three platform
+bindings, App/titlebar/Welcome entry points, active-pane page open/reuse and
+activation, category/ID variant routes, current capability crosswalk, and the
+absence of a Labonair Extensions view/action/store route.
+Visual evidence: Pending paired native macOS menu/Welcome entry captures,
+active-pane creation/reuse, all-category and prefiltered view states, search,
+loading/empty/error and narrow-window states, plus extension installation
+outcomes. Record build, OS, extension category/ID, window/pane state, focus,
+and network state.
+Workspace gates: Diff check, documentation checker, docs verification scope,
+queue check, and focused action/schema/binding/entry/owner/local-route audit.
+Rust workspace gates remain R07-000 exit gates; no runtime code is changed.
+Documentation updates: Action row, independent Extensions action packet,
+Extensions capability crosswalk and action counts/index, normative parity
+note, and this task contract/progress record.
+Security impact: No runtime change. Extension installation trust, code
+execution, permissions, and distribution risks remain part of the deferred
+Extensions capability contract.
+Performance impact: No runtime change. The eventual catalog/search surface
+must define loading and bounded-list behavior.
+Known limitations: Same-session source research and independent requirements
+writing are redevelopment, not separated-room clean-room work. Action
+dispatch, active-pane behavior, extension discovery, view restore, network
+failure, installation, and paired native captures remain unverified.
+Next safe task: Complete this bounded Extensions action classification and
+continue R07-000; do not begin R07-001 or R09.
+
+## Progress record — 2026-10-10 — Extensions action
+
+- Classified `zed::Extensions` and `ACT-MACOS-zed-Extensions`: Workspace
+  bindings on all three platforms, App/titlebar/Welcome entry points, typed
+  category and extension-ID variants, and active-pane Extensions page
+  creation/reuse/activation. Recorded its All/Installed/Not Installed and
+  category/search surfaces plus loading, failure, empty, and restore questions.
+- Updated the action requirement, Extensions and language-services
+  crosswalks, parity action counts/index, normative parity record, and this
+  task's pre-change contract. Labonair has no Extensions action/view/store or
+  canonical Extensions crate; extension distribution remains deferred until
+  the core is stable.
+- Passed: `git diff --check`, `python3 scripts/check_documentation.py`
+  (43 normative docs / 195 Markdown files), `python3 scripts/verify.py
+  --scope docs`, `python3 scripts/check_rework_queue.py` (46 tasks; R07-000
+  active), and the focused action schema/binding/entry/page-state/local-route
+  audit.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, or tests. They remain R07-000 exit gates. Native action
+  dispatch, extension catalog/network/install behavior, explicit retry,
+  item-state restore, and paired macOS evidence remain open.
+- Same-session source research and independently worded requirements are
+  redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue classifying the remaining R07-000 action/workflow
+  inventory; do not begin R07-001 or R09.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

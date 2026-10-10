@@ -340,6 +340,11 @@ records native Hide/Hide Others/Minimize/Quit, Workspace fullscreen modes,
 the `confirm_quit` and `fullscreen_mode` settings, and Labonair's menu,
 shortcut, and quit-preparation gaps. Native app behavior and paired macOS and
 cross-platform evidence remain open. The independent
+[`Extensions action crosswalk`](parity/action-classification-extensions.md)
+records the Workspace-bound manager action, its menu and Welcome routes,
+category/extension focus variants, active-pane page reuse, and missing
+Labonair Extensions owner/crate/view. Marketplace implementation remains
+deferred; dispatch and catalog behavior are unverified. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

@@ -20,8 +20,9 @@ source-side research. It records current evidence without claiming parity.
   collaborator-follow actions, one Workspace worktree-security action,
   four Workspace zoom actions, five Image Viewer zoom actions, five
   Application/window lifecycle actions (plus the related unbound Show All
-  action), one Editor Go to Line action, one File Finder action, two Workspace
-  Open/OpenFiles actions, one Workspace New Window action,
+  action), one Extensions action, one Editor Go to Line action, one File Finder
+  action, two Workspace Open/OpenFiles actions, one Workspace New Window
+  action,
   one Workspace Add Folder to
   Project action, one Workspace New File action,
   one Workspace New Terminal action, one Workspace Open With System action,
@@ -59,6 +60,10 @@ source-side research. It records current evidence without claiming parity.
   independently stated Hide, Hide Others, Minimize, Quit, and fullscreen
   workflows, quit confirmation and Workspace preparation, fullscreen mode,
   current native menu routes, and the missing or unverified Labonair behavior.
+- [`action-classification-extensions.md`](action-classification-extensions.md) —
+  independently stated Extensions page entry, Workspace action parameters,
+  active-pane activation/reuse, filtered entry points, and the missing
+  Labonair Extensions owner and route.
 - [`action-classification-workspace-open.md`](action-classification-workspace-open.md) —
   independently stated intent, Workspace/Editor ownership, distinct general
   Open and platform Open Files routes, related Settings targets, and runtime
