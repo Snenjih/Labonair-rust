@@ -10,6 +10,12 @@ implementation status only; it contains no reference source paths or copied
 implementation details. `Partial` means the owner or some matching values
 exist, not that the page is accepted.
 
+The field-level register [`settings-requirements.md`](settings-requirements.md)
+assigns stable IDs to 382 static field/control rows, 43 typed per-language
+options, 44 packaged language profiles, 10 dynamic setup pages, and 7 shared
+Settings flows. IDs identify scope only: each field's exact owner, runtime
+effect, validation, persistence, and acceptance evidence remain open.
+
 ## Page and owner crosswalk
 
 | Order | Settings page | Canonical Labonair owner(s) | Current values or surface | Status and dependency |

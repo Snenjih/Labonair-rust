@@ -762,6 +762,22 @@ the shared UI kit and Settings owner. Native visual evidence remains pending.
 - Updated the parity index, feature crosswalk, and normative parity inventory.
   R07-000 remains In Progress; no R09 task has started.
 
+## Progress record — 2026-10-10 — Settings requirement IDs
+
+- Added [`../../docs/parity/settings-requirements.md`](../../docs/parity/settings-requirements.md)
+  with 486 stable requirement IDs: 382 static field/control rows, 43 typed
+  per-language options, 44 shipped language profiles, 10 dynamic setup pages,
+  and 7 shared Settings flows.
+- Preserved the two Collaboration Panel controls that share the declared
+  `collaboration_panel.dock` path as separate requirements. The second row's
+  default references `default_width`; the effective path is an open runtime
+  question.
+- The inventory records defaults and declared scopes where available. Exact
+  field owners, value consumers, validation, reset/inheritance, persistence,
+  migrations, runtime effects, and paired macOS captures remain Pending.
+- Updated the Settings index and feature crosswalk. R07-000 remains In
+  Progress; no R09 task has started.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

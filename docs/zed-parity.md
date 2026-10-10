@@ -255,6 +255,11 @@ and runtime evidence remain open; these inventories are not parity evidence.
 
 ## Settings parity pilot
 
+The independent [`Settings field and workflow requirements register`](parity/settings-requirements.md)
+assigns stable IDs to static fields, per-language options, shipped profiles,
+dynamic setup pages, and shared flows. Its IDs are inventory only; owners,
+effects, persistence, and paired macOS acceptance remain open.
+
 Settings is the first detailed specification pilot because it has already
 been reworked several times without accepted Zed-to-Labonair visual evidence.
 The pilot does not begin with another implementation attempt.

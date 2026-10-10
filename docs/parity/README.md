@@ -26,9 +26,13 @@ source-side research. It records current evidence without claiming parity.
   implementation brief or proof of user-visible behavior.
 - [`titlebar-tab-strip.md`](titlebar-tab-strip.md) — independent titlebar tab
   appearance, input/state matrix, ownership, and evidence packet.
+- [`settings-requirements.md`](settings-requirements.md) — 486 stable IDs for
+  static Settings fields, per-language values, shipped profiles, dynamic setup
+  pages, and core Settings flows. Field effects, exact owners/routes, runtime
+  behavior, and visual acceptance remain open.
 - [`settings-crosswalk.md`](settings-crosswalk.md) — independent Settings
-  page-to-owner map and implementation order; its field-level inventory is
-  still incomplete.
+  page-to-owner map and implementation order. It records page ownership;
+  field-level acceptance remains incomplete.
 - [`../reports/zed-parity-settings-analysis-2026-10-09.md`](../reports/zed-parity-settings-analysis-2026-10-09.md)
   — research-side Settings source and commit review. Do not use this report as
   an implementation brief.
