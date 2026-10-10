@@ -1541,6 +1541,84 @@ Next safe task: Continue R07-000 with the next unclassified action family.
   Same-session analysis is independent redevelopment. R07-001 and R09 remain
   unstarted.
 
+## Pre-change contract — classify Workspace New File
+
+Request: Record the pinned `workspace::NewFile` untitled-buffer flow, local
+New Editor Tab route, related unsaved-buffer Settings, and runtime gaps.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `ACT-MACOS-workspace-NewFile`, all default binding contexts,
+pathless Editor creation, first input, save-as continuation, and restoration.
+Out of scope: Implementing or rebinding New File, changing file-save behavior,
+starting R07-001/R09, or claiming end-to-end acceptance.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, settings-requirements.md, product,
+Editor, Workspace, and command/registry owner contracts.
+Owner module and canonical crate: Editor (`labonair-editor`) owns untitled
+document creation and file lifecycle. Workspace (`labonair-workspace`) hosts
+the document in its accepted universal Editor tab surface.
+Canonical user entry point: Pinned File > New, `Cmd+N` in Workspace and
+Welcome contexts. Labonair currently exposes File > New Editor Tab and
+`Cmd+E`; the universal-tab route is a related workflow with different label
+and binding.
+Public typed contract: Editor contributes the New Untitled Document intent
+through its canonical command surface; Workspace hosts and focuses one new
+Editor tab through its typed view contract. Do not add a shell-owned duplicate
+command path or require a second OS window in Labonair.
+Events and registry contributions: Record owner contribution and the
+Workspace host contract; add no route, event, registry, or binding in this
+inventory slice.
+Allowed dependency changes: None.
+Settings: Cross-reference `session.restore_unsaved_buffers` and
+`restore_on_startup`; add no Settings values and leave reload/reset/migration
+effects to the Settings owner.
+State and persistence: Start with one empty pathless document and focus its
+Editor. Labonair creates one universal Editor tab rather than a new application
+window, per the accepted Workspace architecture. Verify typing, Save As,
+unsaved close, app restart, and session restoration.
+Notifications and failure: Record buffer-creation failure and save/recovery
+errors; route user messages through the notification center.
+Security: No path or project is selected during creation. Save As must still
+enforce normal path and permission rules.
+UI-kit: Reuse the shared Editor tab, titlebar, and dialog surfaces; add no
+feature-local tab or save control.
+Focused tests: Trace NewEditorTab descriptor ownership and Editor buffer
+creation code. Do not call descriptor/model evidence action acceptance.
+Visual evidence: Pending pinned macOS and Labonair interaction with paired
+first-input, dirty, and restored-session states.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, exact action/settings/route audit.
+Documentation updates: New File action packet, action register, File Finder
+and New Window distinctions, parity index/crosswalk, normative scope, and
+R07-000 progress.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Native macOS interaction is unavailable here.
+Next safe task: Continue R07-000 with the next unclassified action family.
+
+## Progress record — 2026-10-10 — Workspace New File action classification
+
+- Added [`../../docs/parity/action-classification-workspace-new-file.md`](../../docs/parity/action-classification-workspace-new-file.md)
+  for `ACT-MACOS-workspace-NewFile`, its Workspace/Welcome contexts, untitled
+  document result, focus and save lifecycle, and runtime acceptance states.
+- Recorded `SET-general-session-restore-unsaved-buffers` (`true`, `USER`) and
+  `SET-general-restore-on-startup` (`last_session`, `USER`). Neither setting
+  has corresponding Labonair wiring for this pathless Editor flow.
+- Distinguished `workspace::NewFile` from Project Panel filesystem creation
+  and New Window. Labonair's `Cmd+E` New Editor Tab provides a related blank
+  pathless view; its accepted universal-tab adaptation does not yet establish
+  key, save, dirty-close, or session-restore acceptance.
+- Updated the action register, parity index, app-window/tab, command/keymap,
+  and Editor workflow crosswalks, plus the normative parity scope. The exact
+  action/Settings/context/route audit passed.
+- Passed `python3 scripts/check_documentation.py` (43 normative documents,
+  174 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active),
+  `git diff --check`, and the focused Workspace New File inventory audit.
+- Not run for this documentation-only slice: Rust formatting, workspace check,
+  Clippy, and tests. They remain R07-000 exit gates. Pinned macOS interaction,
+  save/restore verification, and paired captures remain open; Linux evidence
+  is static only. Same-session analysis is independent redevelopment.
+  R07-001 and R09 remain unstarted.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

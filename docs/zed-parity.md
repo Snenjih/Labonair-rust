@@ -285,8 +285,12 @@ File Finder route gaps; native dispatch and interaction evidence remain
 pending. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
-route; pinned dispatch and paired interaction evidence remain pending. All
-other action
+route; pinned dispatch and paired interaction evidence remain pending. The
+separate
+[`Workspace New File action crosswalk`](parity/action-classification-workspace-new-file.md)
+records the untitled-document action contexts, unsaved-buffer Settings, and
+Labonair's universal-tab adaptation; dispatch and file-lifecycle acceptance
+remain pending. All other action
 semantics and owner routes, profile selection/reload, user overrides, and
 macOS/Linux/Windows
 runtime evidence also remain open; these static inventories are not parity

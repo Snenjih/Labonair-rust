@@ -55,7 +55,10 @@ The preference changes only the contents of windows created after the setting
 is applied. Verify whether changing it updates an already open Launchpad or
 empty tab; do not assume that it does. Closing a fresh window, restoring the
 previous session, and opening another new window are separate lifecycle
-transitions and require acceptance evidence.
+transitions and require acceptance evidence. The separate
+[`New File action`](action-classification-workspace-new-file.md) explicitly
+creates an untitled Editor document and must not be treated as a fallback for
+this preference.
 
 ## Required user-flow and state acceptance
 
