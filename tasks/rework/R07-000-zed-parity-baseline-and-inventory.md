@@ -4454,3 +4454,82 @@ source-blind implementation packet is ready, and the next implementation task
 can begin without inventing a missing product or ownership decision. If native
 capture access remains blocked, the blocker and owner must be explicit; visual
 parity itself cannot be claimed from incomplete evidence.
+
+## Pre-change contract — Git stash workflow classification
+
+```text
+Request: Independently classify the pinned Git stash action family and record current Labonair routes and gaps.
+Request type: R07-000 requirements inventory; documentation only.
+In scope: Six default-macOS bound stash actions and six related registered-unbound Git stash actions; stash creation variants, latest-stash apply/pop, picker list/show/drop, stash diff apply/pop/drop, state, confirmation, failures, and local owner routes.
+Out of scope: Implementing stash behavior, changing Git commands or bindings, changing settings or persistence, runtime or visual parity claims.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Git (`labonair-git`) state and transport; panel-scm sibling; Workspace tab/picker hosting; Keymap default action bindings; shared DiffView contract remains to be defined.
+
+Owner module: Git owns stash operations and stash-specific user behavior; Workspace hosts picker and diff items; Keymap owns default bindings.
+Canonical capability crate: `labonair-git`.
+Sibling crates: `labonair-git-transport`, `labonair-panel-scm`; no new crate.
+Canonical user entry point: Git Source Control change-list context menu for stash creation/latest-stash actions; GitPicker Stashes tab for listing and opening a selected stash diff.
+Alternate entry points: Git action palette registrations; `GitPicker` tab shortcut; `StashList` and `StashDiff` context-bound shortcuts; Labonair Source Control Stashes section.
+Public typed contract: Existing Labonair `stash_push(path, message, include_untracked, session_id)`, `stash_apply(path, hash, session_id)`, `stash_pop(...)`, and `stash_drop(...)`; classification proposes no new API.
+Events: Existing Git transport state refresh/events; no new event contract.
+Registry contributions: Pinned actions are classified; no Labonair action, command, or provider registration is added.
+Allowed dependency changes: None.
+Removal condition for temporary code: None; no implementation code.
+
+State owner: Git repository state; picker selection and diff item lifecycle are transient Git UI state hosted by Workspace.
+Persistence owner: Git persists stash objects; no new Labonair settings or UI persistence.
+Settings and scope: None introduced.
+Migration impact: None.
+Commands: Classify `StashAll`, `StashTracked`, `StashStaged`, `StashApply`, `StashPop`, and `ViewStash`, plus the six bound actions.
+Default keymap: Preserve exact macOS, Linux, and Windows bindings recorded in the action register; no edits to keymaps.
+Notifications: Labonair errors must route through the canonical Notifications owner; reference toast behavior is evidence only.
+UI-kit components: Labonair's existing Source Control section uses shared `labonair-ui-kit` controls; any future picker/diff controls must use the same kit.
+User workflow: Create all/tracked/staged stashes with optional message; apply or pop latest; browse/filter stashes; show selected stash as diff; apply/pop/drop that stash; drop list selection.
+Failure/cancellation/retry behavior: Record empty/no-repository states, stash-presence and change-type enablement, prompt cancellation, async Git failures, stale stash index/hash checks, conflict behavior, and retry/refresh expectations.
+Security boundary: Repository-local Git operations remain within the selected repository/session boundary.
+Performance budget: No runtime change; async repository operations and picker list responsiveness remain acceptance requirements.
+
+Implementation order: Contract classification only; future runtime work must move the typed Git contract first, then Git owner behavior, Workspace hosting adapters, and Keymap/surface consumers.
+Focused unit tests: Not applicable to this documentation-only change.
+Contract/integration tests: Not applicable to this documentation-only change.
+Persistence/migration tests: Not applicable; no persistence changes.
+Command/surface tests: Not applicable; no runtime changes.
+Visual states: Paired macOS picker, selected stash diff, context-menu enablement, confirmation, loading/empty/error/conflict states remain pending.
+Security/negative tests: Not applicable to this documentation-only change; retain repository-boundary acceptance requirements.
+Performance measurement: Not applicable to this documentation-only change.
+Workspace gates: Diff check, documentation checker, docs verification scope, queue check, and focused pinned-action/local-owner audit.
+Documentation updates: New stash packet, six bound and six unbound action rows, packet index counts, Git crosswalk, normative parity summary, and this task record.
+Current status: Pending static source audit and documentation updates.
+Target status: Requirements classified; native dispatch and end-to-end acceptance remain explicitly open.
+Evidence links: Pinned action/keymap records, Git UI source audit, Labonair Git and panel-scm source audit.
+Known limitations: Same-session source research and independently written requirements constitute redevelopment, not separated-room clean-room implementation. Runtime outcomes and paired captures are unavailable in this slice.
+Remaining migration edges: Stash Diff owner/contract and end-to-end picker/diff integration are unimplemented.
+Failed/unavailable gates: Rust and runtime/visual gates are not in scope for this documentation-only slice and remain R07-000 exit gates.
+Next safe task: Finish Git stash classification, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify Git stash workflow actions
+
+- Added [`action-classification-git-stash.md`](../../docs/parity/action-classification-git-stash.md)
+  with six bound and six registered-unbound action requirements. It records
+  stage-aware stash creation, latest versus selected-stash apply/pop, picker
+  and diff entry paths, confirmations, stale identity handling, and local
+  Source Control gaps.
+- Updated both action registers, the parity packet index, Git capability
+  crosswalk, and normative parity summary. All native/runtime and paired
+  visual acceptance remains pending.
+- Focused source audit confirmed the three-platform action bindings, Stash
+  Message prompt, GitPanel availability gates, picker/diff routes, asynchronous
+  operations, current Git/transport contracts, and local Source Control
+  controls. No native interaction was observed.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py`
+  (43 normative documents and 200 Markdown files),
+  `python3 scripts/verify.py --scope docs`, and
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest
+  active). A focused ID/cross-reference audit passed for all six bound and six
+  registered-unbound stash actions. Rust gates remain R07-000 exit gates and
+  were not run for this documentation-only slice.
+- Same-session source research and independently written requirements are
+  redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin
+  R07-001 or R09.

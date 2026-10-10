@@ -367,6 +367,13 @@ records the titlebar/shortcut picker route, typed create and switch actions,
 and path-targeted new-window flow. Labonair has no worktree lifecycle API or
 picker; Workspace restoration, remote behavior, and paired macOS acceptance
 remain open. The independent
+[`Git stash workflow action crosswalk`](parity/action-classification-git-stash.md)
+records stash-all/tracked/staged creation, latest and selected-entry apply/pop,
+the Stashes picker tab, stash review diff, and list/review drop routes. Labonair
+has partial Source Control list operations and message entry, but no
+stage-specific stash commands, picker/diff route, or latest-stash actions;
+native dispatch, conflict recovery, and paired macOS acceptance remain open.
+The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The
