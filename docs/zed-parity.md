@@ -351,6 +351,12 @@ default document as separate targets, plus the Settings menu routes and the
 additional Welcome and shortcut routes. Labonair's project Settings UI route,
 default document route, and shortcut/menu coverage remain incomplete; native
 dispatch, file behavior, and paired Settings acceptance are pending. The independent
+[`Keymap entry action crosswalk`](parity/action-classification-keymap-entry.md)
+records the Keymap management surface, editable user keymap JSON, and bundled
+default bindings as separate targets, including menu, Welcome, Settings, and
+shortcut routes. Labonair's extra management shortcut, missing raw-file
+shortcut/menu entry, and absent bundled-document route remain open; native
+dispatch and paired Keymap acceptance are pending. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

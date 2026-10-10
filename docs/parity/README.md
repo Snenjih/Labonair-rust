@@ -21,7 +21,8 @@ source-side research. It records current evidence without claiming parity.
   four Workspace zoom actions, five Image Viewer zoom actions, five
   Application/window lifecycle actions (plus the related unbound Show All
   action), one Extensions action, two Settings entry actions (plus three
-  related unbound Settings actions), one Editor Go to Line action,
+  related unbound Settings actions), two Keymap entry actions (plus one
+  related unbound default-keymap action), one Editor Go to Line action,
   one File Finder action, two Workspace Open/OpenFiles actions, one Workspace
   New Window action,
   one Workspace Add Folder to
@@ -69,6 +70,9 @@ source-side research. It records current evidence without claiming parity.
   independently stated Settings UI, user Settings JSON, project Settings
   UI/file, and bundled-default entry routes, with current Labonair command and
   menu gaps.
+- [`action-classification-keymap-entry.md`](action-classification-keymap-entry.md) —
+  independently stated Keymap management, editable user keymap JSON, and
+  bundled-default entry routes, with current Labonair command and menu gaps.
 - [`action-classification-workspace-open.md`](action-classification-workspace-open.md) —
   independently stated intent, Workspace/Editor ownership, distinct general
   Open and platform Open Files routes, related Settings targets, and runtime

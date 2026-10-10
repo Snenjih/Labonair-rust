@@ -4127,6 +4127,108 @@ continue R07-000; do not begin R07-001 or R09.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin
   R07-001 or R09.
 
+## Pre-change contract — classify Keymap entry actions
+
+Request: Classify the bound Open Keymap and Open Keymap File actions and the
+related menu-only Open Default Key Bindings route.
+Request type: Keymap surface entry and action ownership inventory; no runtime
+change, new command, or new Keymap setting.
+In scope: `ACT-MACOS-zed-OpenKeymap`,
+`ACT-MACOS-zed-OpenKeymapFile`, their platform/context defaults, and
+`ACT-REGISTRY-LINUX-zed-OpenDefaultKeymap`; distinguish the Keymap management
+surface, editable user keymap JSON, and bundled default key bindings.
+Out of scope: binding editor controls, conflict semantics, profiles, Vim or
+Helix layers, keymap migration, and changing Settings, Workspace, Editor,
+command, keymap, or menu code; R07-001/R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Keymap ownership and command contracts, the default and overlay
+keymap inventories, Workspace Editor file-open behavior, existing Keymap
+surface/menu composition, and local Keymap provider/handler.
+Owner module: Keymap owns binding state, action discovery metadata, keymap
+composition, and the management surface contract. Workspace hosts the
+management surface and editable JSON document as Workspace items. The app
+root composes native menu actions; it does not own keymap state.
+Canonical capability crates: `labonair-keymap` owns keymap values, files, and
+runtime composition; `labonair-keymap-ui` owns management presentation;
+`labonair-workspace` hosts the management tab and opens the raw JSON Editor
+item. No new crate is assigned.
+Canonical user entry points: App > Settings > Open Keymap, Open Keymap File,
+and Open Default Key Bindings; `cmd-k cmd-s`/`ctrl-k ctrl-s` opens the Keymap
+surface, and `cmd-e`/`ctrl-e` opens the editable file from KeymapEditor.
+Welcome Customize Keymaps, titlebar/global menu, Settings Keymap link, and
+Command Palette routes also reach the management surface.
+Public typed contracts: Open Keymap takes no arguments and opens or activates
+the Keymap management surface in the active Workspace. Open Keymap File takes
+no arguments and opens/initializes the user's editable keymap JSON in an
+Editor item. Open Default Key Bindings opens the bundled baseline document for
+inspection. These targets are distinct.
+State and persistence: User bindings persist in the user keymap file and are
+composed with platform/profile/mode layers by Keymap. Opening the management
+surface does not change bindings. The bundled default document is distinct
+from editable user bindings.
+Events and registry contributions: No new event or registry. Reuse the
+existing Keymap command provider, Workspace handler, Keymap Settings-surface
+contribution, and action/menu composition.
+Settings: No value addition. Profile and modal-mode values and loading
+behavior remain in their existing crosswalks.
+Notifications and failure: Malformed or unwritable user keymap data uses the
+Keymap notification path; Workspace Editor open failures use existing
+Workspace errors. Do not add duplicate file editors or passive messages.
+UI-kit: The management surface uses `labonair-ui-kit` controls; raw user and
+bundled JSON documents open through the Workspace Editor.
+Allowed dependency changes: None. Compatibility code: none; document the
+existing `OpenKeymapJson` internal command identity only as needed to explain
+its action mapping, and do not add parallel actions.
+Focused verification: Compare the three pinned action/menu routes and
+platform/context bindings; check local menu/Welcome/Settings/palette entries,
+shortcut defaults and identity aliases, management-tab reuse, JSON creation,
+and the missing bundled-document route. Keep visual editor and raw JSON
+targets distinct.
+Visual evidence: Pending paired macOS App Settings menu, Keymap management
+surface, user JSON document, bundled default document, and existing-tab
+activation evidence. Record OS, active Workspace/pane, document target, and
+focus state.
+Workspace gates: Diff check, documentation checker, docs verification scope,
+queue check, and focused pinned-action/local-owner/route audit. Rust gates
+remain R07-000 exit gates; no implementation change is planned.
+Documentation updates: Two bound action rows; one registered-unbound default
+keymap row; Keymap entry packet, action counts/index, command/keymap
+crosswalks, normative parity note, and this task contract/progress record.
+Security impact: N/A; no runtime file access changes. User keymap path and
+default document remain distinct. Performance impact: N/A; no runtime change.
+Known limitations: Same-session source research and independently written
+requirements are redevelopment, not separated-room clean-room implementation.
+Native dispatch, menu composition, existing-item activation, file errors, and
+paired macOS behavior remain unverified.
+Next safe task: Complete this bounded Keymap-entry classification, then
+continue R07-000; do not begin R07-001 or R09.
+
+## Progress — classify Keymap entry actions
+
+- Classified the bound Open Keymap and Open Keymap File actions and related
+  Open Default Key Bindings menu route in
+  [`action-classification-keymap-entry.md`](../../docs/parity/action-classification-keymap-entry.md).
+  The packet distinguishes the interactive management surface, editable user
+  JSON document, and bundled default document, and records current Labonair
+  routes and gaps.
+- Updated the bound and registered-unbound action ledgers, Keymap layer
+  crosswalk, parity packet index, feature crosswalk, normative Zed parity
+  summary, and this task contract/progress record.
+- Focused source audit passed for pinned menu routes, macOS/Linux/Windows
+  shortcut contexts, active-pane item activation/creation, and current local
+  command aliases, user-file initialization, and missing routes. Native
+  dispatch, document behavior, and paired visual acceptance remain unverified.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py`
+  (43 normative documents and 197 Markdown files),
+  `python3 scripts/verify.py --scope docs`, and
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest
+  active). Rust gates were not run for this documentation-only slice and remain
+  R07-000 exit gates.
+- Same-session source research and independently written requirements are
+  redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin
+  R07-001 or R09.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified
