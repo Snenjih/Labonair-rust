@@ -23,8 +23,8 @@ source-side research. It records current evidence without claiming parity.
   six Workspace dock-sizing actions, five Workspace dock visibility actions,
   two Workspace major-region focus actions, nine Workspace pane
   activation/swap actions, two Workspace bulk item/pane close actions, one
-  Workspace Close Window action, two Workspace path-copy actions, and four
-  Workspace save actions;
+  Workspace Close Window action, one Workspace Reopen Last Picker action,
+  two Workspace path-copy actions, and four Workspace save actions;
   pinned dispatch and native interaction acceptance remain open for those and
   all other actions.
 - [`action-classification-search.md`](action-classification-search.md) —
@@ -92,6 +92,9 @@ source-side research. It records current evidence without claiming parity.
   independently stated absolute and worktree-relative clipboard paths,
   owner-specific selection cardinality, path formatting, and Labonair's
   Explorer-only equivalent.
+- [`action-classification-workspace-reopen-last-picker.md`](action-classification-workspace-reopen-last-picker.md) —
+  independently stated eligible-picker behavior, per-window latest-view
+  retention, state and focus restoration, and Labonair's missing stash route.
 - [`action-classification-workspace-save.md`](action-classification-workspace-save.md) —
   independently stated active-item and Workspace-wide save scope, typed save
   intents, format-on-save settings, conflict and partial-failure behavior,

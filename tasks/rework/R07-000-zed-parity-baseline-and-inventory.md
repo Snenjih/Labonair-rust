@@ -2541,6 +2541,95 @@ family after this slice passes its documentation gates.
 - Next safe task: continue R07-000 with the next unclassified default-map
   action family and reconcile the remaining action catalog.
 
+## Pre-change contract — classify Workspace Reopen Last Picker
+
+Request: Independently classify `ReopenLastPicker`, including eligible picker
+modals, per-window stash behavior, state and focus restoration, active-modal
+timing, and the current Labonair modal route.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `ACT-MACOS-workspace-ReopenLastPicker` in Workspace context on macOS,
+Linux, and Windows. Record the pinned modal-layer and generic Picker opt-in
+contract, including behavior when no eligible modal is stashed.
+Out of scope: Implementing a modal stash or picker registry, changing picker
+owners, enumerating every dynamically contributed picker workflow, unrelated
+picker presentation and selection semantics, R07-001/R09, and runtime or
+visual acceptance claims.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, Workspace modal hosting and focus
+contracts, and the owning picker views' dismiss/state behavior.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns the
+action and modal lifecycle. Each eligible picker owner retains its query,
+selection, and other view state while its existing modal entity is stashed.
+Canonical user entry point: macOS `Cmd+K Cmd+P`; Linux and Windows
+`Ctrl+K Ctrl+P`, in Workspace context. No Labonair command descriptor or
+default action binding currently exposes this action.
+Public typed contract: Reopen the most recently dismissed reopenable picker
+modal in the current Workspace window, revealing the same view with its query,
+selection, and other transient state intact. Keep only one stashed view; a
+newly dismissed eligible picker replaces the previous stash. Dismissing a
+non-reopenable modal leaves the stash intact. With no eligible stash, do
+nothing. If another modal is active when the action is dispatched, reveal the
+stash once that modal closes; command-palette invocation must tolerate its
+asynchronous dismissal. Focus the restored picker and preserve normal modal
+focus restoration when it is later dismissed.
+Events and registry contributions: Generic pinned Picker views are eligible
+by default; the command palette explicitly opts out. Workspace owns the
+single per-window eligible-modal stash and deferred reveal. Labonair currently
+has no corresponding reopenability contract or stashed-modal state; do not
+add either in this inventory slice.
+Settings and persistence: No settings, disk persistence, or session restore.
+The one-entry stash exists only for the lifetime of its Workspace modal layer.
+Notifications and failure: An empty stash is a silent no-op. A pending active
+modal delays the reveal until dismissal; verify dismissal-blocked or
+never-closing modal cases and ensure an explicit new modal request does not
+reveal stale content unexpectedly.
+UI-kit: Reuse the owning picker view and shared modal/focus controls. This
+action must reveal the existing view, not construct a new local picker or
+duplicate its inputs/list styling.
+Focused inspection: Trace picker eligibility, default opt-in and opt-out,
+replacement and retention, same-view state preservation, empty
+stash, active-modal ordering, command-palette dismissal, focus transfer,
+per-window scope, and Labonair's current modal teardown.
+Visual evidence: Pending paired macOS checks for reopening an Open File or
+other eligible picker with a non-empty query, selected row, keyboard focus,
+and a different modal open before the action.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, and exact action-ID/key/context/owner/stash-route audit.
+Documentation updates: One action row, a Workspace reopen-picker packet,
+shared-controls and command/keymap crosswalks, parity index, normative parity
+scope if needed, and this task's progress record.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Native key dispatch, focus behavior, and paired
+macOS captures are unavailable here.
+Next safe task: Continue R07-000 with the next unclassified default-map action
+family after this slice passes its documentation gates.
+
+## Progress record — 2026-10-10 — Workspace Reopen Last Picker classification
+
+- Added [`../../docs/parity/action-classification-workspace-reopen-last-picker.md`](../../docs/parity/action-classification-workspace-reopen-last-picker.md)
+  for `ACT-MACOS-workspace-ReopenLastPicker`, recording eligible-picker
+  behavior, one-entry per-window retention, same-view state preservation,
+  active-modal ordering, and focus restoration without prescribing reference
+  implementation mechanics.
+- Updated the stable action row with macOS/Linux/Windows bindings, Workspace
+  ownership, and the missing local route. Linked the packet from the parity
+  index, shared-controls and command/keymap crosswalks, and normative parity
+  scope. Static inspection confirms Labonair's modal host drops dismissed
+  views and File Finder creates a fresh view on open.
+- Passed `python3 scripts/check_documentation.py` (43 normative documents,
+  185 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active),
+  `git diff --check`, and the focused action ID/bindings/context/owner/state/
+  focus/evidence audit.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, and tests. They remain R07-000 exit gates. Native dispatch,
+  picker-owner coverage, modal ordering and focus interaction, and paired
+  macOS captures remain open. Same-session analysis is independent
+  redevelopment, not separated-room clean-room work. R07-001 and R09 remain
+  unstarted.
+- Next safe task: continue R07-000 with the next unclassified default-map
+  action family and reconcile the remaining action catalog.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

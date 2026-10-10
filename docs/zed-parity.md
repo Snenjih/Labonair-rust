@@ -297,7 +297,11 @@ independent
 records absolute and worktree-relative clipboard values, per-panel selection
 cardinality, path style, and Labonair's Explorer-only menu route; platform
 dispatch, multiline order, Outline/Git routes, clipboard behavior, and paired
-interaction evidence remain pending. The
+interaction evidence remain pending. The independent
+[`Workspace Reopen Last Picker action crosswalk`](parity/action-classification-workspace-reopen-last-picker.md)
+records eligible-picker and per-window retention behavior, modal ordering,
+state preservation, and focus restoration; native dispatch, full picker-owner
+coverage, and paired interaction evidence remain pending. The
 independent
 [`Workspace save action crosswalk`](parity/action-classification-workspace-save.md)
 records active-item versus Workspace-wide save scope, typed save intents,
