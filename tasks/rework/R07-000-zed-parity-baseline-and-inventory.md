@@ -1995,6 +1995,86 @@ Next safe task: Continue R07-000 with the next unclassified action family.
   clean-room work. R07-001 and R09 remain unstarted.
 - Next safe task: continue R07-000 with the next unclassified action family.
 
+## Pre-change contract — classify Workspace major-region focus actions
+
+Request: Independently classify forward/backward keyboard navigation among
+the major visible Workspace regions, its wrapping and closed-dock behavior,
+and Labonair's current focus routes.
+Request type: Requirements and parity inventory; no runtime behavior change.
+In scope: `FocusNextPart` and `FocusPreviousPart` under their stable action
+requirement IDs.
+Out of scope: Split-pane cycling, tab order changes, new focus controls,
+accessibility API migrations, implementation, R07-001/R09, and claims of
+native screen-reader or visual acceptance.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: action-requirements.md, feature-crosswalk.md, workspace-model.md,
+design-system.md, UI-kit focus controls, titlebar, docks, and statusbar.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns
+cross-region focus order and selects content focus targets. Shell provides
+titlebar/statusbar surfaces; dock panel owners provide their focus handles.
+Canonical user entry point: Pinned Workspace-context keys: forward `F6` and
+`Cmd+F6` on macOS, `F6` and `Ctrl+F6` on Linux/Windows; backward `Shift+F6`
+on all three platforms. Labonair has `FocusNextPane` for cycling split leaves
+and arrow traversal inside the statusbar, but no major-region actions.
+Public typed contract: Move focus forward or backward through visible
+titlebar, left dock, center editor, right dock, bottom dock, and statusbar
+parts, skipping closed docks and wrapping. When current focus is outside the
+part list, focus its first part. This inventory adds no event or registry.
+Events and registry contributions: Workspace actions remain owned by
+Workspace; surface owners expose existing focus handles. Add no shell-wide
+focus table or cross-feature callback.
+Settings and persistence: No setting, stored state, or persistence change.
+Accessibility and UI-kit: Toolbar parts land on the first focusable control;
+dock/editor parts target usable content for sighted keyboard use and named
+landmarks when assistive technology is active. Record the current GPUI
+accessibility-role limitation; do not claim screen-reader support without
+native verification. Reuse shared controls and focus styles.
+Failure behavior: A toolbar with no focusable control keeps focus on its
+container. With a nonempty part list, focus outside all known parts resolves
+to the first part. Hidden/closed regions are excluded.
+Security/performance: No sensitive data or I/O; no new dependency or measurable
+performance path is expected.
+Focused inspection: Trace part order, current-focus detection, wrap behavior,
+closed docks, titlebar/statusbar first-control handling, active dock panel,
+center pane, screen-reader mode, and Labonair's pane/statusbar-only routes.
+Visual evidence: Pending paired macOS focus-ring and native accessibility
+checks across sparse and fully open region layouts.
+Workspace gates: Documentation checker, docs verification scope, queue check,
+diff check, and exact action/order/route audit.
+Documentation updates: Two action register rows, major-region focus packet,
+Workspace/command crosswalks, parity index, normative parity scope if needed,
+and this task's progress record.
+Known limitations: Same-session analysis is independent redevelopment, not
+separated-room clean-room work. Native macOS and screen-reader interaction are
+unavailable here.
+Next safe task: Continue R07-000 with the next unclassified action family.
+
+## Progress record — 2026-10-10 — Workspace major-region focus action classification
+
+- Added [`../../docs/parity/action-classification-workspace-major-region-focus.md`](../../docs/parity/action-classification-workspace-major-region-focus.md)
+  for `FocusNextPart` and `FocusPreviousPart`, recording visible-region order,
+  wrapping, closed-dock filtering, toolbar/landmark targets, and the outside-
+  focus fallback.
+- Distinguished major-region navigation from Labonair's split-leaf
+  `FocusNextPane` route and statusbar arrow handling. The pinned default map
+  also assigns F6 to `debugger::Pause` while `debugger_session` is active;
+  exact context precedence remains a runtime acceptance check.
+- Updated two action rows, the parity index, Workspace/focus and command-keymap
+  crosswalks, normative parity scope, and this task's pre-change/progress
+  records. The focused ID, F6-overlap, route, and index audit passed.
+- Passed `python3 scripts/check_documentation.py` (43 normative documents,
+  179 Markdown files), `python3 scripts/verify.py --scope docs`,
+  `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 active), and
+  `git diff --check`.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, and tests. They remain R07-000 exit gates. Native F6
+  dispatch, function-key settings, screen-reader announcements, focus-ring
+  states, and paired macOS captures remain open. Same-session analysis is
+  independent redevelopment, not separated-room clean-room work. R07-001 and
+  R09 remain unstarted.
+- Next safe task: continue R07-000 with Workspace directional pane activation
+  and swap actions, then classify the remaining default-map actions.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

@@ -20,8 +20,8 @@ source-side research. It records current evidence without claiming parity.
   to Line action, one File Finder action, two Workspace Open/OpenFiles
   actions, one Workspace New Window action, one Workspace New File action,
   one Workspace New Terminal action, one Workspace Open With System action,
-  six Workspace dock-sizing actions, and five Workspace dock visibility
-  actions;
+  six Workspace dock-sizing actions, five Workspace dock visibility actions,
+  and two Workspace major-region focus actions;
   pinned dispatch and native interaction acceptance remain open for those and
   all other actions.
 - [`action-classification-search.md`](action-classification-search.md) —
@@ -69,6 +69,10 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-workspace-dock-visibility.md`](action-classification-workspace-dock-visibility.md) —
   independently stated active-dock close, per-edge toggles, all-dock
   restoration, keybindings, and Labonair's panel/statusbar and primary-dock
+  routes.
+- [`action-classification-workspace-major-region-focus.md`](action-classification-workspace-major-region-focus.md) —
+  independently stated forward/backward region order, wrap and closed-dock
+  behavior, accessibility focus targets, and Labonair's pane/statusbar-only
   routes.
 - [`keymap-overlay-requirements.md`](keymap-overlay-requirements.md) — stable
   IDs for 1,402 bindings across seven macOS base-profile overlays, conditional

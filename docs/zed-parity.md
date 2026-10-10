@@ -310,6 +310,11 @@ pending. The independent
 records the focused-dock close, three edge toggles, remembered all-dock
 restoration, the local primary-sidebar/statusbar routes, and the local tab
 close key distinction; focus, dispatch, and reload behavior remain pending.
+The independent
+[`Workspace major-region focus action crosswalk`](parity/action-classification-workspace-major-region-focus.md)
+records the visible-region order, wrap and closed-dock behavior, toolbar and
+landmark focus targets, and Labonair's pane-only traversal gap; native F6
+dispatch, screen-reader behavior, and focus-ring evidence remain pending.
 All other action
 semantics and owner routes, profile selection/reload, user overrides, and
 macOS/Linux/Windows
