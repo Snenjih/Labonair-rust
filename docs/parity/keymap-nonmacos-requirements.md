@@ -14,6 +14,7 @@ The platform default map is selected first. A selected base-profile overlay and 
 The non-macOS selector has seven listed choices: Zed, VS Code, Atom, JetBrains, Sublime Text, Emacs, and Cursor. The `TextMate` variant exists in the pinned typed setting but is absent from this selector and has no non-macOS overlay asset. The `None` variant is also absent from the selector and disables built-in layers. Confirm how each value is exposed, saved, reloaded, and resolved at runtime. Windows uses the non-macOS base-profile overlays while retaining its own default platform map.
 
 The `vim.json` layer is shared across platforms. Its 894 binding entries, eight explicit null bindings, 437 action identifiers, and per-binding requirements are recorded once under `KMP-MODE-VIM-HELIX` and `KEYBIND-VIM-HELIX-*` in the [macOS layer register](keymap-overlay-requirements.md); verify those rows on Linux and Windows separately.
+The [Vim AngleBrackets packet](action-classification-vim-angle-brackets.md) classifies its two shared profile rows and records that Linux/Windows dispatch still needs separate runtime verification.
 
 ### Layers
 

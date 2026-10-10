@@ -51,7 +51,8 @@ source-side research. It records current evidence without claiming parity.
   action, five registered-unbound Terminal actions (rename, two half-page
   scroll declarations, search-test declaration, and select-all declaration),
   four registered-unbound TextFinder actions (four macOS-specific and four shared Linux/Windows override entries),
-  19 Outline/OutlinePanel actions (six
+  one registered-unbound Vim AngleBrackets action with two shared Vim/Helix
+  profile bindings, 19 Outline/OutlinePanel actions (six
   default-macOS-bound IDs and 13 registered-unbound panel actions; six of the
   latter occur in seven Vim/Helix entries), one Editor Go to
   Line action,
@@ -108,6 +109,9 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-debugger-go-to-memory.md`](action-classification-debugger-go-to-memory.md) —
   the capability-gated Variables-list action, DAP memory-reference and size
   behavior, transient Memory View state, and Labonair's missing Debugger owner.
+- [`action-classification-vim-angle-brackets.md`](action-classification-vim-angle-brackets.md) —
+  the shared Vim/Helix angle-bracket text object, operator contexts, nested and
+  multiline delimiter behavior, and Labonair's missing text-object route.
 - [`action-classification-terminal-clear.md`](action-classification-terminal-clear.md) —
   the pinned saved-screen/cwd-history effect, platform bindings, Labonair's ANSI
   PTY command route, and native scrollback/runtime acceptance gaps.

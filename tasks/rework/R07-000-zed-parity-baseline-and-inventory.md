@@ -6252,3 +6252,71 @@ Next safe task: Continue R07-000 action/workflow classification; do not begin R0
 - Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, native dispatch, DAP adapter/read behavior, persistence round trip, or visual evidence were run for this documentation-only slice.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
 ~~~
+
+
+## Pre-change contract — Vim AngleBrackets text object
+
+~~~text
+Request: Classify ACT-REGISTRY-LINUX-vim-AngleBrackets, its shared Vim/Helix profile bindings, operator and selection behavior, delimiter matching, related mode settings, and Labonair's current Editor/Keymap gaps.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: `vim::AngleBrackets`; KEYBIND-VIM-HELIX-ca7ff884331a and KEYBIND-VIM-HELIX-d85cfc328391; KMP-MODE-VIM-HELIX and the pinned Vim/Helix mode setting requirements; matching/edit/selection semantics; local `labonair-editor`/`labonair-keymap` behavior; registered action row, macOS/shared Linux-Windows overlay crosswalks, packet index, `commands.keymap` and `editor.text` crosswalks, normative summary, and this task record.
+Out of scope: Implementing the text object, action descriptor, profile layer, Helix mode, new setting, or keybindings; changing pinned settings inventory; claiming runtime dispatch or visual parity; beginning R07-001 or R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned Vim action/object operators and conditional keymap layer; Labonair Editor owner, Keymap overlay contract, Editor Vim setting, and R07 queue order.
+
+Owner module: Pinned `vim` owns modal action/object behavior; the Editor owns buffer selections and edits; Keymap owns the conditional Vim/Helix binding layer. Labonair `editor` is the behavior owner, with Keymap owning binding/profile state and Workspace forwarding Editor input.
+Canonical capability crate: Pinned `vim` plus `editor`; Labonair `labonair-editor` owns the text-object behavior. `labonair-keymap` owns bindings and profile composition; Workspace remains a host adapter.
+Sibling crates: Pinned `vim`, `editor`, and `keymap` integration. No Labonair sibling crate or dependency is proposed.
+Canonical user entry point: In an Editor with Vim or Helix mode enabled and the conditional mode layer active, invoke `<` or `>` while the matching object/operator context is active. In Vim, use the object after `i` (inside) or `a` (around), such as `ci<` or `da>`; the shared layer also binds the action for Helix next/previous-object contexts and change-surround selection.
+Alternate entry points: Visual selection can be expanded to an angle-bracket object through the same action. No pointer surface or Command Palette route was found or proposed.
+Public typed contract: Pinned `AngleBrackets { opening: bool }` dispatches `Object::AngleBrackets` into the current Vim operator/visual selection pipeline. Labonair has no angle-bracket text-object action or typed selection API; its `Vim` state machine exposes key input and edits only.
+Events: Pinned selection changes or operator edits occur in the Editor; resulting buffer changes follow normal Editor transaction/undo behavior. No Labonair event is added.
+Registry contributions: Preserve the two `vim.json` bindings under `vim_operator == a || vim_operator == i || vim_operator == cs || vim_operator == helix_next || vim_operator == helix_previous`: `<` passes `opening: true`; `>` uses the default false. The layer is conditional on Vim or Helix mode and shared across platforms; no platform-default binding exists. No local contribution is added in this inventory slice.
+Allowed dependency changes: None.
+Removal condition for temporary code: None; no compatibility code is introduced.
+
+State owner: The pinned Editor owns cursor/selection and buffer state; Vim owns mode, pending operator, count, and visual-object transition. Labonair `Document` owns cursor/selection and buffer state; `labonair-editor::Vim` owns its mode, pending d/c/y operator, count, and selection integration.
+Persistence owner: No object-specific state persists. Text mutations use the Editor's normal buffer/save lifecycle. Pinned `vim_mode` and `helix_mode` are user-scoped Keymap mode settings; the chosen user keymap overlay is Keymap-owned. Labonair has an Editor-owned `editor.vimMode` preference but no base-profile overlay loader or Helix mode.
+Settings and scope: The pinned mode layer is conditional on `vim_mode` or `helix_mode`; both documented defaults are false and user-scoped. The exact pinned Settings controls/conditions are pending. Local `editor.vimMode` defaults false. This slice adds or changes no setting.
+Migration impact: No schema or data migration.
+Commands: `vim::AngleBrackets` is not in the three default platform maps; the Vim/Helix profile binds `<` and `>` in the text-object/operator contexts above. User override precedence and effective dispatch remain native acceptance.
+Default keymap: None. The action is present in the shared 894-entry Vim/Helix layer in `KMP-MODE-VIM-HELIX`; platform-specific overlays contain no separate angle-object binding.
+Notifications: None for successful selection/edit. Missing matching delimiters produce no text-object range; exact normal/visual operator recovery needs interaction acceptance.
+UI-kit components: No direct reusable control. Any future visual selection/mode indicator must remain in Editor and use `labonair-ui-kit`.
+User workflow: With modal editing active, position the caret or selection in/near nested `<...>` text and use the inside/around object with change, delete, yank, another supported operator, or Helix object-selection navigation; preserve matching, cursor, whitespace, multiline, undo, and register behavior.
+Failure/cancellation/retry behavior: The pinned scanner ignores escaped delimiters, balances nested open/close markers, searches across lines for this multiline object, and returns no range when it cannot find a pair. `around` includes the delimiters; `inside` excludes them and trims boundary whitespace only for multiline content. Text comparisons/generic angle characters may be mistaken for pairs and require runtime characterization. The `<` action's `opening` flag also feeds the later replacement step of `cs`. The normal-object handler consumes a count, but the AngleBrackets range arm ignores it and selects one pair in inspected source; confirm this at runtime.
+Security boundary: None beyond ordinary local buffer editing.
+Performance budget: No local runtime work in this slice. Pinned matching scans display-buffer characters and can cross lines; future implementation must keep large-buffer input responsive and use the Editor buffer model.
+
+Implementation order: Inspect the action declaration/registration, profile binding contexts and arguments, normal/visual operator handling, delimiter matching and whitespace rules; verify setting and profile-layer conditions and absence from platform defaults; map Labonair Editor/Keymap coverage; update action and overlay rows, packet/index/crosswalks, normative summary, and this task.
+Focused unit tests: N/A; documentation-only slice, and no tests are added or run.
+Contract/integration tests: Pending native Vim/Helix acceptance for supported operators, selection results, unmatched pairs, nested/multiline/escaped delimiters, change-surround flow, and the source-level count no-op.
+Persistence/migration tests: N/A for the action itself; verify mode/profile user settings separately under R07 acceptance.
+Command/surface tests: Confirm mode-layer enablement, exact `<`/`>` contexts/arguments, default-map absence, user override precedence, and no unintended insertion/conflict.
+Visual states: No UI change. Native Editor selection, visual-mode expansion, mode indicator, and text edits require paired macOS interaction evidence.
+Security/negative tests: N/A; ordinary local text operations.
+Performance measurement: N/A for docs-only change; future matching across large and multiline buffers needs responsiveness measurement.
+Workspace gates: Diff check; docs, agents, knowledge, settings, and active queue; focused source, profile-binding, and local-route audit.
+Documentation updates: New AngleBrackets packet; registered-unbound action row; links from the two Vim/Helix overlay rows and shared Linux/Windows overlay summary; parity packet index; commands.keymap and editor.text crosswalks; normative parity summary; this task record.
+Current status: Pinned action, profile context, object matching, local partial Vim route, and owner boundary under static audit; documentation and gates pending.
+Target status: Record the full conditional text-object behavior and exact Labonair gap without presenting basic Vim motions as parity.
+Evidence links: `zed-refrence/zed/crates/vim/src/object.rs`; `normal.rs`; `visual.rs`; `surrounds.rs`; `zed-refrence/zed/assets/keymaps/vim.json`; `docs/parity/keymap-overlay-requirements.md`; `docs/parity/settings-requirements.md`; `crates/editor/src/vim.rs`; `crates/workspace/src/views/editor.rs`; `docs/capabilities.md`; `docs/registries.md`.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No profile load, key dispatch, text edit, or native visual interaction has been exercised.
+Remaining migration edges: Labonair lacks object operator state and AngleBrackets matching, a Helix engine, and base-profile overlay loading. Exact user-facing mode/profile settings UI and paired macOS behavior are still open.
+Failed/unavailable gates: Rust build, tests, native key dispatch, profile layering, persistence round trips, and paired visual evidence remain R07-000 exit gates and were not run for this documentation-only slice.
+Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+~~~
+
+
+## Progress — classify Vim AngleBrackets text object
+
+~~~text
+- Added [action-classification-vim-angle-brackets.md](../../docs/parity/action-classification-vim-angle-brackets.md) for ACT-REGISTRY-LINUX-vim-AngleBrackets and the two shared mode-layer bindings.
+- Recorded `<` with `opening: true`, `>` with its false default, exact Vim/Helix operator contexts, inside/around and visual selection behavior, `cs` replacement propagation, nested/escaped/multiline scanning, whitespace rules, and the source-level numeric-count no-op.
+- Mapped the local partial Vim owner to `labonair-editor` plus `labonair-keymap`: local Vim has basic motion operators but no angle text-object action or range scanner; base-profile loading and Helix mode are also absent. The pinned Vim/Helix mode settings remain the conditional-layer prerequisites.
+- Updated the registered-unbound action row, both exact overlay requirement links, shared Linux/Windows overlay summary, parity packet index, commands.keymap and editor.text crosswalks, normative summary, and this task record.
+- Focused audit found no `AngleBrackets` entry in any platform default map, exactly two Vim profile bindings with the audited operator context, and no local `AngleBrackets` implementation. Source inspection confirmed count is consumed upstream but ignored by this object's range branch.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py`, and `python3 scripts/verify.py` scopes docs, agents, knowledge, settings, and queue. The queue reports 46 tasks with R07-000 still earliest active.
+- Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, native profile load/dispatch, text edit, persistence round trip, or paired visual evidence were run for this documentation-only slice.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+~~~
