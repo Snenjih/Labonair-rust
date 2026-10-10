@@ -3575,6 +3575,113 @@ or R09.
 - Next safe task: Continue classifying the remaining R07-000 action and
   workflow inventory; do not begin R07-001 or R09.
 
+## Pre-change contract — classify related Workspace zoom actions
+
+Request: Complete the existing Workspace zoom classification for its three
+registered, default-keymap-unbound actions and distinguish them from the
+global ToggleZoom action and native window zoom.
+Request type: Requirements and registered-action inventory; no runtime change.
+In scope: `ACT-REGISTRY-LINUX-workspace-ToggleEditorZoom`,
+`ACT-REGISTRY-LINUX-workspace-ZoomIn`, and
+`ACT-REGISTRY-LINUX-workspace-ZoomOut`; their target selection, eligibility,
+focus effects, action discoverability, and current Labonair routes.
+Out of scope: Changing global `ACT-MACOS-workspace-ToggleZoom`; implementing
+Pane/Panel or Editor zoom; classifying native window or image zoom; changing
+the accepted Pane/tab model; R07-001/R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: The existing Workspace zoom packet, registered-action and
+keymap inventories, Pane/Panel zoom capability contracts, Workspace layout
+state, and the local Debug dock zoom record.
+Owner module and canonical crate: Workspace (`labonair-workspace`) owns zoom
+target selection and Workspace-level layout state. Pane and Panel owners
+provide eligibility and their content transitions. No shell action table or
+new capability owner is introduced.
+Sibling crates: Workspace has none. `labonair-panel` defines the shared
+UI-free panel contract, and feature panel owners supply their own capabilities;
+Pane state remains Workspace-owned. Canonical entry point: typed
+`workspace::ToggleEditorZoom`,
+`workspace::ZoomIn`, and `workspace::ZoomOut` actions; no default key binding
+or shipped menu/pointer entry was found for these three action IDs.
+Public typed contract: `ToggleEditorZoom` maximizes/restores the active center
+Pane within the split tree, hiding sibling center Panes while leaving docks
+and Panels in place. If an overlay Pane/Panel zoom is active, clear it before
+maximizing. `ZoomIn` and `ZoomOut` enter/leave the active eligible Pane's
+zoom state. A Pane hosted inside a panel may forward its event to that Panel;
+do not assume every Panel handles these action IDs. Empty/non-zoomable Panes
+propagate/no-op; ZoomIn focuses the target when required and is idempotent
+when already zoomed; ZoomOut does nothing unless zoomed. These overlay actions
+share Workspace target/padding behavior with ToggleZoom, while Editor
+maximization remains a different transition.
+State and persistence: No additional setting is defined for these action
+IDs. Direct dock-panel zoom uses existing dock zoom persistence; center-Pane
+overlay and Pane maximization follow the existing Workspace zoom packet's
+restart behavior. The zoom-padding setting applies to eligible overlay zoom,
+not as an Editor font-size or native-window scale value.
+Events and registry contributions: Workspace owns the three typed actions
+and target routing; Pane/Panel zoom events update the existing Workspace
+target state.
+Do not add another zoom state or a generic registry for these three routes.
+Allowed dependency changes: None for this inventory slice. Removal condition
+for compatibility code: N/A; no temporary code is added.
+Notifications and failure: No I/O is expected. If a target disappears during
+transition, clear only the stale zoom target and preserve surviving layout;
+verify focus recovery against the existing zoom packet.
+UI-kit: Any shipped route must reuse the existing Pane/Panel header controls
+and shared UI-kit buttons/tooltips; no new local zoom control is part of this
+documentation-only slice.
+Focused verification: Confirm action schemas have no arguments; no default or
+alternate-profile key binding; Pane/Panel eligibility and focus behavior;
+ToggleEditorZoom overlay restoration and sibling-pane hiding; local internal
+Dock zoom events versus its Debug-only command; and absence of equivalent
+typed Labonair routes.
+Visual evidence: Pending paired macOS states for a split Editor with two or
+more Panes, existing zoom overlay followed by Editor maximize, eligible and
+non-eligible Pane/Panel targets, focus restoration, narrow layout, and
+restart behavior. Record builds, OS, bounds, scale, target owner, pane/dock
+state, and focus.
+Workspace gates: Diff check, documentation checker, docs verification scope,
+queue check, and focused action/owner/target/current-route audit. Rust
+formatting, workspace check, Clippy, and tests remain R07-000 exit gates and
+are not run for this documentation-only slice.
+Documentation updates: Existing Workspace zoom packet and three unbound
+action rows; command/keymap counts and Workspace crosswalk; normative parity
+note; and this task's progress record.
+Security impact: N/A; actions affect local presentation state and no
+permission boundary. Performance impact: No runtime change; future layout
+transitions must remain synchronous-light and must not block GPUI.
+Known limitations: Same-session source research and requirements writing are
+independent redevelopment, not separated-room clean-room work. Native action
+dispatch, palette or user-keymap reachability, layout restoration, and paired
+macOS captures remain unverified. R07-001 and R09 remain unstarted.
+Next safe task: Classify these three related Workspace zoom actions in R07-000,
+then continue with remaining inventory; do not start R07-001 or R09.
+
+## Progress record — 2026-10-10 — Related Workspace zoom action classification
+
+- Completed the existing Workspace zoom packet's classification for
+  `ToggleEditorZoom`, `ZoomIn`, and `ZoomOut`: center-Pane split maximization
+  is distinct from overlay zoom; direct ZoomIn/Out act on the active eligible
+  Pane, with a Pane-hosted Panel allowed to forward its own zoom events.
+- Updated the three Linux registered-action rows with semantic outcomes,
+  Workspace/Panel ownership, absent local typed routes, and Linux-only versus
+  unverified macOS runtime status. Updated the packet index, command/keymap
+  count, Workspace dock crosswalk, and normative parity note. Corrected the
+  task contract to match the repository's Workspace-owned Pane boundary.
+- Static pinned action declaration/handler/keymap and local Workspace/panel
+  source review only; no runtime test was run. Same-session research is
+  independent redevelopment, not separated-room clean-room work.
+- Passed: `git diff --check`, `python3 scripts/check_documentation.py`
+  (43 normative docs / 192 Markdown files), `python3 scripts/verify.py
+  --scope docs`, `python3 scripts/check_rework_queue.py` (46 tasks; R07-000
+  active), and the focused three-action argument/binding/target/owner/local-
+  route audit.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, or tests. They remain R07-000 exit gates. Native action
+  dispatch, command-palette/keymap reachability, Mac registration, Pane/Panel
+  focus and layout restoration, and paired macOS captures remain open.
+- Next safe task: Continue the remaining R07-000 action and workflow
+  inventory; do not begin R07-001 or R09.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

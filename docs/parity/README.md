@@ -67,7 +67,8 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-workspace-zoom.md`](action-classification-workspace-zoom.md) —
   independently stated focused Pane/Panel zoom, Workspace overlay behavior,
   padding and persistence, the Git CommitEditor key override, and Labonair's
-  separate debug dock and native window zoom routes.
+  separate debug dock and native window zoom routes; it also classifies the
+  three registered unbound Editor-maximize and direct Zoom In/Out actions.
 - [`action-classification-git-worktree-delete.md`](action-classification-git-worktree-delete.md) —
   independently stated normal and forced worktree removal, protection for
   main/open worktrees, dirty-tree confirmation, data-loss effects, and the

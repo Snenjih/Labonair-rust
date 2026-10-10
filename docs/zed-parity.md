@@ -325,8 +325,11 @@ independent
 [`Workspace zoom action crosswalk`](parity/action-classification-workspace-zoom.md)
 records focused Pane/Panel overlay behavior, global Shift+Escape, the
 CommitEditor override, the zoom padding setting, and Labonair's separate
-Debug dock and native Window Zoom routes. Focus dispatch, restore behavior,
-and paired macOS captures remain pending. The independent
+Debug dock and native Window Zoom routes. It also separates the three
+registered, default-keymap-unbound direct/maximize actions from the global
+ToggleZoom route and distinguishes active-Pane ZoomIn/Out from Pane
+maximization. Focus dispatch, restore behavior, palette/keymap reachability,
+macOS registration, and paired captures remain pending. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The
