@@ -487,6 +487,11 @@ records the pinned model-level saved-screen/cwd-history effect and the local
 palette command's ANSI PTY write, without assuming equal scrollback behavior.
 Native dispatch, SSH/foreground-process behavior, and paired terminal states
 remain open. The independent
+[`Terminal clipboard action crosswalk`](parity/action-classification-terminal-clipboard.md)
+classifies Copy, Paste, and PasteText, related selection Settings, clipboard
+type branches, bracketed-paste sanitation, and Labonair's text-only route. Native
+clipboard dispatch, platform reachability, and paired terminal states remain
+open. The independent
 [`Outline and OutlinePanel action crosswalk`](parity/action-classification-outline-panel-actions.md)
 classifies the searchable Editor Outline picker, five default-macOS-bound
 OutlinePanel actions, 13 registered-unbound panel actions, six unbound

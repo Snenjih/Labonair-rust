@@ -4812,6 +4812,62 @@ Next safe task: Complete this Terminal Clear action-classification slice, then c
 - Passed `git diff --check`; docs (43 normative documents and 217 Markdown files); agents (10 request routes); knowledge (including capability, product catalog, workflow, Settings, visual-evidence, automation, release, and reform freshness); Settings (7 areas and 101 registered UI fields); and rework queue (46 tasks; R07-000 remains earliest active) verification scopes.
 - No Rust build, tests, native action dispatch, local/SSH scrollback check, or visual check was run for this documentation-only slice. Static source and existing tests were inspected, not run. Native route reachability, PTY/foreground-process effects, and paired macOS terminal states remain R07-000 exit gates. Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+## Pre-change contract — Terminal clipboard actions
+
+```text
+Request: Classify default-bound `terminal::Copy`, `terminal::Paste`, and `terminal::PasteText`, their platform bindings and clipboard/settings effects, and Labonair's terminal clipboard routes.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: Three default-macOS action rows with all platform bindings/contexts and profile occurrences; pinned Copy selection/clipboard behavior, Paste handling of text/images/external paths, PasteText text-only behavior, bracketed/non-bracketed payload handling; Labonair TerminalView copy/paste routes and input sanitation; related `copy_on_select` and `keep_selection_on_copy` Settings rows; packet, parity index, Terminal crosswalk, normative summary, and this task record.
+Out of scope: Changing clipboard permissions, GPUI or OS clipboard integrations, terminal parser/input handling, actions, keymaps, Settings schema/UI, context menus, right-click paste behavior, or adding image/file paste; changing pinned source; starting R07-001 or R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned TerminalView action handlers, terminal model Copy/Paste methods, TerminalSettings defaults, platform keymaps and overlays; Labonair Terminal view, terminal input helper, TerminalSettings value mapping, command/action registration search, and Settings parity register.
+
+Owner module: Pinned TerminalView handles action dispatch and clipboard type branching; terminal owns model selection/paste behavior. Labonair `labonair-terminal` owns terminal selection/input operations and Workspace renders the Terminal view; Settings owns `terminal.copy_on_select`.
+Canonical capability crate: `labonair-terminal`; `labonair-workspace` owns the Terminal view integration and UI clipboard callbacks; `labonair-settings` owns local values.
+Canonical user entry point: Pinned Terminal-scoped default bindings. Labonair captures platform C/V key-downs in the Terminal view and also exposes Copy/Paste through its terminal context menu.
+Alternate entry points: Pinned Edit menu aliases to Editor Copy/Paste, PasteText for clipboard text only, platform profile overrides, selection gestures, and Linux primary selection behavior. Labonair supports its explicit copy-on-select and optional right-click paste paths; these are not replacements for clipboard action bindings.
+Public typed contract: Pinned `terminal::{Copy, Paste, PasteText}` and clipboard APIs; local `TerminalView::copy_selection`, `paste_from_clipboard`, `paste_payload`, and Settings values remain unchanged.
+Events: No event changes proposed.
+Registry contributions: Preserve action IDs, bindings, contexts, and any profile records. No local action or default key binding is introduced.
+Settings: Classify `SET-terminal-terminal-copy-on-select` (pinned false; local `terminal.copy_on_select`, false) and `SET-terminal-terminal-keep-selection-on-copy` (pinned true; Labonair keeps the selection after copy in the current handler but has no matching setting value). Do not create a new Settings field.
+Persistence: Pinned and local clipboard text uses the OS clipboard. Pasted text is sent to the active terminal session; no new durable state.
+Migration impact: None in this documentation slice. Record the different clipboard-item branches and bracketed-paste sanitation behavior without changing them.
+Commands and keymap: Preserve macOS `cmd-c` Copy, `cmd-v` Paste, `ctrl-cmd-v` PasteText; Linux `copy`/`ctrl-insert`/`ctrl-shift-c`, `paste`/`shift-insert`/`ctrl-shift-v`, no PasteText binding; Windows `ctrl-insert`/`ctrl-shift-c`/contextual `ctrl-c`, `shift-insert`/`ctrl-v`/`ctrl-shift-v`, and `ctrl-alt-v` PasteText. Confirm profile overlays from source; preserve static context precedence.
+Notifications: None proposed.
+UI-kit components: No visual changes. Document the existing local Terminal context menu only.
+User workflow: Copy selected terminal output; paste text or supported clipboard items into the active shell; use the text-only paste action when clipboard type branching should be skipped; retain or clear terminal selection according to pinned setting.
+Failure/cancellation/retry behavior: Empty/no clipboard, no text selection, non-text clipboard items, external path quoting, image-to-TUI Ctrl+V forwarding, bracketed paste modes, embedded escape sequences, multiline content, and active selection retention remain evidence cases.
+Security boundary: Clipboard data enters an active terminal/foreground process. Preserve exact pinned and local escape handling and record unknown clipboard types; do not log clipboard content.
+Performance budget: No runtime change.
+
+Implementation order: Inspect three pinned handlers and model paste behavior, check platform/profile maps, inspect local clipboard and paste sanitizer routes plus Settings values, update three action/two Settings rows, link packet indexes, then run docs/agents/knowledge/Settings/queue and focused binding/type/settings audits.
+Focused tests: Not applicable to documentation-only change; do not add or run tests.
+Contract/integration tests: No runtime contract changed.
+Persistence/migration tests: No tests changed; clipboard and active session behavior remain runtime acceptance items.
+Command/surface tests: Terminal Copy/Paste/PasteText dispatch and Edit menu enablement remain native acceptance items.
+Visual states: No UI edits; selected/no-selection, empty clipboard, image/path clipboard, bracketed paste, alternate screen, and narrow Terminal states remain paired macOS acceptance evidence.
+Security/negative tests: No new authority; later acceptance should verify escape-sequence handling, image forwarding boundaries, path quoting, and no clipboard leakage.
+Performance measurement: Not applicable.
+Workspace gates: Diff check; docs, agents, knowledge, Settings and rework-queue scopes; focused action/profile/binding, clipboard-type, Settings-effect, and local route audit.
+Documentation updates: Terminal clipboard action packet, three action rows, two related Settings effects, parity packet index, Terminal crosswalk, normative parity summary, and this task.
+Current status: Pending focused pinned clipboard, keymap, local view/input, and Settings route audit.
+Target status: Clipboard type behavior, selection retention, paste normalization/sanitation, platform bindings, related settings, local route and gaps documented; native clipboard dispatch and paired macOS evidence remain open.
+Evidence links: Pinned TerminalView Copy/Paste/PasteText/Editor aliases, terminal Copy/Paste methods, `copy_on_select` and `keep_selection_on_copy` Settings; default platform keymaps and profiles; Labonair terminal view, `paste_payload`, Settings content/concrete accessors, and input handling.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Source and existing tests were inspected, not run; current native clipboard contents and terminal rendering were not observed.
+Remaining migration edges: No local `terminal::PasteText` action; no explicit image/external-path clipboard branch; bracketed-paste sanitation differs; pinned configurable keep-selection setting has no local value; platform Copy/Paste defaults may not all reach current local handler.
+Failed/unavailable gates: Rust build, native clipboard dispatch, paste confirmation/input, Settings save/reload, and visual gates remain R07-000 exit gates.
+Next safe task: Complete this Terminal clipboard action-classification slice, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify Terminal clipboard actions
+
+- Added [`action-classification-terminal-clipboard.md`](../../docs/parity/action-classification-terminal-clipboard.md) for Copy, Paste, and PasteText, including clipboard type branches, bracketed-paste encoding/sanitation, and related selection Settings.
+- Preserved all three actions' platform bindings and contexts. The focused audit confirmed the two related Settings rows, parity packet/index/crosswalk links, and source-keymap occurrences only in the pinned default platform files (three Copy files, three Paste files, two PasteText files; no profile overlays).
+- Compared pinned clipboard-item branching and selection settings with Labonair's text-only paste handler, app-level C/V listener, context menu, paste payload sanitizer, and copy-on-select preference. Recorded the absent local PasteText route, absent keep-selection setting, and platform/runtime evidence gaps.
+- Passed `git diff --check`; docs (43 normative documents and 218 Markdown files); agents (10 request routes); knowledge (including capability, product catalog, workflow, Settings, visual-evidence, automation, release, and reform freshness); Settings (7 areas and 101 registered UI fields); and rework queue (46 tasks; R07-000 remains earliest active) verification scopes.
+- No Rust build, tests, native clipboard dispatch, clipboard-type/input check, Settings save/reload, or visual check was run for this documentation-only slice. Static source and existing tests were inspected, not run. Native clipboard behavior, platform shortcut reachability, paste sanitation effects, and paired macOS acceptance remain R07-000 exit gates. Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
 ## Pre-change contract — default-bound ProjectPanel actions
 
 ```text
