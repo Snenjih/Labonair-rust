@@ -4924,6 +4924,63 @@ Next safe task: Complete this Terminal scroll action-classification slice, then 
 - Passed `git diff --check`; docs (43 normative documents and 219 Markdown files); agents (10 request routes); knowledge (including capability, product catalog, workflow, Settings, visual-evidence, automation, release, and reform freshness); Settings (7 areas and 101 registered UI fields); and rework queue (46 tasks; R07-000 remains earliest active) verification scopes.
 - No Rust build, tests, native shortcut dispatch, alternate-screen/inline-block check, scrollback replay, or visual check was run for this documentation-only slice. Static source and existing tests were inspected, not run. Native page/boundary behavior and paired macOS scroll states remain R07-000 exit gates. Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+## Pre-change contract — Terminal character palette and vi mode
+
+```text
+Request: Classify the two default-bound `terminal::ShowCharacterPalette` and `terminal::ToggleViMode` actions, including the alternate-screen behavior and pinned vi-motion mode; compare local Terminal input routes.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: Two macOS/Linux/Windows action rows and contexts; pinned TerminalView handlers, terminal vi-mode key processing, native character palette route plus generic/macOS GPUI platform implementations, platform/profile keymaps; local Terminal key/input handlers and evidence gaps; parity packet/index, Terminal crosswalk, normative summary, and this task.
+Out of scope: Implementing either local action, changing PTY key handling, adding a native character picker or vi-mode setting, modifying terminal model/input behavior, touching pinned source, or beginning R07-001/R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned TerminalView handlers, terminal model vi-mode state and motion processing, generic/macOS GPUI character-palette implementations, three platform keymaps and profile overlays; Labonair terminal view/input mapping and GPUI Window APIs.
+
+Owner module: Pinned TerminalView routes the OS character palette or terminal keystroke and toggles the terminal model's vi navigation state. Terminal owns vi cursor/motion processing. Labonair Terminal owns PTY input and local view handling; no current owner route for these two app actions was found.
+Canonical capability crate: `labonair-terminal`, with Terminal rendering and input in `labonair-workspace`.
+Canonical user entry point: Pinned Terminal-context chords: Character Palette (`ctrl-cmd-space` on macOS; `ctrl-alt-space` on Linux/Windows; only macOS has a native palette implementation), Toggle Vi Mode (`ctrl-shift-space` on all three platforms). No local equivalent action route was found.
+Alternate entry points: In pinned alternate-screen mode, Character Palette sends a terminal keystroke instead of opening the OS palette. Vi motions are consumed by the Terminal model after the mode is enabled.
+Public typed contract: Preserve `terminal::ShowCharacterPalette` and `terminal::ToggleViMode` IDs and bindings. Add no local action or setting in this documentation slice.
+Events: No event changes proposed; pinned vi mode uses model events and view notifications.
+Registry contributions: Preserve two action IDs, context rows and default chords; no profile overlay occurrences were found in the pinned keymap source. No local registration is added.
+Settings: None identified. Pinned character-palette alternate-screen path reads `terminal.option_as_meta`; record this existing dependency, but do not expand the Settings inventory in this slice.
+Persistence: Vi mode is transient model state and resets when terminal session/model is recreated. Character palette opens a platform surface or sends a key into the PTY; no new durable state.
+Migration impact: None in this documentation slice. Record both absent local actions and the alt-screen exception.
+Commands and keymap: Preserve macOS `ctrl-cmd-space` / `ctrl-shift-space`; Linux/Windows `ctrl-alt-space` / `ctrl-shift-space`. No profile-overlay action records were found.
+Notifications: None.
+UI-kit components: No visual edits; pinned OS character palette and local terminal surface are documented only.
+User workflow: Open the platform character palette while using a regular terminal screen; in alternate-screen applications invoke the corresponding terminal shortcut; toggle terminal scrollback/cursor navigation into and out of vi mode.
+Failure/cancellation/retry behavior: Palette unavailable on a platform, alternate-screen transition, `option_as_meta`, unrecognized vi motions, selection/cursor boundary behavior, and session recreation while vi mode is enabled remain acceptance cases.
+Security boundary: Terminal shortcuts in vi mode must not become shell input; character palette's alternate-screen keystroke is intentionally sent to the foreground application.
+Performance budget: No runtime change.
+
+Implementation order: Read pinned declarations and handlers, trace model vi-mode and character-palette branches, inspect all default/profile keymaps, search local action/input routes, update two action rows and parity/crosswalk indexes, then run docs/agents/knowledge/Settings/queue and focused action/profile/local route audits.
+Focused tests: Not applicable to documentation-only change; do not add or run tests.
+Contract/integration tests: No runtime contract changed.
+Persistence/migration tests: Not applicable; transient vi mode lifecycle remains acceptance.
+Command/surface tests: Native OS character palette, alt-screen keystroke, vi motion consumption, toggle-off, and focus behavior remain runtime acceptance.
+Visual states: No UI changes; native palette, normal screen, alternate screen, enabled vi cursor, and narrow terminal states require paired macOS evidence.
+Security/negative tests: No new authority; later acceptance should verify vi-mode keystrokes are consumed and only the documented alt-screen palette shortcut is sent to the PTY.
+Performance measurement: Not applicable.
+Workspace gates: Diff check; docs, agents, knowledge, Settings, queue; focused bindings/profile and pinned/local route audit.
+Documentation updates: Terminal character-palette/vi-mode action packet, two action rows, packet index, Terminal crosswalk, normative parity summary, and this task.
+Current status: Pending focused pinned handler, keymap and local route audit.
+Target status: Platform palette behavior, alternate-screen keystroke, vi-mode model transition and key consumption, bindings, local gaps, and native evidence needs documented.
+Evidence links: Pinned TerminalView handlers and action registrations, terminal model vi-mode, default platform keymaps; Labonair TerminalView, terminal input parser, Workspace key handling, and keymap registry search.
+Known limitations: Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Sources and existing tests were inspected, not run; native character palette and vi navigation were not observed.
+Remaining migration edges: Both action routes and default shortcut handling absent locally; vi-mode semantics not represented; no explicit native character palette route in Labonair Terminal.
+Failed/unavailable gates: Rust build, native shortcut dispatch, system palette, alternate-screen behavior, and paired visual evidence remain R07-000 exit gates.
+Next safe task: Complete this two-action Terminal classification slice, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify Terminal character palette and vi mode
+
+- Added [`action-classification-terminal-character-palette-vi-mode.md`](../../docs/parity/action-classification-terminal-character-palette-vi-mode.md) for `terminal::ShowCharacterPalette` and `terminal::ToggleViMode`.
+- Preserved both actions' platform bindings and Terminal contexts. The focused audit confirmed their names occur only in pinned default platform maps, and the packet/index/crosswalk links resolve. Source inspection confirmed native palette support on macOS and the generic GPUI no-op on Linux/Windows; alternate-screen mode attempts parsed `ctrl-cmd-space`. It also traced vi-mode key consumption and confirmed no local palette/vi-mode action handler.
+- Passed `git diff --check`; docs (43 normative documents and 220 Markdown files); agents (10 request routes); knowledge (including capability, product catalog, workflow, Settings, visual-evidence, automation, release, and reform freshness); Settings (7 areas and 101 registered UI fields); and rework queue (46 tasks; R07-000 remains earliest active) verification scopes.
+- No Rust build, tests, native shortcut dispatch, platform character palette, alternate-screen/PTy check, vi-motion interaction, or visual check was run for this documentation-only slice. Static source and existing tests were inspected, not run. Native action reachability and paired macOS palette/vi states remain R07-000 exit gates. Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+```
+
 ## Pre-change contract — default-bound ProjectPanel actions
 
 ```text

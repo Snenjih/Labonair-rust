@@ -42,7 +42,7 @@ source-side research. It records current evidence without claiming parity.
   (20 macOS-profile entries and two shared Linux/Windows Atom entries), two
   Theme mode/selector actions, one Terminal Clear action, three Terminal
   clipboard actions, six Terminal scroll actions (eight JetBrains profile
-  entries), 19 Outline/OutlinePanel actions (six
+  entries), two Terminal character-palette/vi-mode actions, 19 Outline/OutlinePanel actions (six
   default-macOS-bound IDs and 13 registered-unbound panel actions; six of the
   latter occur in seven Vim/Helix entries), one Editor Go to
   Line action,
@@ -95,6 +95,9 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-terminal-scroll.md`](action-classification-terminal-scroll.md) —
   six line/page/top/bottom actions, alternate-screen and inline-block behavior,
   eight JetBrains profile entries, history settings, and native evidence gaps.
+- [`action-classification-terminal-character-palette-vi-mode.md`](action-classification-terminal-character-palette-vi-mode.md) —
+  native palette and alternate-screen routing, transient vi-motion mode,
+  missing local actions, and macOS acceptance states.
 - [`action-classification-outline-panel-actions.md`](action-classification-outline-panel-actions.md) —
   independently stated Outline picker and OutlinePanel behavior, four pinned
   Settings effects, six default-macOS-bound actions, and 13 registered-unbound

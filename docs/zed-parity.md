@@ -497,6 +497,11 @@ classifies six line/page/top/bottom actions, alternate-screen propagation,
 inline-block viewport handling, JetBrains overrides, and the history-limit
 setting difference. Native shortcut, restored-history, and paired scroll states
 remain open. The independent
+[`Terminal character-palette and vi-mode action crosswalk`](parity/action-classification-terminal-character-palette-vi-mode.md)
+records macOS palette support and non-macOS no-op behavior, the alternate-screen
+`option_as_meta` input, transient vi-motion dispatch, missing local actions, and
+platform-specific acceptance gaps. Keyboard reachability and native palette/vi
+interaction remain open. The independent
 [`Outline and OutlinePanel action crosswalk`](parity/action-classification-outline-panel-actions.md)
 classifies the searchable Editor Outline picker, five default-macOS-bound
 OutlinePanel actions, 13 registered-unbound panel actions, six unbound
