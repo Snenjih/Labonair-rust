@@ -4693,3 +4693,67 @@ Next safe task: Complete Git restore/discard classification, then continue R07-0
   not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin
   R07-001 or R09.
+
+## Pre-change contract — Git commit lifecycle actions
+
+```text
+Request: Independently classify pinned commit, amend, message-generation, composer, signoff, hook-skip, cancellation, and last-commit undo workflows against Labonair.
+Request type: R07-000 requirements inventory; documentation only.
+In scope: Six default-macOS bound actions (Amend, Cancel, Commit, ExpandCommitEditor, GenerateCommitMessage, ToggleFillCommitEditor) and three related registered-unbound actions (Signoff, SkipHooks, Uncommit); keyboard contexts; commit staging/message/error states; editor/modal behavior; relevant persistence and AI settings.
+Out of scope: Implementing Git/AI/UI behavior, adding actions or settings, changing transports, implementing the commit modal, runtime or visual parity claims, and R09 work.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Git capability (labonair-git); Git transport (labonair-git-transport); Source Control sibling (labonair-panel-scm); Workspace hosting for commit modal and Git actions; Editor commit-message buffer; Agent/Language Model configuration for generated text; Notifications.
+
+Owner module: Git owns repository commit state and the canonical Source Control commit workflow; Git subcrates retain the same capability owner. Workspace hosts modal and registered actions; Editor owns text editing; Agent/LLM settings and providers own model configuration.
+Canonical capability crate: labonair-git.
+Sibling crates: labonair-git-transport and labonair-panel-scm; Workspace and Editor are consumers/hosts.
+Canonical user entry point: Source Control commit editor and its commit control.
+Alternate entry points: Existing amend checkbox, commit expand control, and Git action menu; pinned modal/action entry points must be documented separately from current Labonair availability.
+Public typed contract: Current Labonair Git::commit(path, message, amend, session_id) returns CommitResult. It has no signoff or no-verify options and no commit-message generation or uncommit contract. Do not add a contract in this inventory slice.
+Events: Existing repository/status refresh and Git operation events only; no event changes proposed.
+Registry contributions: Classify six bound and three registered-unbound actions. Add no Labonair command, action, binding, or registry entry.
+Allowed dependency changes: None.
+Removal condition for temporary code: None; documentation only.
+
+State owner: Git owns staged/worktree/HEAD state. Source Control owns composer mode and in-progress operation UI. Editor owns message buffer editing. Workspace hosts CommitModal and Uncommit confirmation. LLM provider owns generated response stream.
+Persistence owner: Pinned GitPanel serializes per-workspace signoff and per-repository commit drafts/amend draft state; skip-hooks is transient and resets after a successful commit. Current Labonair commit text/amend UI persistence requires runtime acceptance and is not assumed.
+Settings and scope: Pinned GenerateCommitMessage is gated by Agent enablement, configured commit-message model, model temperature, include-project-rules, and custom instructions. These belong to Agent/LLM settings; no Labonair settings change is proposed.
+Migration impact: None in this slice. Future option support must preserve remote/local transport semantics and route failures through Notifications.
+Commands: Amend, Cancel, Commit, ExpandCommitEditor, GenerateCommitMessage, ToggleFillCommitEditor, Signoff, SkipHooks, Uncommit.
+Default keymap: Record exact macOS/Linux/Windows binding contexts for the six bound actions; Signoff, SkipHooks, and Uncommit are registered but have no default key binding.
+Notifications: Record commit, message-generation, authentication/model, and uncommit failures; preserve the owning Source Control/Notifications route.
+UI-kit components: Existing Labonair commit input, amend checkbox, expand control, and commit button use shared UI-kit controls; any new menu/modal/confirmation must use labonair-ui-kit.
+User workflow: Compose or generate a message; commit staged changes or tracked changes; enter/leave amend mode and commit; expand or fill the composer; toggle signoff; skip hooks on the next successful commit; invoke the Escape-bound git::Cancel action whose handler mapping is unresolved (a separate menu::Cancel listener clears marks or toggles focus); undo HEAD with a pushed-commit warning and soft reset.
+Failure/cancellation/retry behavior: Record missing message/changes, unresolved conflicts, no model or disabled Agent, auth/model stream errors, commit failure retention, operation cancellation, missing repository, pushed/unpushed state, confirmation cancellation, and reset failure. Note that a failed pushed-commit check is statically swallowed by the current Uncommit handler.
+Security boundary: Preserve staged/tracked/untracked scope, commit hook behavior, signed-off metadata, remote push warning, and commit history. Uncommit changes local history; pushed commits require explicit confirmation.
+Performance budget: No runtime change; do not block GPUI while reading diffs, authenticating, streaming generated text, committing, or checking remotes.
+
+Implementation order: Requirements packet only. Future changes must define typed commit options/generation/undo boundaries in Git owner, implement Git/transport behavior, adapt Source Control, then add bindings and Workspace hosting where required. Preserve acyclic crate dependencies.
+Focused unit tests: Not applicable to this documentation-only change.
+Contract/integration tests: No tests changed or run.
+Persistence/migration tests: Not applicable; persistence contracts are recorded for later acceptance.
+Command/surface tests: Not applicable; no runtime change.
+Visual states: Composer compact/full-fill/modal, staged/tracked commit, amend, signoff/hook toggles, model loading/error, commit busy/error, pushed warning, and narrow layout remain native acceptance requirements.
+Security/negative tests: Not applicable to this documentation-only change; verify untracked scope, no-verify effect, signoff metadata, pushed history guard, cancel, and failed reset in later acceptance.
+Performance measurement: Not applicable; no runtime change.
+Workspace gates: Diff check, documentation checker, docs verification scope, queue check, and focused pinned/local action and contract audit.
+Documentation updates: New commit-lifecycle packet, six bound rows, three unbound rows, packet index, Git capability crosswalk, normative parity summary, and this task record.
+Current status: Pending focused behavior and local-contract audit.
+Target status: Static commit lifecycle requirements classified; native interaction, runtime behavior, and paired macOS acceptance remain open.
+Evidence links: Pinned GitPanel action handlers/keymaps and commit workflow; Workspace Uncommit registration; Labonair Git trait, transport, and panel-scm workflow.
+Known limitations: Same-session source research and independent requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Typed signoff/no-verify commit options, AI generation, pinned keyboard actions, commit modal/expand behavior, pushed-history undo, selection cancel semantics, persistence parity, and paired captures.
+Failed/unavailable gates: Rust, native runtime, and visual gates remain R07-000 exit gates.
+Next safe task: Classify and document the Git commit lifecycle packet, then continue R07-000; do not begin R07-001 or R09.
+```
+
+## Progress — classify Git commit lifecycle actions
+
+- Added [`action-classification-git-commit-lifecycle.md`](../../docs/parity/action-classification-git-commit-lifecycle.md) for six bound and three registered-unbound Git actions. It records commit/amend sequencing, draft persistence, model-gated message generation, composer modes, signoff/no-verify, the Escape-bound Cancel action and its source binding/handler mismatch, and pushed-commit undo.
+- Updated the six bound and three unbound action rows, parity packet index/count, Git capability crosswalk, normative parity summary, and this task record. Runtime and capture states remain Pending.
+- Focused source audit confirmed platform keys/contexts, commit staging and option semantics, signoff persistence versus transient hook skipping, AI prerequisites and streaming inputs, and pushed-commit warning/soft-reset behavior. It found a pinned binding/handler mismatch: Escape targets `git::Cancel`, for which no handler was found; a separate GitPanel listener accepts `menu::Cancel`. The uncommit handler also statically treats a pushed-state-check error as a declined operation. Both require native/runtime confirmation.
+- Compared Labonair's Git trait, transport, and Source Control paths. Staged/tracked/amend operations exist, but tracked mode invokes `git add -A` and can include untracked files; there is no commit-message model flow, signoff/no-verify option, matching default action set, modal expand route, or last-commit undo. The local composer clears the input before the asynchronous commit result and has no explicit restoration path in the inspected code.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative documents and 203 Markdown files), `python3 scripts/verify.py --scope docs`, and `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active). The focused ID/cross-reference audit passed for all six bound and three registered-unbound actions.
+- Rust gates, native interaction, and paired visual checks were not run for this documentation-only slice and remain R07-000 exit gates.
+- Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.

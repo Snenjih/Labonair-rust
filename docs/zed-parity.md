@@ -388,6 +388,13 @@ unconfirmed, its hunk discard route is unsupported, and Clean Untracked uses
 permanent deletion rather than system Trash. Pinned multi-file RestoreFile and
 RestoreTrackedFiles scopes need runtime confirmation; destructive recovery
 and paired macOS evidence remain open. The independent
+[`Git commit lifecycle action crosswalk`](parity/action-classification-git-commit-lifecycle.md)
+records commit/amend, AI message generation, composer sizing/modal behavior,
+the unresolved `git::Cancel` binding/handler mismatch, persistent signoff,
+transient hook skipping, and pushed-commit undo. Labonair has partial staged/tracked/amend commits;
+tracked mode stages untracked files too. Generation, typed signoff/no-verify
+options, modal/action routes, and last-commit undo are missing; runtime and
+paired macOS evidence remain open. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

@@ -27,7 +27,8 @@ source-side research. It records current evidence without claiming parity.
   four Git worktree navigation/creation actions, six Git stash workflow
   actions (plus six related registered-unbound stash actions), eight Git
   staging actions (plus two related registered-unbound section actions), five
-  Git restore/discard actions, one Editor Go to Line action,
+  Git restore/discard actions, six Git commit-lifecycle actions (plus three
+  related registered-unbound actions), one Editor Go to Line action,
   one File Finder action, two Workspace Open/OpenFiles actions, one Workspace
   New Window action,
   one Workspace Add Folder to
@@ -96,6 +97,10 @@ source-side research. It records current evidence without claiming parity.
   independently stated hunk and file restore, tracked-change scope,
   untracked-file Trash behavior, prompt arguments, and Labonair destructive
   recovery gaps.
+- [`action-classification-git-commit-lifecycle.md`](action-classification-git-commit-lifecycle.md) —
+  independently stated commit/amend, AI message generation, composer,
+  cancel, signoff, hook-skip, last-commit undo, and current Git/Source
+  Control contract gaps.
 - [`action-classification-workspace-open.md`](action-classification-workspace-open.md) —
   independently stated intent, Workspace/Editor ownership, distinct general
   Open and platform Open Files routes, related Settings targets, and runtime
