@@ -3791,6 +3791,128 @@ then continue with remaining inventory; do not start R07-001 or R09.
 - Next safe task: Continue classifying the remaining R07-000 action and
   workflow inventory; do not begin R07-001 or R09.
 
+## Pre-change contract — classify application and window lifecycle actions
+
+Request: Classify the bound native Hide, Hide Others, Minimize, Quit, and
+Toggle Full Screen actions, including their platform/context bindings, menu
+routes, quit preparation and settings. Add the omitted JSON-only quit
+confirmation value to the pinned Settings field register.
+Request type: Action/owner inventory with one source-backed Settings
+requirements ledger correction; no runtime change.
+In scope: `ACT-MACOS-zed-Hide`, `ACT-MACOS-zed-HideOthers`,
+`ACT-MACOS-zed-Minimize`, `ACT-MACOS-zed-Quit`,
+`ACT-MACOS-zed-ToggleFullScreen`, their app/window menu and key routes,
+`workspace.confirm_quit`, existing `fullscreen_mode`, current Labonair
+handlers and quit safeguards, and the neighboring unbound `zed::ShowAll`
+menu action for route comparison.
+Out of scope: Workspace close action semantics already recorded in the Close
+Window packet; other app menus/actions; changing application shutdown,
+fullscreen, Settings, or menu code; the unbound `zed::Zoom` action; R07-001/R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned default action/keymap inventory, `app.windows` and
+`platform.integration` crosswalks, native app menu contract, Settings field
+register, and Workspace close-window packet.
+Owner module: Platform integration supplies stateless native Hide,
+HideOthers, Minimize, and Quit behavior; the current architecture has no
+separate lifecycle capability owner. Workspace owns the fullscreen
+presentation action contract and Workspace close preparation; Settings owns
+the typed values and not the action behavior. `labonair-shell` remains the
+composition adapter and is not assigned lifecycle feature ownership.
+Canonical capability crates: N/A for app-level GPUI lifecycle calls because
+they have no product-owned state; `labonair-shell` composes current menu/window
+actions, `labonair-workspace` owns Workspace close/presentation state, and
+`labonair-settings` stores the persisted values. No new capability or crate
+is assigned by this inventory.
+Canonical user entry points: App menu for Hide, Hide Others, Show All, and
+Quit; Window menu/key for Minimize; View menu and Workspace-context keymap
+bindings for Toggle Full Screen. The global App action remains distinct from
+closing a Workspace window or project.
+Public typed contract: All five actions take no arguments. Hide hides the
+current application; Hide Others hides other applications; Minimize minimizes
+the current window; Quit prepares all workspace windows and only exits after
+confirmation and save/close preparation succeeds; Toggle Full Screen changes
+the current Workspace window's fullscreen mode. Preserve the macOS
+Workspace-context distinction and the Linux/Windows F11 binding.
+State and persistence: `workspace.confirm_quit` defaults false and controls
+the app-level confirmation prompt. `fullscreen_mode` defaults to `native`;
+on macOS, `simple` covers the full display bounds while `native` uses the
+system fullscreen Space. Both values are Settings-owned user values; action
+invocation stores no additional state. The local
+`confirmQuitWithActiveSessions` is a separate terminal-session window-close
+guard and does not replace quit/save preparation.
+Events and registry contributions: Pinned Zed exposes typed actions and
+platform keymap/menu entries. Labonair already has app-menu GPUI actions and a
+shell-owned native-window command adapter. No new registry or event is
+required for this classification.
+Commands and default bindings: macOS: `cmd-h` Hide, `alt-cmd-h` Hide Others,
+`cmd-m` Minimize, `cmd-q` Quit, `fn-f` and `ctrl-cmd-f` Toggle Full Screen in
+Workspace. Linux/Windows: `ctrl-q` Quit and `f11` Toggle Full Screen in
+Workspace. Hide/Hide Others/Minimize are macOS-only defaults. Terminal
+contexts may shadow `ctrl-q` for terminal input.
+UI-kit: No reusable product control; these actions use the native application
+menu and window manager.
+Allowed dependency changes: None. Compatibility code: none; do not add
+parallel menu or shortcut tables.
+Notifications and failure: Hide/Minimize/fullscreen need no notification.
+Quit cancellation, save-preparation refusal, and preparation errors keep the
+application open. Labonair's existing active-shell guard notifies on the
+first close request and allows retry within three seconds.
+Focused verification: Compare pinned action definitions, default keymaps,
+quit-confirmation setting/default, multi-window save preparation and
+fullscreen mode with local app-menu handlers, fixed/default shortcuts,
+close callback and the existing Settings field inventory. Confirm the new
+JSON-only field has a stable requirement ID and an explicit missing-control
+status. Audit no conflation with Workspace Close Window or `zed::Zoom`.
+Visual evidence: Pending paired native macOS App/Window/View menu captures,
+Hide/Hide Others/Minimize/Quit outcomes, fullscreen native/simple modes, and
+multi-window quit cancellation. Linux/Windows shortcut and fullscreen runtime
+acceptance also pending. Record build, OS, window state, active workspace,
+settings values, and running-shell/dirty-buffer state.
+Workspace gates: Diff check, documentation checker, docs verification scope,
+queue check, settings-row count/link validation, and focused action/settings/
+local-route audit. No Rust gates for this documentation-only slice.
+Documentation updates: Five action rows; one app/window lifecycle packet;
+`confirm_quit` JSON-only Settings row and inventory count; app-window,
+platform, and Settings crosswalk references; parity index and normative parity
+note; this task contract and progress record.
+Security impact: N/A; actions are local app/window controls. Performance
+impact: N/A; no runtime path changes.
+Known limitations: Same-session reference review and independently worded
+requirements are redevelopment, not separated-room clean-room work. Pinned
+native dispatch, quit-dialog flow, local dirty-buffer behavior, fullscreen
+rendering, non-macOS runtime and paired captures remain unverified.
+Next safe task: Complete this bounded lifecycle classification, then continue
+the remaining R07-000 inventory; do not begin R07-001 or R09.
+
+## Progress record — 2026-10-10 — Application/window lifecycle actions
+
+- Classified five bound actions: Hide, Hide Others, Minimize, Quit, and
+  Toggle Full Screen, plus the registered unbound Show All menu action.
+  Recorded platform/context shortcuts, app/window entry points, fullscreen
+  mode policy, app-wide quit confirmation and all-workspace save preparation,
+  and Labonair's existing active-shell close guard and native menu routes.
+- Added `SET-settings-json-only-workspace-confirm-quit` (default `false`,
+  user/global scope). The pinned Settings UI has no control for this value;
+  updated the register total to 488 requirements / 384 static fields / five
+  JSON-only values and updated the Settings crosswalk.
+- Updated five bound action rows, the unbound Show All row, app-window and
+  platform crosswalks, the Settings crosswalk, parity index, normative parity
+  record, and this task contract. `labonair-shell` is recorded as a current
+  composition adapter, not a lifecycle feature owner.
+- Passed: `git diff --check`, `python3 scripts/check_documentation.py`
+  (43 normative docs / 194 Markdown files), `python3 scripts/verify.py
+  --scope docs`, `python3 scripts/check_rework_queue.py` (46 tasks; R07-000
+  active), and the focused pinned action/keymap/quit/settings/local-route,
+  inventory-count, and ownership-boundary audit.
+- Not run for this documentation-only slice: Rust formatting, workspace
+  check, Clippy, or tests. They remain R07-000 exit gates. Native menu and
+  accelerator behavior, quit cancellation/save preparation, fullscreen modes,
+  cross-platform dispatch, and paired captures remain open.
+- Same-session source research and requirements writing are independent
+  redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue the remaining R07-000 action/workflow inventory;
+  do not begin R07-001 or R09.
+
 ## Exit condition
 
 This task is complete only when the full feature inventory has no unclassified

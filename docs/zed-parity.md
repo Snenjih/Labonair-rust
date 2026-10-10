@@ -335,6 +335,11 @@ records five context-bound fit, reset, actual-size, and incremental image
 scale actions, the percentage toolbar, pointer gestures, and path-only item
 serialization. Labonair's Preview owner/crate, actions, settings boundary,
 native dispatch, and paired macOS evidence remain open. The independent
+[`Application and window lifecycle action crosswalk`](parity/action-classification-app-window-lifecycle.md)
+records native Hide/Hide Others/Minimize/Quit, Workspace fullscreen modes,
+the `confirm_quit` and `fullscreen_mode` settings, and Labonair's menu,
+shortcut, and quit-preparation gaps. Native app behavior and paired macOS and
+cross-platform evidence remain open. The independent
 [`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
 records initial-content Settings and the missing Labonair user-facing window
 route; pinned dispatch and paired interaction evidence remain pending. The

@@ -18,9 +18,10 @@ source-side research. It records current evidence without claiming parity.
   The 585 macOS IDs remain stable. Independent static intent and owner-route
   packets currently cover 23 Search actions, 22 Pane actions, two Workspace
   collaborator-follow actions, one Workspace worktree-security action,
-  four Workspace zoom actions, five Image Viewer zoom actions, one Editor Go
-  to Line action, one File Finder action, two Workspace Open/OpenFiles actions,
-  one Workspace New Window action,
+  four Workspace zoom actions, five Image Viewer zoom actions, five
+  Application/window lifecycle actions (plus the related unbound Show All
+  action), one Editor Go to Line action, one File Finder action, two Workspace
+  Open/OpenFiles actions, one Workspace New Window action,
   one Workspace Add Folder to
   Project action, one Workspace New File action,
   one Workspace New Terminal action, one Workspace Open With System action,
@@ -54,6 +55,10 @@ source-side research. It records current evidence without claiming parity.
   independently stated Image Viewer zoom/fit/reset actions, toolbar and
   percentage editing, wheel/pinch/drag input, view-state persistence, and the
   missing Labonair Preview owner and route.
+- [`action-classification-app-window-lifecycle.md`](action-classification-app-window-lifecycle.md) —
+  independently stated Hide, Hide Others, Minimize, Quit, and fullscreen
+  workflows, quit confirmation and Workspace preparation, fullscreen mode,
+  current native menu routes, and the missing or unverified Labonair behavior.
 - [`action-classification-workspace-open.md`](action-classification-workspace-open.md) —
   independently stated intent, Workspace/Editor ownership, distinct general
   Open and platform Open Files routes, related Settings targets, and runtime
@@ -156,8 +161,8 @@ source-side research. It records current evidence without claiming parity.
   implementation brief or proof of user-visible behavior.
 - [`titlebar-tab-strip.md`](titlebar-tab-strip.md) — independent titlebar tab
   appearance, input/state matrix, ownership, and evidence packet.
-- [`settings-requirements.md`](settings-requirements.md) — 487 stable IDs for
-  383 static field/value rows, including four JSON-only settings, per-language
+- [`settings-requirements.md`](settings-requirements.md) — 488 stable IDs for
+  384 static field/value rows, including five JSON-only settings, per-language
   values, shipped profiles, dynamic setup pages, and core Settings flows.
   Field effects, exact owners/routes, runtime behavior, and visual acceptance
   remain open.
