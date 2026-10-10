@@ -77,9 +77,39 @@ route. These are static classifications, not runtime acceptance.
 |---|---|---|
 | Pinned action inventory | All 23 action IDs and default macOS bindings link to [`action-requirements.md`](action-requirements.md); catalog semantics are source-checked in the pinned evidence JSON. | Run the pinned macOS build and verify each key, context, visible result, inactive context, and failure/recovery path. |
 | Labonair code mapping | Each row identifies its owner path and operation or states that source inspection found no route. | Add one-to-one typed owner actions and missing user workflows only in dependency-ordered implementation tasks after R07-000/R07-001. |
-| Focused code tests | `find_navigates_matches`, `search_replace_actions_use_typed_state_and_one_undo_step`, `invalid_editor_regex_is_an_inline_error_and_disables_actions`, `project_session_rejects_stale_results_and_cancellation`, `project_session_navigation_wraps_and_empty_results_are_local`, and project adapter root checks. | Tests cover model/adapters, not all 23 action bindings or end-to-end UI states. Add action dispatch and UI workflow coverage with the owning implementation task. |
+| Focused code tests | The exact action-to-test mapping and uncovered IDs are listed below. | Tests cover model/adapters, not pinned action dispatch or end-to-end UI states. Add action dispatch and UI workflow coverage with the owning implementation task. |
 | Native interaction and paired visuals | None for this slice. | Pending native macOS windows and Screen Recording access; record platform, exact binaries, viewport, theme, scale, focus, and state for both apps. |
 | Runtime status | No pinned macOS action has been classified as runtime-observed; no action in this register is accepted. | Keep R07-000 open until runtime and paired native acceptance are available. |
+
+### Existing test traceability
+
+| Test evidence | Requirement IDs with related model evidence | Coverage limit |
+|---|---|---|
+| `find_navigates_matches` in [`editor.rs`](../../crates/workspace/src/views/editor.rs) | `ACT-MACOS-search-SelectNextMatch`, `ACT-MACOS-search-SelectPreviousMatch` | Exercises Editor match selection and wrap behavior, not the pinned key dispatch, overlay focus, or context exclusions. |
+| `search_replace_actions_use_typed_state_and_one_undo_step` in [`editor.rs`](../../crates/workspace/src/views/editor.rs) | `ACT-MACOS-search-ReplaceNext`, `ACT-MACOS-search-ReplaceAll` | Covers current-buffer transactions only; no project replacement or key dispatch. |
+| `invalid_editor_regex_is_an_inline_error_and_disables_actions` in [`editor.rs`](../../crates/workspace/src/views/editor.rs) | `ACT-MACOS-search-ToggleRegex` | Covers an invalid query and disabled replacement; not the toggle binding or project-scope UI control. |
+| `literal_options_and_unicode_crlf_are_position_safe` in [`search.rs`](../../crates/editor/src/search.rs) | `ACT-MACOS-search-ToggleWholeWord` | Covers matcher boundaries and position safety, not control or key dispatch. |
+| `project_session_rejects_stale_results_and_cancellation` and `project_session_navigation_wraps_and_empty_results_are_local` in [`search.rs`](../../crates/editor/src/search.rs) | `ACT-MACOS-project_search-OpenTextFinder`, `ACT-MACOS-project_search-SearchInNew`, `ACT-MACOS-project_search-ToggleAllSearchResults`, `ACT-MACOS-project_search-ToggleFilters`, `ACT-MACOS-project_search-ToggleFocus` | Shared project-result state only; neither test exercises any listed action. |
+| `adapter_maps_line_text_columns_and_truncation` and `root_safe_path_rejects_results_outside_root` in [`project_search.rs`](../../crates/workspace/src/project_search.rs) | `ACT-MACOS-project_search-OpenTextFinder` | Covers result mapping and root escape rejection, not a text-result picker or its interaction. |
+
+The other 17 IDs have no action-specific regression test in the reviewed Labonair
+source: `ACT-MACOS-buffer_search-Deploy`, `ACT-MACOS-buffer_search-Dismiss`,
+`ACT-MACOS-buffer_search-FocusEditor`,
+`ACT-MACOS-buffer_search-UseSelectionForFind`,
+`ACT-MACOS-project_search-OpenTextFinder`,
+`ACT-MACOS-project_search-SearchInNew`,
+`ACT-MACOS-project_search-ToggleAllSearchResults`,
+`ACT-MACOS-project_search-ToggleFilters`,
+`ACT-MACOS-project_search-ToggleFocus`, `ACT-MACOS-search-FocusSearch`,
+`ACT-MACOS-search-NextHistoryQuery`,
+`ACT-MACOS-search-PreviousHistoryQuery`,
+`ACT-MACOS-search-SelectAllMatches`,
+`ACT-MACOS-search-ToggleCaseSensitive`,
+`ACT-MACOS-search-ToggleIncludeIgnored`,
+`ACT-MACOS-search-ToggleReplace`, and `ACT-MACOS-search-ToggleSelection`.
+There are no native interaction or paired visual artifacts for any of the 23
+IDs. No test currently exercises the pinned key-action dispatch for any of the
+23 IDs.
 
 ## Next work
 

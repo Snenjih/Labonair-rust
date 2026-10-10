@@ -1121,6 +1121,9 @@ Next safe task: Continue with another default-macOS action family and the
   tests. It identifies missing per-action routes, query history, result picker/
   tabs/filter controls, selection-only and multi-match selection, and project
   replacement without claiming that key names establish runtime behavior.
+- Added an explicit test-to-requirement map: six actions have related
+  model-level regression evidence; the other 17 have no action-specific test,
+  and all 23 lack native interaction and paired visual evidence.
 - Linked the slice from the action register, feature crosswalk, parity index,
   and normative parity scope. Existing action IDs and binding/context rows are
   preserved. Remaining action semantics, owner routes, and all pinned runtime
@@ -1130,7 +1133,8 @@ Next safe task: Continue with another default-macOS action family and the
   `python3 scripts/verify.py --scope docs`, `python3
   scripts/check_rework_queue.py` (46 tasks; R07-000 active), `git diff --check`,
   and a custom action-ID coverage audit (23 register rows match 23 unique
-  crosswalk IDs).
+  crosswalk IDs) plus the test-coverage audit (six IDs map to related model
+  tests; 17 explicitly have no action-specific regression test).
 - Not run for this documentation-only slice: Cargo checks, clippy, and tests;
   R07-000's workspace Rust gates remain required before task exit. Unavailable:
   pinned macOS dispatch and paired native visuals/interaction. The current host
