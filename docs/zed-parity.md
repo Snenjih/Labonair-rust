@@ -517,6 +517,15 @@ classifies TerminalPanel open/focus/close and shell-start behavior, the
 settings-driven distinction between `Toggle` and `ToggleFocus`, and duplicate
 handler registration. Labonair's universal-tab mapping and native focus
 acceptance remain open. The independent
+[`Terminal registered-unbound action crosswalk`](parity/action-classification-terminal-unbound.md)
+classifies five Linux-registered Terminal IDs without default bindings. It
+records the Terminal tab rename handler and title persistence, the separate
+editor-owned `SelectAll` action, and the Terminal search route distinct from
+`SearchTest`. The two half-page and SearchTest declarations have no discovered
+handlers; `terminal::SelectAll` also has no matching handler of its own.
+Labonair has generic Workspace tab rename and Terminal-target search, with no
+local half-page or select-all action route. Native discovery, dispatch, and
+paired macOS evidence remain open. The independent
 [`Outline and OutlinePanel action crosswalk`](parity/action-classification-outline-panel-actions.md)
 classifies the searchable Editor Outline picker, five default-macOS-bound
 OutlinePanel actions, 13 registered-unbound panel actions, six unbound

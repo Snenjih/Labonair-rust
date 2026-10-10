@@ -45,7 +45,9 @@ source-side research. It records current evidence without claiming parity.
   entries), two Terminal character-palette/vi-mode actions, two Task rerun
   actions (two JetBrains profile entries), two Terminal text/keystroke actions,
   one Terminal panel toggle and one registered-unbound Terminal panel focus
-  action, 19 Outline/OutlinePanel actions (six
+  action, five registered-unbound Terminal actions (rename, two half-page
+  scroll declarations, search-test declaration, and select-all declaration),
+  19 Outline/OutlinePanel actions (six
   default-macOS-bound IDs and 13 registered-unbound panel actions; six of the
   latter occur in seven Vim/Helix entries), one Editor Go to
   Line action,
@@ -110,6 +112,10 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-terminal-panel.md`](action-classification-terminal-panel.md) —
   TerminalPanel open/focus/close behavior, the separate `ToggleFocus` action,
   dock Settings, duplicate handler registration, and Labonair's tab-owner gap.
+- [`action-classification-terminal-unbound.md`](action-classification-terminal-unbound.md) —
+  five Linux-registered Terminal actions without default bindings; distinguishes
+  the Terminal tab rename handler, unhandled half-page/SearchTest declarations,
+  editor-owned SelectAll, and Labonair's generic rename/search/pointer routes.
 - [`action-classification-outline-panel-actions.md`](action-classification-outline-panel-actions.md) —
   independently stated Outline picker and OutlinePanel behavior, four pinned
   Settings effects, six default-macOS-bound actions, and 13 registered-unbound

@@ -5028,6 +5028,7 @@ Failed/unavailable gates: Rust build, native task scheduling, workspace/terminal
 Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
 ```
 
+
 ## Progress — classify Workspace and Terminal task rerun
 
 ```text
@@ -5934,3 +5935,64 @@ Next safe task: Complete this Theme action-classification slice, then continue R
 - Passed `git diff --check`; docs (43 normative documents and 216 Markdown files); agents (10 request routes); knowledge (including capability, product catalog, workflow, Settings, visual-evidence, automation, release, and reform freshness); Settings (7 areas and 101 registered UI fields); and rework queue (46 tasks; R07-000 remains earliest active) verification scopes.
 - No Rust build, tests, native action dispatch, Settings save/reload, or visual check was run for this documentation-only slice. Static source and existing tests were inspected, not run. Native registrations, selector preview/cancel, persistence, and paired macOS acceptance remain R07-000 exit gates. Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+
+## Pre-change contract — registered-unbound Terminal actions
+
+```text
+Request: Classify the five Linux-registered Terminal actions without a default-map binding: `RenameTerminal`, `ScrollHalfPageUp`, `ScrollHalfPageDown`, `SearchTest`, and `SelectAll`; establish pinned behavior, alternate entry points, and Labonair owner routes.
+Request type: R07-000 parity requirements inventory; documentation only.
+In scope: The five registered-unbound action rows; pinned action declarations, handlers, search/selection alternatives, Terminal item persistence, platform/profile keymaps; local Terminal selection, search, scroll, generic tab rename and session persistence; parity packet/index, action register, capability crosswalk, normative summary, and this task.
+Out of scope: Implementing or changing Terminal actions, keymaps, rename/search/selection/scroll behavior, Settings, persistence, UI or registries; treating a declaration as proof of a handler; claiming runtime/visual parity; beginning R07-001 or R09.
+Active task: R07-000-zed-parity-baseline-and-inventory.
+Dependencies: Pinned terminal action definitions and TerminalView callbacks/context menu/serialized item; default and profile keymaps; Labonair `labonair-terminal`, Workspace Terminal/SearchOverlay, universal tab title/persistence, and current action/keymap inventory.
+
+Owner module: Terminal owns Terminal-specific rename/search/selection/scroll behavior; Workspace owns the universal tab title route and hosts the Terminal view. No new owner is proposed.
+Canonical capability crate: Pinned terminal_view/terminal; local `labonair-terminal` plus existing `labonair-workspace` integration. No corresponding local `terminal::RenameTerminal`, half-page, `SearchTest`, or `SelectAll` action route was found.
+Canonical user entry point: Pinned Terminal tab context menu provides Rename for non-task terminals; Terminal search uses its separate search action; declared half-page/SearchTest/terminal::SelectAll actions have no discovered handler or default/profile key binding. Locally, generic Workspace tab rename and Workspace search target the active Terminal, but do not implement those named action IDs.
+Alternate entry points: Pinned TerminalView handles `editor::SelectAll` and its context-menu item; `terminal::SearchTest` is only an action declaration in inspected source. Local Terminal supports pointer range-selection and a Workspace SearchOverlay routed to a Terminal target. No terminal-specific half-page/select-all action or default binding was found locally.
+Public typed contract: The action declarations describe renaming a Terminal tab, scrolling by half a page in either direction, searching terminal text, and selecting all Terminal text. Only `RenameTerminal` has a discovered matching TerminalView handler; `SelectAll` behavior is supplied through the distinct `editor::SelectAll` action. Do not infer effects for the other declarations.
+Events: Rename updates the pinned Terminal item's custom title and serialization state. Search/scroll/selection use their existing view/session state where an implemented route exists. No Labonair event or typed action change is proposed.
+Registry contributions: Preserve all five stable Linux action IDs and registry metadata. Record no default or profile binding found for these IDs. Do not add command-palette entries or local action registrations in this inventory slice.
+Settings: No setting was found that changes these five action declarations or their routes. No Settings schema or catalog change.
+Persistence: Pinned Terminal custom titles are saved per serialized item/workspace and restored on item deserialization. Labonair generic Workspace tab custom titles are included in Workspace tab/session snapshots. Search query/selection/scroll position are transient in the inspected flows.
+Migration impact: None. Retain Terminal behavior in Terminal and the existing universal-tab rename/search routes in their owners. Do not create local copies of generic Workspace behavior or new shell chrome.
+Commands and keymap: Preserve the registry-only status of all five IDs; the default macOS/Linux/Windows maps and inspected profile/override keymaps contain no binding for these action names. Separately retain any implemented entry point such as the Terminal context-menu Rename, `buffer_search::Deploy`, or `editor::SelectAll` without attributing it to the unbound action ID.
+Notifications: No notification changes. Rename cancellation and search/scroll/selection state stay within their current view interactions.
+UI-kit components: No UI change. Pinned rename uses its Terminal tab inline editor; local rename uses the existing Workspace inline tab editor. Future reusable controls remain in `labonair-ui-kit`.
+User workflow: Rename an eligible Terminal tab; search Terminal scrollback; move Terminal history by half a viewport; select the terminal text buffer. Distinguish declared but unimplemented action names from the separate working routes.
+Failure/cancellation/retry behavior: Record task-backed pinned Terminals as ineligible for Rename; Enter commits, Escape or blur cancels, and blank/equal-to-dynamic-title input clears the custom title. No SearchTest, half-page action, or terminal::SelectAll error/recovery semantics are established. Runtime dispatch, empty/exited session, and search-boundary behavior remain acceptance.
+Security boundary: No boundary change. Any future terminal input/selection/scroll route must remain scoped to the active Terminal and must not redirect input to another session.
+Performance budget: No change. Search and scroll remain within existing Terminal session behavior; no new work is introduced.
+
+Implementation order: Inspect exact pinned action declarations, callbacks, context menus, search and serialized item routes; confirm default and profile keymap absence; inspect local generic tab rename/snapshot, search overlay target, and Terminal selection/scroll APIs; classify each action row; update the standalone packet, parity indexes and crosswalks; run documentation and queue gates.
+Focused tests: Not applicable to this documentation-only change; do not add or run tests.
+Contract/integration tests: No runtime contract changed. Named action dispatch and the separate generic rename/search/editor-selection routes remain native acceptance cases.
+Persistence/migration tests: No tests changed. Record the pinned Terminal custom-title database path and Labonair Workspace tab snapshot without asserting cross-format equivalence.
+Command/surface tests: Verify Terminal context-menu rename eligibility and the separate search/editor SelectAll actions; establish whether unbound action IDs are discoverable or invokable at runtime.
+Visual states: No UI edit. Paired macOS evidence remains required for Terminal tab rename, search overlay, selection, scrolling, and task-backed tab states.
+Security/negative tests: Later acceptance verifies actions cannot target an unfocused or different Terminal session and task-backed Terminal rename remains unavailable.
+Performance measurement: Not applicable.
+Workspace gates: Diff check; docs, agents, knowledge, Settings and active queue; focused source and keymap audit of all five actions.
+Documentation updates: Terminal registered-unbound action packet, five action-register rows, parity packet index, `commands.keymap` and `terminal.tasks` crosswalks, normative summary, and this task record.
+Current status: Pinned declarations/handlers, alternative entry points and Labonair owner routes audited; pre-change contract recorded. Packet and required documentation gates remain pending.
+Target status: Identify the single implemented named action (`RenameTerminal`), distinguish editor-owned SelectAll and the generic Terminal search route, and leave actions without handlers explicitly unresolved; native discovery and interaction remain open.
+Evidence links: Pinned `terminal.rs`, `terminal_view/src/terminal_view.rs`, default/profile keymaps, Linux action registry dump; Labonair `workspace/src/views/terminal.rs`, `workspace/src/search_overlay.rs`, `workspace/src/workspace.rs`, `workspace/src/tabs.rs`, and `terminal/src`.
+Known limitations: Same-session source research and independently authored requirements are redevelopment, not separated-room clean-room implementation. Source was inspected; tests and native action dispatch were not run. SearchTest and half-page action effects are not established by action metadata alone.
+Remaining migration edges: Local generic Workspace tab rename and Terminal search exist but lack the pinned named action routes; no local select-all API or half-page scroll action route was found. Native command discovery, exact search action reachability, and paired macOS acceptance remain open.
+Failed/unavailable gates: Rust build, tests, native action discovery/dispatch, persistence round trips, and paired visual evidence are outside this documentation-only slice and remain R07-000 exit gates.
+Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+```
+
+## Progress — classify registered-unbound Terminal actions
+
+```text
+- Added [action-classification-terminal-unbound.md](../../docs/parity/action-classification-terminal-unbound.md) for five Linux-registered Terminal IDs with no default-map bindings: RenameTerminal, ScrollHalfPageUp/Down, SearchTest, and SelectAll.
+- Recorded the pinned TerminalView Rename handler and context-menu task guard, inline editor commit/cancel/reset behavior, and per-item/workspace custom-title persistence. Labonair has an owner-compatible generic Workspace tab rename and tab snapshot, but no Terminal-specific action or task restriction.
+- Confirmed the two half-page declarations and SearchTest have no discovered pinned handler/call site; the actual pinned search path is separate `buffer_search::Deploy`. The pinned Terminal select-all handler/menu use `editor::SelectAll`; no local select-all API or named route was found. Local Workspace SearchOverlay does route to the Terminal.
+- Updated all five action registry rows, the parity packet index, `commands.keymap` and `terminal.tasks` crosswalks, and the normative parity summary. No Settings value or schema is implicated.
+- Focused coverage audit confirmed each stable ID appears once and none of the five action names occurs in the 20 pinned default/profile keymap JSON files. `SearchTest` and both half-page actions appear only at their action declarations; TerminalView wires its handler for the distinct `editor::SelectAll` action and for `RenameTerminal`.
+- Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation. Native action discovery/dispatch and paired macOS evidence remain open.
+- Passed `git diff --check`; docs (43 normative documents and 224 Markdown files); agents (10 request routes); knowledge; Settings (7 areas and 101 registered UI fields); and active queue verification (46 tasks; R07-000 remains earliest active).
+- No Rust build, tests, native action discovery/dispatch, persistence round trips, or visual check was run for this documentation-only slice. Same-session source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 action/workflow classification; do not begin R07-001 or R09.
+```
