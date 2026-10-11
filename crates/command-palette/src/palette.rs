@@ -123,6 +123,9 @@ fn palette_toggle_state(key: &str, cx: &App) -> bool {
         "vimMode" => EditorSettings::try_get(cx)
             .map(|s| s.vim_mode())
             .unwrap_or(false),
+        "helixMode" => EditorSettings::try_get(cx)
+            .map(|s| s.helix_mode())
+            .unwrap_or(false),
         _ => false,
     }
 }
@@ -1562,6 +1565,10 @@ mod tests {
     #[test]
     fn toggle_commands_map_to_pref_keys() {
         assert_eq!(toggle_pref_key(CommandId::ToggleVimMode), Some("vimMode"));
+        assert_eq!(
+            toggle_pref_key(CommandId::ToggleHelixMode),
+            Some("helixMode")
+        );
         assert_eq!(
             toggle_pref_key(CommandId::ToggleEditorWordWrap),
             Some("editorWordWrap")

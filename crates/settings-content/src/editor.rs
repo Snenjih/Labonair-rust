@@ -25,6 +25,25 @@ impl crate::MergeFrom for EditorCursorStyle {
     }
 }
 
+/// Active editor input mode. The value is stored as `editorMode` so the modal
+/// modes remain mutually exclusive in settings and the editor UI.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum EditorModalMode {
+    #[default]
+    Normal,
+    Vim,
+    Helix,
+}
+
+impl crate::MergeFrom for EditorModalMode {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
 /// Visibility policy for editor-owned scrollbars.
 #[derive(
     Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
@@ -248,6 +267,9 @@ pub struct EditorContent {
     pub editor_toolbar_code_actions: Option<bool>,
     pub editor_autocomplete_debounce_ms: Option<u32>,
     pub editor_max_file_size_mb: Option<u32>,
+    #[serde(rename = "editorMode")]
+    pub editor_modal_mode: Option<EditorModalMode>,
+    /// Legacy Vim toggle read when `editorMode` is absent.
     #[serde(rename = "vimMode")]
     pub editor_vim_mode: Option<bool>,
     /// Syntax colour scheme slug.
@@ -321,6 +343,7 @@ impl EditorContent {
             editor_toolbar_code_actions: Some(false),
             editor_autocomplete_debounce_ms: Some(350),
             editor_max_file_size_mb: Some(10),
+            editor_modal_mode: Some(EditorModalMode::Normal),
             editor_vim_mode: Some(false),
             editor_theme: Some("atomone".to_string()),
             vim_hlsearch: Some(true),
@@ -420,5 +443,20 @@ mod tests {
         assert_eq!(parsed.editor_toolbar_breadcrumbs, Some(false));
         assert_eq!(parsed.editor_toolbar_quick_actions, Some(false));
         assert_eq!(parsed.editor_toolbar_code_actions, Some(true));
+    }
+
+    #[test]
+    fn editor_mode_parses_and_serializes_all_modal_choices() {
+        let parsed: EditorContent = serde_json::from_value(serde_json::json!({
+            "editorMode": "helix"
+        }))
+        .expect("editor mode preference");
+        assert_eq!(parsed.editor_modal_mode, Some(EditorModalMode::Helix));
+        let value = serde_json::to_value(parsed).expect("serialize editor mode preference");
+        assert_eq!(value["editorMode"], "helix");
+
+        let vim: EditorContent = serde_json::from_value(serde_json::json!({ "vimMode": true }))
+            .expect("legacy Vim mode preference");
+        assert_eq!(vim.editor_vim_mode, Some(true));
     }
 }

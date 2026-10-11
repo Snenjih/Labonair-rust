@@ -357,7 +357,7 @@ const EDITOR_GROUPS: &[Group] = &[
     (
         "Keybindings",
         paths!("editor":
-            "vimMode",
+            "editorMode",
             "editorRelativeLineNumbers",
             "vimHlsearch",
             "vimIncsearch",

@@ -29,6 +29,8 @@ use labonair_filesystem::file::{
     StorageEncoding, StorageFileCapabilities, StorageFileIdentity, StorageFileSnapshot,
     StorageLineEnding, StorageSaveIntent,
 };
+#[cfg(test)]
+use labonair_settings::content::editor::EditorModalMode;
 use labonair_settings::content::editor::{
     EditorDiagnosticMaxSeverity, EditorMinimapCurrentLineHighlight, EditorMinimapDisplayIn,
     EditorMinimapThumb, EditorMinimapThumbBorder, EditorMinimapVisibility,
@@ -52,9 +54,9 @@ use labonair_editor::{
     DisplayRowKind, DisplaySnapshot, Document, DocumentVersion, Edit, EditorSessionId,
     EditorSessionSnapshot, EditorViewSession, FoldRange, GitDecorationProvider,
     GitDecorationRequest, GitDiscardPreview, GitEditorCommand, GitGutterError, GitGutterSnapshot,
-    GitHunkAction, GitHunkActionKind, GitHunkStatus, HunkActionSink, KillRing, Language,
-    LanguageId, LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceRequest,
-    LanguageServiceResponse, LanguageServiceResult, LanguageServiceRuntime,
+    GitHunkAction, GitHunkActionKind, GitHunkStatus, Helix, HelixKey, HelixMode, HunkActionSink,
+    KillRing, Language, LanguageId, LanguageServiceEditRequest, LanguageServiceEditResponse,
+    LanguageServiceRequest, LanguageServiceResponse, LanguageServiceResult, LanguageServiceRuntime,
     LanguageServiceRuntimeSnapshot, LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus,
     LanguageServiceSnapshot, LanguageServiceState, LocalLanguageServiceRequest, LspPosition,
     LspRange, Match, Position, ProjectBufferCandidate, ProjectReplacePlan, ProjectReplaceRequest,
@@ -735,6 +737,7 @@ pub struct EditorView {
     syntax: SyntaxHighlighter,
     /// Vim keybinding state machine (T06-003) — `None` when Vim mode is off.
     vim: Option<Vim>,
+    helix: Option<Helix>,
     /// Live editor settings mirror (font/indent/line-numbers), refreshed from
     /// the layered `SettingsStore` (T13-003).
     prefs: EditorSettings,
@@ -845,6 +848,7 @@ impl EditorView {
             .detach();
         let prefs = current_prefs(cx);
         let vim = prefs.vim_mode().then(|| Vim::new(vim_options(&prefs)));
+        let helix = (!prefs.vim_mode() && prefs.helix_mode()).then(Helix::new);
         language_services.set_presentation_policy(
             prefs.diagnostics(),
             prefs.completion(),
@@ -908,6 +912,7 @@ impl EditorView {
             pending_navigation: None,
             syntax: SyntaxHighlighter::new(Language::PlainText),
             vim,
+            helix,
             prefs,
             hover: None,
             git_gutter: GitGutterSnapshot::unavailable("", Revision::default()),
@@ -2026,11 +2031,19 @@ impl EditorView {
             self.prefs.hover(),
             self.prefs.semantic_tokens(),
         );
-        match (&mut self.vim, self.prefs.vim_mode()) {
-            (Some(vim), true) => vim.options = vim_options(&self.prefs),
-            (Some(_), false) => self.vim = None,
-            (None, true) => self.vim = Some(Vim::new(vim_options(&self.prefs))),
-            (None, false) => {}
+        if self.prefs.vim_mode() {
+            self.helix = None;
+            match &mut self.vim {
+                Some(vim) => vim.options = vim_options(&self.prefs),
+                None => self.vim = Some(Vim::new(vim_options(&self.prefs))),
+            }
+        } else {
+            self.vim = None;
+            if self.prefs.helix_mode() {
+                self.helix.get_or_insert_with(Helix::new);
+            } else {
+                self.helix = None;
+            }
         }
         self.language_service_snapshot = self.language_services.snapshot(
             self.doc.language,
@@ -3993,6 +4006,15 @@ impl EditorView {
             }
         }
 
+        if self.helix.is_some() {
+            if let Some(key) = self.helix_key(ks) {
+                if self.handle_helix(key, cx) {
+                    cx.stop_propagation();
+                    return;
+                }
+            }
+        }
+
         if m.control || m.alt {
             return;
         }
@@ -4105,6 +4127,59 @@ impl EditorView {
         if resp.quit {
             cx.emit(EditorEvent::CloseRequested);
         }
+    }
+
+    fn helix_key(&self, ks: &gpui::Keystroke) -> Option<HelixKey> {
+        let helix = self.helix.as_ref()?;
+        let modifiers = &ks.modifiers;
+        let insert = helix.mode() == HelixMode::Insert;
+        if modifiers.control && !modifiers.platform && !modifiers.alt && ks.key == "r" {
+            return Some(HelixKey::Redo);
+        }
+        if modifiers.control || modifiers.platform || modifiers.alt {
+            return None;
+        }
+        match ks.key.as_str() {
+            "escape" => Some(HelixKey::Escape),
+            "enter" | "return" if !insert => Some(HelixKey::Enter),
+            "backspace" if !insert => Some(HelixKey::Backspace),
+            "delete" if !insert => Some(HelixKey::Delete),
+            "tab" if !insert => Some(HelixKey::Tab),
+            "left" if !insert => Some(HelixKey::Char('h')),
+            "right" if !insert => Some(HelixKey::Char('l')),
+            "up" if !insert => Some(HelixKey::Char('k')),
+            "down" if !insert => Some(HelixKey::Char('j')),
+            _ if !insert => printable(ks)
+                .and_then(|text| text.chars().next())
+                .map(HelixKey::Char),
+            _ => None,
+        }
+    }
+
+    fn handle_helix(&mut self, key: HelixKey, cx: &mut Context<Self>) -> bool {
+        let revision_before = self.editor_revision();
+        let dirty_before = self.doc.is_dirty();
+        let handled = self
+            .helix
+            .as_mut()
+            .is_some_and(|helix| helix.on_key(&mut self.doc, key));
+        if !handled {
+            return false;
+        }
+
+        self.ensure_cursor_visible();
+        self.refresh_matches();
+        cx.emit(EditorEvent::Changed);
+        if !dirty_before && self.doc.is_dirty() {
+            cx.emit(EditorEvent::Edited);
+        }
+        if self.editor_revision() != revision_before {
+            self.sync_language_service_document(cx);
+            self.refresh_git(cx);
+        }
+        self.schedule_autosave(cx);
+        cx.notify();
+        true
     }
 
     fn position_at(&self, p: Point<Pixels>) -> Position {
@@ -5292,6 +5367,36 @@ impl EditorView {
                 cursor.line + 1,
                 cursor.column + 1
             ))))
+    }
+
+    fn render_helix_status(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme.read(cx);
+        let helix_status = self.helix.as_ref().map(Helix::status).unwrap_or("HELIX");
+        let cursor = self.doc.cursor;
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .w_full()
+            .flex_shrink_0()
+            .px_3()
+            .py_0p5()
+            .bg(theme.card())
+            .border_t_1()
+            .border_color(theme.border())
+            .text_xs()
+            .font(theme.buffer_font())
+            .text_color(theme.accent())
+            .child(SharedString::from(helix_status))
+            .child(
+                div()
+                    .text_color(theme.muted_foreground())
+                    .child(SharedString::from(format!(
+                        "{}:{}",
+                        cursor.line + 1,
+                        cursor.column + 1
+                    ))),
+            )
     }
 
     /// The schema-hover tooltip (T19-006 Anweisung #5) — a small floating
@@ -7819,6 +7924,9 @@ impl Render for EditorView {
             .children(self.render_line_ending_menu(ui_palette, cx))
             .children(self.render_encoding_menu(ui_palette, cx))
             .when(self.vim.is_some(), |d| d.child(self.render_vim_status(cx)))
+            .when(self.helix.is_some(), |d| {
+                d.child(self.render_helix_status(cx))
+            })
             .child(self.render_editor_status(cx))
             .on_key_down(cx.listener(Self::on_key))
             .on_mouse_down(
@@ -8361,19 +8469,20 @@ mod tests {
             install_editor_prefs(cx, |e| {
                 e.editor_indent_with_tabs = Some(false);
                 e.editor_tab_size = Some(3);
-                e.editor_vim_mode = Some(true);
+                e.editor_modal_mode = Some(EditorModalMode::Vim);
             });
         });
         cx.update(|cx| {
             view.update(cx, |v, cx| {
                 v.apply_prefs(cx);
                 assert!(v.vim.is_some(), "vim enabled via prefs");
+                assert!(v.helix.is_none(), "Vim takes precedence over Helix");
                 assert_eq!(v.indent_unit(), "   ");
             });
         });
         cx.update(|cx| {
             install_editor_prefs(cx, |e| {
-                e.editor_vim_mode = Some(false);
+                e.editor_modal_mode = Some(EditorModalMode::Helix);
                 e.editor_indent_with_tabs = Some(true);
             });
         });
@@ -8381,7 +8490,37 @@ mod tests {
             view.update(cx, |v, cx| {
                 v.apply_prefs(cx);
                 assert!(v.vim.is_none(), "vim disabled via prefs");
+                assert!(v.helix.is_some(), "Helix enabled via prefs");
                 assert_eq!(v.indent_unit(), "\t");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn helix_mode_routes_selection_actions_and_insert_input(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            install_editor_prefs(cx, |settings| {
+                settings.editor_modal_mode = Some(EditorModalMode::Helix);
+            });
+        });
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("test.txt".into(), "abc", 1);
+                this.apply_prefs(cx);
+                assert!(this.helix.is_some());
+                assert!(this.vim.is_none());
+
+                assert!(this.handle_helix(HelixKey::Char('d'), cx));
+                assert_eq!(this.doc.text(), "bc");
+                assert_eq!(this.helix.as_ref().map(Helix::status), Some("HELIX SELECT"));
+
+                assert!(this.handle_helix(HelixKey::Char('i'), cx));
+                this.insert_printable("x", cx);
+                assert_eq!(this.doc.text(), "xbc");
+                assert!(this.handle_helix(HelixKey::Escape, cx));
+                assert_eq!(this.helix.as_ref().map(Helix::status), Some("HELIX SELECT"));
+                assert_eq!(this.doc.selected_text().as_deref(), Some("x"));
             });
         });
     }

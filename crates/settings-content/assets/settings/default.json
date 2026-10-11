@@ -131,6 +131,7 @@
     "editorToolbarCodeActions": false,
     "editorAutocompleteDebounceMs": 350,
     "editorMaxFileSizeMb": 10,
+    "editorMode": "normal",
     "vimMode": false,
     // Syntax colour scheme slug; "auto" (not the default) follows the app theme.
     "editorTheme": "atomone",

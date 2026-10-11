@@ -869,11 +869,11 @@ pub fn all_fields() -> Vec<AnyField> {
             "Files above the limit remain unopened in the editor."
         ),
         field!(
-            editor.editor_vim_mode,
-            "vimMode",
-            Switch,
-            "Vim mode",
-            "Enable the modal Vim keybinding layer."
+            editor.editor_modal_mode,
+            "editorMode",
+            Select(&[("normal", "Normal"), ("vim", "Vim"), ("helix", "Helix")]),
+            "Editor mode",
+            "Choose normal, Vim, or selection-first Helix editing."
         ),
         field!(
             editor.editor_theme,

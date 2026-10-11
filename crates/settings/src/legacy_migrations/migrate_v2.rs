@@ -56,7 +56,7 @@ use labonair_settings_content::{
     editor::{
         EditorContent, EditorDiagnosticMaxSeverity, EditorMinimapCurrentLineHighlight,
         EditorMinimapDisplayIn, EditorMinimapSetting, EditorMinimapThumb, EditorMinimapThumbBorder,
-        EditorMinimapVisibility, EditorScrollbarVisibility,
+        EditorMinimapVisibility, EditorModalMode, EditorScrollbarVisibility,
     },
     file_manager::{FileManagerContent, SftpColumn},
     general::{self, GeneralContent},
@@ -509,6 +509,11 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_toolbar_code_actions: Some(false),
         editor_autocomplete_debounce_ms: Some(p.editor_autocomplete_debounce_ms),
         editor_max_file_size_mb: Some(p.editor_max_file_size_mb),
+        editor_modal_mode: Some(if p.editor_vim_mode {
+            EditorModalMode::Vim
+        } else {
+            EditorModalMode::Normal
+        }),
         editor_vim_mode: Some(p.editor_vim_mode),
         editor_theme: Some(p.editor_theme.clone()),
         vim_hlsearch: Some(e.hlsearch),

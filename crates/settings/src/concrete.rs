@@ -14,7 +14,8 @@ use labonair_settings_content::{
     editor::{
         EditorContent, EditorCursorStyle, EditorDiagnosticMaxSeverity,
         EditorMinimapCurrentLineHighlight, EditorMinimapDisplayIn, EditorMinimapThumb,
-        EditorMinimapThumbBorder, EditorMinimapVisibility, EditorScrollbarVisibility,
+        EditorMinimapThumbBorder, EditorMinimapVisibility, EditorModalMode,
+        EditorScrollbarVisibility,
     },
     file_manager::{default_sftp_columns, FileManagerContent, SftpColumn},
     general::{GeneralContent, StartupTab, ThemePref},
@@ -320,8 +321,13 @@ pub struct EditorSettings(EditorContent);
 
 impl Settings for EditorSettings {
     fn from_settings(content: &SettingsContent) -> Self {
+        let legacy_vim_mode = content.editor.editor_modal_mode.is_none()
+            && content.editor.editor_vim_mode.unwrap_or(false);
         let mut merged = EditorContent::defaults();
         merged.merge_from(&content.editor);
+        if legacy_vim_mode {
+            merged.editor_modal_mode = Some(EditorModalMode::Vim);
+        }
         Self(merged)
     }
 }
@@ -352,7 +358,11 @@ impl EditorSettings {
     }
 
     pub fn vim_mode(&self) -> bool {
-        self.0.editor_vim_mode.unwrap_or(false)
+        self.0.editor_modal_mode == Some(EditorModalMode::Vim)
+    }
+
+    pub fn helix_mode(&self) -> bool {
+        self.0.editor_modal_mode == Some(EditorModalMode::Helix)
     }
 
     pub fn vim_hlsearch(&self) -> bool {

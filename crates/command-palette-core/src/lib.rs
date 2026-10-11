@@ -72,6 +72,7 @@ pub enum CommandId {
     ToggleLineNumbers,
     ToggleCursorBlink,
     ToggleVimMode,
+    ToggleHelixMode,
     OpenCommandPalette,
     NewPreviewTab,
     Save,
@@ -542,6 +543,7 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::ToggleLineNumbers, "editor::ToggleLineNumbers"),
     (CommandId::GoToSymbol, "editor::GoToSymbol"),
     (CommandId::ToggleVimMode, "editor::ToggleVimMode"),
+    (CommandId::ToggleHelixMode, "editor::ToggleHelixMode"),
     (CommandId::ToggleCursorBlink, "terminal::ToggleCursorBlink"),
     (CommandId::RunSnippet, "snippets::Run"),
     (CommandId::OpenSnippetsPanel, "snippets::OpenPanel"),
@@ -718,6 +720,7 @@ pub fn toggle_pref_key(id: CommandId) -> Option<&'static str> {
         CommandId::ToggleLineNumbers => "editorLineNumbers",
         CommandId::ToggleCursorBlink => "terminalCursorBlink",
         CommandId::ToggleVimMode => "vimMode",
+        CommandId::ToggleHelixMode => "helixMode",
         _ => return None,
     })
 }

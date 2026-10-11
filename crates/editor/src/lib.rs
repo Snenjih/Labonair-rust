@@ -4,8 +4,8 @@
 //! [`document::Document`] wrapping it with caret / selection / undo history /
 //! dirty-baseline tracking, literal [`search`] find-replace, and lightweight
 //! [`language`] identification. The GPUI view that renders and drives this
-//! lives in `labonair-ui` (`editor.rs`). Syntax highlighting (T06-002), vim
-//! mode (T06-003) and diff view (T06-004) build on top.
+//! lives in `labonair-ui` (`editor.rs`). Syntax highlighting (T06-002), Vim
+//! mode (T06-003), Helix mode, and diff view (T06-004) build on top.
 
 pub mod breadcrumbs;
 pub mod buffer;
@@ -16,6 +16,7 @@ pub mod document;
 pub mod editing;
 pub mod file_finder;
 pub mod git;
+pub mod helix;
 pub mod history;
 pub mod kill_ring;
 pub mod language;
@@ -61,6 +62,7 @@ pub use git::{
     GitGutterError, GitGutterSnapshot, GitGutterState, GitHunk, GitHunkAction, GitHunkActionKind,
     GitHunkStatus, GitHunkTarget, GitLineDecoration, GitProviderFuture, HunkActionSink,
 };
+pub use helix::{Helix, HelixKey, HelixMode};
 pub use kill_ring::{KillRing, KILL_RING_CAPACITY};
 pub use language::Language;
 pub use language_services::{
