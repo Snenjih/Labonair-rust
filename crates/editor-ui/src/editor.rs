@@ -854,13 +854,8 @@ pub struct EditorView {
     /// the layered `SettingsStore` (T13-003).
     prefs: EditorSettings,
     inlay_hints_enabled_override: Option<bool>,
-    /// Settings-schema hover text (T19-006 Anweisung #5) — `Some((mouse
-    /// position, description))` while the mouse is over a key/value in a
-    /// `config.json`/`.labonair/settings.json` tab and that key
-    /// path has a schema description. `None` everywhere else (including
-    /// every non-settings file — [`Self::is_settings_json`] gates this on
-    /// every mouse-move so a plain source file never pays the tree-sitter
-    /// lookup cost).
+    /// Editor-owned hover text and its window-relative pointer anchor. It is
+    /// populated by diagnostics, inlay hints, or settings-schema descriptions.
     hover: Option<(Point<Pixels>, SharedString)>,
     error_lens_task: Option<Task<()>>,
     error_lens_revision: Option<Revision>,
@@ -925,6 +920,22 @@ fn current_prefs(cx: &App) -> EditorSettings {
     EditorSettings::try_get(cx).cloned().unwrap_or_else(|| {
         EditorSettings::from_settings(&labonair_settings::SettingsContent::default())
     })
+}
+
+fn inlay_hint_tooltip_at_position<'a>(
+    hints: &'a [InlayHint],
+    snapshot: &labonair_editor::BufferSnapshot,
+    position: Position,
+    kind_visible: impl Fn(InlayHintKind) -> bool,
+) -> Option<&'a str> {
+    hints
+        .iter()
+        .filter(|hint| kind_visible(hint.kind))
+        .find_map(|hint| {
+            (hint.position.to_position(snapshot) == position)
+                .then_some(hint.tooltip.as_deref())
+                .flatten()
+        })
 }
 
 /// Apply the editor's Git display policy to the existing inline-diff
@@ -2320,9 +2331,10 @@ impl EditorView {
     fn update_hover(&mut self, mouse_pos: Point<Pixels>, cx: &mut Context<Self>) {
         let snapshot = self.doc.snapshot();
         let doc_pos = self.position_at(mouse_pos);
+        let language_state = self.language_service_state.snapshot();
         let diagnostic_hover = if self.prefs.diagnostics() {
             diagnostic_at_position(
-                &self.language_service_state.snapshot().diagnostics,
+                &language_state.diagnostics,
                 &snapshot,
                 doc_pos,
                 self.prefs.diagnostics_max_severity(),
@@ -2331,8 +2343,21 @@ impl EditorView {
         } else {
             None
         };
+        let inlay_hover = self
+            .inlay_hints_enabled()
+            .then(|| {
+                inlay_hint_tooltip_at_position(
+                    &language_state.inlay_hints,
+                    &snapshot,
+                    doc_pos,
+                    |kind| self.inlay_hint_kind_visible(kind),
+                )
+                .map(str::to_string)
+            })
+            .flatten();
         let next = diagnostic_hover
             .map(|text| (mouse_pos, SharedString::from(text)))
+            .or_else(|| inlay_hover.map(|text| (mouse_pos, SharedString::from(text))))
             .or_else(|| {
                 if self.is_settings_json() {
                     let offset = snapshot.position_to_byte(doc_pos);
@@ -2522,11 +2547,7 @@ impl EditorView {
                 .snapshot()
                 .inlay_hints
                 .into_iter()
-                .filter(|hint| match hint.kind {
-                    InlayHintKind::Type => self.prefs.inlay_type_hints(),
-                    InlayHintKind::Parameter => self.prefs.inlay_parameter_hints(),
-                    InlayHintKind::Other => self.prefs.inlay_other_hints(),
-                })
+                .filter(|hint| self.inlay_hint_kind_visible(hint.kind))
                 .collect()
         } else {
             Vec::new()
@@ -2574,6 +2595,14 @@ impl EditorView {
             .as_ref()
             .expect("display layout cache is populated")
             .layout
+    }
+
+    fn inlay_hint_kind_visible(&self, kind: InlayHintKind) -> bool {
+        match kind {
+            InlayHintKind::Type => self.prefs.inlay_type_hints(),
+            InlayHintKind::Parameter => self.prefs.inlay_parameter_hints(),
+            InlayHintKind::Other => self.prefs.inlay_other_hints(),
+        }
     }
 
     /// Build the visible editor-owned display snapshot from the cached
@@ -9167,6 +9196,52 @@ mod tests {
     }
 
     #[gpui::test]
+    fn inlay_hint_tooltip_appears_over_virtual_text(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("test.rs".into(), "abc", 1);
+                this.metrics = (10.0, 18.0);
+                this.gutter_width = 0.0;
+                this.inlay_hints_enabled_override = Some(true);
+                this.bounds = Some(gpui::Bounds {
+                    origin: gpui::Point::default(),
+                    size: gpui::Size {
+                        width: px(100.0),
+                        height: px(40.0),
+                    },
+                });
+                let version = DocumentVersion::from_revision(this.editor_revision());
+                let generation = this.language_service_generation;
+                this.language_service_state
+                    .set_document_generation(version, generation);
+                assert!(this.language_service_state.apply(LanguageServiceResult {
+                    server: labonair_editor::LanguageServerId::new("test-lsp"),
+                    version,
+                    generation,
+                    response: Ok(LanguageServiceResponse::InlayHints(vec![InlayHint {
+                        position: LspPosition {
+                            line: 0,
+                            character: 1,
+                        },
+                        label: ": String".into(),
+                        kind: InlayHintKind::Type,
+                        tooltip: Some("The inferred type of this value".into()),
+                        padding_left: true,
+                        padding_right: false,
+                    }])),
+                }));
+
+                this.update_hover(gpui::point(px(15.0), px(0.0)), cx);
+                assert_eq!(
+                    this.hover.as_ref().map(|(_, text)| text.as_ref()),
+                    Some("The inferred type of this value")
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
     fn helix_mode_routes_selection_actions_and_insert_input(cx: &mut TestAppContext) {
         cx.update(|cx| {
             install_editor_prefs(cx, |settings| {
@@ -9601,6 +9676,32 @@ mod tests {
         .collect::<Vec<_>>();
 
         assert_eq!(diagnostic_error_warning_counts(&diagnostics), (1, 1));
+    }
+
+    #[test]
+    fn inlay_tooltip_lookup_uses_unicode_source_positions_and_visibility() {
+        let snapshot = labonair_editor::EditorBuffer::from_text("aλb").snapshot();
+        let hints = vec![InlayHint {
+            position: LspPosition {
+                line: 0,
+                character: 2,
+            },
+            label: ": Result".into(),
+            kind: InlayHintKind::Type,
+            tooltip: Some("Inferred result type".into()),
+            padding_left: true,
+            padding_right: false,
+        }];
+
+        assert_eq!(
+            inlay_hint_tooltip_at_position(&hints, &snapshot, Position::new(0, 2), |kind| kind
+                == InlayHintKind::Type,),
+            Some("Inferred result type")
+        );
+        assert_eq!(
+            inlay_hint_tooltip_at_position(&hints, &snapshot, Position::new(0, 2), |_| false,),
+            None
+        );
     }
 
     #[test]
