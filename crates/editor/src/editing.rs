@@ -38,6 +38,7 @@ pub enum EditIntent {
     SelectNextOccurrence,
     SelectPreviousOccurrence,
     SelectAllOccurrences,
+    SelectLine,
     SelectAll,
     UndoSelection,
     RedoSelection,
@@ -244,6 +245,7 @@ impl Document {
             EditIntent::SelectNextOccurrence => self.select_next_occurrence(),
             EditIntent::SelectPreviousOccurrence => self.select_previous_occurrence(),
             EditIntent::SelectAllOccurrences => self.select_all_occurrences(),
+            EditIntent::SelectLine => self.select_lines(),
             EditIntent::SelectAll => self.select_all_intent(),
             EditIntent::UndoSelection => self.selection_history_step(false),
             EditIntent::RedoSelection => self.selection_history_step(true),
@@ -699,6 +701,40 @@ impl Document {
         } else {
             EditorCommandResult::changed(EditorViewEvent::SelectionChanged)
         }
+    }
+
+    fn select_lines(&mut self) -> EditorCommandResult {
+        let snapshot = self.snapshot();
+        let current = self.selection_set();
+        let line_count = snapshot.line_count();
+        let selections = current
+            .ranges(&snapshot)
+            .into_iter()
+            .map(|range| {
+                let start = snapshot.byte_to_position(range.start);
+                let mut last_line = snapshot.byte_to_position(range.end).line;
+                let end_position = snapshot.byte_to_position(range.end);
+                if !range.is_empty() && end_position.column == 0 && last_line > start.line {
+                    last_line -= 1;
+                }
+                let selection_start = snapshot.line_start_byte(start.line);
+                let selection_end = if last_line + 1 < line_count {
+                    snapshot.line_start_byte(last_line + 1)
+                } else {
+                    snapshot.line_end_byte(last_line)
+                };
+                Selection {
+                    anchor: Anchor::new(selection_start, AnchorAffinity::Before),
+                    head: Anchor::new(selection_end, AnchorAffinity::After),
+                }
+            })
+            .collect::<Vec<_>>();
+        let next = SelectionSet::from_selections(selections, current.primary_index());
+        if next == current {
+            return EditorCommandResult::unchanged();
+        }
+        self.set_selection_set(next);
+        EditorCommandResult::changed(EditorViewEvent::SelectionChanged)
     }
 
     fn select_next_occurrence(&mut self) -> EditorCommandResult {
@@ -1728,6 +1764,30 @@ mod tests {
 
         document.execute_edit(EditIntent::SelectAll);
         assert_eq!(document.selected_text().as_deref(), Some("abcd"));
+    }
+
+    #[test]
+    fn select_line_includes_line_endings_and_supports_multiple_cursors() {
+        let mut document = doc("one\ntwo\nlast");
+        document.set_caret(Position::new(0, 1), false);
+        document.execute_edit(EditIntent::AddCursor(Position::new(2, 2)));
+
+        let result = document.execute_edit(EditIntent::SelectLine);
+        assert!(result.changed);
+        let snapshot = document.snapshot();
+        let selected = document
+            .selection_set()
+            .ranges(&snapshot)
+            .into_iter()
+            .map(|range| snapshot.text_range(range))
+            .collect::<Vec<_>>();
+        assert_eq!(selected, vec!["one\n", "last"]);
+        assert_eq!(document.selection_set().len(), 2);
+
+        let mut final_line = doc("one\ntwo");
+        final_line.set_caret(Position::new(1, 2), false);
+        final_line.execute_edit(EditIntent::SelectLine);
+        assert_eq!(final_line.selected_text().as_deref(), Some("two"));
     }
 
     #[test]

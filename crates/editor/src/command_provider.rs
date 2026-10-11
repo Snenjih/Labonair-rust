@@ -72,6 +72,7 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         CommandId::EditorSelectAllOccurrences => {
             EditorCommandRoute::Edit(EditIntent::SelectAllOccurrences)
         }
+        CommandId::EditorSelectLine => EditorCommandRoute::Edit(EditIntent::SelectLine),
         CommandId::EditorSelectAll => EditorCommandRoute::Edit(EditIntent::SelectAll),
         CommandId::EditorDuplicateSelection => {
             EditorCommandRoute::Edit(EditIntent::DuplicateSelection)
@@ -200,6 +201,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorSelectNextOccurrence,
     CommandId::EditorSelectPreviousOccurrence,
     CommandId::EditorSelectAllOccurrences,
+    CommandId::EditorSelectLine,
     CommandId::EditorSelectAll,
     CommandId::EditorUndoSelection,
     CommandId::EditorRedoSelection,
@@ -317,6 +319,9 @@ impl CommandProvider for EditorCommandProvider {
             CommandDescriptor::new(CommandId::EditorSelectAll, "Select All", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("cmd-a", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorSelectLine, "Select Line", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-l", Some(CommandContext::Editor)),
             CommandDescriptor::new(CommandId::EditorUndoSelection, "Undo Selection", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("cmd-u", Some(CommandContext::Editor)),
@@ -741,6 +746,21 @@ mod tests {
                 Some(EditorCommandRoute::Edit(EditIntent::DeleteTo(target)))
             );
         }
+    }
+
+    #[test]
+    fn select_line_is_an_editor_owned_command_with_its_mac_default() {
+        let command = EditorCommandProvider
+            .commands()
+            .into_iter()
+            .find(|command| command.id == CommandId::EditorSelectLine)
+            .expect("Select Line descriptor");
+        assert_eq!(command.id.action_name(), "editor.select-line");
+        assert_eq!(command.default_bindings[0].keystrokes, "cmd-l");
+        assert_eq!(
+            route_for_command(CommandId::EditorSelectLine),
+            Some(EditorCommandRoute::Edit(EditIntent::SelectLine))
+        );
     }
 
     #[test]

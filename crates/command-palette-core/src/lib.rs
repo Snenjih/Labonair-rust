@@ -98,6 +98,7 @@ pub enum CommandId {
     EditorSelectNextOccurrence,
     EditorSelectPreviousOccurrence,
     EditorSelectAllOccurrences,
+    EditorSelectLine,
     EditorSelectAll,
     EditorUndoSelection,
     EditorRedoSelection,
@@ -553,6 +554,7 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
         "editor.select-previous-occurrence"
     ),
     (CommandId::EditorSelectAllOccurrences, "editor.select-all-occurrences"),
+    (CommandId::EditorSelectLine, "editor.select-line"),
     (CommandId::EditorSelectAll, "editor.select-all"),
     (CommandId::EditorUndoSelection, "editor.undo-selection"),
     (CommandId::EditorRedoSelection, "editor.redo-selection"),
