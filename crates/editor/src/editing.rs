@@ -22,6 +22,7 @@ pub enum EditIntent {
     DeleteForward,
     /// Remove non-empty selections without deleting at empty carets.
     DeleteSelections,
+    DeleteLine,
     Move {
         motion: Motion,
         extend: bool,
@@ -217,6 +218,7 @@ impl Document {
             EditIntent::DeleteBackward => self.multi_delete(false),
             EditIntent::DeleteForward => self.multi_delete(true),
             EditIntent::DeleteSelections => self.delete_selections(),
+            EditIntent::DeleteLine => self.delete_lines(),
             EditIntent::Move { motion, extend } => self.multi_move(motion, extend),
             EditIntent::AddCursor(position) => self.add_cursor(position),
             EditIntent::AddCursorAbove => self.add_cursors_vertical(false),
@@ -290,6 +292,70 @@ impl Document {
             .map(|range| (range, String::new()))
             .collect();
         self.apply_targets(targets, false, EditSource::Delete, Some("Cut".into()))
+    }
+
+    fn delete_lines(&mut self) -> EditorCommandResult {
+        let snapshot = self.snapshot();
+        let mut lines = self
+            .selection_set()
+            .ranges(&snapshot)
+            .into_iter()
+            .flat_map(|range| {
+                let start = snapshot.byte_to_position(range.start).line;
+                let end_position = snapshot.byte_to_position(range.end);
+                let end =
+                    if !range.is_empty() && end_position.column == 0 && end_position.line > start {
+                        end_position.line - 1
+                    } else {
+                        end_position.line
+                    };
+                start..=end.max(start)
+            })
+            .collect::<Vec<_>>();
+        lines.sort_unstable();
+        lines.dedup();
+        let Some(first_line) = lines.first().copied() else {
+            return EditorCommandResult::unchanged();
+        };
+
+        let mut groups = Vec::new();
+        let mut group_start = first_line;
+        let mut group_end = first_line;
+        for line in lines.into_iter().skip(1) {
+            if line == group_end + 1 {
+                group_end = line;
+            } else {
+                groups.push((group_start, group_end));
+                group_start = line;
+                group_end = line;
+            }
+        }
+        groups.push((group_start, group_end));
+
+        let last_document_line = snapshot.line_count().saturating_sub(1);
+        let targets = groups
+            .into_iter()
+            .map(|(first, last)| {
+                let start = if last == last_document_line && first > 0 {
+                    snapshot.line_end_byte(first - 1)
+                } else {
+                    snapshot.line_start_byte(first)
+                };
+                let end = if last < last_document_line {
+                    snapshot.line_start_byte(last + 1)
+                } else {
+                    snapshot.line_end_byte(last)
+                };
+                (TextRange::new(start, end), String::new())
+            })
+            .filter(|(range, _)| !range.is_empty())
+            .collect();
+        self.apply_targets(
+            targets,
+            false,
+            EditSource::Delete,
+            Some("Delete lines".into()),
+        )
     }
 
     fn multi_delete(&mut self, forward: bool) -> EditorCommandResult {
@@ -1380,6 +1446,62 @@ mod tests {
         document.execute_edit(EditIntent::TypeBracket(')'));
         assert_eq!(document.cursor, Position::new(0, 2));
         assert!(document.selected_text().is_none());
+    }
+
+    #[test]
+    fn delete_line_removes_the_current_line_and_undoes_as_one_transaction() {
+        let mut document = doc("one\ntwo\nthree");
+        document.set_caret(Position::new(1, 2), false);
+        let result = document.execute_edit(EditIntent::DeleteLine);
+        assert!(result.changed);
+        assert_eq!(document.text(), "one\nthree");
+        assert_eq!(document.cursor, Position::new(1, 0));
+        document.undo();
+        assert_eq!(document.text(), "one\ntwo\nthree");
+    }
+
+    #[test]
+    fn delete_line_handles_first_last_empty_and_multi_cursor_lines() {
+        let mut first = doc("one\ntwo");
+        first.set_caret(Position::new(0, 0), false);
+        first.execute_edit(EditIntent::DeleteLine);
+        assert_eq!(first.text(), "two");
+
+        let mut last = doc("one\ntwo");
+        last.set_caret(Position::new(1, 0), false);
+        last.execute_edit(EditIntent::DeleteLine);
+        assert_eq!(last.text(), "one");
+
+        let mut empty = doc("");
+        assert!(!empty.execute_edit(EditIntent::DeleteLine).changed);
+        assert_eq!(empty.text(), "");
+
+        let mut multiple = doc("one\ntwo\nthree");
+        multiple.set_caret(Position::new(0, 0), false);
+        multiple.execute_edit(EditIntent::AddCursor(Position::new(2, 0)));
+        multiple.execute_edit(EditIntent::DeleteLine);
+        assert_eq!(multiple.text(), "two");
+    }
+
+    #[test]
+    fn delete_line_treats_a_selection_ending_at_line_start_as_exclusive() {
+        let mut document = doc("one\ntwo\nthree");
+        let snapshot = document.snapshot();
+        document.set_selection_set(SelectionSet::from_selections(
+            vec![Selection {
+                anchor: Anchor::new(
+                    snapshot.position_to_byte(Position::new(0, 0)),
+                    AnchorAffinity::Before,
+                ),
+                head: Anchor::new(
+                    snapshot.position_to_byte(Position::new(1, 0)),
+                    AnchorAffinity::After,
+                ),
+            }],
+            0,
+        ));
+        document.execute_edit(EditIntent::DeleteLine);
+        assert_eq!(document.text(), "two\nthree");
     }
 
     #[test]

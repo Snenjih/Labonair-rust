@@ -103,6 +103,7 @@ pub enum CommandId {
     EditorRedoSelection,
     EditorGoToLineColumn,
     EditorToggleBreadcrumb,
+    EditorDeleteLine,
     EditorExpandSelection,
     EditorShrinkSelection,
     EditorDuplicateLines,
@@ -552,6 +553,7 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
         "editor.go-to-line-column"
     ),
     (CommandId::EditorToggleBreadcrumb, "editor.toggle-breadcrumb"),
+    (CommandId::EditorDeleteLine, "editor.delete-line"),
     (CommandId::EditorExpandSelection, "editor.expand-selection"),
     (CommandId::EditorShrinkSelection, "editor.shrink-selection"),
     (CommandId::EditorDuplicateLines, "editor.duplicate-lines"),

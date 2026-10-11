@@ -81,6 +81,7 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         CommandId::EditorToggleBreadcrumb => {
             EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb)
         }
+        CommandId::EditorDeleteLine => EditorCommandRoute::Edit(EditIntent::DeleteLine),
         CommandId::EditorExpandSelection => EditorCommandRoute::Edit(EditIntent::ExpandSelection),
         CommandId::EditorShrinkSelection => EditorCommandRoute::Edit(EditIntent::ShrinkSelection),
         CommandId::EditorDuplicateLines => EditorCommandRoute::Edit(EditIntent::DuplicateLines),
@@ -183,6 +184,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorRedoSelection,
     CommandId::EditorGoToLineColumn,
     CommandId::EditorToggleBreadcrumb,
+    CommandId::EditorDeleteLine,
     CommandId::EditorExpandSelection,
     CommandId::EditorShrinkSelection,
     CommandId::EditorDuplicateLines,
@@ -304,6 +306,9 @@ impl CommandProvider for EditorCommandProvider {
                 "Editor",
             )
             .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(CommandId::EditorDeleteLine, "Delete Line", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-shift-k", Some(CommandContext::Editor)),
             CommandDescriptor::new(
                 CommandId::EditorExpandSelection,
                 "Expand Selection",
@@ -552,6 +557,22 @@ mod tests {
         assert_eq!(
             bindings(CommandId::EditorRedoSelection),
             vec!["cmd-shift-u"]
+        );
+    }
+
+    #[test]
+    fn delete_line_is_an_editor_owned_command_with_the_macos_default() {
+        let command = EditorCommandProvider
+            .commands()
+            .into_iter()
+            .find(|command| command.id == CommandId::EditorDeleteLine)
+            .expect("Delete Line descriptor");
+        assert_eq!(command.id.action_name(), "editor.delete-line");
+        assert_eq!(command.default_bindings.len(), 1);
+        assert_eq!(command.default_bindings[0].keystrokes, "cmd-shift-k");
+        assert_eq!(
+            route_for_command(CommandId::EditorDeleteLine),
+            Some(EditorCommandRoute::Edit(EditIntent::DeleteLine))
         );
     }
 
