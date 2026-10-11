@@ -47,6 +47,7 @@ pub enum EditorUiCommand {
     Rewrap,
     KillRingCut,
     KillRingYank,
+    ShowCharacterPalette,
     Fold,
     FoldAll,
     FoldAtLevel(u8),
@@ -115,6 +116,9 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         }
         CommandId::EditorKillRingCut => EditorCommandRoute::Ui(EditorUiCommand::KillRingCut),
         CommandId::EditorKillRingYank => EditorCommandRoute::Ui(EditorUiCommand::KillRingYank),
+        CommandId::EditorShowCharacterPalette => {
+            EditorCommandRoute::Ui(EditorUiCommand::ShowCharacterPalette)
+        }
         CommandId::EditorFold => EditorCommandRoute::Ui(EditorUiCommand::Fold),
         CommandId::EditorFoldAll => EditorCommandRoute::Ui(EditorUiCommand::FoldAll),
         CommandId::EditorFoldAtLevel1 => EditorCommandRoute::Ui(EditorUiCommand::FoldAtLevel(1)),
@@ -246,6 +250,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorDeleteToPreviousSubwordStart,
     CommandId::EditorKillRingCut,
     CommandId::EditorKillRingYank,
+    CommandId::EditorShowCharacterPalette,
     CommandId::EditorFold,
     CommandId::EditorFoldAll,
     CommandId::EditorFoldAtLevel1,
@@ -439,6 +444,13 @@ impl CommandProvider for EditorCommandProvider {
             CommandDescriptor::new(CommandId::EditorKillRingYank, "Kill Ring Yank", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("ctrl-y", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
+                CommandId::EditorShowCharacterPalette,
+                "Show Character Palette",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("ctrl-cmd-space", Some(CommandContext::Editor)),
             CommandDescriptor::new(CommandId::EditorJoinLines, "Join Lines", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("ctrl-j", Some(CommandContext::Editor)),
@@ -885,6 +897,28 @@ mod tests {
             assert_eq!(command.default_bindings[0].keystrokes, binding);
             assert_eq!(route_for_command(id), Some(EditorCommandRoute::Ui(route)));
         }
+    }
+
+    #[test]
+    fn character_palette_is_an_editor_owned_command_with_its_spec_binding() {
+        let command = EditorCommandProvider
+            .commands()
+            .into_iter()
+            .find(|command| command.id == CommandId::EditorShowCharacterPalette)
+            .expect("Character Palette descriptor");
+        assert_eq!(command.id.action_name(), "editor.show-character-palette");
+        assert_eq!(command.default_bindings[0].keystrokes, "ctrl-cmd-space");
+        assert_eq!(
+            command.default_bindings[0].context,
+            Some(CommandContext::Editor)
+        );
+        assert_eq!(
+            route_for_command(CommandId::EditorShowCharacterPalette),
+            Some(EditorCommandRoute::Ui(
+                EditorUiCommand::ShowCharacterPalette
+            ))
+        );
+        assert!(EXECUTABLE_EDITOR_COMMAND_IDS.contains(&CommandId::EditorShowCharacterPalette));
     }
 
     #[test]

@@ -71,7 +71,8 @@ use labonair_theme::{modal_scrim, ThemeStore};
 use labonair_ui_kit::{
     banner, button, context_menu, icon_button_builder, popover_menu, text_field,
     text_field_surface, text_input, ButtonSize, ButtonVariant, IconButtonShape, IconName,
-    InputEvent, InputState, ListItem, MenuItem, Palette, Severity, TextFieldState, Tooltip,
+    InputEvent, InputState, ListItem, MenuItem, Palette, Severity, SubmenuHoverSource,
+    TextFieldState, Tooltip,
 };
 
 /// Editor → workspace notifications.
@@ -114,6 +115,73 @@ struct EditorSelectionDrag {
 const EDITOR_SCROLLBAR_SIZE: f32 = 10.0;
 const EDITOR_SCROLLBAR_MIN_THUMB: f32 = 24.0;
 const EDITOR_BREADCRUMB_MAX_PATH_CHARS: usize = 96;
+type CharacterPaletteEntry = (&'static str, &'static str);
+type CharacterPaletteGroup = (&'static str, &'static str, &'static [CharacterPaletteEntry]);
+
+const CHARACTER_PALETTE_GROUPS: &[CharacterPaletteGroup] = &[
+    (
+        "common",
+        "Common Symbols",
+        &[
+            ("©", "Copyright sign"),
+            ("®", "Registered sign"),
+            ("™", "Trademark sign"),
+            ("§", "Section sign"),
+            ("¶", "Paragraph sign"),
+            ("†", "Dagger"),
+            ("‡", "Double dagger"),
+            ("•", "Bullet"),
+            ("…", "Ellipsis"),
+            ("—", "Em dash"),
+            ("–", "En dash"),
+            ("·", "Middle dot"),
+        ],
+    ),
+    (
+        "math",
+        "Mathematics",
+        &[
+            ("±", "Plus-minus"),
+            ("×", "Multiplication sign"),
+            ("÷", "Division sign"),
+            ("≠", "Not equal to"),
+            ("≤", "Less than or equal to"),
+            ("≥", "Greater than or equal to"),
+            ("∞", "Infinity"),
+            ("√", "Square root"),
+            ("∑", "Summation"),
+            ("∏", "Product"),
+        ],
+    ),
+    (
+        "arrows",
+        "Arrows",
+        &[
+            ("←", "Left arrow"),
+            ("→", "Right arrow"),
+            ("↑", "Up arrow"),
+            ("↓", "Down arrow"),
+            ("↔", "Left-right arrow"),
+            ("⇒", "Right double arrow"),
+            ("⇐", "Left double arrow"),
+            ("↦", "Maps to"),
+        ],
+    ),
+    (
+        "greek",
+        "Greek",
+        &[
+            ("α", "Alpha"),
+            ("β", "Beta"),
+            ("γ", "Gamma"),
+            ("δ", "Delta"),
+            ("λ", "Lambda"),
+            ("π", "Pi"),
+            ("σ", "Sigma"),
+            ("Ω", "Omega"),
+        ],
+    ),
+];
 
 fn editor_toolbar_has_contribution(
     breadcrumbs: bool,
@@ -687,6 +755,8 @@ pub struct EditorView {
     git_refresh_generation: u64,
     git_context_menu: Option<(Point<Pixels>, String, Revision)>,
     text_context_menu: Option<Point<Pixels>>,
+    character_palette_open: bool,
+    character_palette_group_open: Option<&'static str>,
     git_discard_confirmation: Option<GitDiscardPreview>,
     /// Editor-owned language-service runtime and its revision-safe result
     /// projection. Workspace only injects the runtime at composition time.
@@ -847,6 +917,8 @@ impl EditorView {
             git_refresh_generation: 0,
             git_context_menu: None,
             text_context_menu: None,
+            character_palette_open: false,
+            character_palette_group_open: None,
             git_discard_confirmation: None,
             language_services,
             language_service_snapshot,
@@ -1003,6 +1075,11 @@ impl EditorView {
             }
             EditorCommandRoute::Ui(EditorUiCommand::KillRingCut) => self.kill_ring_cut(cx),
             EditorCommandRoute::Ui(EditorUiCommand::KillRingYank) => self.kill_ring_yank(cx),
+            EditorCommandRoute::Ui(EditorUiCommand::ShowCharacterPalette) => {
+                self.character_palette_open = true;
+                self.character_palette_group_open = None;
+                cx.notify();
+            }
             EditorCommandRoute::Ui(
                 command @ (EditorUiCommand::Fold
                 | EditorUiCommand::FoldAll
@@ -4730,6 +4807,99 @@ impl EditorView {
         ))
     }
 
+    fn insert_character_from_palette(&mut self, character: &'static str, cx: &mut Context<Self>) {
+        self.character_palette_open = false;
+        self.character_palette_group_open = None;
+        if self.doc.can_edit() {
+            let _ = self.execute_command(
+                EditorCommand::Edit(EditIntent::Insert(character.to_owned())),
+                cx,
+            );
+        }
+        cx.notify();
+    }
+
+    fn render_character_palette(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if !self.character_palette_open {
+            return None;
+        }
+
+        let view = cx.entity();
+        let can_edit = self.doc.can_edit();
+        let open_group = self.character_palette_group_open;
+        let mut items = vec![MenuItem::label("Character Palette")];
+        for (group_id, label, entries) in CHARACTER_PALETTE_GROUPS.iter().copied() {
+            let choices = entries
+                .iter()
+                .enumerate()
+                .map(|(index, (character, description))| {
+                    let character = *character;
+                    let view = view.clone();
+                    MenuItem::new(format!("editor-character-{group_id}-{index}"), *description)
+                        .detail(character)
+                        .disabled(!can_edit)
+                        .on_click(move |_, window, cx| {
+                            view.update(cx, |this, cx| {
+                                this.insert_character_from_palette(character, cx);
+                                this.focus(window);
+                            });
+                        })
+                })
+                .collect();
+            let group_view = view.clone();
+            let on_hover = move |source: SubmenuHoverSource,
+                                 hovered: bool,
+                                 _window: &mut Window,
+                                 cx: &mut App| {
+                group_view.update(cx, |this, cx| {
+                    let changed = if hovered {
+                        let was = this.character_palette_group_open;
+                        this.character_palette_group_open = Some(group_id);
+                        was != Some(group_id)
+                    } else if source == SubmenuHoverSource::Flyout
+                        && this.character_palette_group_open == Some(group_id)
+                    {
+                        this.character_palette_group_open = None;
+                        true
+                    } else {
+                        false
+                    };
+                    if changed {
+                        cx.notify();
+                    }
+                });
+            };
+            items.push(
+                MenuItem::submenu(format!("editor-character-group-{group_id}"), label, choices)
+                    .submenu_control(open_group == Some(group_id), on_hover),
+            );
+        }
+
+        let dismiss_view = view;
+        let dismiss = move |_window: &mut Window, cx: &mut App| {
+            dismiss_view.update(cx, |this, cx| {
+                this.character_palette_open = false;
+                this.character_palette_group_open = None;
+                cx.notify();
+            });
+        };
+        let viewport = window.viewport_size();
+        let anchor = gpui::point(
+            px(((f32::from(viewport.width) - 220.0) / 2.0).max(8.0)),
+            px(((f32::from(viewport.height) - 150.0) / 2.0).max(8.0)),
+        );
+        Some(context_menu(
+            anchor,
+            Palette::from_theme(self.theme.read(cx)),
+            dismiss,
+            items,
+        ))
+    }
+
     /// Hunk discard is intentionally not a direct editor mutation. The Git
     /// capability currently exposes whole-file discard only, so the decision
     /// surface explains the limitation and offers the canonical Project Diff
@@ -7704,6 +7874,7 @@ impl Render for EditorView {
             .children(self.render_hover_tooltip(cx))
             .children(self.render_git_context_menu(cx))
             .children(self.render_text_context_menu(cx))
+            .children(self.render_character_palette(window, cx))
             .children(self.render_git_discard_confirmation(cx))
             .on_scroll_wheel(cx.listener(|this, ev: &ScrollWheelEvent, window, cx| {
                 let dy = match ev.delta {
@@ -8380,6 +8551,29 @@ mod tests {
                 assert_eq!(this.doc.text(), "one ");
                 assert!(this.dispatch_registered_command(CommandId::EditorKillRingYank, cx));
                 assert_eq!(this.doc.text(), "one two");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn character_palette_inserts_through_an_undoable_editor_transaction(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("test.txt".into(), "abc", 1);
+                this.doc.set_caret(Position::new(0, 1), false);
+
+                assert!(this.dispatch_registered_command(
+                    CommandId::EditorShowCharacterPalette,
+                    cx
+                ));
+                assert!(this.character_palette_open);
+                this.insert_character_from_palette("©", cx);
+                assert!(!this.character_palette_open);
+                assert_eq!(this.doc.text(), "a©bc");
+
+                this.edit(cx, Document::undo);
+                assert_eq!(this.doc.text(), "abc");
             });
         });
     }

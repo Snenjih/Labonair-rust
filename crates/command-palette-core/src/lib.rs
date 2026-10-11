@@ -115,6 +115,7 @@ pub enum CommandId {
     EditorDeleteToPreviousSubwordStart,
     EditorKillRingCut,
     EditorKillRingYank,
+    EditorShowCharacterPalette,
     EditorFold,
     EditorFoldAll,
     EditorFoldAtLevel1,
@@ -609,6 +610,10 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     ),
     (CommandId::EditorKillRingCut, "editor.kill-ring-cut"),
     (CommandId::EditorKillRingYank, "editor.kill-ring-yank"),
+    (
+        CommandId::EditorShowCharacterPalette,
+        "editor.show-character-palette"
+    ),
     (CommandId::EditorFold, "editor.fold"),
     (CommandId::EditorFoldAll, "editor.fold-all"),
     (CommandId::EditorFoldAtLevel1, "editor.fold-at-level-1"),
