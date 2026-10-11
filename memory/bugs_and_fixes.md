@@ -1043,3 +1043,18 @@ pinned `Cmd+P` action.
 collision in the [Workspace Open requirements packet](../docs/parity/action-classification-workspace-open.md).
 Labonair's Open Files route remains unimplemented and runtime acceptance is
 pending.
+
+## 2026-10-11 — Pinned BackQuotes action has duplicate listeners
+
+**Discovery:** The frozen Zed `vim::object::register` function calls
+`Vim::action` twice for `&BackQuotes`. Each call reaches
+`Editor::register_action`, which stores a distinct subscription and installs a
+Bubble-phase listener for the same action type. No focused BackQuotes action
+fixture was found; existing AnyQuotes backtick cases exercise a different
+action. The effect of both listeners on each operator and Helix selection path
+has not been observed.
+
+**Disposition:** Preserve this as a pinned-source anomaly and verify its event
+effects before claiming exact behavior. Do not edit the frozen reference or
+replicate duplicate local handlers. Track it in the
+[Vim BackQuotes classification](../docs/parity/action-classification-vim-back-quotes.md).

@@ -322,6 +322,11 @@ records the shared `=` bindings in Vim Visual and Helix Normal/Select, syntax
 range reindent behavior, Vim Normal's separate `PushAutoIndent` operator path,
 and the local insertion-only intent gap. Profile dispatch and paired macOS
 acceptance remain open. The independent
+[`Vim BackQuotes text-object crosswalk`](parity/action-classification-vim-back-quotes.md)
+records the active shared backtick binding, line-local marker matching,
+`cs` old-pair and Helix directional routes, and duplicate pinned action
+subscriptions. Duplicate-listener effects and paired macOS acceptance remain
+open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and

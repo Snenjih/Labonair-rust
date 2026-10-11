@@ -6687,3 +6687,49 @@ Next safe task: Continue R07-000 with `vim::BackQuotes`; do not begin R07-001 or
 - Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, Vim/Helix profile or palette dispatch, syntax reindent interaction, or paired visual evidence were run; these remain goal acceptance gates.
 - Next safe task: Continue R07-000 with `vim::BackQuotes`; do not begin R07-001 or R09.
 ~~~
+
+## Pre-change contract — Vim BackQuotes text object
+
+~~~text
+Request type: Pinned registered-action, text-object, surround, and Helix adapter inventory; documentation-only.
+Owner module: Editor owns text-object ranges, operator state, selection, and edits; Keymap owns shared mode and user bindings; Settings owns Vim/Helix mode values; Command Palette owns existing Vim action discovery.
+Canonical capability crate: `labonair-editor`; profile composition in `labonair-keymap`.
+Canonical user entry point: Shared mode-layer backtick in text-object contexts (`a`, `i`, `cs`, Helix next, and Helix previous); focused-Editor Vim action palette when Vim/Helix is enabled. A standalone palette invocation with no pending object/operator context has no range to act on.
+Public typed contract: Existing registered unit action `vim::BackQuotes`; Labonair has no backtick text-object, `cs` surround, or Helix quote-boundary action.
+State owner: Editor owns current selection and transient Vim/Helix operator state. BackQuotes itself stores no persistent state.
+Persistence owner: Settings persists mode values; Keymap persists profile and user override values. Selected text and `cs` anchors remain transient Editor state; resulting text changes use ordinary document persistence.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-BackQuotes`; active shared binding `KEYBIND-VIM-HELIX-9f3ee8930dea`, key backtick, context `vim_operator == a || vim_operator == i || vim_operator == cs || vim_operator == helix_next || vim_operator == helix_previous`; no platform-default binding.
+Events and registry contributions: Existing registered Vim action, shared mode keymap row, and generic palette route; no new event, registry, or shell-wide conditional.
+Settings: Existing Vim/Helix mode values gate the profile and palette namespace; no BackQuotes-specific setting.
+Notifications: None. An unmatched pair produces no range; no error or notification is implied.
+UI-kit components: Existing Editor, Command Palette, and Keymap only; no new UI control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Read existing `test_anyquotes_object` backtick cases and surrounding-marker/Helix source without running tests. No focused `vim::BackQuotes` test or Helix BackQuotes fixture was found. Future owner work needs single-line pair/escape/unmatched/around whitespace cases, Vim `i`/`a` operators, `cs` source selection, Helix current/next/previous behavior, visual mode, and duplicate-listener regression coverage.
+Visual evidence: No local UI change; native macOS key, palette, operator, and Helix selection behavior remain acceptance gates; Linux and Windows profile dispatch must be checked separately.
+Security impact: None beyond ordinary local text edits.
+Performance impact: No local runtime work. Vim marker search is line-bound; Helix immediate-boundary scans may cover long ranges and need responsive implementation.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static registration, shared binding context, marker-range algorithm, `cs` integration, Helix adapter mapping, local owner gap, and duplicate subscription registration can be classified; callback effect and native acceptance remain pending.
+Documentation updates: New BackQuotes packet; registered-action row; active shared binding annotation; non-macOS layer note; packet index; `commands.keymap` and `editor.text` crosswalks; normative parity summary; task record; memory note for the duplicate pinned Editor action subscription.
+Current status: Static action/profile/source audit, Labonair Editor/Keymap route audit, packet and crosswalk updates complete; all required documentation-only gates passed.
+Target status: Distinguish the single-backtick object from AnyQuotes and MiniQuotes, record all five action contexts, and preserve the source-level duplicate listener anomaly without claiming its runtime effect.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no BackQuotes object scanner, Vim `cs` pair adapter, Helix BackQuotes selector, or active Vim/Helix shared layer. The pinned `object::register` contains two identical BackQuotes handler registrations and Editor creates a separate listener subscription for each; direct runtime callback effects have not been observed.
+Failed/unavailable gates: No documentation or queue gate failed. Rust tests/build, profile and palette dispatch, BackQuotes range behavior, duplicate-listener effects, and native/visual acceptance were not run for this documentation-only classification and remain R07-000 acceptance work.
+Next safe task: Continue R07-000 with `vim::ChangeCase`; do not begin R07-001 or R09.
+~~~
+
+
+## Progress — classify Vim BackQuotes text object
+
+~~~text
+- Added [action-classification-vim-back-quotes.md](../../docs/parity/action-classification-vim-back-quotes.md) for ACT-REGISTRY-LINUX-vim-BackQuotes.
+- Recorded the single shared backtick binding KEYBIND-VIM-HELIX-9f3ee8930dea and its Vim inside/around, `cs`, and Helix next/previous contexts; no platform-default binding exists. Plain Normal-mode palette invocation has no pending object range.
+- Classified the line-local literal marker range, immediate-backslash escape rule, inside/around boundaries and whitespace behavior, ignored count, visual-mode target, old-pair `cs` role, and Helix ImmediateBoundary adapter. Kept the dedicated action distinct from AnyQuotes and MiniQuotes.
+- Found two identical `Vim::action` registrations for BackQuotes; each installs a separate Editor action listener. No focused BackQuotes or Helix BackQuotes test was found. Recorded the anomaly and its unverified effect in `memory/bugs_and_fixes.md`; no pinned or local code was changed.
+- Audited Labonair Editor, Keymap, and Settings sources; there is no backtick text object, quote scanner, `cs` route, Helix selector, or shared mode profile.
+- Updated the registered-action row, shared binding row annotation, Linux/Windows layer note, parity packet index, `commands.keymap` and `editor.text` crosswalks, normative parity summary, memory record, and this task record.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative docs; 236 Markdown files), `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active), and `python3 scripts/verify.py --scope docs`, `agents`, `knowledge`, `settings`, and `queue`.
+- Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, platform or palette dispatch, BackQuotes object/surround/Helix interaction, duplicate-listener observation, or paired visual evidence were run; these remain goal acceptance gates.
+- Next safe task: Continue R07-000 with `vim::ChangeCase`; do not begin R07-001 or R09.
+~~~

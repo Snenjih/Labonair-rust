@@ -62,7 +62,7 @@ source-side research. It records current evidence without claiming parity.
   directional Helix consumers), and one registered-unbound ArgumentRequired
   action reached by `:delmarks` without a mark argument; the registered
   `vim::AutoIndent` action has shared `=` bindings for Vim Visual and Helix
-  Normal/Select ([Vim AutoIndent packet](action-classification-vim-auto-indent.md)); 19 Outline/OutlinePanel actions (six
+  Normal/Select ([Vim AutoIndent packet](action-classification-vim-auto-indent.md)); `vim::BackQuotes` has one shared backtick binding for Vim object/surround and Helix directional contexts ([Vim BackQuotes packet](action-classification-vim-back-quotes.md)); 19 Outline/OutlinePanel actions (six
   default-macOS-bound IDs and 13 registered-unbound panel actions; six of the
   latter occur in seven Vim/Helix entries), one Editor Go to
   Line action,
