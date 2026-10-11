@@ -68,6 +68,7 @@ The [Vim CurlyBrackets packet](action-classification-vim-curly-brackets.md) clas
 The [Vim CurrentLine packet](action-classification-vim-current-line.md) classifies the 25 shared linewise operator routes, counted range and direct no-operator behavior, representative linewise fixtures, and Labonair's bounded doubled-operator path. Platform dispatch and full native operator acceptance remain open.
 The [Vim Decrement packet](action-classification-vim-decrement.md) classifies supported numeric formats and Boolean pairs, Vim/Helix `ctrl-x` routes, Visual stepped decrement, cursor/selection effects, and the missing local Editor action. Platform dispatch and native acceptance remain open.
 The [Vim DeleteLeft packet](action-classification-vim-delete-left.md) classifies Normal `shift-x` as a counted, line-bounded Left delete with Vim register effects, distinguishes Visual and Helix `shift-x` actions, and records Labonair uppercase `X`'s missing register update. Platform dispatch and native acceptance remain open.
+The [Vim DeleteRight packet](action-classification-vim-delete-right.md) classifies Normal `x` and `delete` as counted, line-bounded Right deletes with Vim register effects, distinguishes Visual and Helix actions, and records Labonair's partial lowercase-x route. Platform dispatch and native acceptance remain open.
 
 ## Current Labonair capability reconciliation
 

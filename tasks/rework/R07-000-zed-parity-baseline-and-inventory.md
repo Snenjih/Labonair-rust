@@ -7538,3 +7538,45 @@ Next safe task: Continue R07-000 with `vim::DeleteRight` after completing this D
 - First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 255 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`.
 - Rust build/tests, register and count acceptance, platform dispatch, and paired native evidence remain active goal acceptance gates.
 - Next safe task: Continue R07-000 with `vim::DeleteRight`; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim DeleteRight
+
+~~~text
+Request type: Pinned Vim characterwise delete action, count-aware Right motion, mode-specific shared-profile routing, and local equivalent; documentation-only classification.
+Owner module: Editor owns motion ranges, register effects, and document edits; Keymap owns the shared Vim/Helix profile and user overrides; Settings owns Vim and Helix mode values.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry points: Vim Normal `x` and `delete` invoke `vim::DeleteRight`; the pending Vim count selects how many characters to delete to the right. In Vim Visual, `x` and `delete` instead invoke `vim::VisualDelete`. In Helix Normal/Select, `x` invokes `vim::HelixSelectLine`. These are separate actions. `vim::DeleteRight` may also be palette-discoverable as a registered action, but direct invocation and focus behavior are unverified.
+Public typed contract: Unit action `vim::DeleteRight`, no arguments or action-specific setting. It records the action, consumes count and forced-motion state, and calls the shared Vim delete path with `Motion::Right`; absent count defaults to one.
+State owner: Editor owns all active selections, Right-motion ranges, and text edits. Vim owns mode, count, forced-motion state, action/repeat history, and the characterwise register. The delete path copies deleted ranges to the Vim register as a delete, removes them in an Editor transaction, and collapses each selection at the clipped motion head. `Motion::Right` advances without wrapping across the current line end. The action does not itself request another mode.
+Persistence owner: No action-specific persistent state. Buffer text follows ordinary save/undo; count and selections are transient; the Vim register follows the Vim register lifecycle.
+Commands and keymap entries: ACT-REGISTRY-LINUX-vim-DeleteRight and shared Vim profile IDs KEYBIND-VIM-HELIX-68ad1f41fdc5 (`delete`, Vim Normal) and -df32d16b908d (`x`, Vim Normal). No platform-default map binds the action. Visual `x`/`delete` and Helix Normal/Select `x` target different actions.
+Events and registry contributions: Existing Vim action, editor delete transaction, register path, and shared profile rows only; no new event or registry contribution proposed.
+Settings: Vim Mode enables the Normal routes; Helix mode activates its separate context. No DeleteRight-specific setting.
+Notifications: None expected.
+UI-kit components: Existing Editor and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect without running pinned `test_x`, the Right motion and saturating boundary helpers, and local `x_deletes_char_with_count`. These do not establish Labonair register, EOF, multi-selection, palette, or native acceptance.
+Visual evidence: No layout change proposed. Paired native macOS Editor and Keymap evidence is still required for accepted binding and delete behavior; Linux and Windows shared-profile dispatch must be checked separately.
+Security impact: None beyond editing the active buffer and its ordinary Vim register.
+Performance impact: Work scales with count, deleted range length, and active selections. Large counts, line-end behavior, multibyte text, and multi-cursor ranges need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Registry metadata, two Normal bindings, Visual/Helix route distinctions, Right motion boundaries, pinned focused fixture, and local lowercase-x behavior can be classified statically; runtime dispatch, register semantics, multi-selection behavior, and paired native acceptance remain open.
+Documentation updates: New DeleteRight packet; registered-action row; both Normal binding annotations; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; pinned action and all direct mode-specific route distinctions, Right motion, focused fixture, and local lowercase-x count path inspected. Static classification remains to be recorded; platform and native acceptance remain open.
+Target status: Classify Normal `x` and `delete` as count-aware, line-bounded characterwise deletion with Vim register effects; distinguish Visual and Helix routes; compare Labonair's local lowercase-x path without claiming complete parity.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has a local lowercase `x` count-delete path and writes its register for that positive-count case, but has no typed `vim::DeleteRight` action, shared profile routes, tested selection/multicursor behavior, or palette route.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Native dispatch, register results, count/boundary behavior, platform acceptance, and paired visual evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::DeleteToEndOfLine` after completing this DeleteRight classification; do not begin R07-001 or R09.
+~~~
+
+
+## Vim DeleteRight action classification progress
+
+- Classified Vim Normal `x` and `delete` as count-aware characterwise deletion through `Motion::Right`, including line-end clipping and Vim register updates. Recorded that Visual `x`/`delete` use `VisualDelete` and Helix Normal/Select `x` uses `HelixSelectLine`.
+- Compared Labonair's lowercase `x` path: it deletes right by count and updates the local Vim register; its existing `3x` fixture covers count, while its typed action and shared profile are absent.
+- Updated the DeleteRight packet, registered-action row, both Normal binding annotations, Linux/Windows profile note, parity index, feature crosswalk, and this task record. Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 256 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`.
+- Rust build/tests, register and boundary acceptance, platform dispatch, and paired native evidence remain active goal acceptance gates.
+- Next safe task: Continue R07-000 with `vim::DeleteToEndOfLine`; do not begin R07-001 or R09.
