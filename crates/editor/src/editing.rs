@@ -1176,21 +1176,28 @@ impl Document {
         let snapshot = self.snapshot();
         let selections = self.selection_set();
         let mut targets = Vec::new();
+        let mut inner_ranges = Vec::new();
         for selection in selections.selections() {
             let range = selection.range().resolve(&snapshot);
-            targets.push((range, format!("{ch}{close}")));
+            let selected = snapshot.text_range(range);
+            inner_ranges.push((range, selected.len()));
+            targets.push((range, format!("{ch}{selected}{close}")));
         }
         let edits = targets
             .iter()
             .map(|(range, replacement)| Edit::new(*range, replacement.clone()))
             .collect::<Vec<_>>();
-        let after_offsets = targets
-            .iter()
-            .map(|(range, _)| {
-                if range.is_empty() {
-                    map_offset(range.start, &edits, AnchorAffinity::Before) + ch.len_utf8()
+        let after_selections = inner_ranges
+            .into_iter()
+            .map(|(range, inner_len)| {
+                let start = map_offset(range.start, &edits, AnchorAffinity::Before) + ch.len_utf8();
+                if inner_len == 0 {
+                    Selection::collapsed(Anchor::new(start, AnchorAffinity::After))
                 } else {
-                    map_offset(range.end, &edits, AnchorAffinity::After)
+                    Selection {
+                        anchor: Anchor::new(start, AnchorAffinity::Before),
+                        head: Anchor::new(start + inner_len, AnchorAffinity::After),
+                    }
                 }
             })
             .collect::<Vec<_>>();
@@ -1201,11 +1208,7 @@ impl Document {
             Some("Auto close bracket".into()),
         );
         if result.changed {
-            let after = after_offsets
-                .into_iter()
-                .map(|offset| Selection::collapsed(Anchor::new(offset, AnchorAffinity::After)))
-                .collect();
-            self.set_selection_set(SelectionSet::from_selections(after, 0));
+            self.set_selection_set(SelectionSet::from_selections(after_selections, 0));
         }
         result
     }
@@ -1830,6 +1833,41 @@ mod tests {
         document.execute_edit(EditIntent::TypeBracket(')'));
         assert_eq!(document.cursor, Position::new(0, 2));
         assert!(document.selected_text().is_none());
+    }
+
+    #[test]
+    fn typing_an_open_bracket_wraps_and_preserves_selected_text() {
+        let mut document = doc("one two");
+        let snapshot = document.snapshot();
+        document.set_selection_set(SelectionSet::from_selections(
+            vec![
+                Selection {
+                    anchor: Anchor::new(0, AnchorAffinity::Before),
+                    head: Anchor::new(3, AnchorAffinity::After),
+                },
+                Selection {
+                    anchor: Anchor::new(4, AnchorAffinity::Before),
+                    head: Anchor::new(snapshot.byte_len(), AnchorAffinity::After),
+                },
+            ],
+            0,
+        ));
+
+        let result = document.execute_edit(EditIntent::TypeBracket('('));
+        assert!(result.changed);
+        assert_eq!(document.text(), "(one) (two)");
+        let snapshot = document.snapshot();
+        let selected = document
+            .selection_set()
+            .ranges(&snapshot)
+            .into_iter()
+            .map(|range| snapshot.text_range(range))
+            .collect::<Vec<_>>();
+        assert_eq!(selected, vec!["one", "two"]);
+
+        document.undo();
+        assert_eq!(document.text(), "one two");
+        assert_eq!(document.selected_text().as_deref(), Some("one"));
     }
 
     #[test]
