@@ -7580,3 +7580,45 @@ Next safe task: Continue R07-000 with `vim::DeleteToEndOfLine` after completing 
 - First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 256 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`.
 - Rust build/tests, register and boundary acceptance, platform dispatch, and paired native evidence remain active goal acceptance gates.
 - Next safe task: Continue R07-000 with `vim::DeleteToEndOfLine`; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim DeleteToEndOfLine
+
+~~~text
+Request type: Pinned Vim line-end deletion action, count-aware EndOfLine motion, mode-specific shared-profile route, and local D comparison; documentation-only classification.
+Owner module: Editor owns EndOfLine range, Vim register effect, and document edits; Keymap owns the shared Vim/Helix profile and user overrides; Settings owns Vim and Helix mode values.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry points: Shared `shift-d` in `(vim_mode == normal || vim_mode == helix_normal) && !menu` invokes `vim::DeleteToEndOfLine`. In Vim Visual, `shift-d` instead invokes `vim::VisualDeleteLine`. Direct `D` in Labonair's parser is a separate local route. Palette availability and direct action behavior are unverified.
+Public typed contract: Unit action `vim::DeleteToEndOfLine`, no arguments or action-specific setting. It records the action, consumes Vim count and forced-motion state, and calls the shared delete path with `Motion::EndOfLine { display_lines: false }`; count defaults to one. The EndOfLine motion targets the counted buffer row's end, clipped to the final row.
+State owner: Editor owns active selections, count-expanded ranges, and text edits. Vim owns mode, count, forced-motion state, action/repeat history, and the characterwise register. The delete path copies each range to the Vim register, deletes in an Editor transaction, and collapses selections at the motion head. EndOfLine is normally inclusive; forced-motion context changes its kind. The direct action does not explicitly switch modes.
+Persistence owner: No action-specific persistent state. Buffer text follows ordinary save/undo; count and selections are transient; the Vim register follows its existing lifecycle.
+Commands and keymap entries: ACT-REGISTRY-LINUX-vim-DeleteToEndOfLine and KEYBIND-VIM-HELIX-06c29a3aeeaa (`shift-d`, `(vim_mode == normal || vim_mode == helix_normal) && !menu`). No platform-default map binds the action. Vim Visual `shift-d` is `vim::VisualDeleteLine`.
+Events and registry contributions: Existing Vim action, delete/register path, and shared profile row only; no new event or registry contribution proposed.
+Settings: Vim Mode enables the Normal route; Helix mode adds Helix Normal to the same chord. No DeleteToEndOfLine-specific setting.
+Notifications: None expected.
+UI-kit components: Existing Editor and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect without running pinned `test_delete_to_end_of_line`, operator `test_delete_end_of_line`, and `test_forced_motion_delete_to_end_of_line`; inspect local D and operator range behavior. These do not establish counted action, register, no-op, or native acceptance.
+Visual evidence: No layout change proposed. Paired native macOS Editor and Keymap evidence is still required for accepted binding and delete behavior; Linux and Windows shared-profile dispatch must be checked separately.
+Security impact: None beyond editing the active buffer and its ordinary Vim register.
+Performance impact: Work scales with the number of counted buffer rows, range length, and active selections. Large counts, EOF clipping, empty lines, soft wrap, selections, and multibyte text need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Registry metadata, shared Normal/Helix Normal binding, separate Visual action, EndOfLine range/count rules, focused pinned fixtures, and local D gap can be classified statically; platform dispatch, register outcomes, count/forced-motion behavior, and paired native acceptance remain open.
+Documentation updates: New DeleteToEndOfLine packet; registered-action row; shared binding annotation; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; pinned action, profile and Visual routes, motion count/end rules, representative fixtures, and local D path inspected. Static classification remains to be recorded; platform and native acceptance remain open.
+Target status: Classify shared `shift-d` as a count-aware deletion from each cursor through the counted buffer row's end, record its Vim register and forced-motion behavior, distinguish Visual `shift-d`, and document Labonair D's current-row/count gap.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair's local D deletes to the end of the current row and records a local register value, but ignores the pending count and has no typed `vim::DeleteToEndOfLine` action or shared profile route.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Native dispatch, count/EOF/register behavior, platform acceptance, and paired visual evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::DoubleQuotes` after completing this DeleteToEndOfLine classification; do not begin R07-001 or R09.
+~~~
+
+
+## Vim DeleteToEndOfLine action classification progress
+
+- Classified shared Normal/Helix Normal `shift-d` as count-aware deletion through the counted buffer row's end. Recorded the distinct Visual `shift-d` action, EndOfLine's forced-motion handling, and pinned direct/operator fixture boundaries.
+- Compared Labonair's local `D`: it deletes to the current row's end and stores the local register, but ignores count. Its zero-width delete path on a blank row after content may backspace the preceding line break; this is a static code-path risk with no local D fixture.
+- Updated the DeleteToEndOfLine packet, registered-action row, binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and this task record. Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 257 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`.
+- Rust build/tests, blank-row and count behavior, forced-motion, platform dispatch, and paired native evidence remain active goal acceptance gates.
+- Next safe task: Continue R07-000 with `vim::DoubleQuotes`; do not begin R07-001 or R09.

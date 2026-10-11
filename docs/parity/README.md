@@ -353,6 +353,7 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-vim-decrement.md`](action-classification-vim-decrement.md) — Vim/Helix numeric decrement and Boolean toggling, shared selection routes, stepped Visual decrement, and the missing Labonair action; platform and native acceptance remain open.
 - [`action-classification-vim-delete-left.md`](action-classification-vim-delete-left.md) — count-aware Vim Normal `shift-x`, characterwise register deletion, distinct Visual/Helix routes, and Labonair's uppercase-X register gap; platform and native acceptance remain open.
 - [`action-classification-vim-delete-right.md`](action-classification-vim-delete-right.md) — count-aware Vim Normal `x`/`delete`, characterwise register deletion, distinct Visual/Helix routes, and Labonair's local `x` path; platform and native acceptance remain open.
+- [`action-classification-vim-delete-to-end-of-line.md`](action-classification-vim-delete-to-end-of-line.md) — counted Vim/Helix Normal `shift-d`, buffer-row range semantics, separate Visual route, and Labonair's local D count/blank-row gaps; platform and native acceptance remain open.
 - [`titlebar-tab-strip.md`](titlebar-tab-strip.md) — independent titlebar tab
   appearance, input/state matrix, ownership, and evidence packet.
 - [`settings-requirements.md`](settings-requirements.md) — 488 stable IDs for
