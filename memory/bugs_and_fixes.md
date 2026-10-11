@@ -1072,3 +1072,18 @@ Visual selection.
 [Vim ChangeCase classification](../docs/parity/action-classification-vim-change-case.md).
 Keep this parity-inventory slice documentation-only; fix and verify the local
 Editor path when its owner contract is implemented.
+
+## 2026-10-11 — Local Vim uppercase C ignores count and skips the change register
+
+**Bug found:** `crates/editor/src/vim.rs::enter_insert` handles uppercase `C`
+by deleting from the caret to the current line end, then enters Insert mode.
+It resets but does not apply a pending count and does not copy the deleted text
+to the Vim register. The pinned `vim::ChangeToEndOfLine` action passes its
+count through the `EndOfLine` motion and copies the changed selection before
+deleting it. The existing pinned `test_change_end_of_line` fixture exercises
+`c $`, not the direct Shift-C action.
+
+**Disposition:** Record the partial local route and its count/register gaps in
+the [Vim ChangeToEndOfLine classification](../docs/parity/action-classification-vim-change-to-end-of-line.md).
+Keep this parity-inventory slice documentation-only; fix and verify the local
+Editor behavior when its owner contract is implemented.

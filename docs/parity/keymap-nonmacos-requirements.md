@@ -24,6 +24,7 @@ The [Vim BackQuotes packet](action-classification-vim-back-quotes.md) classifies
 The [Vim ChangeCase packet](action-classification-vim-change-case.md) classifies the three shared `~` rows in Vim Normal/Visual and Helix Normal/Select, and distinguishes direct toggling from `g~{motion}`. The profile data is shared; Linux/Windows dispatch, Unicode expansion, selection handling, and mode transitions need runtime verification.
 The [Vim ChangeListNewer packet](action-classification-vim-change-list-newer.md) classifies the shared `g ,` route in `VimControl && !menu`, its transient edit-position state, and the missing local change list. The profile data is shared; Linux/Windows dispatch and anchor restoration need runtime verification.
 The [Vim ChangeListOlder packet](action-classification-vim-change-list-older.md) classifies the paired `g ;` route and older traversal with an oldest-entry clamp. The profile data is shared; Linux/Windows dispatch and anchor restoration need runtime verification.
+The [Vim ChangeToEndOfLine packet](action-classification-vim-change-to-end-of-line.md) classifies `Shift-C` in Vim Normal and distinguishes Helix `Shift-C` → `HelixDuplicateBelow`; direct Linux/Windows dispatch, count/register results, and mode transition remain unverified.
 
 ### Layers
 

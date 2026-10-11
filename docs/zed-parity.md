@@ -340,6 +340,11 @@ anchor restoration, and paired macOS acceptance remain open. The independent
 records shared `g ;` navigation toward older edit-position anchors, counted
 movement, and the same missing local change-list route. Profile dispatch,
 anchor restoration, and paired macOS acceptance remain open. The independent
+[`Vim ChangeToEndOfLine action crosswalk`](parity/action-classification-vim-change-to-end-of-line.md)
+records Vim Normal `Shift-C`, its exclusive register-backed change to a buffer
+line end, the separate Helix DuplicateBelow chord, and Labonair's partial
+uppercase-C route. Count, register, palette, platform, and paired macOS
+acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and

@@ -6865,3 +6865,47 @@ Next safe task: Continue R07-000 with the next registered Vim action after `vim:
 - Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, profile/palette dispatch, anchor restoration, native behavior, or paired visual evidence were run; these remain R07-000 acceptance gates.
 - Next safe task: Continue R07-000 with `vim::ChangeToEndOfLine`; do not begin R07-001 or R09.
 ~~~
+
+## Pre-change contract — Vim ChangeToEndOfLine action
+
+~~~text
+Request type: Pinned registered-action, Vim text-edit, and shared-profile inventory; documentation-only.
+Owner module: Editor owns text changes, selections, Vim register and modal state; Keymap owns shared mode/user bindings; Settings owns Vim/Helix mode values; Command Palette owns existing Vim action discovery.
+Canonical capability crate: `labonair-editor`; profile composition in `labonair-keymap`.
+Canonical user entry point: Shared `Shift-C` under `vim_mode == normal`; focused-Editor Command Palette when Vim/Helix is enabled. Helix's separate `Shift-C` binding is `vim::HelixDuplicateBelow`.
+Public typed contract: Existing registered unit action `vim::ChangeToEndOfLine`; Labonair has an uppercase `C` parser branch that deletes from the current caret to the current line end and enters Insert mode, but no matching typed action or palette route. It ignores the count and does not update the Vim register with the deleted text. The local `c$` operator-plus-motion sequence is a separate partial route.
+State owner: Editor owns text and active selections; its Vim mode owns count, forced-motion, register, and Insert/Normal transitions. Pinned `ChangeToEndOfLine` uses the non-display-line `EndOfLine` motion, copies the exclusive selection into the Vim register, deletes it, refreshes edit prediction, and enters Insert mode. The count may extend the endpoint across buffer rows.
+Persistence owner: Settings persists Vim mode; Keymap persists profile and user bindings. Text changes use ordinary document persistence; the Vim register and mode are transient.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-ChangeToEndOfLine`; shared `KEYBIND-VIM-HELIX-4653d4ed0a84` (`shift-c`, `vim_mode == normal`); no platform-default binding. `shift-c` in Helix Normal/Select is bound separately to `vim::HelixDuplicateBelow`.
+Events and registry contributions: Existing Vim action registration, shared mode layer, Editor document-edit route, and generic palette route; no new event or registry.
+Settings: Existing Vim/Helix mode values gate the shared layer and Vim action palette namespace; no change-to-end-of-line setting.
+Notifications: None expected. Read-only behavior and empty-range mode transition require acceptance evidence.
+UI-kit components: Existing Editor, Command Palette, and Keymap only; no new UI control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect pinned `test_change_end_of_line` (`c $`) and the corresponding shared keymap declaration without running tests. It exercises the operator-plus-motion route, not the direct `Shift-C` action. Future owner work needs direct Shift-C, count, logical line versus wrapped display line, line-end/empty-line behavior, Vim register contents, multi-selection, read-only, Visual/palette invocation, and resulting mode coverage.
+Visual evidence: No local layout change; native macOS key/palette and mode behavior remain unverified, with Linux and Windows profile dispatch checked separately.
+Security impact: None beyond ordinary local text edits.
+Performance impact: No local runtime work; the pinned action transforms active selection ranges and refreshes edit prediction after a buffer edit.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static registration, shared Vim Normal binding, separate Helix Shift-C binding, change-motion implementation, focused operator fixture, and partial local C route can be classified; direct-action runtime behavior and native acceptance remain pending.
+Documentation updates: New ChangeToEndOfLine packet; registered-action row; shared Vim Normal binding annotation; Linux/Windows layer note; packet index; `commands.keymap` and `editor.text` crosswalks; normative parity summary; task record; memory note for the local uppercase-C count/register gaps.
+Current status: Pre-change contract recorded; source and local-owner audit complete; parity packet and crosswalk updates not yet made.
+Target status: Separate the registered Shift-C action from `c$` and Helix DuplicateBelow, identify the local partial C route and count gap, and record acceptance still needed.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair's uppercase C handles only the current line from the current caret, ignores a count, and does not update the Vim register with deleted text; it has no typed action or palette route. Direct Shift-C, multi-selection, read-only, platform, and palette behavior remain unverified.
+Failed/unavailable gates: No gates run yet. This is a docs-only classification; tests, Rust build, profile/palette dispatch, native behavior, and paired visual acceptance are not requested or run in this slice.
+Next safe task: Continue R07-000 with `vim::Class`; do not begin R07-001 or R09.
+~~~
+
+## Progress — classify Vim ChangeToEndOfLine action
+
+~~~text
+- Added [action-classification-vim-change-to-end-of-line.md](../../docs/parity/action-classification-vim-change-to-end-of-line.md) for ACT-REGISTRY-LINUX-vim-ChangeToEndOfLine.
+- Recorded the shared `Shift-C` binding (KEYBIND-VIM-HELIX-4653d4ed0a84) under `vim_mode == normal`, with no platform-default binding. Distinguished Helix Normal/Select `Shift-C` → `vim::HelixDuplicateBelow`.
+- Classified count-driven buffer-line EndOfLine motion, exclusive register capture, linked text deletion, edit-prediction refresh, and Insert-mode transition. Inspected `test_change_end_of_line`, which covers `c $`, not direct Shift-C; no tests were run.
+- Audited local uppercase `C`: it deletes from the caret to the current line end and enters Insert, but ignores count and does not populate the Vim register. The separate local `c $` operator route is not the registered Shift-C action. Recorded the count/register gaps in `memory/bugs_and_fixes.md`; runtime code was not changed.
+- Updated the registered-action row, shared Vim Normal binding annotation, Linux/Windows layer note, packet index, `commands.keymap` and `editor.text` crosswalks, normative parity summary, memory note, and this task record.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative docs; 240 Markdown files), `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active), and `python3 scripts/verify.py --scope docs`, `agents`, `knowledge`, `settings`, and `queue`.
+- Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, direct-action or palette dispatch, read-only/count/register runtime behavior, native behavior, or paired visual evidence were run; these remain R07-000 acceptance gates.
+- Next safe task: Continue R07-000 with `vim::Class`; do not begin R07-001 or R09.
+~~~
