@@ -3083,6 +3083,29 @@ impl EditorView {
 
     // ── Key handling ────────────────────────────────────────────────────────
 
+    fn insert_printable(&mut self, text: &str, cx: &mut Context<Self>) {
+        let mut characters = text.chars();
+        let Some(character) = characters.next() else {
+            return;
+        };
+        if characters.next().is_none()
+            && matches!(character, '(' | '[' | '{' | ')' | ']' | '}' | '\'' | '"')
+        {
+            self.execute_command(EditorCommand::Edit(EditIntent::TypeBracket(character)), cx);
+        } else {
+            let text = text.to_owned();
+            self.edit(cx, move |document| document.insert(&text));
+        }
+    }
+
+    fn insert_newline(&mut self, cx: &mut Context<Self>) {
+        let indent = self.indent_unit();
+        self.execute_command(
+            EditorCommand::Edit(EditIntent::AutoIndent { unit: indent }),
+            cx,
+        );
+    }
+
     fn on_key(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let ks = &ev.keystroke;
         let m = &ks.modifiers;
@@ -3207,7 +3230,7 @@ impl EditorView {
             }
             "pageup" => self.navigate(Motion::PageUp(rows), m.shift, cx),
             "pagedown" => self.navigate(Motion::PageDown(rows), m.shift, cx),
-            "enter" => self.edit(cx, |d| d.insert("\n")),
+            "enter" => self.insert_newline(cx),
             "tab" => {
                 let indent = self.indent_unit();
                 self.edit(cx, move |d| d.insert(&indent));
@@ -3217,7 +3240,7 @@ impl EditorView {
             "escape" => {}
             _ => {
                 if let Some(text) = printable(ks) {
-                    self.edit(cx, |d| d.insert(&text));
+                    self.insert_printable(&text, cx);
                 } else {
                     return;
                 }
@@ -6547,6 +6570,27 @@ mod tests {
                 assert_eq!(this.doc.text(), "\tline");
                 assert!(this.dispatch_registered_command(CommandId::EditorOutdent, cx));
                 assert_eq!(this.doc.text(), "line");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn typed_brackets_close_skip_and_auto_indent_on_enter(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("test.rs".into(), "", 1);
+                this.insert_printable("{", cx);
+                assert_eq!(this.doc.text(), "{}");
+                assert_eq!(this.doc.cursor, Position::new(0, 1));
+
+                this.insert_newline(cx);
+                assert_eq!(this.doc.text(), "{\n  }");
+                assert_eq!(this.doc.cursor, Position::new(1, 2));
+
+                this.insert_printable("}", cx);
+                assert_eq!(this.doc.text(), "{\n  }");
+                assert_eq!(this.doc.cursor, Position::new(1, 3));
             });
         });
     }

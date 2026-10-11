@@ -656,28 +656,23 @@ impl Document {
     }
 
     fn insert_auto_indent(&mut self, unit: &str) -> EditorCommandResult {
-        if unit.is_empty() {
-            return EditorCommandResult::unchanged();
-        }
         let snapshot = self.snapshot();
+        let text = snapshot.text();
         let targets = self
             .selection_set()
             .selections()
             .iter()
-            .filter_map(|selection| {
+            .map(|selection| {
                 let range = selection.range().resolve(&snapshot);
-                range.is_empty().then(|| {
-                    let text = auto_indent(&snapshot.text(), range.start, unit);
-                    (range, text)
-                })
+                let indentation = auto_indent(&text, range.start, unit);
+                (range, format!("\n{indentation}"))
             })
-            .filter(|(_, text)| !text.is_empty())
             .collect();
         self.apply_targets(
             targets,
-            false,
+            true,
             EditSource::Typing,
-            Some("Auto indent".into()),
+            Some("Enter with auto indent".into()),
         )
     }
 
@@ -1155,7 +1150,7 @@ fn matching_pair(ch: char) -> Option<char> {
 }
 
 fn closing_bracket(ch: char) -> Option<char> {
-    matches!(ch, ')' | ']' | '}').then_some(ch)
+    matches!(ch, ')' | ']' | '}' | '\'' | '"').then_some(ch)
 }
 
 /// A small typed snippet session. Placeholders are `${1:default}` or `${1}`;
@@ -1330,5 +1325,17 @@ mod tests {
         document.execute_edit(EditIntent::TypeBracket(')'));
         assert_eq!(document.cursor, Position::new(0, 2));
         assert!(document.selected_text().is_none());
+    }
+
+    #[test]
+    fn enter_inserts_newline_and_auto_indents_the_caret() {
+        let mut document = doc("  if {");
+        document.set_caret(Position::new(0, 6), false);
+        document.execute_edit(EditIntent::AutoIndent { unit: "  ".into() });
+
+        assert_eq!(document.text(), "  if {\n    ");
+        assert_eq!(document.cursor, Position::new(1, 4));
+        document.undo();
+        assert_eq!(document.text(), "  if {");
     }
 }
