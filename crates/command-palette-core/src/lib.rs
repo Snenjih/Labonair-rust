@@ -10,11 +10,13 @@ use std::fmt;
 
 pub mod command_provider;
 
-/// The surface that is active in the focused tab.
+/// The surface or modal editor mode active in the focused tab.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum CommandContext {
     Terminal,
     Editor,
+    EditorVim,
+    EditorHelix,
     Sftp,
     Home,
     SshTerminal,

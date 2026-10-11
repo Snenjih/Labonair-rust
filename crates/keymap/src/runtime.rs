@@ -21,6 +21,8 @@ pub fn context_name(context: CommandContext) -> &'static str {
     match context {
         CommandContext::Terminal => "Terminal",
         CommandContext::Editor => "Editor",
+        CommandContext::EditorVim => "EditorVim",
+        CommandContext::EditorHelix => "EditorHelix",
         CommandContext::Sftp => "Sftp",
         CommandContext::Home => "Home",
         CommandContext::SshTerminal => "SshTerminal",
@@ -34,6 +36,8 @@ pub fn context_label(context: CommandContext) -> &'static str {
     match context {
         CommandContext::Terminal => "Terminal",
         CommandContext::Editor => "Editor",
+        CommandContext::EditorVim => "Vim Editor",
+        CommandContext::EditorHelix => "Helix Editor",
         CommandContext::Sftp => "SFTP",
         CommandContext::Home => "Home",
         CommandContext::SshTerminal => "SSH Terminal",

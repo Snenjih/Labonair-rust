@@ -18,8 +18,8 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     canvas, div, px, relative, AnyElement, App, AppContext, Bounds, ClickEvent, ClipboardItem,
     Context, Entity, EventEmitter, FocusHandle, Focusable, HighlightStyle, InteractiveElement,
-    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, Render, ScrollWheelEvent, SharedString,
+    IntoElement, KeyContext, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollWheelEvent, SharedString,
     StatefulInteractiveElement, Styled, StyledText, Task, Window,
 };
 use labonair_command_palette_core::CommandId;
@@ -834,6 +834,38 @@ fn vim_options(p: &EditorSettings) -> VimOptions {
 }
 
 impl EditorView {
+    /// Publish the active modal state to GPUI's keymap context tree. User
+    /// bindings can scope actions with predicates such as
+    /// `Editor && editor_mode == helix && modal_mode == select`.
+    fn keymap_context(&self) -> KeyContext {
+        let mut context = KeyContext::default();
+        context.add("Editor");
+
+        let (editor_mode, modal_mode) = if let Some(vim) = &self.vim {
+            context.add("EditorVim");
+            let modal_mode = match vim.mode() {
+                VimMode::Normal => "normal",
+                VimMode::Insert => "insert",
+                VimMode::Visual => "visual",
+                VimMode::VisualLine => "visual_line",
+                VimMode::Command => "command",
+            };
+            ("vim", modal_mode)
+        } else if let Some(helix) = &self.helix {
+            context.add("EditorHelix");
+            let modal_mode = match helix.mode() {
+                HelixMode::Select => "select",
+                HelixMode::Insert => "insert",
+            };
+            ("helix", modal_mode)
+        } else {
+            ("normal", "normal")
+        };
+        context.set("editor_mode", editor_mode);
+        context.set("modal_mode", modal_mode);
+        context
+    }
+
     pub fn new(theme: Entity<ThemeStore>, cx: &mut Context<Self>) -> Self {
         Self::new_with_language_services(theme, Arc::new(LanguageServiceRuntime::default()), cx)
     }
@@ -7907,7 +7939,7 @@ impl Render for EditorView {
         div()
             .id("editor")
             .track_focus(&self.focus_handle)
-            .key_context("Editor")
+            .key_context(self.keymap_context())
             .flex()
             .flex_col()
             .size_full()
@@ -8070,7 +8102,7 @@ fn parse_line_column(value: &str) -> Option<Position> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::{AppContext, TestAppContext};
+    use gpui::{AppContext, KeyBindingContextPredicate, TestAppContext};
     use labonair_editor::SearchOptions;
     use labonair_settings::content::editor::EditorContent;
     use labonair_settings::{SettingsContent, SettingsLayer, SettingsStore};
@@ -8110,6 +8142,14 @@ mod tests {
             let theme = cx.new(|_| ThemeStore::new(gpui::WindowAppearance::Light));
             cx.new(|cx| EditorView::new(theme, cx))
         })
+    }
+
+    fn key_context_matches(context: &KeyContext, expression: &str) -> bool {
+        let Ok(predicate) = KeyBindingContextPredicate::parse(expression) else {
+            return false;
+        };
+        let contexts = std::slice::from_ref(context);
+        predicate.eval_inner(contexts, contexts)
     }
 
     #[gpui::test]
@@ -8478,6 +8518,11 @@ mod tests {
                 assert!(v.vim.is_some(), "vim enabled via prefs");
                 assert!(v.helix.is_none(), "Vim takes precedence over Helix");
                 assert_eq!(v.indent_unit(), "   ");
+                let key_context = v.keymap_context();
+                assert!(key_context_matches(
+                    &key_context,
+                    "EditorVim && editor_mode == vim && modal_mode == normal",
+                ));
             });
         });
         cx.update(|cx| {
@@ -8510,12 +8555,22 @@ mod tests {
                 this.apply_prefs(cx);
                 assert!(this.helix.is_some());
                 assert!(this.vim.is_none());
+                let key_context = this.keymap_context();
+                assert!(key_context_matches(
+                    &key_context,
+                    "EditorHelix && editor_mode == helix && modal_mode == select",
+                ));
 
                 assert!(this.handle_helix(HelixKey::Char('d'), cx));
                 assert_eq!(this.doc.text(), "bc");
                 assert_eq!(this.helix.as_ref().map(Helix::status), Some("HELIX SELECT"));
 
                 assert!(this.handle_helix(HelixKey::Char('i'), cx));
+                let key_context = this.keymap_context();
+                assert!(key_context_matches(
+                    &key_context,
+                    "EditorHelix && editor_mode == helix && modal_mode == insert",
+                ));
                 this.insert_printable("x", cx);
                 assert_eq!(this.doc.text(), "xbc");
                 assert!(this.handle_helix(HelixKey::Escape, cx));

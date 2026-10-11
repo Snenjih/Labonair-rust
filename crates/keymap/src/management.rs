@@ -287,7 +287,7 @@ pub fn snapshot<'a>(
             command: descriptor.id,
             title: descriptor.title.clone(),
             section: descriptor.section.clone(),
-            contexts: descriptor.contexts.clone(),
+            contexts: management_contexts(&descriptor.contexts),
             default_bindings: descriptor
                 .default_bindings
                 .iter()
@@ -313,6 +313,17 @@ pub fn snapshot<'a>(
         document,
         issues: runtime.issues.clone(),
     }
+}
+
+/// Offer modal editor scopes in the keymap editor for every command that is
+/// available in the general editor surface. Runtime command availability
+/// remains tied to the descriptor's declared `Editor` context.
+fn management_contexts(contexts: &[CommandContext]) -> Vec<CommandContext> {
+    let mut expanded = contexts.to_vec();
+    if contexts.contains(&CommandContext::Editor) {
+        expanded.extend([CommandContext::EditorVim, CommandContext::EditorHelix]);
+    }
+    expanded
 }
 
 /// Build the known-action vocabulary used by the lossless document parser.
@@ -433,6 +444,7 @@ mod tests {
     #[test]
     fn snapshot_groups_effective_bindings_by_typed_command() {
         let descriptor = CommandDescriptor::new(CommandId::Find, "Find", "Search")
+            .with_contexts(&[CommandContext::Editor])
             .with_default_binding("cmd-f", Some(CommandContext::Editor));
         let runtime = KeymapSnapshot {
             effective_bindings: vec![EffectiveBinding {
@@ -448,6 +460,14 @@ mod tests {
 
         assert_eq!(snapshot.rows.len(), 1);
         assert_eq!(snapshot.rows[0].command, CommandId::Find);
+        assert_eq!(
+            snapshot.rows[0].contexts,
+            vec![
+                CommandContext::Editor,
+                CommandContext::EditorVim,
+                CommandContext::EditorHelix,
+            ]
+        );
         assert_eq!(snapshot.rows[0].effective_bindings.len(), 1);
         assert_eq!(snapshot.search("cmd-f").len(), 1);
         assert_eq!(
