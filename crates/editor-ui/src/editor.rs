@@ -2877,6 +2877,12 @@ impl EditorView {
         labonair_editor::document_symbols(self.syntax.language(), &snapshot)
     }
 
+    /// Current revision-bound diagnostics for the Editor-owned diagnostics
+    /// palette page. Display severity settings do not filter this result list.
+    pub fn diagnostics(&self) -> Vec<labonair_editor::Diagnostic> {
+        self.language_service_state.snapshot().diagnostics
+    }
+
     /// Move the caret to the start of `line0` (0-based, clamped) and scroll it
     /// into view — palette symbol jump.
     pub fn goto_line(&mut self, line0: usize, cx: &mut Context<Self>) {

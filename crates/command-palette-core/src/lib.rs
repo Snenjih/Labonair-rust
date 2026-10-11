@@ -216,6 +216,7 @@ pub enum CommandSubmenu {
     Hosts,
     Snippets,
     Outline,
+    Diagnostics,
     GitBranches,
     StatusBarHidden,
 }

@@ -1,6 +1,7 @@
 //! Editor-owned command metadata.
 
 use crate::editing::{DeleteTarget, EditIntent, SplitIntent};
+use crate::language_services::{Diagnostic, DiagnosticSeverity};
 use crate::symbols::DocumentSymbol;
 use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider, CommandSubmenu,
@@ -78,6 +79,14 @@ pub struct EditorSymbolPickerRow {
     pub tab_id: u64,
     pub file_label: String,
     pub symbol: DocumentSymbol,
+}
+
+/// One diagnostic result from an open editor buffer in the active workspace.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EditorDiagnosticPickerRow {
+    pub tab_id: u64,
+    pub file_label: String,
+    pub diagnostic: Diagnostic,
 }
 
 /// Resolve an editor-owned command ID without making Workspace understand
@@ -345,6 +354,49 @@ pub fn outline_submenu(rows: impl IntoIterator<Item = EditorSymbolPickerRow>) ->
                     line: row.symbol.line,
                 },
                 secondary: None,
+            })
+            .collect(),
+    }
+}
+
+/// Build the editor-owned searchable diagnostics page from current buffer
+/// snapshots. Workspace contributes rows; the picker only renders and routes.
+pub fn diagnostics_submenu(
+    rows: impl IntoIterator<Item = EditorDiagnosticPickerRow>,
+) -> SubmenuSnapshot {
+    SubmenuSnapshot {
+        descriptor: SubmenuDescriptor::new(
+            "diagnostics",
+            "Diagnostics",
+            CommandSubmenu::Diagnostics,
+        ),
+        items: rows
+            .into_iter()
+            .enumerate()
+            .map(|(index, row)| {
+                let line = row.diagnostic.range.start.line;
+                let severity = match row.diagnostic.severity {
+                    DiagnosticSeverity::Error => "error",
+                    DiagnosticSeverity::Warning => "warning",
+                    DiagnosticSeverity::Information => "information",
+                    DiagnosticSeverity::Hint => "hint",
+                };
+                SubmenuItem {
+                    id: format!("{}:{index}", row.tab_id),
+                    title: row.diagnostic.message,
+                    subtitle: Some(format!(
+                        "{}  ·  {}  ·  line {}",
+                        row.file_label,
+                        severity,
+                        line + 1
+                    )),
+                    active: false,
+                    action: SubmenuAction::GoToEditorLine {
+                        tab_id: row.tab_id,
+                        line,
+                    },
+                    secondary: None,
+                }
             })
             .collect(),
     }
@@ -641,7 +693,8 @@ impl CommandProvider for EditorCommandProvider {
                 "Show Diagnostics",
                 "Editor",
             )
-            .with_contexts(&[CommandContext::Editor]),
+            .with_contexts(&[CommandContext::Editor])
+            .with_submenu(CommandSubmenu::Diagnostics),
             CommandDescriptor::new(CommandId::EditorNextDiagnostic, "Next Diagnostic", "Editor")
                 .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(
@@ -746,6 +799,45 @@ mod tests {
             SubmenuAction::GoToEditorLine {
                 tab_id: 17,
                 line: 8,
+            }
+        );
+    }
+
+    #[test]
+    fn diagnostics_submenu_targets_the_diagnostic_buffer_and_line() {
+        let snapshot = diagnostics_submenu([EditorDiagnosticPickerRow {
+            tab_id: 23,
+            file_label: "src/lib.rs".to_string(),
+            diagnostic: Diagnostic {
+                range: crate::LspRange {
+                    start: crate::LspPosition {
+                        line: 11,
+                        character: 2,
+                    },
+                    end: crate::LspPosition {
+                        line: 11,
+                        character: 8,
+                    },
+                },
+                severity: DiagnosticSeverity::Warning,
+                message: "unused value".to_string(),
+                source: crate::LanguageServerId::new("rust-analyzer"),
+                code: None,
+            },
+        }]);
+
+        assert_eq!(snapshot.descriptor.id, "diagnostics");
+        assert_eq!(snapshot.items.len(), 1);
+        assert_eq!(snapshot.items[0].title, "unused value");
+        assert_eq!(
+            snapshot.items[0].subtitle.as_deref(),
+            Some("src/lib.rs  ·  warning  ·  line 12")
+        );
+        assert_eq!(
+            snapshot.items[0].action,
+            SubmenuAction::GoToEditorLine {
+                tab_id: 23,
+                line: 11,
             }
         );
     }

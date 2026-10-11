@@ -239,6 +239,11 @@ impl AppShell {
         );
         register_snapshot(&mut submenus, symbols);
 
+        let diagnostics = labonair_editor::command_provider::diagnostics_submenu(
+            self.workspace.read(cx).editor_diagnostic_picker_rows(cx),
+        );
+        register_snapshot(&mut submenus, diagnostics);
+
         let app_themes = labonair_theme::command_provider::app_themes_submenu(
             labonair_theme::command_provider::app_theme_choices()
                 .into_iter()

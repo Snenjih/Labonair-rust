@@ -1760,6 +1760,38 @@ impl Workspace {
         rows
     }
 
+    /// Current diagnostics from each editor tab in the active space, for the
+    /// Editor-owned diagnostics palette page.
+    pub fn editor_diagnostic_picker_rows(
+        &self,
+        cx: &App,
+    ) -> Vec<labonair_editor::command_provider::EditorDiagnosticPickerRow> {
+        let active_space = self.spaces.read(cx).active_id();
+        let editors = self
+            .tabs
+            .read(cx)
+            .tabs_in_space(active_space)
+            .into_iter()
+            .filter(|tab| tab.kind == TabKind::Editor)
+            .map(|tab| (tab.id, tab.label()))
+            .collect::<Vec<_>>();
+
+        let mut rows = Vec::new();
+        for (tab_id, file_label) in editors {
+            let Some(editor) = self.editors.get(&tab_id) else {
+                continue;
+            };
+            rows.extend(editor.read(cx).diagnostics().into_iter().map(|diagnostic| {
+                labonair_editor::command_provider::EditorDiagnosticPickerRow {
+                    tab_id,
+                    file_label: file_label.clone(),
+                    diagnostic,
+                }
+            }));
+        }
+        rows
+    }
+
     /// Activate an editor tab from the current space and move its caret to a
     /// symbol definition selected from the Go to Symbol palette.
     pub fn goto_editor_line(

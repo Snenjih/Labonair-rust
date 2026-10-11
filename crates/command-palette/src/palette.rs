@@ -170,7 +170,7 @@ pub trait PaletteWorkspace {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sub-pages (port of the reference `CommandPage` registry — 11 named pages)
+// Sub-pages (port of the reference `CommandPage` registry — 12 named pages)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Every palette page. `Root` is the command list; the rest are the
@@ -186,6 +186,7 @@ pub enum Page {
     Hosts,
     Snippets,
     Outline,
+    Diagnostics,
     GitBranches,
     StatusBarHidden,
 }
@@ -203,6 +204,7 @@ impl Page {
             Page::Hosts => "Search hosts\u{2026}",
             Page::Snippets => "Search snippets\u{2026}",
             Page::Outline => "Search symbols\u{2026}",
+            Page::Diagnostics => "Search diagnostics\u{2026}",
             Page::GitBranches => "Search branches\u{2026}",
             Page::StatusBarHidden => "Search hidden items\u{2026}",
         }
@@ -220,6 +222,7 @@ impl Page {
             Page::Hosts => "Hosts",
             Page::Snippets => "Snippets",
             Page::Outline => "Symbols",
+            Page::Diagnostics => "Diagnostics",
             Page::GitBranches => "Branches",
             Page::StatusBarHidden => "Hidden Status Bar Items",
         }
@@ -309,6 +312,7 @@ fn page_for(page: CommandSubmenu) -> Page {
         CommandSubmenu::Hosts => Page::Hosts,
         CommandSubmenu::Snippets => Page::Snippets,
         CommandSubmenu::Outline => Page::Outline,
+        CommandSubmenu::Diagnostics => Page::Diagnostics,
         CommandSubmenu::GitBranches => Page::GitBranches,
         CommandSubmenu::StatusBarHidden => Page::StatusBarHidden,
     }
@@ -904,6 +908,13 @@ where
                 IconName::FileCode,
                 mode,
                 "No symbols found",
+            ),
+            Page::Diagnostics => self.submenu_rows(
+                CommandSubmenu::Diagnostics,
+                "Diagnostics",
+                IconName::FileCode,
+                mode,
+                "No diagnostics",
             ),
             Page::GitBranches => self.submenu_rows(
                 CommandSubmenu::GitBranches,
