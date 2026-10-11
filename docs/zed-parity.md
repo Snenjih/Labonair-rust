@@ -350,6 +350,11 @@ records the shared Vim c and Helix Type routes, grammar-backed inside/around
 ranges, directional Helix selection, and missing local text-object action.
 Language coverage, profile dispatch, palette context, and paired macOS
 acceptance remain open. The independent
+[`Vim ClearExchange action crosswalk`](parity/action-classification-vim-clear-exchange.md)
+records the shared cx c cancellation route, removal of the transient
+VimExchange highlight, common operator/count/register clearing, and the
+missing local Editor route. Palette context, profile dispatch, and paired
+macOS acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and

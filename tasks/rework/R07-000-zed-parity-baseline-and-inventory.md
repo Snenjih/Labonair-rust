@@ -6951,3 +6951,45 @@ Next safe task: Continue R07-000 with `vim::ClearExchange`; do not begin R07-001
 - Passed git diff --check, scripts/check_documentation.py (43 normative docs; 241 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
 - Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, profile/palette dispatch, syntax coverage, native behavior, or paired visual evidence were run; these remain R07-000 acceptance gates.
 - Next safe task: Continue R07-000 with vim::ClearExchange; do not begin R07-001 or R09.
+
+## Pre-change contract — Vim ClearExchange action
+
+~~~text
+Request type: Pinned registered-action, transient exchange-state, and shared Vim profile inventory; documentation-only.
+Owner module: Editor owns exchange ranges/highlights and modal operator/count/register state; Keymap owns shared mode and user bindings; Settings owns Vim/Helix mode values; Command Palette owns existing Vim action discovery.
+Canonical capability crate: labonair-editor; profile composition in labonair-keymap.
+Canonical user entry point: After starting the Vim exchange operator with cx, c under vim_operator == cx clears the stored exchange range and pending operator. Focused-Editor Command Palette discovery is conditional on Vim/Helix; direct invocation also clears modal operator state.
+Public typed contract: Existing registered unit action vim::ClearExchange. Its handler stops Vim recording, clears Editor background highlights under VimExchange, then clears operator stack, count, forced-motion, and selected-register state. It does not edit text or directly switch modes. Labonair has no exchange operator, stored exchange highlight, or matching action.
+State owner: Editor owns the exchange range represented by VimExchange background highlights and transient Vim operator state.
+Persistence owner: None for exchange range/operator state. User profile and mode values use existing Keymap and Settings persistence.
+Commands and keymap entries: ACT-REGISTRY-LINUX-vim-ClearExchange; shared KEYBIND-VIM-HELIX-3f44433d13b1 (c, vim_operator == cx). The preceding exchange operator is vim::Exchange under vim_operator == c with x; no platform-default binding exists.
+Events and registry contributions: Existing Vim action registration, Editor background-highlight facility, shared mode profile, and generic palette route; no new event, registry, or shell-wide conditional.
+Settings: Existing Vim/Helix mode values gate the shared layer and Vim palette namespace; no ClearExchange-specific setting.
+Notifications: None expected. The action silently clears any current exchange highlight and modal operator state.
+UI-kit components: Existing Editor text background highlights, Command Palette, and Keymap only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect pinned test_clear_exchange and test_clear_exchange_clears_operator without running them. Future owner work needs active and absent exchange range, pending exchange and unrelated operator, count/forced motion/selected-register clearing, text and cursor preservation, mode preservation, palette invocation, and repeated clear coverage.
+Visual evidence: No persistent layout change; transient VimExchange highlight and its clearing need paired native macOS Editor evidence. Linux/Windows shared-profile dispatch remains unverified.
+Security impact: None beyond local Editor state.
+Performance impact: No local runtime work; clearing one background-highlight key and modal state is constant-scale.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static action, handler, shared cx c binding, editor highlight behavior, test fixtures, and local owner gap can be classified; direct runtime, palette, profile, and native acceptance remain pending.
+Documentation updates: New ClearExchange packet; registered-action row; shared keybinding annotation; Linux/Windows layer note; packet index; commands.keymap and editor.text crosswalks; normative parity summary; task record. No memory note unless audit discovers a non-obvious bug or API issue.
+Current status: Pre-change contract recorded; source and local-owner audit complete; parity packet and register updates not yet made.
+Target status: Distinguish ClearExchange cancellation from the two-range exchange edit; record the exact transient state cleared, shared cx c route, and missing local Editor owner route without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no Vim exchange operator, range highlight/register, ClearExchange action, shared Vim/Helix profile, or palette action route.
+Failed/unavailable gates: No gates run yet. This is a docs-only classification; tests, Rust build, profile/palette dispatch, native behavior, and paired visual evidence are not requested or run in this slice.
+Next safe task: Continue R07-000 with vim::ClearOperators; do not begin R07-001 or R09.
+~~~
+
+
+## Progress — Vim ClearExchange action
+
+- Added [action-classification-vim-clear-exchange.md](../../docs/parity/action-classification-vim-clear-exchange.md) for ACT-REGISTRY-LINUX-vim-ClearExchange.
+- Classified the shared cx c route, distinguished it from the two-range Exchange edit, and recorded that the handler clears the VimExchange background highlight plus the full operator stack, count, forced-motion, and selected-register state without editing text or directly switching modes.
+- Inspected test_clear_exchange and test_clear_exchange_clears_operator source fixtures without running them. Palette invocation with an unrelated pending operator remains an explicit acceptance case.
+- Updated the registered-action row, shared keybinding annotation, Linux/Windows layer note, packet index, commands.keymap and editor.text crosswalks, normative parity summary, and this task record. No memory note was needed because the audit found no new bug or API discovery.
+- Passed git diff --check, scripts/check_documentation.py (43 normative docs; 242 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
+- Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, profile/palette dispatch, native behavior, or paired visual evidence were run; these remain R07-000 acceptance gates.
+- Next safe task: Continue R07-000 with vim::ClearOperators; do not begin R07-001 or R09.

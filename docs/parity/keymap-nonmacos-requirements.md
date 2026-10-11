@@ -26,6 +26,7 @@ The [Vim ChangeListNewer packet](action-classification-vim-change-list-newer.md)
 The [Vim ChangeListOlder packet](action-classification-vim-change-list-older.md) classifies the paired `g ;` route and older traversal with an oldest-entry clamp. The profile data is shared; Linux/Windows dispatch and anchor restoration need runtime verification.
 The [Vim ChangeToEndOfLine packet](action-classification-vim-change-to-end-of-line.md) classifies `Shift-C` in Vim Normal and distinguishes Helix `Shift-C` → `HelixDuplicateBelow`; direct Linux/Windows dispatch, count/register results, and mode transition remain unverified.
 The [Vim Class packet](action-classification-vim-class.md) records the shared Vim c and Helix t routes, grammar-backed inside/around ranges, Helix next/previous type selection, and missing local text-object action. Linux/Windows dispatch, language coverage, and paired macOS acceptance remain open.
+The [Vim ClearExchange packet](action-classification-vim-clear-exchange.md) classifies the shared cx c cancellation route, transient VimExchange highlight removal, common operator/count/register clearing, and missing local action. Linux/Windows dispatch and paired macOS acceptance remain open.
 
 ### Layers
 
