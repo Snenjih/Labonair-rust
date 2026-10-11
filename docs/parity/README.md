@@ -23,6 +23,7 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-vim-half-page-left.md`](action-classification-vim-half-page-left.md) — `z shift-h` horizontal half-width scrolling by default and counted full-width multiples, with cursor visibility adjustment; runtime acceptance remains open.
 - [`action-classification-vim-half-page-right.md`](action-classification-vim-half-page-right.md) — `z shift-l` horizontal half-width scrolling by default and counted full-width multiples, including the left-edge gutter adjustment; runtime acceptance remains open.
 - [`action-classification-vim-helix-append.md`](action-classification-vim-helix-append.md) — Helix Normal/Select `a`, selection-end insertion, and conditional no-edit Escape restoration; runtime acceptance remains open.
+- [`action-classification-vim-helix-collapse-selection.md`](action-classification-vim-helix-collapse-selection.md) — Helix `;` per-selection collapse, the overlapping Select/shared keymap rows, and Labonair's missing Helix route; runtime acceptance remains open.
 - [`action-requirements.md`](action-requirements.md) — stable requirement IDs
   for all 595 action identifiers across the default macOS, Linux, and Windows
   keymaps, with 2,731 binding/context records and four null entries. It records

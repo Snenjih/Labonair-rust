@@ -8476,3 +8476,42 @@ Next safe task: Continue R07-000 with `vim::HelixCollapseSelection`; do not begi
 - Updated the HelixAppend packet, registered-action row, both `a` binding annotations, Linux/Windows profile note, parity index, feature crosswalk, Helix Mode setting row, and task record. Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 278 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Multi-selection, no-edit restore, count, undo/escape, settings/profile interaction, palette, platform dispatch, and paired native acceptance remain active.
 - Next safe task: Continue R07-000 with `vim::HelixCollapseSelection`; do not begin R07-001 or R09.
+
+## Pre-change contract — Vim HelixCollapseSelection
+
+~~~text
+Request type: Pinned Helix selection-collapse action, selection endpoint rules, overlapping shared keymap rows, and Labonair's missing Helix route; documentation-only classification.
+Owner module: Editor/Vim owns active mode and editor selections; Keymap owns both shared Helix `;` routes. Labonair's current selection and Vim state belong to `labonair-editor`; a Helix profile route belongs to `labonair-keymap` and its mode value to Settings.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: `;` in Helix Select under `vim_mode == helix_select`; the same action is also bound by a shared `(vim_mode == helix_normal || vim_mode == helix_select) && !menu` selection-manipulation row.
+Public typed contract: Unit action `vim::HelixCollapseSelection`, no JSON arguments or aliases. Each selection collapses without scrolling: empty and reversed selections collapse to the active head; a forward nonempty selection collapses one display step left from its active head, retaining its selection goal.
+State owner: Editor owns selection ranges and cursor positions; Vim owns mode state; Keymap/Settings gate Helix contexts.
+Persistence owner: No action-specific persistence; collapse changes transient Editor selections only.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-HelixCollapseSelection`; `KEYBIND-VIM-HELIX-e0b158c1db46` (`;`, `vim_mode == helix_select`); `KEYBIND-VIM-HELIX-b76cb2779bad` (`;`, `(vim_mode == helix_normal || vim_mode == helix_select) && !menu`). Both rows dispatch the same unit action; profile precedence and menu interaction need runtime acceptance.
+Events and registry contributions: Existing Vim action and two shared Keymap rows; selection updates use `SelectionEffects::no_scroll()`. No edit, mode transition, event, or new registry contribution is proposed.
+Settings: `SET-keymap-helix-mode` enables Helix mode contexts; `SET-keymap-vim-mode` enables the Vim/Helix action layer. No action-specific setting or count behavior is declared.
+Notifications: None.
+UI-kit components: Existing Editor selection/caret only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action schema/handler, both `;` routes and contexts, display-point selection collapse, nearby direct semicolon fixture, local Vim modes/semicolon behavior, and missing local Helix route; do not run tests.
+Visual evidence: Paired native macOS Editor/Keymap evidence should record empty, forward, reversed, multi, and multiline selections; active head and resulting caret; mode, profile, menu/focus state, platform, viewport, theme, and scale.
+Security impact: None; the action changes only transient selections in the active Editor.
+Performance impact: O(number of selections), with one display-map left movement for each forward nonempty selection; large selection counts and display-map edge behavior need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema/handler, both binding IDs and contexts, no-scroll behavior, and Labonair's Vim-only mode list/semicolon route can be classified statically. Direct Helix-collapse fixtures, selection edge cases, duplicate-row precedence, menu behavior, platform dispatch, palette, and native behavior remain open.
+Documentation updates: New HelixCollapseSelection packet; registered-action row; both `;` binding annotations; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action handler, both keymap rows, local `VimMode`, local append handler, and local semicolon find-repeat behavior inspected. Documentation-only changes are planned; no tests run.
+Target status: Classify per-selection collapse behavior and overlapping Helix `;` routes without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has Vim Normal/Insert/Visual/VisualLine/Command modes and a single-cursor semicolon repeat-find path, but no Helix mode or Helix selection-collapse action/route.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Selection orientation/grapheme/display-map edges, direct action behavior, overlapping-route precedence, menu/focus, palette, platform dispatch, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::HelixCollapseSelection` (now in progress); do not begin R07-001 or R09.
+~~~
+
+## Vim HelixCollapseSelection action classification progress
+
+- Classified `vim::HelixCollapseSelection` as a per-selection no-scroll collapse: forward nonempty ranges move one display point left from their active head; empty and reversed ranges collapse to their head. Recorded that it edits no text and changes no mode.
+- Inspected the two shared `;` keymap rows: one specifically in `vim_mode == helix_select`, and another in Helix Normal or Select with `!menu`. Both name the same action and overlap in Helix Select when the menu is closed. Runtime precedence and menu behavior remain open. The nearby pinned `find_char_motion` semicolon fixture tests repeat-find only; no focused collapse fixture was found. Fixtures were inspected, not run.
+- Confirmed Labonair's local `VimMode` has no Helix modes, and its semicolon path repeats the previous character-find motion. Updated the HelixCollapseSelection packet, registered-action row, both binding annotations, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 279 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Selection orientation/display-map edges, overlapping-row precedence, menu/focus, palette, platform dispatch, and paired native acceptance remain active.
+- Next safe task: Continue R07-000 with `vim::HelixDelete`; do not begin R07-001 or R09.
