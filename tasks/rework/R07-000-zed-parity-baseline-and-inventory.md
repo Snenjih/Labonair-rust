@@ -8277,3 +8277,42 @@ Next safe task: Continue R07-000 with `vim::GoToPreviousTab` after this packet; 
 - Updated the GoToPreviousReference packet, registered-action row, `[ r` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final post-edit documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 273 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Palette, cross-file mapping, no-result/error behavior, mode/selection, platform, and paired native acceptance remain active.
 - Next safe task: Continue R07-000 with `vim::GoToPreviousTab`; do not begin R07-001 or R09.
+## Pre-change contract — Vim GoToPreviousTab
+
+~~~text
+Request type: Pinned Vim `gT` previous-pane-item action, count/wrap behavior, Workspace-to-Pane dispatch, and local workspace-tab scope gap; documentation-only classification.
+Owner module: Workspace owns the active Pane's item collection and activation; Editor/Vim owns pending count and Vim-profile semantics; Keymap owns the `g shift-t` profile route. Labonair's existing global/space-scoped tab cycle is Workspace-owned.
+Canonical capability crates: labonair-workspace, labonair-editor, and labonair-keymap.
+Canonical user entry point: Shared `g shift-t` route in `VimControl && !menu` or `!Editor && !Terminal`. Without a count it activates the previous item in the active Pane with wrapping; with count `n`, it targets `(current_index - n) mod item_count` and wraps.
+Public typed contract: Unit action `vim::GoToPreviousTab`, no JSON arguments or aliases. The Workspace handler consumes count and forced-motion state; Vim pre-count and post-count multiply when both are present. It dispatches either `pane::ActivatePreviousItem { wrap_around: true }` or `pane::ActivateItem(target_index)`.
+State owner: Workspace/Panes own items and active index; Vim owns pending/pre/post count and forced-motion state; Keymap owns route/context.
+Persistence owner: No action-specific persistence; item activation uses the Pane's existing activation/history and focus behavior. Whether that history persists is outside this action contract.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-GoToPreviousTab`; `KEYBIND-VIM-HELIX-1ba39d12bbb8` (`g shift-t`). Related sibling `g t` routes to `vim::GoToTab` with distinct absolute-count behavior.
+Events and registry contributions: Existing Vim action and one profile binding; it dispatches the existing Pane activation action, which emits the Pane activation event. Labonair's related `CommandId::PrevTab` emits the existing `ActiveTabChanged` event through TabStore; no new events or registry contributions proposed.
+Settings: Existing Vim mode/profile gates the route. Labonair's Previous Tab command uses the active Space and has no count setting.
+Notifications: None.
+UI-kit components: Existing Pane tab strip and Workspace titlebar tabs only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action schema/handler, keymap context, Pane item activation/wrap behavior and `test_activate_item_with_wrap_around`, local `CommandId::PrevTab` route/descriptor, TabStore active-Space cycle, and local Vim `resolve_motion` for absence of `gT`; do not run tests.
+Visual evidence: No permanent layout change proposed. Paired native macOS Editor/Workspace/Keymap evidence must distinguish the target collection, capture focused item/tab after `gT` with no count and several counts, and record active Space/pane, profile, platform, viewport, theme, and scale.
+Security impact: None; navigation switches among already-open Pane items.
+Performance impact: Target calculation is constant time and activation work is bounded to the selected Pane item; very large count conversion and activation side effects require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema, keymap contexts, no-count Pane route, count-index formula, wrap/index activation path, Pane wrap fixture, local workspace-level PrevTab command, and different collection scope can be classified statically. Count limits, empty/single-item Pane, history/focus side effects, direct palette, key-layout dispatch, and native acceptance remain open.
+Documentation updates: New GoToPreviousTab packet; registered-action row; `g shift-t` annotation; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action handler, shared binding/context, Pane previous-item/count behavior, Pane wrap fixture, local `PrevTab` command and TabStore cycle inspected. First and final post-edit documentation-only gate sets passed: diff check, documentation checker (43 normative docs, 274 Markdown files), queue checker (46 tasks; R07-000 active), and `docs`, `agents`, `knowledge`, `settings`, and `queue` scopes. Rust build/tests are outside this slice.
+Target status: Classify how uncounted and counted `gT` select an item in the active Pane and distinguish Labonair's active-Space workspace-tab cycle without claiming full parity.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has a Workspace `Previous Tab` command bound to `ctrl-shift-tab` that wraps through tabs in the active Space, but no Vim `gT` action/profile route or previous-item navigation in the active Pane's item collection. Existing `PrevTab` has no count argument.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Pane-vs-workspace scope, count boundaries, empty/single-item behavior, activation/history/focus effects, palette, platform key layout, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::GoToTab` after this packet; do not begin R07-001 or R09.
+~~~
+
+
+## Vim GoToPreviousTab action classification progress
+
+- Classified `g shift-t` as an uncounted wrapped previous-item dispatch or a counted active-Pane index calculation. Pane activation updates focus, Pane history, toolbar/status, activation event, and tab-strip scroll; `g t` remains a separate absolute-index sibling.
+- Inspected `test_activate_item_with_wrap_around` for Pane boundary behavior, plus Labonair's `CommandId::PrevTab`, Ctrl-Shift-Tab descriptor, active-Space `TabStore` cycle, and `adjacent_tab_navigation_wraps_inside_the_source_space`. Tests were inspected, not run. No direct pinned Vim `GoToPreviousTab` fixture or local `gT` route was found.
+- Updated the GoToPreviousTab packet, registered-action row, `g shift-t` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final post-edit documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 274 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Pane/workspace scope, count edges, activation/history/focus behavior, palette, platform, and paired native acceptance remain active.
+- Next safe task: Continue R07-000 with `vim::GoToTab`; do not begin R07-001 or R09.
