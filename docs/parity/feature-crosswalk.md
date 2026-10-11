@@ -75,6 +75,7 @@ The [Vim Down packet](action-classification-vim-down.md) classifies counted buff
 The [Vim EndOfDocument packet](action-classification-vim-end-of-document.md) classifies Vim `Shift-G` counts and column retention, Helix `g e` versus `Shift-G` override behavior, Ex command-table routes, and Labonair's partial local `G` implementation. Platform dispatch and native acceptance remain open.
 The [Vim EndOfLine packet](action-classification-vim-end-of-line.md) classifies counted inclusive logical/display-row endpoints, the persistent EOL goal, Helix `g l` last-character behavior, and the local missing display-row route. Platform dispatch and native acceptance remain open.
 The [Vim EndOfLineDownward packet](action-classification-vim-end-of-line-downward.md) classifies counted inclusive `g _` scanning to the final non-whitespace character, the distinction from `$` and `_`, and Labonair's missing scanner. Platform and mode acceptance remain open.
+The [Vim EndOfParagraph packet](action-classification-vim-end-of-paragraph.md) classifies counted exclusive `}` paragraph motion, empty-row boundary rules, whitespace-only content, operator adjustments, jump-list effects, and Labonair's partial resolver. Platform and mode acceptance remain open.
 
 ## Current Labonair capability reconciliation
 

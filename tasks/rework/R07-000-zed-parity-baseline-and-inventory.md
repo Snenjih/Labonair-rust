@@ -7826,4 +7826,45 @@ Next safe task: Continue R07-000 with `vim::EndOfLineDownward` classification co
 - Inspected the focused pinned fixture for leading indentation, optional trailing spaces, and count to the next buffer row without running. Empty and whitespace-only rows, Unicode whitespace, Visual/Helix, and operator flows remain runtime acceptance.
 - Updated the EndOfLineDownward packet, registered-action row, both `g _` and `_` binding annotations, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final documentation-only gates passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 262 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, action palette, platform dispatch, whitespace edge cases, mode/operator behavior, and paired native evidence remain active.
-- Next safe task: Continue R07-000 with `vim::EndOfParagraph`; do not begin R07-001 or R09.
+- Next safe task: Continue R07-000 with `vim::EndOfParagraph` classification complete; then advance to the next earliest registered action without beginning R07-001 or R09.
+
+
+## Pre-change contract — Vim EndOfParagraph
+
+~~~text
+Request type: Pinned counted `}` paragraph motion, operator/selection behavior, and local owner gap; documentation-only classification.
+Owner module: Editor owns paragraph scanning, cursor/selections, jump history, and operator ranges; Keymap owns the shared Vim/Helix profile; Settings owns Vim and Helix mode values.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: `}` invokes `vim::EndOfParagraph` in the shared `VimControl && !menu` profile context. The `{` route is the distinct StartOfParagraph action. Paragraph and curly-bracket text objects use separate routes.
+Public typed contract: Unit action `vim::EndOfParagraph`, no arguments or aliases. It consumes the pending count (default one), scans logical buffer rows to the next paragraph-ending empty row, advances across later paragraph ends for larger counts, and targets the document maximum point if no later separator exists. Whitespace-only rows are content, not boundaries. The motion is exclusive, leaves the horizontal selection goal unset, and contributes to the jump list; operator range handling adjusts empty-row and EOF endpoints.
+State owner: Editor owns buffer rows, cursor, selection goal, jump history, and active selections. Vim owns mode, pending count/operator, and forced-motion state. Visual and Helix modes consume the motion through their mode-specific selection paths.
+Persistence owner: None for motion state; cursor, jump history, count, operator, and selection are transient. Text/register effects come from a consuming operator.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-EndOfParagraph` and shared `KEYBIND-VIM-HELIX-2a4dd0ea5779` (`}`) under `VimControl && !menu`. No platform-default map binds this action.
+Events and registry contributions: Existing Vim motion action and one shared profile row only; no new event or registry contribution proposed.
+Settings: Vim/Helix mode values select the owning behavior; no action-specific setting.
+Notifications: None expected.
+UI-kit components: Existing Editor and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect without running `motion.rs::test_start_end_of_paragraph`, `motion.rs::test_paragraph_motion_with_whitespace_lines`, and `normal/delete.rs::test_delete_end_of_paragraph`. Check the remaining EOF, indentation, Visual/Helix, platform, and jump-history paths independently; these pinned fixtures do not establish native acceptance.
+Visual evidence: No layout change proposed. Paired native macOS Editor and Keymap evidence is required for `}`, counts, blank-row patterns, EOF, selection/operator effects, jump history, and mode state; Linux/Windows dispatch and keyboard-layout input need separate runtime checks.
+Security impact: None beyond text/register effects from the consuming operator in the active buffer.
+Performance impact: The action scans buffer rows to paragraph boundaries; large counts, long paragraphs, blank-row runs, and multi-selection require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema, shared key route, logical-row boundary algorithm, count, exclusive kind, jump-list behavior, direct fixtures, operator adjustments, and local gaps can be classified statically; platform dispatch, palette, mode-specific selection, keyboard-layout, and paired native acceptance remain open.
+Documentation updates: New EndOfParagraph packet; registered-action row; `}` binding annotation; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action schema, shared route, paragraph scan/count, motion/operator kinds, jump-list behavior, focused fixtures, and local resolver differences inspected. Static classification packet and parity updates are complete; platform, palette, mode, keyboard-layout, and native acceptance remain open.
+Target status: Classify counted exclusive logical-row paragraph motion, empty versus whitespace-only boundary semantics, EOF and operator adjustments, jump-list behavior, and the local count/whitespace/EOF gaps without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no typed EndOfParagraph action, shared Vim/Helix profile, Helix mode route, or counted paragraph scanner; local `}` treats whitespace-only rows as blank and resolves a final paragraph to column zero.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Palette, platform/key-layout dispatch, EOF/operator details, Visual/Helix modes, jump history, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::EndOfParagraph` classification complete; then advance to the next earliest registered action without beginning R07-001 or R09.
+~~~
+
+
+## Vim EndOfParagraph action classification progress
+
+- Classified counted exclusive `}` as a logical buffer-row scan to the next paragraph boundary or EOF. Recorded that only truly empty rows separate paragraphs, whitespace-only rows are content, and the motion participates in jump history and special operator range adjustment.
+- Inspected the count/blank-row and whitespace-row motion fixtures plus the end-paragraph delete fixture without running. Platform dispatch, keyboard layouts, Helix mode behavior, remaining EOF/operator cases, and jump-list interaction remain runtime acceptance.
+- Updated the EndOfParagraph packet, registered-action row, `}` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final documentation-only gates passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 263 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, action palette, platform/key-layout dispatch, mode/operator edge cases, jump history, and paired native evidence remain active.
+- Next safe task: Continue R07-000 with `vim::EndRepeat`; do not begin R07-001 or R09.
