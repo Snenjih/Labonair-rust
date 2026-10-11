@@ -16,6 +16,7 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-vim-first-non-whitespace.md`](action-classification-vim-first-non-whitespace.md) — logical-line `^`, display-row `g ^`, Helix `g s`, exclusive operator behavior, and Labonair's blank-line/display-row gap; runtime acceptance remains open.
 - [`action-classification-vim-go-to-column.md`](action-classification-vim-go-to-column.md) — counted Vim `|` movement, DisplayPoint clipping, the `18|` integration fixture, and Labonair's missing motion; runtime acceptance remains open.
 - [`action-classification-vim-go-to-next-reference.md`](action-classification-vim-go-to-next-reference.md) — counted `] r` reference cycling, wrap and selection behavior, the LSP traversal fixture, and Labonair's first-result route; runtime acceptance remains open.
+- [`action-classification-vim-go-to-percentage.md`](action-classification-vim-go-to-percentage.md) — counted `N%` row calculation, its distinction from bare `%` bracket matching, linewise selection behavior, and Labonair's missing percentage route; runtime acceptance remains open.
 - [`action-requirements.md`](action-requirements.md) — stable requirement IDs
   for all 595 action identifiers across the default macOS, Linux, and Windows
   keymaps, with 2,731 binding/context records and four null entries. It records

@@ -8186,7 +8186,7 @@ Target status: Classify counted forward reference cycling, wrapping, result mapp
 Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 Remaining migration edges: Labonair has a Go to References command and LSP service response, but no current-relative cycle, count/wrap behavior, `] r` route, or typed GoToNextReference action; the local response selects only the first returned target.
 Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Cross-file and multibuffer mapping, no-result/error presentation, palette, selection/mode transitions, platform key dispatch, and paired native evidence remain active goal acceptance gates.
-Next safe task: Continue R07-000 with `vim::GoToPercentage` after this packet; do not begin R07-001 or R09.
+Next safe task: Continue R07-000 with `vim::GoToPreviousReference` after this packet; do not begin R07-001 or R09.
 ~~~
 
 
@@ -8196,4 +8196,45 @@ Next safe task: Continue R07-000 with `vim::GoToPercentage` after this packet; d
 - Inspected the four-location `test_next_prev_reference` helper fixture, which covers next/previous, wrapping, and counts but not the Vim key action or cross-file, selection, and mode cases. Tests were inspected, not run. Labonair's `EditorGoToReferences` command uses its LSP contract but selects only the first result.
 - Updated the GoToNextReference packet, registered-action row, `] r` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final post-edit documentation-only gate sets passed: `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 271 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Palette, cross-file mapping, errors/no-result, mode/selection, platform, and paired native acceptance remain active.
-- Next safe task: Continue R07-000 with `vim::GoToPercentage`; do not begin R07-001 or R09.
+- Next safe task: Continue R07-000 with `vim::GoToPreviousReference`; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim GoToPercentage
+
+~~~text
+Request type: Pinned counted whole-buffer percentage motion, linewise operator/selection behavior, key-context distinction from bracket matching, and local count-motion gap; documentation-only classification.
+Owner module: Editor owns cursor/selection coordinates and document row mapping; Vim owns count, mode, motion, and operator dispatch; Keymap owns the shared Vim profile route; Settings owns Vim mode/profile values.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: Count prefix followed by `%` in `VimControl && VimCount` invokes GoToPercentage. Bare `%` in Vim Control invokes Matching with quote matching. Direct action invocation without a count defaults to 1%.
+Public typed contract: Unit action `vim::GoToPercentage`, no JSON arguments or aliases. It dispatches `Motion::GoToPercentage`, which is linewise by default, clears the selection goal, and is added to the jump list. `Vim::take_count` multiplies pending pre-count and post-count; the motion computes `ceil(count * total_buffer_rows / 100) - 1`, passes that index as a `DisplayRow` with the current display column, and clips with left bias.
+State owner: Vim owns pending/pre/post count, forced-motion, and mode/operator state; Editor owns active selection/caret and buffer/display mapping; Keymap owns the shared profile binding.
+Persistence owner: None; the action only moves or extends the active selection and may supply a linewise operator range.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-GoToPercentage`; `KEYBIND-VIM-HELIX-958307561b7c` (`%` under `VimControl && VimCount`). Bare `%` is a separate `vim::Matching { match_quotes: true }` route.
+Events and registry contributions: Existing Vim motion action and one shared profile row only; no new event or registry contribution proposed.
+Settings: Existing Vim mode/profile gates the route and Vim palette namespace; no GoToPercentage-specific setting.
+Notifications: None.
+UI-kit components: Existing Editor caret/selection and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action schema, handler, count default, motion kind/jump-list/selection goal, percentage formula, `motion.rs::test_go_to_percentage`, local `%` resolver, and `vim.rs::match_bracket_percent` without running tests.
+Visual evidence: No permanent layout change proposed. Paired native macOS Editor/Keymap evidence must record the exact target row/column and linewise selection/operator endpoints for counts at and beyond 1/100, tabs/wrap, and mode, profile, viewport, theme, scale, and platform.
+Security impact: None; the motion is confined to the active Editor selections.
+Performance impact: Formula-based target computation followed by display clipping; count multiplication overflow, very large counts, and multi-cursor movement require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema, count route/default, separate bare-percent matching, linewise kind, jump-list policy, selection goal, formula, clipping, focused Normal/Visual fixture, and local bracket-match route can be classified statically. The function comment's first-nonblank description conflicts with implementation/test column retention; soft-wrap, multibuffer, boundary, extreme-count, operator, platform, and native behavior remain open.
+Documentation updates: New GoToPercentage packet; registered-action row; counted `%` binding annotation; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; counted and bare-percent profile rows, motion metadata/handler, count default, target formula, Visual/Normal fixture, local `%` resolver, and local bracket-match test inspected. First and final post-edit documentation-only gate sets passed: diff check, documentation checker (43 normative docs, 272 Markdown files), queue checker (46 tasks; R07-000 active), and `docs`, `agents`, `knowledge`, `settings`, and `queue` scopes. Rust build/tests are outside this slice.
+Target status: Classify `N%` target selection and operator/mode effects separately from bare `%` bracket matching, and document Labonair's missing percentage motion without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair's local `%` resolver matches brackets and ignores a pending numeric count for percentage purposes; no typed GoToPercentage action or shared counted-profile route exists.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Boundary/overflow, soft-wrap/multibuffer, operator/Visual, palette, platform dispatch, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::GoToPreviousReference` after this packet; do not begin R07-001 or R09.
+~~~
+
+
+## Vim GoToPercentage action classification progress
+
+- Classified counted `%` in `VimControl && VimCount` as GoToPercentage, separate from bare `%` bracket/quote matching. Recorded the percentage-row formula, effective count combination, retained-column clipping, linewise kind, jump-list policy, Visual fixture, and source-comment discrepancy.
+- Inspected `motion.rs::test_go_to_percentage` for Normal 20/25/75 and Visual 50/100 cases, plus Labonair's count-insensitive bracket resolver and `match_bracket_percent` fixture. Tests were inspected, not run; row/display mapping, operator, edge-count, and platform cases remain open.
+- Updated the GoToPercentage packet, registered-action row, counted `%` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final post-edit documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 272 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Boundary/overflow, soft-wrap/multibuffer, operator/Visual, palette, platform dispatch, and paired native acceptance remain active.
+- Next safe task: Continue R07-000 with `vim::GoToPreviousReference`; do not begin R07-001 or R09.
