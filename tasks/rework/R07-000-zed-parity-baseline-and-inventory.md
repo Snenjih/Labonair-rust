@@ -7372,3 +7372,44 @@ Next safe task: Continue R07-000 with vim::CurlyBrackets; do not begin R07-001 o
 - First and final gate passes both passed git diff --check, scripts/check_documentation.py (43 normative docs; 251 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
 - No Rust build, tests, count-colon dispatch, palette interception, command effects, native behavior, or paired visual evidence were run. These remain active goal acceptance gates. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 with vim::CurlyBrackets; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim CurlyBrackets text object
+
+~~~text
+Request type: Pinned Vim/Helix delimiter text object, surround-change input, shared profile contexts, and alias-precedence audit; documentation-only.
+Owner module: Editor owns selections, text-object ranges, and document edits; Keymap owns the shared Vim/Helix profile and user overrides; Settings owns Vim/Helix mode values.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry points: Vim `i{`/`a{` selects inside/around a curly pair for motions, edits, and Visual expansion; the shared object action also participates in `cs` old-pair selection. Helix current and next/previous object operators use `{`/`}`. The `shift-b` alias participates in Vim object and `cs` contexts, but its broad Helix next/previous candidates are overridden by later exact Pane bindings under pinned context-depth/declaration-order precedence.
+Public typed contract: Registered action vim::CurlyBrackets with optional `opening: bool` (default false), dispatching Object::CurlyBrackets to the active text-object, surround-change, or Helix selection operator. The `{` binding supplies `opening: true`; `}` and `shift-b` use the default. No setting, event, or persistence-specific value.
+State owner: Editor owns selection/cursor ranges, active operator, and edited text. Vim owns text-object and change-surround state. Keymap resolves the active object context; Helix mode owns current/next/previous operator state.
+Persistence owner: No action-specific persistence; edits use ordinary document save/undo. Modal/operator state is transient; Vim/Helix settings and profile overrides use existing owners.
+Commands and keymap entries: ACT-REGISTRY-LINUX-vim-CurlyBrackets; KEYBIND-VIM-HELIX-e72a89c89d55 (`{`, `opening: true`); KEYBIND-VIM-HELIX-db7eb0fe9d0f (`}`); KEYBIND-VIM-HELIX-27588cb974e8 (`shift-b`). The `b` alias remains Parentheses. No platform-default keymap binds vim::CurlyBrackets.
+Events and registry contributions: Existing Vim action, shared profile rows, text-object dispatcher, surround-change operator, and Helix ImmediateBoundary adapter; no new contribution.
+Settings: Vim Mode and Helix Mode gate profiles and mode dispatch; no curly-object setting.
+Notifications: None expected.
+UI-kit components: Existing Editor selection and modal keymap only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect pinned test_multiline_surrounding_character_objects and Helix object source/tests without running them. The focused Vim fixture covers `v i {` on nested multiline braces and `c i {` for an empty multiline inner range. The shared test_change_surrounding_character_objects and test_delete_surrounding_character_objects fixtures contain only quotes and parentheses, so they do not cover curly pairs. No dedicated Helix CurlyBrackets fixture or exact `shift-b` override fixture was found. Curly range handling consumes but does not apply count.
+Visual evidence: Selection and operator behavior affect the Editor; paired native macOS Editor and Keymap evidence is required. Helix current/next/previous and the Shift-B conflict need runtime verification.
+Security impact: None beyond editing the focused local buffer through the selected operator.
+Performance impact: Literal multiline delimiter scans and Helix boundary searches need acceptance for large buffers; braces in strings/comments, escape sequences, nesting, and malformed pairs are edge cases.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static Vim ranges, Visual behavior, `cs` forwarding, Helix boundary adapter, binding IDs, Shift-B overrides, and local owner gap can be classified; cross-platform dispatch, Helix runtime, and paired native behavior remain open.
+Documentation updates: New CurlyBrackets packet; registered-action row; three shared keybinding annotations; Linux/Windows layer note; packet index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; pinned text-object, surround, Helix, keymap-precedence, and local bracket-motion audit complete; classification packet and parity registers updated; platform dispatch and native acceptance remain open.
+Target status: Classify Vim inside/around and Visual pair selection, `cs` old-pair context, Helix current/next/previous routes, the Shift-B precedence override, and the local absence of syntax-aware bracket objects without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has counted Vim motions and a `%` matching-bracket motion, but no inside/around curly text object, Vim operator-object dispatch, surround-change pair selection, Helix object modes, or shared CurlyBrackets profile route.
+Failed/unavailable gates: No failures across the first and final docs-only gate passes. Both passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs; 252 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, Vim/Helix key dispatch, native selection, surround-change execution, cross-platform profile behavior, and paired visual evidence were not run in this documentation-only slice and remain active goal acceptance gates.
+Next safe task: Continue R07-000 with vim::CurrentLine; do not begin R07-001 or R09.
+~~~
+
+
+## Vim CurlyBrackets action classification progress
+
+- Classified `vim::CurlyBrackets` as the Vim inside/around and `cs` old-pair object, plus Helix `m i {` / `m a {` current selection and `] {` / `[ {` directional selection. Recorded the later exact Helix `shift-b` Pane overrides, literal Vim brace scan and count behavior, the distinct Helix boundary adapter, the bounded Vim fixture coverage, and Labonair's separate `%` match-bracket motion without an object workflow.
+- Updated the CurlyBrackets packet, action register, three shared binding rows, Linux/Windows profile note, parity index, feature crosswalk, and this task record. Same-session source analysis and independently written requirements are documented as redevelopment, not separated-room clean-room implementation.
+- First and final docs-only passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs; 252 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`.
+- No Rust build, tests, key dispatch, native object/surround workflow, cross-platform profile behavior, or paired visual evidence were run in this documentation-only slice. These remain active goal acceptance gates.
+- Next safe task: Continue R07-000 with `vim::CurrentLine`; do not begin R07-001 or R09.

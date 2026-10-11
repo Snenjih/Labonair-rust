@@ -348,6 +348,7 @@ source-side research. It records current evidence without claiming parity.
   implementation brief or proof of user-visible behavior.
 - [`action-classification-vim-convert-to-upper-case.md`](action-classification-vim-convert-to-upper-case.md) — Vim Visual and Helix direct uppercase transforms, the separate Normal uppercase operator, Unicode expansion, and the missing Labonair route; runtime and native acceptance remain open.
 - [`action-classification-vim-count-command.md`](action-classification-vim-count-command.md) — count-aware colon context, line-range query seeding, Vim command interception, and the missing Labonair Ex workflow; profile and end-to-end acceptance remain open.
+- [`action-classification-vim-curly-brackets.md`](action-classification-vim-curly-brackets.md) — Vim inside/around and `cs` object routes, Helix current/directional selection, literal multiline brace ranges, Shift-B Pane override, and the missing Labonair text object; platform and native acceptance remain open.
 - [`titlebar-tab-strip.md`](titlebar-tab-strip.md) — independent titlebar tab
   appearance, input/state matrix, ownership, and evidence packet.
 - [`settings-requirements.md`](settings-requirements.md) — 488 stable IDs for
