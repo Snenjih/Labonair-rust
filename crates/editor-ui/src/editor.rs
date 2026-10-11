@@ -84,9 +84,9 @@ pub enum EditorEvent {
     CloseRequested,
 }
 
-/// Editor find state, driven entirely by the workspace `Cmd+F` search overlay
-/// (T18-002) — the editor no longer paints its own find bar. The active match
-/// is shown as the editor selection.
+/// Editor-owned query and match state shared by the workspace search overlay
+/// and the editor toolbar's local buffer-search row. The active match is
+/// shown as the editor selection.
 #[derive(Default)]
 struct EditorSearch {
     query: SearchQuery,
@@ -113,6 +113,15 @@ struct EditorSelectionDrag {
 const EDITOR_SCROLLBAR_SIZE: f32 = 10.0;
 const EDITOR_SCROLLBAR_MIN_THUMB: f32 = 24.0;
 const EDITOR_BREADCRUMB_MAX_PATH_CHARS: usize = 96;
+
+fn editor_toolbar_has_contribution(
+    breadcrumbs: bool,
+    quick_actions: bool,
+    selections_menu: bool,
+    code_actions: bool,
+) -> bool {
+    breadcrumbs || quick_actions || selections_menu || code_actions
+}
 
 /// The divider's cursor communicates the resize operation; the drag payload
 /// itself intentionally renders no visual content.
@@ -595,6 +604,7 @@ pub struct EditorView {
     encoding_menu_anchor: Option<Point<Pixels>>,
     selection_drag: Option<EditorSelectionDrag>,
     outline_open: bool,
+    breadcrumb_visible_override: Option<bool>,
     /// Editor-internal groups. Workspace pane layouts remain a separate
     /// capability; this tree is changed only by Editor commands.
     editor_splits: labonair_editor::EditorSplitTree,
@@ -612,6 +622,8 @@ pub struct EditorView {
     scrollbar_occurrence_cache: Option<ScrollbarOccurrenceCache>,
     minimap_occurrence_cache: Option<MinimapOccurrenceCache>,
     search: Option<EditorSearch>,
+    buffer_search_open: bool,
+    buffer_search_input: Option<Entity<InputState>>,
     project_search: ProjectSearchSession,
     pending_navigation: Option<Position>,
     /// Tree-sitter syntax highlighter for the current document (T06-002).
@@ -772,6 +784,7 @@ impl EditorView {
             encoding_menu_anchor: None,
             selection_drag: None,
             outline_open: false,
+            breadcrumb_visible_override: None,
             editor_splits: labonair_editor::EditorSplitTree::default(),
             split_drag_last: None,
             metrics: (8.0, 18.0),
@@ -781,6 +794,8 @@ impl EditorView {
             scrollbar_occurrence_cache: None,
             minimap_occurrence_cache: None,
             search: None,
+            buffer_search_open: false,
+            buffer_search_input: None,
             project_search: ProjectSearchSession::default(),
             pending_navigation: None,
             syntax: SyntaxHighlighter::new(Language::PlainText),
@@ -936,6 +951,10 @@ impl EditorView {
             EditorCommandRoute::Git(command) => self.execute_git_command(command, cx),
             EditorCommandRoute::Ui(EditorUiCommand::GoToLineColumn) => {
                 self.go_to_line_requested = true;
+                cx.notify();
+            }
+            EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb) => {
+                self.breadcrumb_visible_override = Some(!self.breadcrumbs_visible());
                 cx.notify();
             }
         }
@@ -1861,6 +1880,10 @@ impl EditorView {
             return;
         }
         self.prefs = p;
+        if !self.prefs.toolbar_quick_actions() && self.buffer_search_open {
+            self.buffer_search_open = false;
+            self.search_close(cx);
+        }
         if !self.prefs.selections_menu() {
             self.selection_menu_anchor = None;
         }
@@ -1884,6 +1907,11 @@ impl EditorView {
         );
         self.schedule_autosave(cx);
         cx.notify();
+    }
+
+    fn breadcrumbs_visible(&self) -> bool {
+        self.breadcrumb_visible_override
+            .unwrap_or_else(|| self.prefs.toolbar_breadcrumbs())
     }
 
     fn file_limit_bytes(&self) -> u64 {
@@ -3193,6 +3221,61 @@ impl EditorView {
         self.doc
             .selected_text()
             .filter(|s| !s.is_empty() && !s.contains('\n'))
+    }
+
+    fn ensure_buffer_search_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.buffer_search_input.is_some() {
+            return;
+        }
+        let seed = self.search_seed().unwrap_or_default();
+        let input = cx.new(|cx| {
+            text_field(window, cx)
+                .placeholder("Find in buffer…")
+                .default_value(seed)
+        });
+        let editor = cx.entity();
+        window
+            .subscribe(
+                &input,
+                cx,
+                move |input, event: &InputEvent, _window, cx| match event {
+                    InputEvent::Change => {
+                        let query = input.read(cx).value().to_string();
+                        editor.update(cx, |this, cx| {
+                            let _ = this
+                                .search_set(SearchQuery::new(query, SearchOptions::default()), cx);
+                        });
+                    }
+                    InputEvent::PressEnter { secondary } => {
+                        editor.update(cx, |this, cx| {
+                            let _ = this.search_step(!*secondary, cx);
+                        });
+                    }
+                    _ => {}
+                },
+            )
+            .detach();
+        self.buffer_search_input = Some(input);
+    }
+
+    fn toggle_buffer_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.buffer_search_open {
+            self.buffer_search_open = false;
+            self.search_close(cx);
+            self.focus(window);
+        } else {
+            self.ensure_buffer_search_input(window, cx);
+            self.buffer_search_open = true;
+            if let Some(input) = self.buffer_search_input.clone() {
+                let query = input.read(cx).value().to_string();
+                let focus_handle = input.read(cx).focus_handle(cx);
+                if !query.is_empty() {
+                    let _ = self.search_set(SearchQuery::new(query, SearchOptions::default()), cx);
+                }
+                window.focus(&focus_handle);
+            }
+        }
+        cx.notify();
     }
 
     /// Start / update the Editor-owned search contract. Workspace only forwards
@@ -5330,46 +5413,188 @@ impl EditorView {
 
     fn render_editor_toolbar(
         &mut self,
+        breadcrumb_state: BreadcrumbState,
         palette: Palette,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        if !self.prefs.selections_menu() {
+        let breadcrumbs = self.breadcrumbs_visible();
+        let quick_actions = self.prefs.toolbar_quick_actions();
+        let selections_menu = self.prefs.selections_menu();
+        let code_actions = self.prefs.toolbar_code_actions()
+            && self.language_service_snapshot.capabilities.code_actions;
+        if !editor_toolbar_has_contribution(
+            breadcrumbs,
+            quick_actions,
+            selections_menu,
+            code_actions,
+        ) {
             return None;
         }
-        let trigger = icon_button_builder("editor-selections-menu", palette, IconName::ListTree)
+        let mut row = div()
+            .id("editor-toolbar")
+            .flex()
+            .items_center()
+            .gap_1()
+            .w_full()
+            .h(px(30.0))
+            .px_2()
+            .flex_shrink_0()
+            .bg(palette.bg)
+            .border_b_1()
+            .border_color(palette.border);
+        if breadcrumbs {
+            row = row.child(self.render_breadcrumb(breadcrumb_state, palette, cx));
+        } else {
+            row = row.child(div().flex_1().min_w_0());
+        }
+
+        let mut actions = div()
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap_1()
+            .flex_shrink_0();
+        if quick_actions {
+            let search =
+                icon_button_builder("editor-buffer-search-toggle", palette, IconName::Search)
+                    .size(ButtonSize::IconSm)
+                    .shape(IconButtonShape::Square)
+                    .selected(self.buffer_search_open)
+                    .tooltip("Find in Buffer")
+                    .render()
+                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.toggle_buffer_search(window, cx);
+                    }));
+            actions = actions.child(search);
+        }
+        if selections_menu {
+            let trigger =
+                icon_button_builder("editor-selections-menu", palette, IconName::ListTree)
+                    .size(ButtonSize::IconSm)
+                    .shape(IconButtonShape::Square)
+                    .selected(self.selection_menu_anchor.is_some())
+                    .tooltip("Selections")
+                    .render()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, event: &MouseDownEvent, _window, cx| {
+                            this.selection_menu_anchor = if this.selection_menu_anchor.is_some() {
+                                None
+                            } else {
+                                Some(Point {
+                                    x: event.position.x,
+                                    y: event.position.y + px(4.0),
+                                })
+                            };
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    );
+            actions = actions.child(trigger);
+        }
+        if code_actions {
+            let trigger =
+                icon_button_builder("editor-code-actions-toggle", palette, IconName::Code)
+                    .size(ButtonSize::IconSm)
+                    .shape(IconButtonShape::Square)
+                    .selected(self.code_actions.is_some())
+                    .tooltip("Code Actions")
+                    .render()
+                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                        let _ = this.dispatch_registered_command(CommandId::EditorCodeAction, cx);
+                    }));
+            actions = actions.child(trigger);
+        }
+
+        row = row.child(actions);
+        let mut toolbar = div().flex().flex_col().w_full().flex_shrink_0().child(row);
+        if quick_actions && self.buffer_search_open {
+            toolbar = toolbar.children(self.render_buffer_search_bar(palette, window, cx));
+        }
+        Some(toolbar.into_any_element())
+    }
+
+    fn render_buffer_search_bar(
+        &self,
+        palette: Palette,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let input = self.buffer_search_input.as_ref()?;
+        let field_state = if input.read(cx).focus_handle(cx).is_focused(window) {
+            TextFieldState::Focused
+        } else {
+            TextFieldState::Normal
+        };
+        let (current, total) = self.search_count();
+        let count_text = if let Some(error) = self.search_error() {
+            SharedString::from(error.to_string())
+        } else {
+            SharedString::from(format!("{current}/{total}"))
+        };
+        let count_color = if self.search_error().is_some() {
+            palette.error
+        } else {
+            palette.muted
+        };
+        let previous = icon_button_builder(
+            "editor-buffer-search-previous",
+            palette,
+            IconName::ChevronUp,
+        )
+        .size(ButtonSize::IconSm)
+        .shape(IconButtonShape::Square)
+        .tooltip("Previous Match")
+        .render()
+        .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+            let _ = this.search_step(false, cx);
+        }));
+        let next = icon_button_builder("editor-buffer-search-next", palette, IconName::ChevronDown)
             .size(ButtonSize::IconSm)
             .shape(IconButtonShape::Square)
-            .selected(self.selection_menu_anchor.is_some())
-            .tooltip("Selections")
+            .tooltip("Next Match")
             .render()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, event: &MouseDownEvent, _window, cx| {
-                    this.selection_menu_anchor = if this.selection_menu_anchor.is_some() {
-                        None
-                    } else {
-                        Some(Point {
-                            x: event.position.x,
-                            y: event.position.y + px(4.0),
-                        })
-                    };
-                    cx.stop_propagation();
-                    cx.notify();
-                }),
-            );
+            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                let _ = this.search_step(true, cx);
+            }));
+        let close = icon_button_builder("editor-buffer-search-close", palette, IconName::Close)
+            .size(ButtonSize::IconSm)
+            .shape(IconButtonShape::Square)
+            .tooltip("Close Search")
+            .render()
+            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                this.toggle_buffer_search(window, cx);
+            }));
         Some(
             div()
+                .id("editor-buffer-search")
                 .flex()
                 .items_center()
-                .justify_end()
+                .gap_1()
                 .w_full()
-                .h(px(28.0))
+                .h(px(36.0))
                 .px_2()
                 .flex_shrink_0()
                 .bg(palette.bg)
                 .border_b_1()
                 .border_color(palette.border)
-                .child(trigger)
+                .child(div().flex_1().min_w_0().child(text_field_surface(
+                    "editor-buffer-search-input",
+                    palette,
+                    field_state,
+                    text_input(input, palette),
+                )))
+                .child(
+                    div()
+                        .min_w(px(64.0))
+                        .text_xs()
+                        .text_color(count_color)
+                        .child(count_text),
+                )
+                .child(previous)
+                .child(next)
+                .child(close)
                 .into_any_element(),
         )
     }
@@ -5477,15 +5702,10 @@ impl EditorView {
             .flex()
             .items_center()
             .gap_1()
-            .w_full()
+            .flex_1()
             .min_w_0()
             .h(px(30.0))
-            .px_2()
-            .flex_shrink_0()
             .overflow_hidden()
-            .border_b_1()
-            .border_color(palette.border)
-            .bg(palette.bg)
             .text_xs()
             .text_color(palette.muted);
 
@@ -5513,6 +5733,7 @@ impl EditorView {
                 let has_symbol = symbol.is_some();
                 if let Some(path) = path {
                     let full_path = path.full_path.clone();
+                    let copy_path = full_path.clone();
                     row = row.child(
                         div()
                             .id("editor-breadcrumb-path")
@@ -5522,8 +5743,21 @@ impl EditorView {
                             .whitespace_nowrap()
                             .text_color(palette.muted)
                             .tooltip(move |window, cx| {
-                                Tooltip::new(full_path.clone()).build(window, cx)
+                                Tooltip::new(format!(
+                                    "{} · right-click to copy absolute path",
+                                    full_path
+                                ))
+                                .build(window, cx)
                             })
+                            .on_mouse_down(
+                                MouseButton::Right,
+                                cx.listener(move |_this, _event: &MouseDownEvent, _window, cx| {
+                                    cx.write_to_clipboard(ClipboardItem::new_string(
+                                        copy_path.clone(),
+                                    ));
+                                    cx.stop_propagation();
+                                }),
+                            )
                             .child(SharedString::from(path.label)),
                     );
                 }
@@ -5588,7 +5822,12 @@ impl EditorView {
             }
         }
 
-        row.into_any_element()
+        row.on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+            this.outline_open = true;
+            cx.notify();
+        }))
+        .tooltip(|window, cx| Tooltip::new("Open Symbol Outline").build(window, cx))
+        .into_any_element()
     }
 
     fn render_outline(
@@ -7088,9 +7327,12 @@ impl Render for EditorView {
             .flex_1()
             .min_w_0()
             .min_h_0();
-        buffer_surface = buffer_surface
-            .child(self.render_breadcrumb(breadcrumb_state, ui_palette, cx))
-            .children(self.render_editor_toolbar(ui_palette, cx));
+        buffer_surface = buffer_surface.children(self.render_editor_toolbar(
+            breadcrumb_state,
+            ui_palette,
+            window,
+            cx,
+        ));
         if show_text_area {
             let mut editor_surface_container = div().relative().flex_1().min_w_0().min_h_0();
             if minimap {
@@ -7732,11 +7974,15 @@ mod tests {
     }
 
     #[gpui::test]
-    fn selections_menu_preference_hides_the_toolbar_and_closes_its_popover(
+    fn selections_menu_preference_hides_its_contribution_and_closes_the_popover(
         cx: &mut TestAppContext,
     ) {
         cx.update(|cx| {
-            install_editor_prefs(cx, |editor| editor.editor_selections_menu = Some(true));
+            install_editor_prefs(cx, |editor| {
+                editor.editor_toolbar_breadcrumbs = Some(false);
+                editor.editor_toolbar_quick_actions = Some(false);
+                editor.editor_selections_menu = Some(true);
+            });
         });
         let view = setup(cx);
         cx.update(|cx| {
@@ -7745,15 +7991,39 @@ mod tests {
             });
         });
         cx.update(|cx| {
-            install_editor_prefs(cx, |editor| editor.editor_selections_menu = Some(false));
+            install_editor_prefs(cx, |editor| {
+                editor.editor_toolbar_breadcrumbs = Some(false);
+                editor.editor_toolbar_quick_actions = Some(false);
+                editor.editor_selections_menu = Some(false);
+            });
         });
         cx.update(|cx| {
             view.update(cx, |this, cx| {
                 this.apply_prefs(cx);
                 assert!(this.selection_menu_anchor.is_none());
-                assert!(this
-                    .render_editor_toolbar(Palette::from_theme(this.theme.read(cx)), cx)
-                    .is_none());
+                assert!(!editor_toolbar_has_contribution(
+                    this.breadcrumbs_visible(),
+                    this.prefs.toolbar_quick_actions(),
+                    this.prefs.selections_menu(),
+                    this.prefs.toolbar_code_actions()
+                        && this.language_service_snapshot.capabilities.code_actions,
+                ));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn toggle_breadcrumb_command_overrides_the_global_setting_for_this_editor(
+        cx: &mut TestAppContext,
+    ) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                assert!(this.breadcrumbs_visible());
+                assert!(this.dispatch_registered_command(CommandId::EditorToggleBreadcrumb, cx));
+                assert!(!this.breadcrumbs_visible());
+                assert!(this.dispatch_registered_command(CommandId::EditorToggleBreadcrumb, cx));
+                assert!(this.breadcrumbs_visible());
             });
         });
     }

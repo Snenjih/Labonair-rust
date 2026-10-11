@@ -580,6 +580,18 @@ impl EditorSettings {
         self.0.editor_selections_menu.unwrap_or(true)
     }
 
+    pub fn toolbar_breadcrumbs(&self) -> bool {
+        self.0.editor_toolbar_breadcrumbs.unwrap_or(true)
+    }
+
+    pub fn toolbar_quick_actions(&self) -> bool {
+        self.0.editor_toolbar_quick_actions.unwrap_or(true)
+    }
+
+    pub fn toolbar_code_actions(&self) -> bool {
+        self.0.editor_toolbar_code_actions.unwrap_or(false)
+    }
+
     pub fn autocomplete_debounce_ms(&self) -> u32 {
         self.0
             .editor_autocomplete_debounce_ms
@@ -942,11 +954,20 @@ mod tests {
     fn editor_selections_menu_defaults_on_and_can_be_hidden() {
         let defaults = EditorSettings::from_settings(&SettingsContent::default());
         assert!(defaults.selections_menu());
+        assert!(defaults.toolbar_breadcrumbs());
+        assert!(defaults.toolbar_quick_actions());
+        assert!(!defaults.toolbar_code_actions());
 
         let mut content = SettingsContent::default();
         content.editor.editor_selections_menu = Some(false);
+        content.editor.editor_toolbar_breadcrumbs = Some(false);
+        content.editor.editor_toolbar_quick_actions = Some(false);
+        content.editor.editor_toolbar_code_actions = Some(true);
         let settings = EditorSettings::from_settings(&content);
         assert!(!settings.selections_menu());
+        assert!(!settings.toolbar_breadcrumbs());
+        assert!(!settings.toolbar_quick_actions());
+        assert!(settings.toolbar_code_actions());
     }
 
     #[test]

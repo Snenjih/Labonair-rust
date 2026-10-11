@@ -829,6 +829,27 @@ pub fn all_fields() -> Vec<AnyField> {
             "Selections menu",
             "Show selection and multi-cursor actions in the editor toolbar."
         ),
+        field!(
+            editor.editor_toolbar_breadcrumbs,
+            "editorToolbarBreadcrumbs",
+            Switch,
+            "Breadcrumbs",
+            "Show the file path and current symbol in the editor toolbar."
+        ),
+        field!(
+            editor.editor_toolbar_quick_actions,
+            "editorToolbarQuickActions",
+            Switch,
+            "Quick actions",
+            "Show editor quick actions, including buffer search."
+        ),
+        field!(
+            editor.editor_toolbar_code_actions,
+            "editorToolbarCodeActions",
+            Switch,
+            "Code actions",
+            "Show the code actions button when the active language service supports it."
+        ),
         field_with_details!(
             editor.editor_autocomplete_debounce_ms,
             "editorAutocompleteDebounceMs",
@@ -1150,6 +1171,26 @@ mod tests {
         let mut content = SettingsContent::default();
         assert!((field.set)(&mut content, Value::Bool(false)));
         assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn editor_toolbar_contributions_are_exposed_as_switches() {
+        let paths = [
+            "editor.editorToolbarBreadcrumbs",
+            "editor.editorToolbarQuickActions",
+            "editor.editorSelectionsMenu",
+            "editor.editorToolbarCodeActions",
+        ];
+        for path in paths {
+            let field = all_fields()
+                .into_iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing toolbar setting {path}"));
+            assert!(matches!(field.control, FieldControl::Switch));
+            let mut content = SettingsContent::default();
+            assert!((field.set)(&mut content, Value::Bool(false)));
+            assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+        }
     }
 
     #[test]

@@ -414,6 +414,15 @@ const EDITOR_GROUPS: &[Group] = &[
         ),
     ),
     (
+        "Toolbar",
+        paths!("editor":
+            "editorToolbarBreadcrumbs",
+            "editorToolbarQuickActions",
+            "editorSelectionsMenu",
+            "editorToolbarCodeActions"
+        ),
+    ),
+    (
         "Caret",
         paths!("editor":
             "editorCursorStyle",

@@ -243,6 +243,9 @@ pub struct EditorContent {
     pub editor_show_selection_stats: Option<bool>,
     pub editor_show_outline: Option<bool>,
     pub editor_selections_menu: Option<bool>,
+    pub editor_toolbar_breadcrumbs: Option<bool>,
+    pub editor_toolbar_quick_actions: Option<bool>,
+    pub editor_toolbar_code_actions: Option<bool>,
     pub editor_autocomplete_debounce_ms: Option<u32>,
     pub editor_max_file_size_mb: Option<u32>,
     #[serde(rename = "vimMode")]
@@ -313,6 +316,9 @@ impl EditorContent {
             editor_show_selection_stats: Some(false),
             editor_show_outline: Some(false),
             editor_selections_menu: Some(true),
+            editor_toolbar_breadcrumbs: Some(true),
+            editor_toolbar_quick_actions: Some(true),
+            editor_toolbar_code_actions: Some(false),
             editor_autocomplete_debounce_ms: Some(350),
             editor_max_file_size_mb: Some(10),
             editor_vim_mode: Some(false),
@@ -396,5 +402,23 @@ mod tests {
         assert_eq!(defaults["editorMinimap"], "never");
         assert_eq!(defaults["editorMinimapDisplayIn"], "active_editor");
         assert_eq!(defaults["editorMinimapMaxWidthColumns"], 80);
+    }
+
+    #[test]
+    fn toolbar_preferences_have_documented_defaults_and_wire_names() {
+        let defaults = serde_json::to_value(EditorContent::defaults()).expect("editor defaults");
+        assert_eq!(defaults["editorToolbarBreadcrumbs"], true);
+        assert_eq!(defaults["editorToolbarQuickActions"], true);
+        assert_eq!(defaults["editorToolbarCodeActions"], false);
+
+        let parsed: EditorContent = serde_json::from_value(serde_json::json!({
+            "editorToolbarBreadcrumbs": false,
+            "editorToolbarQuickActions": false,
+            "editorToolbarCodeActions": true,
+        }))
+        .expect("toolbar preferences");
+        assert_eq!(parsed.editor_toolbar_breadcrumbs, Some(false));
+        assert_eq!(parsed.editor_toolbar_quick_actions, Some(false));
+        assert_eq!(parsed.editor_toolbar_code_actions, Some(true));
     }
 }

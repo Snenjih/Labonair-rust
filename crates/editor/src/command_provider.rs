@@ -43,6 +43,7 @@ pub enum GitEditorCommand {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EditorUiCommand {
     GoToLineColumn,
+    ToggleBreadcrumb,
 }
 
 /// Typed route selected by the Editor owner for an executable command ID.
@@ -77,6 +78,9 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         CommandId::EditorUndoSelection => EditorCommandRoute::Edit(EditIntent::UndoSelection),
         CommandId::EditorRedoSelection => EditorCommandRoute::Edit(EditIntent::RedoSelection),
         CommandId::EditorGoToLineColumn => EditorCommandRoute::Ui(EditorUiCommand::GoToLineColumn),
+        CommandId::EditorToggleBreadcrumb => {
+            EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb)
+        }
         CommandId::EditorExpandSelection => EditorCommandRoute::Edit(EditIntent::ExpandSelection),
         CommandId::EditorShrinkSelection => EditorCommandRoute::Edit(EditIntent::ShrinkSelection),
         CommandId::EditorDuplicateLines => EditorCommandRoute::Edit(EditIntent::DuplicateLines),
@@ -178,6 +182,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorUndoSelection,
     CommandId::EditorRedoSelection,
     CommandId::EditorGoToLineColumn,
+    CommandId::EditorToggleBreadcrumb,
     CommandId::EditorExpandSelection,
     CommandId::EditorShrinkSelection,
     CommandId::EditorDuplicateLines,
@@ -290,6 +295,12 @@ impl CommandProvider for EditorCommandProvider {
             CommandDescriptor::new(
                 CommandId::EditorGoToLineColumn,
                 "Go to Line/Column…",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(
+                CommandId::EditorToggleBreadcrumb,
+                "Toggle Breadcrumbs",
                 "Editor",
             )
             .with_contexts(&[CommandContext::Editor]),
