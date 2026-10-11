@@ -52,8 +52,8 @@ use labonair_editor::{
     DisplayRowKind, DisplaySnapshot, Document, DocumentVersion, Edit, EditorSessionId,
     EditorSessionSnapshot, EditorViewSession, FoldRange, GitDecorationProvider,
     GitDecorationRequest, GitDiscardPreview, GitEditorCommand, GitGutterError, GitGutterSnapshot,
-    GitHunkAction, GitHunkActionKind, GitHunkStatus, HunkActionSink, Language, LanguageId,
-    LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceRequest,
+    GitHunkAction, GitHunkActionKind, GitHunkStatus, HunkActionSink, KillRing, Language,
+    LanguageId, LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceRequest,
     LanguageServiceResponse, LanguageServiceResult, LanguageServiceRuntime,
     LanguageServiceRuntimeSnapshot, LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus,
     LanguageServiceSnapshot, LanguageServiceState, LocalLanguageServiceRequest, LspPosition,
@@ -622,6 +622,7 @@ pub struct EditorView {
     scrollbar_occurrence_cache: Option<ScrollbarOccurrenceCache>,
     minimap_occurrence_cache: Option<MinimapOccurrenceCache>,
     search: Option<EditorSearch>,
+    kill_ring: KillRing,
     buffer_search_open: bool,
     buffer_search_input: Option<Entity<InputState>>,
     project_search: ProjectSearchSession,
@@ -794,6 +795,7 @@ impl EditorView {
             scrollbar_occurrence_cache: None,
             minimap_occurrence_cache: None,
             search: None,
+            kill_ring: KillRing::default(),
             buffer_search_open: false,
             buffer_search_input: None,
             project_search: ProjectSearchSession::default(),
@@ -963,6 +965,8 @@ impl EditorView {
                 let _ =
                     self.execute_command(EditorCommand::Edit(EditIntent::Rewrap { columns }), cx);
             }
+            EditorCommandRoute::Ui(EditorUiCommand::KillRingCut) => self.kill_ring_cut(cx),
+            EditorCommandRoute::Ui(EditorUiCommand::KillRingYank) => self.kill_ring_yank(cx),
         }
         true
     }
@@ -3080,6 +3084,39 @@ impl EditorView {
                 self.paste_text(&text, cx);
             }
         }
+    }
+
+    fn kill_ring_cut(&mut self, cx: &mut Context<Self>) {
+        if !self.doc.can_edit() {
+            return;
+        }
+        let snapshot = self.doc.snapshot();
+        let text = self
+            .doc
+            .kill_to_line_end_ranges()
+            .into_iter()
+            .map(|range| snapshot.text_range(range))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if text.is_empty() {
+            return;
+        }
+        self.kill_ring.push(text);
+        self.execute_command(EditorCommand::Edit(EditIntent::KillToLineEnd), cx);
+    }
+
+    fn kill_ring_yank(&mut self, cx: &mut Context<Self>) {
+        if !self.doc.can_edit() {
+            return;
+        }
+        let Some(text) = self.kill_ring.yank() else {
+            return;
+        };
+        let replacements = vec![text; self.doc.selection_set().len()];
+        self.execute_command(
+            EditorCommand::Edit(EditIntent::InsertMany(replacements)),
+            cx,
+        );
     }
 
     fn clipboard_selection_text(&self) -> Option<String> {
@@ -8090,6 +8127,22 @@ mod tests {
                     0,
                 ));
                 assert_eq!(this.clipboard_selection_text().as_deref(), Some("one\ntwo"));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn kill_ring_commands_cut_and_yank_through_the_editor_registry(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("test.txt".into(), "one two", 1);
+                this.doc.set_caret(Position::new(0, 4), false);
+
+                assert!(this.dispatch_registered_command(CommandId::EditorKillRingCut, cx));
+                assert_eq!(this.doc.text(), "one ");
+                assert!(this.dispatch_registered_command(CommandId::EditorKillRingYank, cx));
+                assert_eq!(this.doc.text(), "one two");
             });
         });
     }

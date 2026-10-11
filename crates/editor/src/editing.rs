@@ -25,6 +25,7 @@ pub enum EditIntent {
     DeleteLine,
     JoinLines,
     DeleteTo(DeleteTarget),
+    KillToLineEnd,
     Rewrap {
         columns: usize,
     },
@@ -237,6 +238,7 @@ impl Document {
             EditIntent::DeleteLine => self.delete_lines(),
             EditIntent::JoinLines => self.join_lines(),
             EditIntent::DeleteTo(target) => self.delete_to(target),
+            EditIntent::KillToLineEnd => self.kill_to_line_end(),
             EditIntent::Rewrap { columns } => self.rewrap(columns),
             EditIntent::Move { motion, extend } => self.multi_move(motion, extend),
             EditIntent::AddCursor(position) => self.add_cursor(position),
@@ -426,14 +428,14 @@ impl Document {
     fn delete_to(&mut self, target: DeleteTarget) -> EditorCommandResult {
         let snapshot = self.snapshot();
         let text = snapshot.text();
-        let targets = self
+        let ranges = self
             .selection_set()
             .selections()
             .iter()
             .filter_map(|selection| {
                 let range = selection.range().resolve(&snapshot);
                 if !range.is_empty() {
-                    return Some((range, String::new()));
+                    return Some(range);
                 }
                 let position = snapshot.byte_to_position(range.start);
                 let boundary = match target {
@@ -453,8 +455,12 @@ impl Document {
                     }
                 };
                 let range = TextRange::new(range.start.min(boundary), range.start.max(boundary));
-                (!range.is_empty()).then_some((range, String::new()))
+                (!range.is_empty()).then_some(range)
             })
+            .collect();
+        let targets = merge_ranges(ranges)
+            .into_iter()
+            .map(|range| (range, String::new()))
             .collect();
         let label = match target {
             DeleteTarget::LineStart => "Delete to line start",
@@ -465,6 +471,45 @@ impl Document {
             DeleteTarget::NextSubwordEnd => "Delete to next subword end",
         };
         self.apply_targets(targets, false, EditSource::Delete, Some(label.into()))
+    }
+
+    /// Resolve the ranges affected by Kill Ring Cut for the current selection
+    /// set. The Editor view uses these exact ranges to capture text before it
+    /// dispatches [`EditIntent::KillToLineEnd`].
+    pub fn kill_to_line_end_ranges(&self) -> Vec<TextRange> {
+        let snapshot = self.snapshot();
+        let ranges = self
+            .selection_set()
+            .selections()
+            .iter()
+            .filter_map(|selection| {
+                let range = selection.range().resolve(&snapshot);
+                if !range.is_empty() {
+                    return Some(range);
+                }
+                let position = snapshot.byte_to_position(range.start);
+                let mut end = snapshot.line_end_byte(position.line);
+                if end == range.start && position.line + 1 < snapshot.line_count() {
+                    end = snapshot.line_start_byte(position.line + 1);
+                }
+                (end > range.start).then_some(TextRange::new(range.start, end))
+            })
+            .collect();
+        merge_ranges(ranges)
+    }
+
+    fn kill_to_line_end(&mut self) -> EditorCommandResult {
+        let targets = self
+            .kill_to_line_end_ranges()
+            .into_iter()
+            .map(|range| (range, String::new()))
+            .collect();
+        self.apply_targets(
+            targets,
+            false,
+            EditSource::Delete,
+            Some("Kill to line end".into()),
+        )
     }
 
     fn rewrap(&mut self, columns: usize) -> EditorCommandResult {
@@ -1279,6 +1324,21 @@ fn word_delete_boundary(text: &str, offset: usize, forward: bool, subword: bool)
     }
 }
 
+fn merge_ranges(mut ranges: Vec<TextRange>) -> Vec<TextRange> {
+    ranges.sort_by_key(|range| (range.start, range.end));
+    let mut merged: Vec<TextRange> = Vec::with_capacity(ranges.len());
+    for range in ranges.into_iter().filter(|range| !range.is_empty()) {
+        if let Some(previous) = merged.last_mut() {
+            if range.start <= previous.end {
+                previous.end = previous.end.max(range.end);
+                continue;
+            }
+        }
+        merged.push(range);
+    }
+    merged
+}
+
 fn is_word_character(character: char) -> bool {
     character.is_alphanumeric() || character == '_'
 }
@@ -1970,6 +2030,29 @@ mod tests {
         selected.set_caret(Position::new(0, 6), true);
         selected.execute_edit(EditIntent::DeleteTo(DeleteTarget::NextWordEnd));
         assert_eq!(selected.text(), " this");
+    }
+
+    #[test]
+    fn kill_to_line_end_captures_line_breaks_and_merges_overlapping_cursors() {
+        let mut newline = doc("one\ntwo");
+        newline.set_caret(Position::new(0, 3), false);
+        let snapshot = newline.snapshot();
+        let ranges = newline.kill_to_line_end_ranges();
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(snapshot.text_range(ranges[0]), "\n");
+        newline.execute_edit(EditIntent::KillToLineEnd);
+        assert_eq!(newline.text(), "onetwo");
+        newline.undo();
+        assert_eq!(newline.text(), "one\ntwo");
+
+        let mut overlapping = doc("abcdef");
+        overlapping.set_caret(Position::new(0, 1), false);
+        overlapping.execute_edit(EditIntent::AddCursor(Position::new(0, 3)));
+        let ranges = overlapping.kill_to_line_end_ranges();
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(overlapping.snapshot().text_range(ranges[0]), "bcdef");
+        overlapping.execute_edit(EditIntent::KillToLineEnd);
+        assert_eq!(overlapping.text(), "a");
     }
 
     #[test]

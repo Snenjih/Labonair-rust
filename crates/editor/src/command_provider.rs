@@ -45,6 +45,8 @@ pub enum EditorUiCommand {
     GoToLineColumn,
     ToggleBreadcrumb,
     Rewrap,
+    KillRingCut,
+    KillRingYank,
 }
 
 /// Typed route selected by the Editor owner for an executable command ID.
@@ -104,6 +106,8 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         CommandId::EditorDeleteToPreviousSubwordStart => {
             EditorCommandRoute::Edit(EditIntent::DeleteTo(DeleteTarget::PreviousSubwordStart))
         }
+        CommandId::EditorKillRingCut => EditorCommandRoute::Ui(EditorUiCommand::KillRingCut),
+        CommandId::EditorKillRingYank => EditorCommandRoute::Ui(EditorUiCommand::KillRingYank),
         CommandId::EditorExpandSelection => EditorCommandRoute::Edit(EditIntent::ExpandSelection),
         CommandId::EditorShrinkSelection => EditorCommandRoute::Edit(EditIntent::ShrinkSelection),
         CommandId::EditorDuplicateLines => EditorCommandRoute::Edit(EditIntent::DuplicateLines),
@@ -216,6 +220,8 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorDeleteToPreviousWordStart,
     CommandId::EditorDeleteToNextSubwordEnd,
     CommandId::EditorDeleteToPreviousSubwordStart,
+    CommandId::EditorKillRingCut,
+    CommandId::EditorKillRingYank,
     CommandId::EditorExpandSelection,
     CommandId::EditorShrinkSelection,
     CommandId::EditorDuplicateLines,
@@ -388,6 +394,12 @@ impl CommandProvider for EditorCommandProvider {
             .with_contexts(&[CommandContext::Editor])
             .with_default_binding("ctrl-alt-backspace", Some(CommandContext::Editor))
             .with_default_binding("ctrl-alt-h", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorKillRingCut, "Kill Ring Cut", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("ctrl-k", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorKillRingYank, "Kill Ring Yank", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("ctrl-y", Some(CommandContext::Editor)),
             CommandDescriptor::new(CommandId::EditorJoinLines, "Join Lines", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("ctrl-j", Some(CommandContext::Editor)),
@@ -761,6 +773,30 @@ mod tests {
             route_for_command(CommandId::EditorSelectLine),
             Some(EditorCommandRoute::Edit(EditIntent::SelectLine))
         );
+    }
+
+    #[test]
+    fn kill_ring_commands_are_editor_owned_with_spec_bindings() {
+        let commands = EditorCommandProvider.commands();
+        for (id, binding, route) in [
+            (
+                CommandId::EditorKillRingCut,
+                "ctrl-k",
+                EditorUiCommand::KillRingCut,
+            ),
+            (
+                CommandId::EditorKillRingYank,
+                "ctrl-y",
+                EditorUiCommand::KillRingYank,
+            ),
+        ] {
+            let command = commands
+                .iter()
+                .find(|command| command.id == id)
+                .expect("Kill Ring descriptor");
+            assert_eq!(command.default_bindings[0].keystrokes, binding);
+            assert_eq!(route_for_command(id), Some(EditorCommandRoute::Ui(route)));
+        }
     }
 
     #[test]

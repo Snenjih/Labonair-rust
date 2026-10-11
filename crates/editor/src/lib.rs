@@ -17,6 +17,7 @@ pub mod editing;
 pub mod file_finder;
 pub mod git;
 pub mod history;
+pub mod kill_ring;
 pub mod language;
 pub mod language_services;
 pub mod lifecycle;
@@ -60,6 +61,7 @@ pub use git::{
     GitGutterError, GitGutterSnapshot, GitGutterState, GitHunk, GitHunkAction, GitHunkActionKind,
     GitHunkStatus, GitHunkTarget, GitLineDecoration, GitProviderFuture, HunkActionSink,
 };
+pub use kill_ring::{KillRing, KILL_RING_CAPACITY};
 pub use language::Language;
 pub use language_services::{
     default_registry, BackgroundRequest, CancellationToken, CodeAction, CompletionItem,

@@ -113,6 +113,8 @@ pub enum CommandId {
     EditorDeleteToPreviousWordStart,
     EditorDeleteToNextSubwordEnd,
     EditorDeleteToPreviousSubwordStart,
+    EditorKillRingCut,
+    EditorKillRingYank,
     EditorExpandSelection,
     EditorShrinkSelection,
     EditorDuplicateLines,
@@ -590,6 +592,8 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
         CommandId::EditorDeleteToPreviousSubwordStart,
         "editor.delete-to-previous-subword-start"
     ),
+    (CommandId::EditorKillRingCut, "editor.kill-ring-cut"),
+    (CommandId::EditorKillRingYank, "editor.kill-ring-yank"),
     (CommandId::EditorExpandSelection, "editor.expand-selection"),
     (CommandId::EditorShrinkSelection, "editor.shrink-selection"),
     (CommandId::EditorDuplicateLines, "editor.duplicate-lines"),
