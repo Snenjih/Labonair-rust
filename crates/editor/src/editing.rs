@@ -15,9 +15,17 @@ use crate::splits::{EditorGroupId, EditorSplitTree, SplitError};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditIntent {
     Insert(String),
+    /// Replace each selection with its matching text, or broadcast one value
+    /// when only one is provided. Used for multi-cursor paste.
+    InsertMany(Vec<String>),
     DeleteBackward,
     DeleteForward,
-    Move { motion: Motion, extend: bool },
+    /// Remove non-empty selections without deleting at empty carets.
+    DeleteSelections,
+    Move {
+        motion: Motion,
+        extend: bool,
+    },
     AddCursor(Position),
     AddCursorAbove,
     AddCursorBelow,
@@ -31,12 +39,20 @@ pub enum EditIntent {
     ExpandSelection,
     ShrinkSelection,
     DuplicateLines,
-    MoveLines { down: bool },
+    MoveLines {
+        down: bool,
+    },
     Transpose,
     ToggleComment,
-    Indent { unit: String },
-    Outdent { unit: String },
-    AutoIndent { unit: String },
+    Indent {
+        unit: String,
+    },
+    Outdent {
+        unit: String,
+    },
+    AutoIndent {
+        unit: String,
+    },
     TypeBracket(char),
 }
 
@@ -197,8 +213,10 @@ impl Document {
     pub fn execute_edit(&mut self, intent: EditIntent) -> EditorCommandResult {
         match intent {
             EditIntent::Insert(text) => self.multi_insert(&text),
+            EditIntent::InsertMany(texts) => self.multi_insert_many(&texts),
             EditIntent::DeleteBackward => self.multi_delete(false),
             EditIntent::DeleteForward => self.multi_delete(true),
+            EditIntent::DeleteSelections => self.delete_selections(),
             EditIntent::Move { motion, extend } => self.multi_move(motion, extend),
             EditIntent::AddCursor(position) => self.add_cursor(position),
             EditIntent::AddCursorAbove => self.add_cursors_vertical(false),
@@ -235,6 +253,43 @@ impl Document {
             .map(|range| (range, text.to_string()))
             .collect::<Vec<_>>();
         self.apply_targets(targets, text.chars().count() == 1, EditSource::Typing, None)
+    }
+
+    fn multi_insert_many(&mut self, texts: &[String]) -> EditorCommandResult {
+        if texts.is_empty() {
+            return EditorCommandResult::unchanged();
+        }
+        let selections = self.selection_set();
+        if texts.len() != 1 && texts.len() != selections.len() {
+            return EditorCommandResult::unchanged();
+        }
+        let snapshot = self.snapshot();
+        let targets = selections
+            .ranges(&snapshot)
+            .into_iter()
+            .enumerate()
+            .map(|(index, range)| {
+                let replacement = if texts.len() == 1 {
+                    texts[0].clone()
+                } else {
+                    texts[index].clone()
+                };
+                (range, replacement)
+            })
+            .collect();
+        self.apply_targets(targets, false, EditSource::Paste, Some("Paste".into()))
+    }
+
+    fn delete_selections(&mut self) -> EditorCommandResult {
+        let snapshot = self.snapshot();
+        let targets = self
+            .selection_set()
+            .ranges(&snapshot)
+            .into_iter()
+            .filter(|range| !range.is_empty())
+            .map(|range| (range, String::new()))
+            .collect();
+        self.apply_targets(targets, false, EditSource::Delete, Some("Cut".into()))
     }
 
     fn multi_delete(&mut self, forward: bool) -> EditorCommandResult {
@@ -1337,5 +1392,42 @@ mod tests {
         assert_eq!(document.cursor, Position::new(1, 4));
         document.undo();
         assert_eq!(document.text(), "  if {");
+    }
+
+    #[test]
+    fn paste_distributes_or_broadcasts_replacements_across_selections() {
+        let mut document = doc("a b");
+        document.set_caret(Position::new(0, 1), false);
+        document.execute_edit(EditIntent::AddCursor(Position::new(0, 3)));
+
+        document.execute_edit(EditIntent::InsertMany(vec!["x".into(), "y".into()]));
+        assert_eq!(document.text(), "ax by");
+        document.undo();
+        assert_eq!(document.text(), "a b");
+
+        document.execute_edit(EditIntent::InsertMany(vec!["!".into()]));
+        assert_eq!(document.text(), "a! b!");
+        document.undo();
+        assert_eq!(document.text(), "a b");
+    }
+
+    #[test]
+    fn cut_deletes_only_non_empty_selections() {
+        let mut document = doc("one two");
+        document.set_selection_set(SelectionSet::from_selections(
+            vec![
+                Selection {
+                    anchor: Anchor::new(0, AnchorAffinity::Before),
+                    head: Anchor::new(3, AnchorAffinity::After),
+                },
+                Selection::collapsed(Anchor::new(4, AnchorAffinity::After)),
+            ],
+            0,
+        ));
+
+        document.execute_edit(EditIntent::DeleteSelections);
+        assert_eq!(document.text(), " two");
+        document.undo();
+        assert_eq!(document.text(), "one two");
     }
 }

@@ -2693,10 +2693,8 @@ impl EditorView {
 
     fn navigate(&mut self, motion: Motion, extend: bool, cx: &mut Context<Self>) {
         self.cursor_blink_on = true;
-        self.doc.move_caret(motion, extend);
+        self.execute_command(EditorCommand::Edit(EditIntent::Move { motion, extend }), cx);
         self.dismiss_language_popovers();
-        self.ensure_cursor_visible();
-        cx.notify();
     }
 
     /// The current selection text, if any (for "Ask AI about Selection").
@@ -2705,24 +2703,55 @@ impl EditorView {
     }
 
     fn copy(&self, cx: &mut Context<Self>) {
-        if let Some(text) = self.doc.selected_text() {
+        if let Some(text) = self.clipboard_selection_text() {
             cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
     }
 
     fn cut(&mut self, cx: &mut Context<Self>) {
-        if let Some(text) = self.doc.selected_text() {
+        if let Some(text) = self.clipboard_selection_text() {
             cx.write_to_clipboard(ClipboardItem::new_string(text));
-            self.edit(cx, |d| d.backspace());
+            self.execute_command(EditorCommand::Edit(EditIntent::DeleteSelections), cx);
         }
     }
 
     fn paste(&mut self, cx: &mut Context<Self>) {
         if let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) {
             if !text.is_empty() {
-                self.edit(cx, |d| d.insert(&text));
+                self.paste_text(&text, cx);
             }
         }
+    }
+
+    fn clipboard_selection_text(&self) -> Option<String> {
+        let snapshot = self.doc.snapshot();
+        let selected = self
+            .doc
+            .selection_set()
+            .ranges(&snapshot)
+            .into_iter()
+            .filter(|range| !range.is_empty())
+            .map(|range| snapshot.text_range(range))
+            .collect::<Vec<_>>();
+        (!selected.is_empty()).then(|| selected.join("\n"))
+    }
+
+    fn paste_text(&mut self, text: &str, cx: &mut Context<Self>) {
+        let selection_count = self.doc.selection_set().len();
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        let lines = normalized
+            .split('\n')
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let replacements = if selection_count > 1 && lines.len() == selection_count {
+            lines
+        } else {
+            vec![normalized; selection_count]
+        };
+        self.execute_command(
+            EditorCommand::Edit(EditIntent::InsertMany(replacements)),
+            cx,
+        );
     }
 
     // ── Scrolling ───────────────────────────────────────────────────────────
@@ -3093,8 +3122,7 @@ impl EditorView {
         {
             self.execute_command(EditorCommand::Edit(EditIntent::TypeBracket(character)), cx);
         } else {
-            let text = text.to_owned();
-            self.edit(cx, move |document| document.insert(&text));
+            self.execute_command(EditorCommand::Edit(EditIntent::Insert(text.to_owned())), cx);
         }
     }
 
@@ -3209,22 +3237,22 @@ impl EditorView {
             "left" => self.navigate(Motion::Left, m.shift, cx),
             "right" => self.navigate(Motion::Right, m.shift, cx),
             "up" => {
-                if !self.wrap_vertical(false, m.shift, cx) {
+                if self.doc.selection_set().len() > 1 || !self.wrap_vertical(false, m.shift, cx) {
                     self.navigate(Motion::Up, m.shift, cx)
                 }
             }
             "down" => {
-                if !self.wrap_vertical(true, m.shift, cx) {
+                if self.doc.selection_set().len() > 1 || !self.wrap_vertical(true, m.shift, cx) {
                     self.navigate(Motion::Down, m.shift, cx)
                 }
             }
             "home" => {
-                if !self.wrap_horizontal(false, m.shift, cx) {
+                if self.doc.selection_set().len() > 1 || !self.wrap_horizontal(false, m.shift, cx) {
                     self.navigate(Motion::LineStart, m.shift, cx)
                 }
             }
             "end" => {
-                if !self.wrap_horizontal(true, m.shift, cx) {
+                if self.doc.selection_set().len() > 1 || !self.wrap_horizontal(true, m.shift, cx) {
                     self.navigate(Motion::LineEnd, m.shift, cx)
                 }
             }
@@ -3233,10 +3261,14 @@ impl EditorView {
             "enter" => self.insert_newline(cx),
             "tab" => {
                 let indent = self.indent_unit();
-                self.edit(cx, move |d| d.insert(&indent));
+                self.execute_command(EditorCommand::Edit(EditIntent::Insert(indent)), cx);
             }
-            "backspace" => self.edit(cx, Document::backspace),
-            "delete" => self.edit(cx, Document::delete_forward),
+            "backspace" => {
+                self.execute_command(EditorCommand::Edit(EditIntent::DeleteBackward), cx);
+            }
+            "delete" => {
+                self.execute_command(EditorCommand::Edit(EditIntent::DeleteForward), cx);
+            }
             "escape" => {}
             _ => {
                 if let Some(text) = printable(ks) {
@@ -6591,6 +6623,45 @@ mod tests {
                 this.insert_printable("}", cx);
                 assert_eq!(this.doc.text(), "{\n  }");
                 assert_eq!(this.doc.cursor, Position::new(1, 3));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn ordinary_typing_and_multiline_paste_use_secondary_cursors(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("test.txt".into(), "a b", 1);
+                this.doc.set_caret(Position::new(0, 1), false);
+                this.doc
+                    .execute_edit(EditIntent::AddCursor(Position::new(0, 3)));
+
+                this.insert_printable("x", cx);
+                assert_eq!(this.doc.text(), "ax bx");
+
+                this.doc = Document::from_file("test.txt".into(), "a b", 1);
+                this.doc.set_caret(Position::new(0, 1), false);
+                this.doc
+                    .execute_edit(EditIntent::AddCursor(Position::new(0, 3)));
+                this.paste_text("left\nright", cx);
+                assert_eq!(this.doc.text(), "aleft bright");
+
+                this.doc = Document::from_file("test.txt".into(), "one two", 1);
+                this.doc.set_selection_set(SelectionSet::from_selections(
+                    vec![
+                        Selection {
+                            anchor: Anchor::new(0, AnchorAffinity::Before),
+                            head: Anchor::new(3, AnchorAffinity::After),
+                        },
+                        Selection {
+                            anchor: Anchor::new(4, AnchorAffinity::Before),
+                            head: Anchor::new(7, AnchorAffinity::After),
+                        },
+                    ],
+                    0,
+                ));
+                assert_eq!(this.clipboard_selection_text().as_deref(), Some("one\ntwo"));
             });
         });
     }
