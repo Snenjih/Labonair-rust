@@ -7908,4 +7908,45 @@ Next safe task: Continue R07-000 with `vim::EndRepeat` classification complete; 
 - Inspected the ordinary repeat, completion, and focus-loss fixtures without running. Direct action invocation, palette exposure, platform routing, mode recovery, and failure/cancellation cases remain runtime acceptance.
 - Updated the EndRepeat packet, unbound-action row, both `.` Repeat binding annotations, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final documentation-only gates passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 264 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, action palette, direct-invocation behavior, platform dispatch, focus/mode recovery, and paired native evidence remain active.
-- Next safe task: Continue R07-000 with `vim::Enter`; do not begin R07-001 or R09.
+- Next safe task: Continue R07-000 with `vim::Enter` classification complete; then advance to the next earliest registered action without beginning R07-001 or R09.
+
+
+## Pre-change contract — Vim Enter
+
+~~~text
+Request type: Pinned newline input through Replace and Waiting modes, counted replace operator, and local owner gap; documentation-only classification.
+Owner module: Editor owns newline edits, selections, and indentation; Vim owns pending operators, Replace mode, and input routing; Keymap owns the mode-specific Enter rows.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry points: In Replace mode, `R` followed by `enter` invokes `vim::Enter`; in Waiting mode, `enter` forwards newline input to the active pending operator, including `r enter`. Normal-mode `enter` is the separate `vim::NextLineStart` route, and ordinary Insert-mode Enter uses editor text input.
+Public typed contract: Unit action `vim::Enter`, no arguments or aliases. It passes newline text to `input_ignored`. In Replace mode, newline is inserted at each selection with block-indent handling and Replace mode remains active. In Waiting mode, the pending operator handles newline; `r enter` replaces the counted characters with one newline through Editor's newline path. Editor autoindent is enabled in these contexts; there is no Enter-specific setting.
+State owner: Editor owns buffer contents, selections, and language indentation. Vim owns Replace/Waiting mode, pending operator/count, and input dispatch. Keymap owns `enter` dispatch by mode.
+Persistence owner: No action-specific persisted state; text edits persist through the active buffer and normal document lifecycle.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-Enter`, `KEYBIND-VIM-HELIX-19af9151931c` (`enter` in Replace mode), and `KEYBIND-VIM-HELIX-8f0e82b34c55` (`enter` in Waiting mode). No platform-default map binds this Vim action.
+Events and registry contributions: Existing Vim input action and two profile rows only; no new event or registry contribution proposed.
+Settings: No action-specific setting; Editor autoindent/language indentation behavior applies.
+Notifications: None expected.
+UI-kit components: Existing Editor and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect without running `normal.rs::test_r`, `replace.rs::test_replace_mode`, and the separate normal-mode `normal.rs::test_enter`. Check other pending operators, direct invocation, indentation/language edge cases, platform dispatch, and multi-cursor lifecycle independently.
+Visual evidence: No layout change proposed. Paired native macOS Editor and Keymap evidence is required for Replace-mode and Waiting-mode Enter, indentation, counted replacement, selections, undo, and mode state; Linux/Windows dispatch needs separate runtime checks.
+Security impact: No external or privileged effects; newline and replacement edits affect the current Editor buffer and its active selections.
+Performance impact: Newline input can edit multiple selections and invoke language-aware block indentation; large selections and multiple cursors require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema, two contexts, newline input dispatcher, Replace and Waiting paths, counted `r enter`, autoindent handoff, fixtures, and local distinctions can be classified statically; platform, other operators, palette, and paired native acceptance remain open.
+Documentation updates: New Enter packet; registered-action row; both `enter` binding annotations; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action schema, Replace/Waiting routes, `input_ignored` behavior, counted replace newline, Replace-mode multi-selection insertion, autoindent handoff, focused fixtures, and local Enter differences inspected. Static classification packet and parity updates are complete; platform, palette, other operators, and native acceptance remain open.
+Target status: Classify Replace-mode newline insertion and Waiting-mode newline-as-operator-input, distinguish ordinary Insert/Normal Enter, and record local Replace/Waiting/r Enter gaps without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no typed `vim::Enter` action, Replace or Waiting mode, action keymap, block-indent Replace newline, or newline-consuming `r` path; local Enter inserts in Insert mode, moves down in Normal mode, and executes Command mode.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Palette exposure, platform dispatch, language indentation, pending-operator inputs, Replace mode, multi-selection, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::Enter` classification complete; then advance to the next earliest registered action without beginning R07-001 or R09.
+~~~
+
+
+## Vim Enter action classification progress
+
+- Classified `vim::Enter` as newline input bound in Replace and Waiting modes. Documented Replace-mode multi-selection insertion, waiting-operator handling, counted `r enter`, autoindent behavior, and the distinct Normal/Insert Enter routes.
+- Inspected the counted `r enter`, Replace-mode multi-selection newline, and separate Normal Enter fixtures without running. Other waiting operators, platform dispatch, palette exposure, and language-specific indentation remain runtime acceptance.
+- Updated the Enter packet, registered-action row, both `enter` binding annotations, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final documentation-only gates passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 265 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, action palette, platform dispatch, other pending operators, language indentation, and paired native evidence remain active.
+- Next safe task: Continue R07-000 with `vim::EntireFile`; do not begin R07-001 or R09.

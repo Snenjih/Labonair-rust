@@ -77,6 +77,7 @@ The [Vim EndOfLine packet](action-classification-vim-end-of-line.md) classifies 
 The [Vim EndOfLineDownward packet](action-classification-vim-end-of-line-downward.md) classifies counted inclusive `g _` scanning to the final non-whitespace character, the distinction from `$` and `_`, and Labonair's missing scanner. Platform and mode acceptance remain open.
 The [Vim EndOfParagraph packet](action-classification-vim-end-of-paragraph.md) classifies counted exclusive `}` paragraph motion, empty-row boundary rules, whitespace-only content, operator adjustments, jump-list effects, and Labonair's partial resolver. Platform and mode acceptance remain open.
 The [Vim EndRepeat packet](action-classification-vim-end-repeat.md) classifies the internal dot-repeat completion marker, Normal-mode/state cleanup, the focus-loss fallback, and Labonair's missing replay queue. The user-facing `.` binding remains the separate `vim::Repeat` requirement; palette and runtime acceptance remain open.
+The [Vim Enter packet](action-classification-vim-enter.md) classifies Replace- and Waiting-mode newline input, counted `r Enter`, indentation ownership, and Labonair's distinct Insert/Normal/Command Enter paths. Platform dispatch, other pending operators, and native acceptance remain open.
 
 ## Current Labonair capability reconciliation
 

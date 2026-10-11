@@ -361,6 +361,7 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-vim-end-of-line-downward.md`](action-classification-vim-end-of-line-downward.md) — counted inclusive `g _` last-non-whitespace motion, distinct from `$`/`end` and `_`, plus Labonair's missing scanner; platform and mode acceptance remain open.
 - [`action-classification-vim-end-of-paragraph.md`](action-classification-vim-end-of-paragraph.md) — counted exclusive `}` motion, logical paragraph boundaries, whitespace-only rows, operator adjustments, and Labonair's local gaps; platform and mode acceptance remain open.
 - [`action-classification-vim-end-repeat.md`](action-classification-vim-end-repeat.md) — unbound internal completion sentinel for `.`, replay mode cleanup, focus-loss fallback, and Labonair's missing replay pipeline; palette and runtime acceptance remain open.
+- [`action-classification-vim-enter.md`](action-classification-vim-enter.md) — Replace/Waiting-mode Enter input, counted `r Enter`, Editor indentation handoff, and Labonair's local gaps; platform and operator acceptance remain open.
 - [`titlebar-tab-strip.md`](titlebar-tab-strip.md) — independent titlebar tab
   appearance, input/state matrix, ownership, and evidence packet.
 - [`settings-requirements.md`](settings-requirements.md) — 488 stable IDs for
