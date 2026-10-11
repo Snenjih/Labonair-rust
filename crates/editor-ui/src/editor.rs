@@ -138,6 +138,21 @@ struct EditorScrollbarDrag {
     geometry: ScrollbarGeometry,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct EditorMinimapDrag {
+    total_rows: usize,
+    viewport_rows: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct MinimapLineMarkers {
+    cursor: bool,
+    selection: bool,
+    search: bool,
+    diagnostic: Option<labonair_editor::language_services::DiagnosticSeverity>,
+    git: Option<GitHunkStatus>,
+}
+
 /// Calculate a compact scrollbar thumb without allowing a zero-sized or
 /// out-of-track thumb. The editor uses this for both display rows and columns,
 /// so the math remains deterministic and independent of GPUI layout.
@@ -179,6 +194,49 @@ fn scrollbar_scroll_from_pointer(
     }
     let offset = (pointer - track_start - geometry.thumb_length / 2.0).clamp(0.0, travel);
     (offset / travel * geometry.max_scroll as f32).round() as usize
+}
+
+fn minimap_slot(line: usize, line_count: usize, slot_count: usize) -> Option<usize> {
+    if line_count == 0 || slot_count == 0 || line >= line_count {
+        return None;
+    }
+    Some((line.saturating_mul(slot_count) / line_count).min(slot_count - 1))
+}
+
+fn mark_minimap_line_range(
+    markers: &mut [MinimapLineMarkers],
+    line_count: usize,
+    start_line: usize,
+    end_line: usize,
+    mut mark: impl FnMut(&mut MinimapLineMarkers),
+) {
+    if markers.is_empty() || line_count == 0 || start_line >= line_count {
+        return;
+    }
+    let start = minimap_slot(start_line, line_count, markers.len());
+    let end = minimap_slot(end_line.min(line_count - 1), line_count, markers.len());
+    if let (Some(start), Some(end)) = (start, end) {
+        for marker in &mut markers[start..=end] {
+            mark(marker);
+        }
+    }
+}
+
+fn minimap_scroll_from_pointer(
+    pointer: f32,
+    track_start: f32,
+    track_length: f32,
+    total_rows: usize,
+    viewport_rows: usize,
+) -> usize {
+    if track_length <= 0.0 || total_rows <= viewport_rows {
+        return 0;
+    }
+    let fraction = ((pointer - track_start) / track_length).clamp(0.0, 1.0);
+    let center_row = (fraction * total_rows as f32).round() as usize;
+    center_row
+        .saturating_sub(viewport_rows / 2)
+        .min(total_rows.saturating_sub(viewport_rows))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -5163,20 +5221,206 @@ impl EditorView {
     fn render_minimap(
         &self,
         snapshot: &labonair_editor::BufferSnapshot,
+        display: &labonair_editor::DisplaySnapshot,
         palette: Palette,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let line_count = snapshot.line_count().max(1);
-        let rows = (0..line_count.min(500)).map(|line| {
-            let width = (snapshot.line_len(line).min(60) as f32 / 60.0 * 62.0).max(4.0);
-            div().h(px(2.0)).w(px(width)).bg(palette.muted.opacity(
-                if line == self.doc.cursor.line {
-                    0.95
+        let height = self
+            .bounds
+            .map(|bounds| f32::from(bounds.size.height))
+            .unwrap_or(480.0);
+        let track_length = (height - 16.0).max(1.0);
+        let slot_count = line_count
+            .min(500)
+            .min(track_length.floor().max(1.0) as usize)
+            .max(1);
+        let slot_height = track_length / slot_count as f32;
+        let mut markers = vec![MinimapLineMarkers::default(); slot_count];
+        mark_minimap_line_range(
+            &mut markers,
+            line_count,
+            self.doc.cursor.line,
+            self.doc.cursor.line,
+            |marker| marker.cursor = true,
+        );
+        for range in self.doc.selection_set().ranges(snapshot) {
+            if range.is_empty() {
+                continue;
+            }
+            mark_minimap_line_range(
+                &mut markers,
+                line_count,
+                snapshot.byte_to_position(range.start).line,
+                snapshot.byte_to_position(range.end).line,
+                |marker| marker.selection = true,
+            );
+        }
+        if let Some(search) = &self.search {
+            for matched in &search.matches {
+                mark_minimap_line_range(
+                    &mut markers,
+                    line_count,
+                    matched.start.line,
+                    matched.end.line,
+                    |marker| marker.search = true,
+                );
+            }
+        }
+        let language_state = self.language_service_state.snapshot();
+        if self.prefs.diagnostics()
+            && language_state.version == DocumentVersion::from_revision(self.editor_revision())
+        {
+            for diagnostic in language_state.diagnostics {
+                mark_minimap_line_range(
+                    &mut markers,
+                    line_count,
+                    diagnostic.range.start.line,
+                    diagnostic.range.end.line,
+                    |marker| {
+                        marker.diagnostic =
+                            Some(marker.diagnostic.map_or(diagnostic.severity, |current| {
+                                current.min(diagnostic.severity)
+                            }));
+                    },
+                );
+            }
+        }
+        if self.git_snapshot_is_current(&self.git_gutter) {
+            for hunk in &self.git_gutter.hunks {
+                if hunk.changed_lines.is_empty() {
+                    let line = hunk.new_start.saturating_sub(1) as usize;
+                    mark_minimap_line_range(&mut markers, line_count, line, line, |marker| {
+                        marker.git = Some(hunk.status)
+                    });
                 } else {
-                    0.45
-                },
-            ))
+                    for line in &hunk.changed_lines {
+                        mark_minimap_line_range(&mut markers, line_count, *line, *line, |marker| {
+                            marker.git = Some(hunk.status)
+                        });
+                    }
+                }
+            }
+        }
+        let show_current_line = self.prefs.highlight_current_line();
+        let rows = (0..slot_count).map(|slot| {
+            let line = (slot.saturating_mul(line_count) / slot_count).min(line_count - 1);
+            let width = (snapshot.line_len(line).min(60) as f32 / 60.0 * 56.0).max(4.0);
+            let marker = markers[slot];
+            let mut row = div()
+                .relative()
+                .w_full()
+                .h(px(slot_height))
+                .when(marker.cursor && show_current_line, |row| {
+                    row.bg(palette.accent.opacity(0.12))
+                })
+                .child(
+                    div()
+                        .absolute()
+                        .left(px(10.0))
+                        .top_0()
+                        .h_full()
+                        .w(px(width))
+                        .bg(palette
+                            .muted
+                            .opacity(if marker.cursor { 0.9 } else { 0.42 })),
+                );
+            if marker.selection {
+                row = row.child(
+                    div()
+                        .absolute()
+                        .left(px(10.0))
+                        .top_0()
+                        .h_full()
+                        .w(px((width * 0.72).max(3.0)))
+                        .bg(palette.selected_accent.opacity(0.85)),
+                );
+            }
+            if marker.search {
+                row = row.child(
+                    div()
+                        .absolute()
+                        .left(px(10.0))
+                        .top_0()
+                        .h_full()
+                        .w(px((width * 0.45).max(3.0)))
+                        .bg(palette.info.opacity(0.9)),
+                );
+            }
+            if marker.cursor {
+                row = row.child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .top_0()
+                        .h_full()
+                        .w(px(2.0))
+                        .bg(palette.primary),
+                );
+            }
+            if let Some(status) = marker.git {
+                let color = match status {
+                    GitHunkStatus::Added | GitHunkStatus::Untracked => palette.success,
+                    GitHunkStatus::Modified => palette.warning,
+                    GitHunkStatus::Deleted => palette.error,
+                };
+                row = row.child(
+                    div()
+                        .absolute()
+                        .left(px(3.0))
+                        .top_0()
+                        .h_full()
+                        .w(px(2.0))
+                        .bg(color),
+                );
+            }
+            if let Some(severity) = marker.diagnostic {
+                let color = match severity {
+                    labonair_editor::language_services::DiagnosticSeverity::Error => palette.error,
+                    labonair_editor::language_services::DiagnosticSeverity::Warning => {
+                        palette.warning
+                    }
+                    labonair_editor::language_services::DiagnosticSeverity::Information
+                    | labonair_editor::language_services::DiagnosticSeverity::Hint => palette.info,
+                };
+                row = row.child(
+                    div()
+                        .absolute()
+                        .left(px(6.0))
+                        .top_0()
+                        .h_full()
+                        .w(px(2.0))
+                        .bg(color),
+                );
+            }
+            row
         });
-        div()
+        let thumb = scrollbar_geometry(
+            display.total_rows,
+            display.viewport.height_rows,
+            display.viewport.top_row,
+            track_length,
+        )
+        .map(|geometry| {
+            div()
+                .absolute()
+                .top(px(8.0 + geometry.thumb_offset))
+                .right_0()
+                .w(px(3.0))
+                .h(px(geometry.thumb_length))
+                .rounded(px(2.0))
+                .bg(palette.muted.opacity(0.78))
+                .border_l_1()
+                .border_color(palette.border)
+        });
+        let drag = EditorMinimapDrag {
+            total_rows: display.total_rows,
+            viewport_rows: display.viewport.height_rows,
+        };
+        let minimap_total_rows = drag.total_rows;
+        let minimap_viewport_rows = drag.viewport_rows;
+        let minimap = div()
+            .id("editor-minimap")
             .absolute()
             .top_0()
             .bottom_0()
@@ -5191,7 +5435,47 @@ impl EditorView {
             .border_l_1()
             .border_color(palette.border)
             .children(rows)
-            .into_any_element()
+            .children(thumb)
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
+                    let (track_start, length) = this
+                        .bounds
+                        .map(|bounds| {
+                            (
+                                f32::from(bounds.origin.y) + 8.0,
+                                (f32::from(bounds.size.height) - 16.0).max(1.0),
+                            )
+                        })
+                        .unwrap_or((8.0, 1.0));
+                    let row = minimap_scroll_from_pointer(
+                        f32::from(event.position.y),
+                        track_start,
+                        length,
+                        minimap_total_rows,
+                        minimap_viewport_rows,
+                    );
+                    this.scroll_to_visual_row(row, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_drag(drag, |_, _, _, cx| cx.new(|_| EditorDragGhost))
+            .on_drag_move(cx.listener(
+                move |this, event: &gpui::DragMoveEvent<EditorMinimapDrag>, _window, cx| {
+                    let drag = event.drag(cx);
+                    let track_start = f32::from(event.bounds.origin.y) + 8.0;
+                    let track_length = (f32::from(event.bounds.size.height) - 16.0).max(1.0);
+                    let row = minimap_scroll_from_pointer(
+                        f32::from(event.event.position.y),
+                        track_start,
+                        track_length,
+                        drag.total_rows,
+                        drag.viewport_rows,
+                    );
+                    this.scroll_to_visual_row(row, cx);
+                },
+            ));
+        minimap.into_any_element()
     }
 
     fn render_language_service_overlay(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -6266,8 +6550,8 @@ impl Render for EditorView {
             }
             editor_surface_container = editor_surface_container.child(editor_surface);
             if minimap {
-                editor_surface_container =
-                    editor_surface_container.child(self.render_minimap(&snapshot, ui_palette));
+                editor_surface_container = editor_surface_container
+                    .child(self.render_minimap(&snapshot, &display, ui_palette, cx));
             }
             buffer_surface = buffer_surface.child(editor_surface_container);
         }
@@ -7007,6 +7291,34 @@ mod tests {
         assert_eq!(scrollbar_scroll_from_pointer(100.0, 0.0, geometry), 90);
         assert_eq!(scrollbar_scroll_from_pointer(50.0, 0.0, geometry), 45);
         assert!(scrollbar_geometry(10, 10, 0, 100.0).is_none());
+    }
+
+    #[test]
+    fn minimap_slots_cover_lines_and_reject_invalid_coordinates() {
+        assert_eq!(minimap_slot(0, 100, 10), Some(0));
+        assert_eq!(minimap_slot(9, 100, 10), Some(0));
+        assert_eq!(minimap_slot(10, 100, 10), Some(1));
+        assert_eq!(minimap_slot(99, 100, 10), Some(9));
+        assert_eq!(minimap_slot(100, 100, 10), None);
+        assert_eq!(minimap_slot(0, 0, 10), None);
+        assert_eq!(minimap_slot(0, 1, 0), None);
+
+        let mut markers = vec![MinimapLineMarkers::default(); 10];
+        mark_minimap_line_range(&mut markers, 100, 15, 35, |marker| {
+            marker.search = true;
+        });
+        assert!(markers[1..=3].iter().all(|marker| marker.search));
+        assert!(!markers[0].search);
+        assert!(!markers[4].search);
+    }
+
+    #[test]
+    fn minimap_pointer_scroll_is_centered_and_clamped() {
+        assert_eq!(minimap_scroll_from_pointer(50.0, 0.0, 100.0, 100, 10), 45);
+        assert_eq!(minimap_scroll_from_pointer(-10.0, 0.0, 100.0, 100, 10), 0);
+        assert_eq!(minimap_scroll_from_pointer(110.0, 0.0, 100.0, 100, 10), 90);
+        assert_eq!(minimap_scroll_from_pointer(50.0, 0.0, 100.0, 100, 100), 0);
+        assert_eq!(minimap_scroll_from_pointer(50.0, 0.0, 0.0, 100, 10), 0);
     }
 
     #[test]
