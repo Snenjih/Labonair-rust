@@ -8515,3 +8515,42 @@ Next safe task: Continue R07-000 with `vim::HelixCollapseSelection` (now in prog
 - Confirmed Labonair's local `VimMode` has no Helix modes, and its semicolon path repeats the previous character-find motion. Updated the HelixCollapseSelection packet, registered-action row, both binding annotations, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 279 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Selection orientation/display-map edges, overlapping-row precedence, menu/focus, palette, platform dispatch, and paired native acceptance remain active.
 - Next safe task: Continue R07-000 with `vim::HelixDelete`; do not begin R07-001 or R09.
+
+## Pre-change contract — Vim HelixDelete
+
+~~~text
+Request type: Pinned Helix `d` deletion from Helix Normal and Helix Select, selection/register/undo behavior, and Labonair's Vim-only delete gap; documentation-only classification.
+Owner module: Editor/Vim owns deletion, selection, mode, register, mark, and undo-selection behavior; Keymap owns the shared `d` route. Labonair's current Vim state and edits belong to `labonair-editor`; a Helix route belongs to `labonair-keymap` and its mode value to Settings.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: `d` in `(vim_mode == helix_normal || vim_mode == helix_select) && !menu`. In Helix Normal, each empty cursor extends one display point right and deletes that character; in Helix Select, each selected range is deleted.
+Public typed contract: Unit action `vim::HelixDelete`, no JSON arguments or aliases. It records the action, captures the original selection anchors, extends empty ranges by one display point, applies the visual deletion path, restores the original ranges as the undo selection state, and returns to Helix Normal.
+State owner: Editor owns selections, document edits, and transaction selection history; Vim owns Helix/Vim mode, marks, and registers; Keymap/Settings gate Helix mode.
+Persistence owner: No action-specific persistence; deletion is a normal Editor buffer transaction, with undo/history owned by Editor.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-HelixDelete`; `KEYBIND-VIM-HELIX-4ac06d98c5fa` (`d`, `(vim_mode == helix_normal || vim_mode == helix_select) && !menu`). The distinct `alt-d` route invokes `editor::Delete` without yanking.
+Events and registry contributions: Existing Vim unit action and shared Keymap row; visual delete records a buffer transaction, updates Vim delete registers and `[`/`]` marks, applies linked edits, and restores original selection anchors for undo. No new event or registry contribution proposed.
+Settings: `SET-keymap-helix-mode` enables Helix Normal/Select contexts; `SET-keymap-vim-mode` enables the Vim/Helix layer. The handler reads no count directly; count accumulation/cleanup still needs verification.
+Notifications: None.
+UI-kit components: Existing Editor buffer, selection, status, and undo surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action schema/handler, shared `d` context, visual-delete/register/mark/undo path, `test_delete`, EOL/newline cases, `test_helix_select_lines` undo behavior, local Vim operator `d` and `x` paths, and missing local Helix mode; do not run tests.
+Visual evidence: Paired native macOS Editor/Keymap evidence should record initial mode/ranges, deleted text and remaining buffer, resulting carets, Vim register/marks, undo state and restored selection, EOL/newline/EOF case, focus/profile, platform, viewport, theme, and scale.
+Security impact: None; the action deletes user-selected text in the active Editor and updates local Vim registers.
+Performance impact: O(number of selections plus deleted text) for range expansion, register capture, and linked deletion; large multi-selection and deletion sizes need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema/handler, shared key route, simple selected/current-character tests, line-ending behavior, delete-register path, transaction selection-history restoration, and local Vim-only delete routes can be classified statically. Counts, complex/multiple ranges, register details, no-op EOF, undo/redo edge cases, palette, platform dispatch, and native behavior remain open.
+Documentation updates: New HelixDelete packet; registered-action row; `d` binding annotation; Linux/Windows profile note; Helix Mode setting note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action handler, action metadata, shared `d` route, visual-delete implementation, direct selection/current-character/EOL/newline/undo fixtures, and local Vim operator implementation inspected. Documentation-only changes are planned; no tests run.
+Target status: Classify Helix `d` selection and one-character deletion, register/mark updates, undo selection restoration, and return-to-Normal behavior without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair's Normal `d` begins a single-cursor Vim operator and `x` deletes forward, but it has no Helix mode, multi-selection delete semantics, Helix action route, or Helix-specific selection restore on undo.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Counts, range orientation/overlap, register/clipboard destinations, EOF/newline behavior, selection restoration through undo/redo, palette, platform dispatch, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::HelixDelete` (now in progress); do not begin R07-001 or R09.
+~~~
+
+## Vim HelixDelete action classification progress
+
+- Classified shared Helix `d`: empty cursors extend one display point right and selected ranges delete as-is. The visual-delete path writes deleted content through Vim's register handling, updates marks, applies linked edits, and returns to Helix Normal; transaction undo selections are reset to the pre-expansion ranges.
+- Inspected `test_delete` for selection and current-character deletion, line-end/newline cursor fixtures, and `test_helix_select_lines` for `d u x` undo/cursor behavior. Tests were inspected, not run. Labonair's Normal `d` starts a pending single-cursor operator and `x` deletes forward, with no Helix mode or multi-selection route.
+- Updated the HelixDelete packet, registered-action row, shared `d` binding annotation, Linux/Windows profile note, Helix Mode setting row, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 280 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Counts, complex selections, register/clipboard details, EOF/newline, undo/redo edges, palette, platform dispatch, and paired native acceptance remain active.
+- Next safe task: Continue R07-000 with `vim::HelixDuplicateAbove`; do not begin R07-001 or R09.
