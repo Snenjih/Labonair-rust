@@ -332,6 +332,10 @@ records the three shared `~` contexts, mode-specific selection/cursor effects,
 full Unicode case mappings, separate `g~{motion}` operator, and the local
 cursor-only mapping gap. Palette, platform dispatch, Helix Select transition,
 and paired macOS acceptance remain open. The independent
+[`Vim ChangeListNewer action crosswalk`](parity/action-classification-vim-change-list-newer.md)
+records shared `g ,` navigation through transient edit-position anchors,
+counted movement, and the missing local change-list route. Profile dispatch,
+anchor restoration, and paired macOS acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and
