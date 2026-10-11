@@ -7992,3 +7992,45 @@ Next safe task: Continue R07-000 with `vim::Exchange`; do not begin R07-001 or R
 - Updated the EntireFile packet, registered-action row, shared `e` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 266 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. The pre-change baseline also passed with 265 Markdown files. Rust build/tests, action palette, direct invocation, platform dispatch, endpoint/operator behavior, and paired native evidence remain active.
 - Next safe task: Continue R07-000 with `vim::Exchange`; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim Exchange
+
+~~~text
+Request type: Pinned two-range text exchange, operator/palette routes, overlap behavior, and local owner gap; documentation-only classification.
+Owner module: Editor owns anchored ranges, transient highlights, selections, and text edits; Vim owns the Exchange operator and mode transitions; Keymap owns shared `cx` routes.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: In the shared Vim/Helix profile, `c x` starts the Exchange operator; a motion or text object selects the first range, and a later `c x` plus another motion/object exchanges the two ranges. `cx x` selects the current line, `cx c` clears pending Exchange state, and Visual invocation uses the current selection. The Vim action namespace is available in the Command Palette while Vim/Helix is enabled.
+Public typed contract: Unit action `vim::Exchange`, no arguments or aliases. Normal/non-visual invocation pushes `Operator::Exchange`; visual invocation resolves the newest selected range and switches to Normal (Helix Normal when that mode is enabled). Motion ranges use count/forced motion; text-object ranges use around/inside but no count. The first range is stored as one anchored `VimExchange` background highlight. A disjoint second range swaps text; a containing range is replaced by the contained range's text; partial or merely touching ranges can be consumed without an edit.
+State owner: Editor owns the active buffer, exchange anchor/highlight, and selection/edit state. Vim owns pending Exchange operator/mode/count and motion dispatch. Keymap owns the `c x`, `cx x`, and `cx c` routes.
+Persistence owner: None for the saved range/highlight; successful text exchange uses the active document edit/history lifecycle.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-Exchange`; `KEYBIND-VIM-HELIX-6fc9437f8aea` (`x` when `vim_operator == c`); `KEYBIND-VIM-HELIX-4a05bbefa86b` (`x` current-line motion when `vim_operator == cx`); `KEYBIND-VIM-HELIX-3f44433d13b1` (`c` ClearExchange cancellation). No platform-default map binds Exchange.
+Events and registry contributions: Existing Vim action and shared profile rows only; no new event or registry contribution proposed.
+Settings: Vim/Helix mode values gate the shared layer and `vim:` Command Palette namespace; no Exchange-specific setting.
+Notifications: None expected.
+UI-kit components: Existing Editor selection/highlight and Keymap surfaces only; no new control or local highlight style.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action handler, operator context, range storage/comparison, cancellation interaction, and the five focused pinned fixtures without running. Visual, palette, multi-selection, exact endpoint, and edit-history behavior remain acceptance requirements.
+Visual evidence: No layout change proposed. Paired native macOS Editor/Keymap evidence must record the highlighted first range, second range, overlap class, resulting document/cursor/mode, theme, scale, and viewport. Linux/Windows key dispatch needs separate runtime checks.
+Security impact: No external access; Exchange edits only the active document through its normal edit path.
+Performance impact: Range text is copied into strings before `Editor::edit`; large ranges and the two-range operation require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema, palette namespace gate, keymap stages, transient highlight, disjoint/containment/overlap branches, focused fixtures, and local gap can be classified statically; platform, palette dispatch/focus, Visual/Helix, multi-selection, endpoint, and edit-history acceptance remain open.
+Documentation updates: New Exchange packet; registered-action row; `cx` start/current-line/cancel binding annotations; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action schema, shared `c x`/`cx x`/`cx c` routes, action/palette mode handling, range storage/swap/overlap code, fixtures, and local gap inspected. Baseline documentation-only gates passed (43 normative docs, 266 Markdown files; 46 active queue tasks).
+Target status: Classify how the first range is selected/highlighted, how a later range swaps or replaces it, how overlap and cancellation behave, and how Visual/palette invocation differs without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no Exchange operator, typed action, transient saved range/highlight, `cx` mode context, shared keymap route, or Vim action-palette descriptor.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Visual and palette dispatch, mode/focus recovery, multiple selections, exact endpoint/overlap cases, undo/repeat/recording, platform dispatch, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::Exchange` classification complete and proceed to `vim::FindCommand`; do not begin R07-001 or R09.
+~~~
+
+
+## Vim Exchange action classification progress
+
+- Classified `c x` as the shared Exchange operator, with motions/text objects selecting the first range, a theme-colored Editor highlight storing that range, and a later range performing a swap. Recorded `cx x` current-line selection and `cx c` cancellation as separate keymap actions.
+- Classified strict-disjoint swaps, both containing-range replacement branches, partial-overlap no-edit behavior, and the strict endpoint comparison that leaves exactly touching ranges outside the disjoint branch. The transient highlight is cleared before second-range comparison; the implementation uses only the newest selection and one stored range.
+- Inspected the action/Command Palette registration, Vim namespace gate, operator stack and motion/object consumers, range/highlight implementation, all five focused Exchange/ClearExchange fixtures, and the local Editor gap. Fixtures were inspected, not run; Visual/Helix, palette focus, multi-selection, exact endpoint, history/recording, and platform acceptance remain open.
+- Updated the Exchange packet, registered-action row, `cx` start/current-line/cancel binding annotations, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final post-edit documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 267 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Action palette dispatch, Visual/Helix behavior, multi-selection, endpoint cases, undo/repeat/recording, platform dispatch, and paired native evidence remain active.
+- Next safe task: Continue R07-000 with `vim::Exchange` classification complete and proceed to `vim::FindCommand`; do not begin R07-001 or R09.

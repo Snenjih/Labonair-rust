@@ -28,7 +28,7 @@ The action handler stops Vim recording, clears Editor background highlights keye
 
 Clearing works whether or not an exchange range is stored. With no range, the highlight removal has nothing to remove, but the operator-clear routine still runs. This makes c x c a cancellation route for a pending exchange even before its first range is selected. Because the common routine clears the whole operator stack, a direct palette invocation while a different operator is pending also cancels that state; the focused palette interaction and resulting context require runtime verification.
 
-ClearExchange is distinct from vim::Exchange. Exchange starts or completes the text exchange: the first motion or text object stores and highlights a range, and a later range may exchange text with it. ClearExchange removes the saved range and cancels pending Vim operator state without exchanging or editing text.
+ClearExchange is distinct from [vim::Exchange](action-classification-vim-exchange.md). Exchange starts or completes the text exchange: the first motion or text object stores and highlights a range, and a later range may exchange text with it. ClearExchange removes the saved range and cancels pending Vim operator state without exchanging or editing text.
 
 ## Labonair owner and current route
 

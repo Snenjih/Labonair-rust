@@ -11,6 +11,7 @@ source-side research. It records current evidence without claiming parity.
 - [`feature-crosswalk.md`](feature-crosswalk.md) — draft user-workflow coverage
   map with proposed/current owners and explicit missing areas. It is not an
   exhaustive settings or runtime inventory yet.
+- [`action-classification-vim-exchange.md`](action-classification-vim-exchange.md) — `cx` range selection, transient highlight, range exchange/overlap behavior, and Labonair's missing Editor/Keymap route; runtime acceptance remains open.
 - [`action-requirements.md`](action-requirements.md) — stable requirement IDs
   for all 595 action identifiers across the default macOS, Linux, and Windows
   keymaps, with 2,731 binding/context records and four null entries. It records
