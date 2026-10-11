@@ -23,9 +23,10 @@ use gpui::{
 };
 use labonair_command_palette_core::CommandId;
 use labonair_filesystem::file::{
-    load_editor_file_lifecycle_sync, save_editor_file_lifecycle_sync, stat_editor_file_sync,
-    EditorFileError, EditorFileStat, EditorLifecycleLoad, StorageBom, StorageFileCapabilities,
-    StorageFileIdentity, StorageFileSnapshot, StorageLineEnding, StorageSaveIntent,
+    load_editor_file_lifecycle_with_encoding_sync, save_editor_file_lifecycle_sync,
+    stat_editor_file_sync, EditorFileError, EditorFileStat, EditorLifecycleLoad, StorageBom,
+    StorageEncoding, StorageFileCapabilities, StorageFileIdentity, StorageFileSnapshot,
+    StorageLineEnding, StorageSaveIntent,
 };
 use labonair_settings::{EditorSettings, Settings as _, SettingsStore};
 
@@ -340,6 +341,7 @@ pub struct EditorView {
     folds: Vec<FoldRange>,
     selection_menu_anchor: Option<Point<Pixels>>,
     line_ending_menu_anchor: Option<Point<Pixels>>,
+    encoding_menu_anchor: Option<Point<Pixels>>,
     selection_drag: Option<EditorSelectionDrag>,
     outline_open: bool,
     /// Editor-internal groups. Workspace pane layouts remain a separate
@@ -513,6 +515,7 @@ impl EditorView {
             folds: Vec::new(),
             selection_menu_anchor: None,
             line_ending_menu_anchor: None,
+            encoding_menu_anchor: None,
             selection_drag: None,
             outline_open: false,
             editor_splits: labonair_editor::EditorSplitTree::default(),
@@ -2248,6 +2251,37 @@ impl EditorView {
         match bom {
             labonair_editor::lifecycle::Bom::None => StorageBom::None,
             labonair_editor::lifecycle::Bom::Utf8 => StorageBom::Utf8,
+            labonair_editor::lifecycle::Bom::Utf16Le => StorageBom::Utf16Le,
+            labonair_editor::lifecycle::Bom::Utf16Be => StorageBom::Utf16Be,
+        }
+    }
+
+    fn editor_bom(bom: StorageBom) -> labonair_editor::lifecycle::Bom {
+        match bom {
+            StorageBom::None => labonair_editor::lifecycle::Bom::None,
+            StorageBom::Utf8 => labonair_editor::lifecycle::Bom::Utf8,
+            StorageBom::Utf16Le => labonair_editor::lifecycle::Bom::Utf16Le,
+            StorageBom::Utf16Be => labonair_editor::lifecycle::Bom::Utf16Be,
+        }
+    }
+
+    fn editor_encoding(encoding: StorageEncoding) -> labonair_editor::lifecycle::Encoding {
+        match encoding {
+            StorageEncoding::Utf8 => labonair_editor::lifecycle::Encoding::Utf8,
+            StorageEncoding::Utf16Le => labonair_editor::lifecycle::Encoding::Utf16Le,
+            StorageEncoding::Utf16Be => labonair_editor::lifecycle::Encoding::Utf16Be,
+            StorageEncoding::Windows1252 => labonair_editor::lifecycle::Encoding::Windows1252,
+            StorageEncoding::ShiftJis => labonair_editor::lifecycle::Encoding::ShiftJis,
+        }
+    }
+
+    fn storage_encoding(encoding: labonair_editor::lifecycle::Encoding) -> StorageEncoding {
+        match encoding {
+            labonair_editor::lifecycle::Encoding::Utf8 => StorageEncoding::Utf8,
+            labonair_editor::lifecycle::Encoding::Utf16Le => StorageEncoding::Utf16Le,
+            labonair_editor::lifecycle::Encoding::Utf16Be => StorageEncoding::Utf16Be,
+            labonair_editor::lifecycle::Encoding::Windows1252 => StorageEncoding::Windows1252,
+            labonair_editor::lifecycle::Encoding::ShiftJis => StorageEncoding::ShiftJis,
         }
     }
 
@@ -2265,11 +2299,8 @@ impl EditorView {
             Self::editor_identity(snapshot.identity),
             snapshot.text,
             Self::editor_line_ending(snapshot.line_ending),
-            labonair_editor::lifecycle::Encoding::Utf8,
-            match snapshot.bom {
-                StorageBom::None => labonair_editor::lifecycle::Bom::None,
-                StorageBom::Utf8 => labonair_editor::lifecycle::Bom::Utf8,
-            },
+            Self::editor_encoding(snapshot.encoding),
+            Self::editor_bom(snapshot.bom),
             Self::editor_capabilities(snapshot.capabilities),
         )
     }
@@ -2339,6 +2370,8 @@ impl EditorView {
                 FileCapabilities::unavailable(),
             ),
             Err(error @ EditorFileError::UnsupportedEncoding { .. })
+            | Err(error @ EditorFileError::InvalidEncodingData { .. })
+            | Err(error @ EditorFileError::UnrepresentableText { .. })
             | Err(error @ EditorFileError::InvalidUtf8 { .. })
             | Err(error @ EditorFileError::Io { .. })
             | Err(error @ EditorFileError::ReadOnly { .. })
@@ -2353,8 +2386,18 @@ impl EditorView {
 
     /// Load `path` into this view, replacing any current document.
     pub fn open_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.open_path_with_encoding(path, None, cx);
+    }
+
+    fn open_path_with_encoding(
+        &mut self,
+        path: PathBuf,
+        encoding: Option<StorageEncoding>,
+        cx: &mut Context<Self>,
+    ) {
         self.close_language_service_document();
         self.line_ending_menu_anchor = None;
+        self.encoding_menu_anchor = None;
         self.pending_navigation = None;
         self.doc = Document::loading(path.clone());
         self.recovery_prompt = None;
@@ -2364,9 +2407,9 @@ impl EditorView {
         self.scroll_top = 0;
         let path_str = path.to_string_lossy().to_string();
         let max_bytes = self.file_limit_bytes();
-        let load = cx
-            .background_executor()
-            .spawn(async move { load_editor_file_lifecycle_sync(&path_str, Some(max_bytes)) });
+        let load = cx.background_executor().spawn(async move {
+            load_editor_file_lifecycle_with_encoding_sync(&path_str, Some(max_bytes), encoding)
+        });
         cx.spawn(async move |this, cx| {
             let result = load.await;
             let _ = this.update(cx, |this, cx| {
@@ -2461,14 +2504,19 @@ impl EditorView {
             return;
         };
         self.line_ending_menu_anchor = None;
+        self.encoding_menu_anchor = None;
         self.invalidate_git_requests();
         self.git_gutter =
             GitGutterSnapshot::loading(path.to_string_lossy().to_string(), self.editor_revision());
         let path_str = path.to_string_lossy().to_string();
         let max_bytes = self.file_limit_bytes();
-        let load = cx
-            .background_executor()
-            .spawn(async move { load_editor_file_lifecycle_sync(&path_str, Some(max_bytes)) });
+        let encoding = self
+            .doc
+            .file_format()
+            .map(|format| Self::storage_encoding(format.encoding));
+        let load = cx.background_executor().spawn(async move {
+            load_editor_file_lifecycle_with_encoding_sync(&path_str, Some(max_bytes), encoding)
+        });
         cx.spawn(async move |this, cx| {
             let result = load.await;
             let _ = this.update(cx, |this, cx| {
@@ -2546,13 +2594,18 @@ impl EditorView {
         }
         let content = self.doc.text();
         let expected = Self::storage_identity(file_snapshot.identity.clone());
+        let format = self.doc.file_format();
+        let encoding = Self::storage_encoding(
+            format
+                .map(|format| format.encoding)
+                .unwrap_or(file_snapshot.encoding),
+        );
         let line_ending = Self::storage_line_ending(
-            self.doc
-                .file_format()
+            format
                 .map(|format| format.line_ending)
                 .unwrap_or(file_snapshot.line_ending),
         );
-        let bom = Self::storage_bom(file_snapshot.bom);
+        let bom = Self::storage_bom(format.map(|format| format.bom).unwrap_or(file_snapshot.bom));
         let write = cx.background_executor().spawn(async move {
             let current = stat_editor_file_sync(&path_str)?;
             if current.identity != expected {
@@ -2564,6 +2617,7 @@ impl EditorView {
             save_editor_file_lifecycle_sync(
                 &path_str,
                 &content,
+                encoding,
                 line_ending,
                 bom,
                 &current.identity,
@@ -4613,15 +4667,38 @@ impl EditorView {
             } else {
                 right = right.child(SharedString::from(ending_label));
             }
-            let mut encoding = div()
-                .flex()
-                .items_center()
-                .text_color(palette.muted)
-                .child(SharedString::from(format.encoding.as_str()));
-            if format.bom == labonair_editor::lifecycle::Bom::Utf8 {
-                encoding = encoding.child("BOM");
+            let can_reopen_encoding = self.doc.path.is_some()
+                && matches!(
+                    self.doc.file_state(),
+                    FileState::Clean | FileState::ReadOnly
+                );
+            if can_reopen_encoding {
+                let trigger = button(
+                    "editor-encoding-menu",
+                    palette,
+                    ButtonVariant::Transparent,
+                    ButtonSize::Xs,
+                )
+                .child(SharedString::from(format.encoding.as_str()))
+                .tooltip(|window, cx| Tooltip::new("Reopen with encoding").build(window, cx))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, event: &MouseDownEvent, _window, cx| {
+                        this.encoding_menu_anchor = Some(Point {
+                            x: event.position.x,
+                            y: event.position.y + px(4.0),
+                        });
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                );
+                right = right.child(trigger);
+            } else {
+                right = right.child(SharedString::from(format.encoding.as_str()));
             }
-            right = right.child(encoding);
+            if format.bom != labonair_editor::lifecycle::Bom::None {
+                right = right.child("BOM");
+            }
         }
         div()
             .flex()
@@ -4647,6 +4724,12 @@ impl EditorView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let anchor = self.line_ending_menu_anchor?;
+        if !matches!(
+            self.doc.file_state(),
+            FileState::Clean | FileState::Dirty | FileState::Conflict
+        ) {
+            return None;
+        }
         let current = self.doc.file_format()?.line_ending;
         let can_edit = self.doc.can_edit()
             && matches!(
@@ -4690,6 +4773,65 @@ impl EditorView {
                 item(LineEnding::Lf, "editor-line-ending-lf"),
                 item(LineEnding::CrLf, "editor-line-ending-crlf"),
                 item(LineEnding::Cr, "editor-line-ending-cr"),
+            ],
+        ))
+    }
+
+    fn render_encoding_menu(&self, palette: Palette, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let anchor = self.encoding_menu_anchor?;
+        let current = self.doc.file_format()?.encoding;
+        let path = self.doc.path.clone()?;
+        let can_reopen = matches!(
+            self.doc.file_state(),
+            FileState::Clean | FileState::ReadOnly
+        );
+        let editor = cx.entity();
+        let item_editor = editor.clone();
+        let item = move |encoding: StorageEncoding, id: &'static str| {
+            let editor = item_editor.clone();
+            let path = path.clone();
+            MenuItem::new(id, encoding.as_str())
+                .checked(current == EditorView::editor_encoding(encoding))
+                .disabled(!can_reopen)
+                .on_click(move |_, _window, app| {
+                    let selected_path = path.clone();
+                    editor.update(app, move |this, cx| {
+                        this.encoding_menu_anchor = None;
+                        if !matches!(
+                            this.doc.file_state(),
+                            FileState::Clean | FileState::ReadOnly
+                        ) {
+                            cx.notify();
+                            return;
+                        }
+                        if this.doc.file_format().is_some_and(|format| {
+                            format.encoding == Self::editor_encoding(encoding)
+                        }) {
+                            cx.notify();
+                            return;
+                        }
+                        this.open_path_with_encoding(selected_path, Some(encoding), cx);
+                    });
+                })
+        };
+        let dismiss_editor = editor;
+        let dismiss = move |_window: &mut Window, app: &mut App| {
+            dismiss_editor.update(app, |this, cx| {
+                this.encoding_menu_anchor = None;
+                cx.notify();
+            });
+        };
+        Some(popover_menu(
+            anchor,
+            palette,
+            dismiss,
+            vec![
+                MenuItem::label("Reopen with encoding"),
+                item(StorageEncoding::Utf8, "editor-encoding-utf8"),
+                item(StorageEncoding::Utf16Le, "editor-encoding-utf16le"),
+                item(StorageEncoding::Utf16Be, "editor-encoding-utf16be"),
+                item(StorageEncoding::Windows1252, "editor-encoding-windows1252"),
+                item(StorageEncoding::ShiftJis, "editor-encoding-shiftjis"),
             ],
         ))
     }
@@ -6151,6 +6293,7 @@ impl Render for EditorView {
             .child(buffer_surface)
             .children(self.render_selection_menu(ui_palette, cx))
             .children(self.render_line_ending_menu(ui_palette, cx))
+            .children(self.render_encoding_menu(ui_palette, cx))
             .when(self.vim.is_some(), |d| d.child(self.render_vim_status(cx)))
             .child(self.render_editor_status(cx))
             .on_key_down(cx.listener(Self::on_key))

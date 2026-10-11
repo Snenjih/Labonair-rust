@@ -43,19 +43,31 @@ impl LineEnding {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Encoding {
     Utf8,
+    Utf16Le,
+    Utf16Be,
+    Windows1252,
+    ShiftJis,
 }
 
 impl Encoding {
     pub const fn as_str(self) -> &'static str {
-        "UTF-8"
+        match self {
+            Self::Utf8 => "UTF-8",
+            Self::Utf16Le => "UTF-16 LE",
+            Self::Utf16Be => "UTF-16 BE",
+            Self::Windows1252 => "Windows-1252",
+            Self::ShiftJis => "Shift_JIS",
+        }
     }
 }
 
-/// Byte-order mark metadata. Only the UTF-8 BOM is accepted today.
+/// Byte-order mark metadata retained with the current encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Bom {
     None,
     Utf8,
+    Utf16Le,
+    Utf16Be,
 }
 
 /// Capabilities discovered for the current file identity.

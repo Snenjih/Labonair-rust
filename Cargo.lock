@@ -4311,6 +4311,7 @@ name = "labonair-filesystem"
 version = "0.1.0"
 dependencies = [
  "dirs 6.0.0",
+ "encoding_rs",
  "globset",
  "grep-regex",
  "grep-searcher",
