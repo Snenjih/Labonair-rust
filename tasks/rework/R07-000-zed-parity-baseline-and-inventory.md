@@ -7413,3 +7413,44 @@ Next safe task: Continue R07-000 with vim::CurrentLine; do not begin R07-001 or 
 - First and final docs-only passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs; 252 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`.
 - No Rust build, tests, key dispatch, native object/surround workflow, cross-platform profile behavior, or paired visual evidence were run in this documentation-only slice. These remain active goal acceptance gates.
 - Next safe task: Continue R07-000 with `vim::CurrentLine`; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim CurrentLine linewise motion
+
+~~~text
+Request type: Pinned Vim linewise motion, operator aliases, shared-profile reachability, and local line-operation gap; documentation-only.
+Owner module: Editor owns motion ranges, selections, and document effects; Keymap owns the shared Vim profile and user overrides; Settings owns Vim mode values.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry points: The shared profile binds vim::CurrentLine only after a pending Vim operator. Contexts and final keys: c/c (`cc`); d/d (`dd`); gu/g u or u; gU/g shift-u or shift-u; g~/g ~ or ~; g?/g ? or ?; gq/g q, q, g w, or w; y/y (`yy`); ys/s (`yss`); >/>, </<, eq/=, sh/!, gc/c, gb/c, gR/r or shift-r, and cx/x. These rows represent whole-line operator motions; no platform-default map binds the action. A generic palette candidate, if surfaced, has a separate no-operator behavior and is not the line-selection workflow.
+Public typed contract: Registered unit action vim::CurrentLine, with no arguments, settings, or persistence-specific fields. It dispatches Motion::CurrentLine; the motion is linewise by default and its count selects the current line plus following lines.
+State owner: Editor owns active selections and buffer edits. Vim owns the pending operator, count, forced-motion flag, register, and operator result. Keymap resolves the shared action row; the Command Palette may expose the registered action independently of an operator.
+Persistence owner: No action-specific persistence. Line edits use ordinary document save/undo; Vim register and pending operator/count are transient.
+Commands and keymap entries: ACT-REGISTRY-LINUX-vim-CurrentLine and 25 shared rows: KEYBIND-VIM-HELIX-4fcfcbedd005, -f2ca19c896bd, -ff28c4b5f23f, -010df7016e29, -74e1c850a9ff, -c55e6ceea4f3, -8849300cebff, -73ff9b5e174d, -36edc885aabb, -1b6529d89d9f, -39ad2a231765, -74a3a736859a, -00bca69c8213, -07f569351fd1, -e1c32270a4ef, -6de6594a85b9, -96a354ccccde, -dfdfe273a16d, -5456953f90d1, -952500a7d840, -c3c49f439b8f, -df366715458c, -431cfd081b2d, -c3df9d741dbd, and -4a05bbefa86b. No platform-default map binding.
+Events and registry contributions: Existing Vim motion action and shared profile rows; no new registry or event contribution.
+Settings: Vim Mode gates the shared profile; no CurrentLine-specific setting.
+Notifications: None expected for the motion. The `!!` route delegates to the existing Vim shell-command prompt and needs its established error/permission behavior verified.
+UI-kit components: Existing Editor selection and Keymap profile only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect linewise motion expansion, test_yank_line_with_trailing_newline, test_yank_line_without_trailing_newline, test_yank_multiline_without_trailing_newline, test_dd_then_paste_without_trailing_newline, test_toggle_comments, test_toggle_block_comments, test_indent_outdent, test_gq, test_add_surrounds (including its current-line case), and local dd/cc/yy handling without running tests. Verify whether each unusual operator alias has direct fixture coverage.
+Visual evidence: Native Editor and Keymap behavior is required for any accepted action/profile implementation; no layout change is proposed in this classification slice.
+Security impact: No new permission boundary. The shell-filter operator takes an explicitly entered command and sends the selected line range as input; verify the existing prompt, errors, cancellation, and recovery.
+Performance impact: Range expansion scales with the requested line count and active selections; large counts, EOF clamping, and multiline buffers need runtime acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Shared contexts, action schema, linewise range rules, representative operator fixtures, local direct line operations, and direct no-operator motion can be classified; Linux/Windows dispatch, macOS action discovery, uncommon aliases, and full end-to-end operator acceptance remain open.
+Documentation updates: New CurrentLine packet; registered-action row; all 25 shared binding annotations; Linux/Windows layer note; packet index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; pinned action, contexts, operator matrix, range/count behavior, representative tests, and local double-operator gap inspected; classification packet and all 25 parity rows updated; platform and native acceptance remain open.
+Target status: Classify CurrentLine as a linewise motion used by the shared Vim operator matrix, distinguish no-operator line-end movement from line selection, reconcile local dd/cc/yy behavior, and keep platform and native acceptance open.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair implements a bounded direct dd/cc/yy linewise path and Y, but has no reusable CurrentLine motion/action or the pinned shared matrix of line transforms, rewrap, surround, indent, shell-filter, comment, register-replace, and exchange operations.
+Failed/unavailable gates: No failures across the first and final docs-only gate passes. Both passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs; 253 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, Vim keyboard dispatch, palette discovery/direct effect, all 25 alias routes, shell-filter effects, native behavior, cross-platform profile acceptance, and paired visual evidence were not run in this documentation-only slice and remain active goal acceptance gates.
+Next safe task: Continue R07-000 with vim::Decrement after completing this CurrentLine classification; do not begin R07-001 or R09.
+~~~
+
+
+## Vim CurrentLine action classification progress
+
+- Classified `vim::CurrentLine` as a linewise motion shared by 25 Vim operator completion rows, not a standalone full-line selection chord. Recorded its counted range, line-boundary expansion, no-operator line-end movement, operation families, representative fixture coverage, and Labonair's bounded doubled-operator path.
+- Updated the CurrentLine packet, action register, all 25 binding rows, Linux/Windows layer note, parity index, feature crosswalk, and this task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final docs-only passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs; 253 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`.
+- No Rust build or tests were run. Vim/platform dispatch, palette behavior, all operator effects, shell-filter handling, and paired native evidence remain active goal acceptance gates.
+- Next safe task: Continue R07-000 with `vim::Decrement`; do not begin R07-001 or R09.

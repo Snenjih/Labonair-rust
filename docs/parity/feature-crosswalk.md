@@ -65,6 +65,7 @@ are still pending; the IDs do not change the crosswalk's partial status.
 The [Vim ConvertToUpperCase packet](action-classification-vim-convert-to-upper-case.md) classifies Visual `shift-u`, Helix Normal/Select Alt-backtick, and the separate Normal `g shift-u` operator, including Unicode expansion and the missing local action route. Linux/Windows dispatch, palette behavior, and paired macOS acceptance remain open.
 The [Vim CountCommand packet](action-classification-vim-count-command.md) classifies colon after a pending count as a Command Palette range-prefill action, records the Vim range interceptor and modal/focus conditions, and identifies Labonair's missing Ex workflow. Linux/Windows dispatch and end-to-end command acceptance remain open.
 The [Vim CurlyBrackets packet](action-classification-vim-curly-brackets.md) classifies brace-based Vim inside/around and `cs` selection, Helix current/next/previous object routes, literal nested multiline ranges, the Shift-B Pane override, and Labonair's missing curly text object. Platform dispatch and native operator acceptance remain open.
+The [Vim CurrentLine packet](action-classification-vim-current-line.md) classifies the 25 shared linewise operator routes, counted range and direct no-operator behavior, representative linewise fixtures, and Labonair's bounded doubled-operator path. Platform dispatch and full native operator acceptance remain open.
 
 ## Current Labonair capability reconciliation
 
