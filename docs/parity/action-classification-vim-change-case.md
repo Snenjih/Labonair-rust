@@ -42,12 +42,12 @@ The selected range and post-action cursor depend on the current mode:
 
 | Mode | Range transformed | Selection/cursor and resulting mode |
 |---|---|---|
-| Vim Normal | `count` characters from each cursor on the current line; count defaults to one. | Cursor advances to the range end, except a range reaching line end leaves it on the final transformed character. Requests Vim Normal afterward. |
+| Vim Normal | `count` characters from each cursor on the current line; count defaults to one. | Cursor advances to the range end, except a range reaching line end leaves it on the final transformed character. Vim Normal remains active unless `temp_mode` is active, in which case the transition returns to Insert. |
 | Vim Visual / Visual Line | Each selected range. | Selections collapse to their starts; the handler requests Vim Normal. |
 | Vim Visual Block | Each block-derived selection range. | The implementation records one cursor at the first range's start, then requests Vim Normal. |
 | Helix Normal | A non-empty selection, or one character at an empty cursor. | A non-empty selection remains selected; an empty selection keeps the cursor at its character. Helix Normal remains active. |
-| Helix Select | Each selected range; an empty selection uses one character. | The range is transformed, then the handler requests Vim Normal rather than Helix Normal. No focused Helix Select fixture was found. |
-| Insert / Replace action invocation | `count` characters from each selection start on the current line. | Uses the Normal range/cursor handling and requests Vim Normal. No default key binding exposes these modes, but the generic palette route can invoke the action. |
+| Helix Select | Each selected range; an empty selection uses one character. | The range is transformed, then the handler requests Mode::Normal. `Vim::switch_mode` remaps that request to Helix Normal when Helix mode remains enabled. No focused Helix Select fixture was found. |
+| Insert / Replace action invocation | `count` characters from each selection start on the current line. | Uses the Normal range/cursor handling and requests Mode::Normal; `Vim::switch_mode` remaps that request to Helix Normal when Helix mode is enabled. No default key binding exposes these modes, but the generic palette route can invoke the action. |
 
 The direct action consumes a count (default one) and forced-motion state,
 records the current action, and stores visual marks before editing. A direct
@@ -55,8 +55,11 @@ palette invocation is not a passive setting: it performs the same mode-based
 text change at the active Editor selection/cursor. If the action is invoked
 from Vim Visual, Visual Line, Visual Block, or Helix Select, the source handler
 requests a transition to `Mode::Normal` even when the transformation is a
-no-op or the Editor is read-only; native focus and mode presentation need
-verification.
+no-op or the Editor is read-only. `Vim::switch_mode` remaps that request to
+Helix Normal when the Helix setting remains enabled. If `temp_mode` is
+active, the special-case in `Vim::switch_mode` returns to Insert after a
+Normal request; this temporary-Normal palette route also needs runtime
+verification. Native focus and mode presentation still need verification.
 
 The `g~{motion}` operator is a separate route. The `vim::PushOppositeCase`
 action starts the operator and a later motion defines its range. Tests for
@@ -83,8 +86,9 @@ selection. It has no Helix modes, registered action, palette route, or
 Keymap-owned shared profile. For each character it takes only the first
 scalar from `to_uppercase()` or `to_lowercase()`, so it truncates expanding
 Unicode mappings; local `ß` becomes `S`, not `SS`. The local action also keeps
-its current mode rather than applying the pinned Visual/Helix Select
-transition.
+its current mode rather than applying the pinned Visual-to-Normal transition;
+it has no Helix Select mode or profile to implement the pinned Helix Select to
+Helix Normal transition.
 
 Local text changes remain owned by Editor and use its document edit/undo
 route. No extra persistence or case preference is implied. The Unicode
@@ -103,9 +107,10 @@ this inventory slice records it without changing runtime code.
   linewise and blockwise Visual ranges, selected Helix ranges, empty Helix
   cursors, read-only buffers, uncased characters, and multi-scalar Unicode
   mappings such as `ß`.
-- Verify whether Helix Select should transition to Vim Normal after the edit.
-  Confirm Visual and Helix mode transitions when the text does not change or
-  the buffer is read-only.
+- Verify Helix Select transitions to Helix Normal after the handler's Normal
+  request. Verify the temporary-Normal palette path returns to Insert. Confirm
+  Visual and Helix transitions when the text does not change or the buffer is
+  read-only.
 - Exercise `g~{motion}` separately and confirm it remains the pending
   `PushOppositeCase` operator route.
 - Capture paired native macOS Editor and Keymap evidence with platform,

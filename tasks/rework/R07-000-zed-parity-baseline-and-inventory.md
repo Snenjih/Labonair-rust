@@ -7162,3 +7162,45 @@ Next safe task: Continue R07-000 with vim::ConvertToLowerCase; do not begin R07-
 - Second gate pass after recording task progress also passed the same checks; no failures.
 - No Rust build, tests, profile or palette dispatch, native behavior, or paired visual evidence were run. These remain active goal acceptance gates. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 with vim::ConvertToLowerCase; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim ConvertToLowerCase text conversion
+
+~~~text
+Request type: Pinned registered-action, mode-dependent text conversion, shared Vim/Helix profile, and case-operator distinction; documentation-only.
+Owner module: Editor owns text transforms, selection state, and document edits; Keymap owns shared profile and user bindings; Settings owns Vim/Helix mode values; Command Palette owns existing Vim action discovery.
+Canonical capability crate: labonair-editor; profile composition in labonair-keymap.
+Canonical user entry points: Vim Visual u converts the active selection; Helix Normal/Select backtick converts selection or the cursor character. Focused Vim/Helix Command Palette exposes the registered action when the mode is enabled. Vim Normal g u starts the separate PushLowercase operator followed by a motion/object.
+Public typed contract: Registered unit action vim::ConvertToLowerCase; applies Unicode lowercase mapping to mode-derived Editor ranges through a text transaction. No argument, setting, event, or persistence-specific value.
+State owner: Editor owns selections, cursor positions, modal state, and edited text. The direct action consumes count and forced-motion state; its selected ranges and resulting mode depend on the active Vim/Helix mode.
+Persistence owner: No action-specific persistence; converted content follows ordinary document save/undo. Vim/Helix settings and profile bindings use their existing owners.
+Commands and keymap entries: ACT-REGISTRY-LINUX-vim-ConvertToLowerCase; KEYBIND-VIM-HELIX-5bda91ec3ec4 (u, Vim Visual); KEYBIND-VIM-HELIX-73e43d83e3b1 (backtick, Helix Normal/Select, not menu). Related but distinct KEYBIND-VIM-HELIX-b1bda7e33a63 (g u, PushLowercase operator). No platform-default map binds the vim:: action.
+Events and registry contributions: Existing Vim action registration, shared mode profile, generic palette route, and Editor text-edit transaction; no new contribution.
+Settings: Vim Mode and Helix Mode gate profiles/palette discovery; no case-conversion setting.
+Notifications: None expected.
+UI-kit components: Existing Editor selection and Command Palette only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect pinned test_convert_to_lower_case, test_change_case_helix_mode, and test_change_case_motion fixtures without running them. Direct Vim fixtures cover characterwise/linewise/blockwise Visual ranges and multibyte text; the Helix fixture covers cursor-only direct mapping. No focused multi-scalar lowercase expansion fixture was found. Palette invocation in Insert/Replace, temporary Normal return to Insert, and Helix Select to Helix Normal also need runtime acceptance.
+Visual evidence: Text-edit behavior requires paired native macOS Editor evidence for selection, cursor, and mode; no layout change is planned. Cross-platform shared-profile dispatch remains open.
+Security impact: None beyond editing the focused local buffer.
+Performance impact: One range transform per active selection; large selection and Unicode expansion behavior need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static registration, Visual and Helix mappings, lower-case operator distinction, Unicode transform, mode effects, and local route gap can be classified; runtime dispatch and native behavior remain pending.
+Documentation updates: New ConvertToLowerCase packet; registered-action row; Visual and Helix keybinding annotations; Linux/Windows layer note; packet index; commands.keymap/editor.text crosswalks; corrected ChangeCase mode note; memory record of the pinned switch_mode remapping; task progress.
+Current status: Pre-change contract and docs-only ConvertToLowerCase classification recorded; mode-dependent ranges, Unicode transform, shared routes, local gap, Helix remapping, and temporary-mode return classified; runtime/native acceptance remains open.
+Target status: Classify direct lower-case action ranges and mode transitions, distinguish g u motion conversion and ChangeCase toggling, and record missing Labonair lower-case transform without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no direct lower-case action or selected-range transform; its existing Vim ~ path toggles case from the cursor only and truncates multi-scalar mappings.
+Failed/unavailable gates: No failures in the docs-only scope. First pass passed git diff --check, documentation and rework-queue scripts, and verify scopes docs, agents, knowledge, settings, and queue. Rust build/tests, profile/palette dispatch, native behavior, and paired visual evidence were not run in this slice and remain goal acceptance gates.
+Next safe task: Continue R07-000 with vim::ConvertToRot13; do not begin R07-001 or R09.
+~~~
+
+
+## Vim ConvertToLowerCase text conversion classification progress
+
+- Classified the direct Visual and Helix lower-case action, its mode-derived ranges and cursor results, full Unicode mapping, and the separate Normal g u operator route. The local Editor only has cursor-local case toggling, with no lowercase-only selected-range action.
+- Verified that switch_mode requests to Mode::Normal map to Helix Normal while Helix mode is enabled and return to Insert when temporary Normal mode is active. Corrected the earlier ChangeCase packet and recorded the pinned mode-remapping behavior in memory/bugs_and_fixes.md.
+- Updated the new ConvertToLowerCase packet, registered-action row, two shared binding annotations, non-macOS note, packet index, commands.keymap/editor.text crosswalks, ChangeCase packet, memory note, and this task record.
+- First gate pass: passed git diff --check, scripts/check_documentation.py (43 normative docs; 247 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
+- No Rust build, tests, profile or palette dispatch, native behavior, or paired visual evidence were run. These remain active goal acceptance gates. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 with vim::ConvertToRot13; do not begin R07-001 or R09.

@@ -1087,3 +1087,20 @@ deleting it. The existing pinned `test_change_end_of_line` fixture exercises
 the [Vim ChangeToEndOfLine classification](../docs/parity/action-classification-vim-change-to-end-of-line.md).
 Keep this parity-inventory slice documentation-only; fix and verify the local
 Editor behavior when its owner contract is implemented.
+
+## 2026-10-11 — Pinned Vim mode transition remaps Normal in Helix mode
+
+**Discovery:** `Vim::switch_mode(Mode::Normal, ...)` changes the resulting mode
+to Helix Normal when the Helix mode setting is enabled. Direct text transforms
+in Vim Visual/Helix Select and palette-only Insert/Replace routes request
+`Mode::Normal`, so the resulting mode is Helix Normal in that setting. When
+`temp_mode` is active, the same Normal request instead clears the temporary
+state and returns to Insert. A source review of `vim::ChangeCase` had
+incorrectly described Helix Select as returning to Vim Normal.
+
+**Disposition:** Describe the requested mode separately from the resulting
+mode, account for the Helix remapping and temporary-mode return when classifying
+direct actions, and keep Helix Select and no-op/read-only transitions in the
+runtime acceptance list. This behavior is recorded in the
+[Vim ChangeCase classification](../docs/parity/action-classification-vim-change-case.md)
+and [Vim ConvertToLowerCase classification](../docs/parity/action-classification-vim-convert-to-lower-case.md).
