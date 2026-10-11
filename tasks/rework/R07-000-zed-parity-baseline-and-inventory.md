@@ -7496,3 +7496,45 @@ Next safe task: Continue R07-000 with `vim::DeleteLeft` after completing this De
 - First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 254 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`.
 - Rust build/tests, palette and profile dispatch, local action behavior, undo grouping, platform acceptance, and paired native evidence remain active goal acceptance gates.
 - Next safe task: Continue R07-000 with `vim::DeleteLeft`; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim DeleteLeft
+
+~~~text
+Request type: Pinned Vim characterwise delete action, count-aware Left motion, mode-specific shared-profile routing, and local partial equivalent; documentation-only classification.
+Owner module: Editor owns motion ranges, register effects, and document edits; Keymap owns the shared Vim/Helix profile and user overrides; Settings owns Vim and Helix mode values.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry points: Vim Normal `shift-x` invokes `vim::DeleteLeft`; the pending Vim count selects how many characters to delete to the left. In Vim Visual, `shift-x` instead invokes `vim::VisualDeleteLine`. In Helix Normal/Select, `shift-x` invokes `editor::SelectLine` under the later combined context. These are separate action routes. `vim::DeleteLeft` may also be palette-discoverable as a registered action, but direct invocation and focus behavior are unverified.
+Public typed contract: Unit action `vim::DeleteLeft`, no arguments or action-specific setting. It records the action, consumes count and forced-motion state, and calls the shared Vim delete path with `Motion::Left`; absent count defaults to one.
+State owner: Editor owns all active selections, Left-motion ranges, and text edits. Vim owns count, forced-motion state, action/repeat history, and the characterwise register. The delete path copies deleted ranges to the Vim register, deletes them in an Editor transaction, and collapses each selection at the clipped motion head. `Motion::Left` saturates at the start of the current line rather than crossing the newline. The action does not itself request another mode.
+Persistence owner: No action-specific persistent state. Buffer text follows ordinary save/undo; count and selections are transient; the Vim register follows the Vim register lifecycle.
+Commands and keymap entries: ACT-REGISTRY-LINUX-vim-DeleteLeft and KEYBIND-VIM-HELIX-e5fd268d576f (`shift-x`, `vim_mode == normal`). No platform-default map binds the action. Shared Visual `shift-x` and Helix Normal/Select `shift-x` rows target different actions.
+Events and registry contributions: Existing Vim action, editor delete transaction, register path, and shared profile row only; no new event or registry contribution proposed.
+Settings: Vim Mode enables the Normal route; Helix mode activates the later Helix context. No DeleteLeft-specific setting.
+Notifications: None expected.
+UI-kit components: Existing Editor and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect without running pinned `test_delete_left` and relevant Left motion boundary code; inspect local uppercase-X handling and its existing count fixture. These do not establish Labonair register, multi-selection, palette, or native acceptance.
+Visual evidence: No layout change proposed. Paired native macOS Editor and Keymap evidence is still required for accepted binding and delete behavior; Linux and Windows shared-profile dispatch must be checked separately.
+Security impact: None beyond editing the active buffer and its ordinary Vim register.
+Performance impact: Work scales with count, deleted range length, and active selections. Large counts, beginning-of-line behavior, multibyte text, and multi-cursor ranges need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Registry metadata, Normal binding, Visual/Helix route distinctions, Left motion boundaries, pinned focused fixture, and local uppercase-X partial behavior can be classified statically; runtime dispatch, register semantics, multi-selection behavior, and paired native acceptance remain open.
+Documentation updates: New DeleteLeft packet; registered-action row; Normal binding annotation; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; pinned action and profile routes, Left motion, focused fixture, and Labonair uppercase-X path inspected. Static classification remains to be recorded; platform and native acceptance remain open.
+Target status: Classify Normal `shift-x` as count-aware, line-bounded characterwise deletion with Vim register effects; distinguish Visual and Helix `shift-x` routes; compare the local uppercase-X partial path without claiming full parity.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair's local uppercase-X path deletes left with count but does not update the Vim register and has no typed `vim::DeleteLeft` action, Keymap profile, tested multiselection route, or palette route.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Native dispatch, register results, count/boundary behavior, platform acceptance, and paired visual evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::DeleteRight` after completing this DeleteLeft classification; do not begin R07-001 or R09.
+~~~
+
+
+## Vim DeleteLeft action classification progress
+
+- Classified Vim Normal `shift-x` as count-aware characterwise deletion through `Motion::Left`, including current-line-start clipping and Vim register update. Recorded that Visual `shift-x` is `VisualDeleteLine` and Helix Normal/Select `shift-x` is `editor::SelectLine`.
+- Compared Labonair's uppercase `X` implementation: it deletes left by count but has no local Vim register update, typed action, or shared profile route. The existing count fixture covers lowercase `x`, not uppercase `X`.
+- Updated the DeleteLeft packet, registered-action row, Normal binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and this task record. Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 255 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`.
+- Rust build/tests, register and count acceptance, platform dispatch, and paired native evidence remain active goal acceptance gates.
+- Next safe task: Continue R07-000 with `vim::DeleteRight`; do not begin R07-001 or R09.

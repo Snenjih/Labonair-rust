@@ -351,6 +351,7 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-vim-curly-brackets.md`](action-classification-vim-curly-brackets.md) — Vim inside/around and `cs` object routes, Helix current/directional selection, literal multiline brace ranges, Shift-B Pane override, and the missing Labonair text object; platform and native acceptance remain open.
 - [`action-classification-vim-current-line.md`](action-classification-vim-current-line.md) — linewise Vim motion and 25 operator bindings, counted current-line ranges, direct line-end movement, and Labonair's partial doubled operators; platform and native acceptance remain open.
 - [`action-classification-vim-decrement.md`](action-classification-vim-decrement.md) — Vim/Helix numeric decrement and Boolean toggling, shared selection routes, stepped Visual decrement, and the missing Labonair action; platform and native acceptance remain open.
+- [`action-classification-vim-delete-left.md`](action-classification-vim-delete-left.md) — count-aware Vim Normal `shift-x`, characterwise register deletion, distinct Visual/Helix routes, and Labonair's uppercase-X register gap; platform and native acceptance remain open.
 - [`titlebar-tab-strip.md`](titlebar-tab-strip.md) — independent titlebar tab
   appearance, input/state matrix, ownership, and evidence packet.
 - [`settings-requirements.md`](settings-requirements.md) — 488 stable IDs for
