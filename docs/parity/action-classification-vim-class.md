@@ -8,7 +8,7 @@
 
 ## Evidence boundary
 
-The pinned Linux action inventory registers vim::Class. It has no binding in the macOS, Linux, or Windows platform-default maps. The shared vim.json layer maps c to Class in Vim text-object contexts. Under Helix mode, t maps to Class (Type); the c key is mapped separately to Comment. The shared layer binds ] to PushHelixNext and [ to PushHelixPrevious, both with the around argument, so ]t and [t select the next and previous type objects. These declarations are shared profile data, not evidence of active profile loading or key dispatch on any platform.
+The pinned Linux action inventory registers vim::Class. It has no binding in the macOS, Linux, or Windows platform-default maps. The shared vim.json layer maps c to Class in Vim inside, around, and surround-change contexts. Under Helix mode, t maps to Class (Type) for current and next/previous type objects. Helix c selects the current Comment object in inside/around contexts; in next/previous contexts, later specific c bindings resolve to NextComment/PreviousComment. The broad Class and Comment rows also declare those directional contexts, but the later specific rows win by the pinned resolver's context-depth and declaration-order precedence. These declarations are shared profile data, not evidence of active profile loading or key dispatch on any platform.
 
 Registered Vim actions also have a focused-Editor Command Palette route when Vim/Helix is enabled. Class depends on pending text-object/operator context to select or act on a range; invoking the action without that context does not provide a standalone class navigation operation. Palette discovery does not establish successful selection or operator behavior.
 
@@ -21,8 +21,8 @@ The language test fixture for a Rust impl block returns the function range for I
 | Requirement | Pinned behavior and entry point | Labonair route and gap |
 |---|---|---|
 | [ACT-REGISTRY-LINUX-vim-Class](registered-actions-unbound.md) | Registered unit action mapped to Object::Class, using grammar captures for inside and around ranges. | Editor owns the capability, but Labonair has no syntax-backed text-object action or range. Its class symbol support is for symbol discovery. |
-| [KEYBIND-VIM-HELIX-5f44df1dbbb2](keymap-overlay-requirements.md) | Shared c binding in Vim a, i, cs, and Helix directional object contexts; no platform-default binding. | Labonair has no shared Vim/Helix profile binding for Class. |
-| [KEYBIND-VIM-HELIX-f021a4fe05af](keymap-overlay-requirements.md) | Shared t binding for Helix Type in a, i, and next/previous object contexts when Helix mode is enabled. The Helix c binding is Comment. | Labonair has no Helix mode or Type text-object route. |
+| [KEYBIND-VIM-HELIX-5f44df1dbbb2](keymap-overlay-requirements.md) | Shared c binding to Class in Vim a, i, and cs contexts. Its declared Helix next/previous candidates are overridden by later specific NextComment/PreviousComment bindings; no platform-default binding. | Labonair has no shared Vim Class profile binding. |
+| [KEYBIND-VIM-HELIX-f021a4fe05af](keymap-overlay-requirements.md) | Shared t binding for Helix Type in a, i, and next/previous object contexts when Helix mode is enabled. Helix c selects the current Comment object in a/i contexts and resolves to directional comment actions in next/previous contexts. | Labonair has no Helix mode or Type text-object route. |
 | [SET-keymap-vim-mode](settings-requirements.md) and [SET-keymap-helix-mode](settings-requirements.md) | Mode values gate the shared layer and Vim palette namespace; there is no Class-specific setting. | Labonair has only a partial Editor-owned Vim preference and no Helix profile layer. |
 
 ## Pinned behavior
@@ -33,7 +33,7 @@ For an inside request, the range helper first seeks the smallest matching Inside
 
 Class is treated as multiline and as an object that expands in both directions. Vim inside selection targets Visual mode; around selection targets Visual Line mode. The Class range branch does not use the text-object count, so a count does not widen the syntax capture. Operator behavior when no capture is found, including resulting mode and selection, remains a runtime acceptance question.
 
-In Helix, t selects the current Type object, while ]t and [t route through the next/previous object handlers with around enabled. Those handlers use object-specific Helix ranges when available. The pinned fixture confirms the t mapping selects a Rust struct and separately confirms that c means Comment in Helix. Current, next, and previous Type behavior still depends on grammar queries and runtime acceptance.
+In Helix, t selects the current Type object, while ]t and [t route through the next/previous object handlers with around enabled. Those handlers use object-specific Helix ranges when available. The pinned fixture confirms the t mapping selects a Rust struct and separately confirms that c means Comment in Helix. For directional selectors, the later c rows resolve to NextComment/PreviousComment; t remains the Type selector. Current, next, and previous Type behavior still depends on grammar queries and runtime acceptance.
 
 Class text-object selection is distinct from symbol discovery or navigation to a class declaration. The action changes selection or supplies a range to the pending operator; it does not itself jump to a symbol.
 
@@ -47,7 +47,7 @@ Object selection and pending operator state are transient Editor state. Language
 
 ## Acceptance still required
 
-- Verify the shared c route in Vim inside/around and surround-change contexts, including excluded Vim and Helix contexts. Verify Helix t as Type and c as Comment, plus ]t and [t next/previous behavior with Helix mode on and off.
+- Verify the shared c route in Vim inside/around and surround-change contexts, including excluded contexts. Verify Helix t as Type and c as the current Comment object, plus ]t/[t and ]c/[c directional behavior. Confirm c resolves to NextComment/PreviousComment in directional contexts because those exact rows are declared later.
 - Verify focused-Editor palette discovery and invocation with and without pending object/operator context. Capture selection, cursor, mode, focus, and any operator effect.
 - Exercise nested class-like captures, cursors on boundaries, missing inner captures, missing around captures, empty captures, counts, multiple selections, and each supported grammar. Confirm no-range behavior for each caller.
 - Compare Vim inside and around behavior separately from Helix current, next, and previous Type selection. Include representative class, struct, impl, interface, and grammar-specific ranges without generalizing across languages.

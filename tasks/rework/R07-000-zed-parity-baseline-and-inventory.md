@@ -7119,3 +7119,46 @@ Next safe task: Continue R07-000 with vim::Comment; do not begin R07-001 or R09.
 - Passed git diff --check, scripts/check_documentation.py (43 normative docs; 245 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
 - Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, profile/palette dispatch, native behavior, or paired visual evidence were run; these remain R07-000 acceptance gates.
 - Next safe task: Continue R07-000 with vim::Comment; do not begin R07-001 or R09.
+
+## Pre-change contract — Vim Comment text object
+
+~~~text
+Request type: Pinned registered-action, syntax-backed text-object, shared Vim/Helix profile, and comment-operator inventory; documentation-only.
+Owner module: Editor owns comment range selection, operator state, and comment edits; Language owns grammar comment captures; Keymap owns shared mode and user bindings; Settings owns Vim/Helix mode values; Command Palette owns existing Vim action discovery.
+Canonical capability crate: labonair-editor; language query integration stays within the Editor capability; profile composition in labonair-keymap.
+Canonical user entry point: Vim operator-pending g c invokes vim::Comment as a syntax-backed object; Normal g c starts PushToggleComments and Visual g c invokes ToggleComments, which are separate comment edits. Focused Vim/Helix Command Palette discovery is conditional on mode. Helix c selects the current Comment object for inside/around selection; c in next/previous selector contexts invokes NextComment/PreviousComment.
+Public typed contract: Existing registered unit action vim::Comment, mapped to Object::Comment and InsideComment/AroundComment grammar captures. If no Object operator is active, its handler first pushes Object { around: true }; then it dispatches through the current mode's normal/visual object handler. Labonair offers selected-line Toggle Comment but no syntax-backed Comment text object or Helix mapping.
+State owner: Editor owns selections and transient object/comment operator state; Language grammar queries provide range captures. Comment-toggle edits remain Editor-owned document changes.
+Persistence owner: No persistence for a selected comment range or pending object operator. Text edits use ordinary document persistence; profile and mode values use Keymap and Settings persistence.
+Commands and keymap entries: ACT-REGISTRY-LINUX-vim-Comment; KEYBIND-VIM-HELIX-720754662b63 (g c, vim_mode == operator); KEYBIND-VIM-HELIX-21b18eb55110 (c, Helix a/i/current object plus broad directional declarations). KEYBIND-VIM-HELIX-b69ab2413a28 and KEYBIND-VIM-HELIX-523832efe256 are later exact c rows for NextComment/PreviousComment and win by resolver precedence. KEYBIND-VIM-HELIX-d61dd4a23dcd and KEYBIND-VIM-HELIX-1b70771bd066 are separate Normal/Visual comment-toggle routes. No platform-default binding exists for Comment.
+Events and registry contributions: Existing Vim Comment action, Language Tree-sitter text-object queries, shared mode layer, generic palette route, and Editor ToggleComments behavior; no new event, registry, or shell-wide conditional.
+Settings: Existing Vim/Helix mode values gate the shared layer and Vim palette namespace; no Comment-specific setting. Language grammar/query configuration controls available comment ranges.
+Notifications: None expected.
+UI-kit components: Existing Editor selection/comment editing, Command Palette, and Keymap only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect pinned test_toggle_comments, test_helix_treesitter_object_keys, and language test_text_objects source fixtures without running them. No focused direct Vim operator-pending g c Comment text-object fixture was found. No bundled query defines comment.inside; an inside request therefore falls back to the full around capture when one exists. Future owner work needs language coverage, missing captures, Vim operator and Visual behavior, Helix inside/around, directional separation, palette mode behavior, and multiline/nested comments.
+Visual evidence: Selection and comment edits affect the Editor surface; paired native macOS Editor and Keymap evidence is required. Linux/Windows shared-profile dispatch remains unverified.
+Security impact: None beyond local Editor selection and comment edits.
+Performance impact: No local runtime work; grammar query cost and comment grouping across large buffers need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static action, operator and Helix entry points, capture fallback, fixtures, resolver precedence, and local owner gap can be classified; profile dispatch, direct palette behavior, runtime syntax coverage, and native acceptance remain pending.
+Documentation updates: New Comment packet; registered-action row; shared Comment/Class/directional keybinding annotations; Linux/Windows layer note; packet index; commands.keymap and editor.text crosswalks; Class packet precedence correction; task record. No memory note unless audit discovers a non-obvious bug or API issue.
+Current status: Pre-change contract and docs-only Comment classification recorded; operator, Helix, directional precedence, capture fallback, and Labonair owner gap classified; runtime and native acceptance remain open.
+Target status: Separate Vim operator-pending Comment objects from Normal/Visual comment toggling, classify Helix current and directional Comment routes, document the around-capture fallback and missing local text-object route, and correct the Class packet precedence claim without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has line-selection comment toggling but no syntax-backed Comment range, Vim g c operator/profile route, Helix c text object, or Vim/Helix action palette route.
+Failed/unavailable gates: No failures in the docs-only scope. First pass passed git diff --check, documentation and rework-queue scripts, and verify scopes docs, agents, knowledge, settings, and queue. Rust build/tests, profile/palette dispatch, syntax coverage, native behavior, and paired visual evidence were not run in this slice and remain goal acceptance gates.
+Next safe task: Continue R07-000 with vim::ConvertToLowerCase; do not begin R07-001 or R09.
+~~~
+
+
+## Vim Comment text object classification progress
+
+- Classified the registered Comment action as an operator-pending Vim syntax object and a Helix current-object action; separated it from Normal/Visual g c comment toggling and Helix directional comment motion.
+- Confirmed that the later Helix directional c rows win over broad Comment/Class candidates under the pinned resolver's context-depth and declaration-order rules. Corrected the Class packet and both shared-row notes.
+- Recorded the grammar-specific around-capture fallback for inside requests, the missing local syntax-backed route, the partial line-toggle behavior, and the same-session redevelopment boundary.
+- Updated the new Comment packet, registered-action and binding rows, Linux/Windows note, packet index, commands.keymap/editor.text crosswalks, Class packet, and this task record.
+- First gate pass: passed git diff --check, scripts/check_documentation.py (43 normative docs; 246 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
+- Second gate pass after recording task progress also passed the same checks; no failures.
+- No Rust build, tests, profile or palette dispatch, native behavior, or paired visual evidence were run. These remain active goal acceptance gates. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 with vim::ConvertToLowerCase; do not begin R07-001 or R09.
