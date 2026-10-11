@@ -355,6 +355,11 @@ records the shared cx c cancellation route, removal of the transient
 VimExchange highlight, common operator/count/register clearing, and the
 missing local Editor route. Palette context, profile dispatch, and paired
 macOS acceptance remain open. The independent
+[`Vim ClearOperators action crosswalk`](parity/action-classification-vim-clear-operators.md)
+records the six Escape/Ctrl-C/Ctrl-[ bindings across waiting/operator
+contexts, transient operator/count/register cleanup, Helix jump-overlay
+removal, and preservation of the VimExchange highlight. Runtime profile,
+palette, and paired macOS acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and

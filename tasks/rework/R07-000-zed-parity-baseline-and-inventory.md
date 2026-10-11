@@ -6993,3 +6993,45 @@ Next safe task: Continue R07-000 with vim::ClearOperators; do not begin R07-001 
 - Passed git diff --check, scripts/check_documentation.py (43 normative docs; 242 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
 - Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, profile/palette dispatch, native behavior, or paired visual evidence were run; these remain R07-000 acceptance gates.
 - Next safe task: Continue R07-000 with vim::ClearOperators; do not begin R07-001 or R09.
+
+## Pre-change contract — Vim ClearOperators action
+
+~~~text
+Request type: Pinned registered-action, modal cancellation, and shared Vim/Helix profile inventory; documentation-only.
+Owner module: Editor owns operator stack, count, forced-motion, selected-register, and Helix jump-overlay state; Keymap owns shared mode and user bindings; Settings owns Vim/Helix mode values; Command Palette owns existing Vim action discovery.
+Canonical capability crate: labonair-editor; profile composition in labonair-keymap.
+Canonical user entry point: Shared Escape, Ctrl-C, or Ctrl-[ in vim_mode == waiting or vim_mode == operator; focused-Editor Command Palette discovery is conditional on Vim/Helix. Unhandled input in a non-waiting operator context also clears the operator through the same state-clearing path.
+Public typed contract: Existing registered unit action vim::ClearOperators. Its handler clears the pending operator stack, count, forced-motion and selected-register state, removes Helix jump overlays when a HelixJump operator is active, and synchronizes Vim settings. It does not directly switch the editor mode or edit text. Unlike ClearExchange, it does not remove the VimExchange highlight.
+State owner: Editor owns modal operator state, count, forced motion, selected register, and Helix jump UI; Keymap derives contexts from the active Vim mode and operator.
+Persistence owner: None for operator/count/register/jump state. User profile and mode values use existing Keymap and Settings persistence.
+Commands and keymap entries: ACT-REGISTRY-LINUX-vim-ClearOperators; shared KEYBIND-VIM-HELIX-ff7b5bc901bb, KEYBIND-VIM-HELIX-ec55de25d812, and KEYBIND-VIM-HELIX-0dcd99032537 bind Ctrl-C, Ctrl-[, and Escape in waiting mode; KEYBIND-VIM-HELIX-6d610abd8246, KEYBIND-VIM-HELIX-5bab71d04374, and KEYBIND-VIM-HELIX-947aa5d493ab bind the same keys in operator mode. No platform-default binding exists.
+Events and registry contributions: Existing Vim action registration, Editor operator state and Helix jump overlay, shared mode profile, and generic palette route; no new event, registry, or shell-wide conditional.
+Settings: Existing Vim/Helix mode values gate the shared layer and Vim palette namespace; no ClearOperators-specific setting.
+Notifications: None expected. The action silently cancels pending operator state.
+UI-kit components: Existing Editor and Keymap only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. No focused ClearOperators action test was found in the inspected Vim Rust sources. Future owner work needs each of the six bindings in waiting/operator contexts, operator/count/forced-motion/register clearing, Helix jump overlay removal, exchange-highlight preservation, direct palette invocation, and resulting mode/cursor behavior.
+Visual evidence: No persistent layout change; Escape/cancel behavior, Helix jump overlay removal, and preserved exchange highlight need paired native macOS Editor evidence. Linux/Windows shared-profile dispatch remains unverified.
+Security impact: None beyond local Editor state.
+Performance impact: No local runtime work; the common clear path resets transient fields and conditionally removes one Helix overlay.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static registration, six shared key rows, mode-context construction, common clear behavior, invalid-input path, and local owner gap can be classified; direct runtime, palette, profile, and native acceptance remain pending.
+Documentation updates: New ClearOperators packet; registered-action row; six shared keybinding annotations; Linux/Windows layer note; packet index; commands.keymap and editor.text crosswalks; normative parity summary; task record. No memory note unless audit discovers a non-obvious bug or API issue.
+Current status: Pre-change contract recorded; source and local-owner audit complete; parity packet and register updates not yet made.
+Target status: Classify Escape/Ctrl-C/Ctrl-[ cancellation across waiting and operator contexts, distinguish generic operator clearing from ClearExchange's highlight removal, and record the missing local owner route without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no Vim operator stack, count/forced-motion/selected-register state, Helix jump overlays, shared Vim/Helix profile, or corresponding palette action.
+Failed/unavailable gates: No gates run yet. This is a docs-only classification; tests, Rust build, profile/palette dispatch, native behavior, and paired visual evidence are not requested or run in this slice.
+Next safe task: Continue R07-000 with vim::ColumnLeft; do not begin R07-001 or R09.
+~~~
+
+
+## Progress — Vim ClearOperators action
+
+- Added [action-classification-vim-clear-operators.md](../../docs/parity/action-classification-vim-clear-operators.md) for ACT-REGISTRY-LINUX-vim-ClearOperators.
+- Classified Escape, Ctrl-C, and Ctrl-[ in both waiting and operator contexts; recorded the common helper's operator-stack, count, forced-motion, selected-register, and Helix jump-overlay cleanup. Distinguished ClearOperators from ClearExchange because it preserves the VimExchange highlight.
+- Inspected the action handler, mode-context derivation, implicit invalid-input/focus-loss paths, and operator clear helper. No focused ClearOperators action test was found in the inspected Vim Rust sources.
+- Updated the registered-action row, six shared keybinding annotations, Linux/Windows layer note, packet index, commands.keymap and editor.text crosswalks, normative parity summary, and this task record. No memory note was needed because the audit found no new bug or API discovery.
+- Passed git diff --check, scripts/check_documentation.py (43 normative docs; 243 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
+- Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, profile/palette dispatch, native behavior, or paired visual evidence were run; these remain R07-000 acceptance gates.
+- Next safe task: Continue R07-000 with vim::ColumnLeft; do not begin R07-001 or R09.
