@@ -111,6 +111,7 @@
     "editorShowCursorPosition": true,
     "editorShowSelectionStats": false,
     "editorShowOutline": false,
+    "editorSelectionsMenu": true,
     "editorAutocompleteDebounceMs": 350,
     "editorMaxFileSizeMb": 10,
     "vimMode": false,

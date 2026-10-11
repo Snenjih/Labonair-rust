@@ -59,6 +59,7 @@ pub struct EditorContent {
     pub editor_show_cursor_position: Option<bool>,
     pub editor_show_selection_stats: Option<bool>,
     pub editor_show_outline: Option<bool>,
+    pub editor_selections_menu: Option<bool>,
     pub editor_autocomplete_debounce_ms: Option<u32>,
     pub editor_max_file_size_mb: Option<u32>,
     #[serde(rename = "vimMode")]
@@ -114,6 +115,7 @@ impl EditorContent {
             editor_show_cursor_position: Some(true),
             editor_show_selection_stats: Some(false),
             editor_show_outline: Some(false),
+            editor_selections_menu: Some(true),
             editor_autocomplete_debounce_ms: Some(350),
             editor_max_file_size_mb: Some(10),
             editor_vim_mode: Some(false),

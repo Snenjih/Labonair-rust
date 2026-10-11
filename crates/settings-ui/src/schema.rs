@@ -701,6 +701,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Code outline",
             "Expose the document symbol outline affordance."
         ),
+        field!(
+            editor.editor_selections_menu,
+            "editorSelectionsMenu",
+            Switch,
+            "Selections menu",
+            "Show selection and multi-cursor actions in the editor toolbar."
+        ),
         field_with_details!(
             editor.editor_autocomplete_debounce_ms,
             "editorAutocompleteDebounceMs",
@@ -1009,6 +1016,19 @@ mod tests {
                 f.json_path
             );
         }
+    }
+
+    #[test]
+    fn editor_selections_menu_is_an_exposed_switch() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorSelectionsMenu")
+            .expect("editor selections-menu setting");
+        assert!(matches!(field.control, FieldControl::Switch));
+
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::Bool(false)));
+        assert_eq!((field.get)(&content), Some(Value::Bool(false)));
     }
 
     #[test]

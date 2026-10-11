@@ -483,6 +483,7 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_show_cursor_position: Some(p.editor_show_cursor_position),
         editor_show_selection_stats: Some(p.editor_show_selection_stats),
         editor_show_outline: Some(p.editor_show_outline),
+        editor_selections_menu: Some(true),
         editor_autocomplete_debounce_ms: Some(p.editor_autocomplete_debounce_ms),
         editor_max_file_size_mb: Some(p.editor_max_file_size_mb),
         editor_vim_mode: Some(p.editor_vim_mode),

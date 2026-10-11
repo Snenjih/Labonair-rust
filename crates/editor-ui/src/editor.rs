@@ -1597,6 +1597,9 @@ impl EditorView {
             return;
         }
         self.prefs = p;
+        if !self.prefs.selections_menu() {
+            self.selection_menu_anchor = None;
+        }
         self.cursor_blink_on = true;
         self.language_services.set_presentation_policy(
             self.prefs.diagnostics(),
@@ -4573,7 +4576,14 @@ impl EditorView {
             .into_any_element()
     }
 
-    fn render_editor_toolbar(&mut self, palette: Palette, cx: &mut Context<Self>) -> AnyElement {
+    fn render_editor_toolbar(
+        &mut self,
+        palette: Palette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if !self.prefs.selections_menu() {
+            return None;
+        }
         let trigger = icon_button_builder("editor-selections-menu", palette, IconName::ListTree)
             .size(ButtonSize::IconSm)
             .shape(IconButtonShape::Square)
@@ -4595,19 +4605,21 @@ impl EditorView {
                     cx.notify();
                 }),
             );
-        div()
-            .flex()
-            .items_center()
-            .justify_end()
-            .w_full()
-            .h(px(28.0))
-            .px_2()
-            .flex_shrink_0()
-            .bg(palette.bg)
-            .border_b_1()
-            .border_color(palette.border)
-            .child(trigger)
-            .into_any_element()
+        Some(
+            div()
+                .flex()
+                .items_center()
+                .justify_end()
+                .w_full()
+                .h(px(28.0))
+                .px_2()
+                .flex_shrink_0()
+                .bg(palette.bg)
+                .border_b_1()
+                .border_color(palette.border)
+                .child(trigger)
+                .into_any_element(),
+        )
     }
 
     fn render_selection_menu(
@@ -4615,6 +4627,9 @@ impl EditorView {
         palette: Palette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
+        if !self.prefs.selections_menu() {
+            return None;
+        }
         let anchor = self.selection_menu_anchor?;
         let editor = cx.entity();
         let command_item = |id: CommandId, label: &'static str, disabled: bool| {
@@ -5964,7 +5979,7 @@ impl Render for EditorView {
             .min_h_0();
         buffer_surface = buffer_surface
             .child(self.render_breadcrumb(breadcrumb_state, ui_palette, cx))
-            .child(self.render_editor_toolbar(ui_palette, cx));
+            .children(self.render_editor_toolbar(ui_palette, cx));
         if show_text_area {
             let mut editor_surface_container = div().relative().flex_1().min_w_0().min_h_0();
             if minimap {
@@ -6602,6 +6617,33 @@ mod tests {
                 assert_eq!(this.doc.text(), "\tline");
                 assert!(this.dispatch_registered_command(CommandId::EditorOutdent, cx));
                 assert_eq!(this.doc.text(), "line");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn selections_menu_preference_hides_the_toolbar_and_closes_its_popover(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(|cx| {
+            install_editor_prefs(cx, |editor| editor.editor_selections_menu = Some(true));
+        });
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, _cx| {
+                this.selection_menu_anchor = Some(gpui::point(px(10.0), px(10.0)));
+            });
+        });
+        cx.update(|cx| {
+            install_editor_prefs(cx, |editor| editor.editor_selections_menu = Some(false));
+        });
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.apply_prefs(cx);
+                assert!(this.selection_menu_anchor.is_none());
+                assert!(this
+                    .render_editor_toolbar(Palette::from_theme(this.theme.read(cx)), cx)
+                    .is_none());
             });
         });
     }

@@ -497,6 +497,10 @@ impl EditorSettings {
         self.0.editor_show_outline.unwrap_or(false)
     }
 
+    pub fn selections_menu(&self) -> bool {
+        self.0.editor_selections_menu.unwrap_or(true)
+    }
+
     pub fn autocomplete_debounce_ms(&self) -> u32 {
         self.0
             .editor_autocomplete_debounce_ms
@@ -785,6 +789,17 @@ mod tests {
         content.editor.editor_git_word_diff = Some(false);
         let settings = EditorSettings::from_settings(&content);
         assert!(!settings.git_word_diff());
+    }
+
+    #[test]
+    fn editor_selections_menu_defaults_on_and_can_be_hidden() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(defaults.selections_menu());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_selections_menu = Some(false);
+        let settings = EditorSettings::from_settings(&content);
+        assert!(!settings.selections_menu());
     }
 
     #[test]
