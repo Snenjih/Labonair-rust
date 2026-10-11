@@ -742,6 +742,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Set the highest severity shown in the editor and Error Lens."
         ),
         field!(
+            editor.editor_lsp_document_colors,
+            "editorLspDocumentColors",
+            Select(&[("off", "Off"), ("inlay", "Inlay preview"), ("inline", "Inline tint")]),
+            "Document colors",
+            "Choose how colors reported by a language server appear in source files."
+        ),
+        field!(
             editor.editor_error_lens,
             "editorErrorLens",
             Switch,
@@ -1343,6 +1350,18 @@ mod tests {
             assert!((field.set)(&mut content, Value::from(250)));
             assert_eq!((field.get)(&content), Some(Value::from(250)));
         }
+    }
+
+    #[test]
+    fn editor_document_color_mode_is_registered_and_editable() {
+        let mut content = SettingsContent::default();
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorLspDocumentColors")
+            .expect("document colors setting");
+        assert!(matches!(field.control, FieldControl::Select(_)));
+        assert!((field.set)(&mut content, Value::String("inline".into())));
+        assert_eq!((field.get)(&content), Some(Value::String("inline".into())));
     }
 
     #[test]

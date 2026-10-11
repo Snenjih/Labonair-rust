@@ -12,7 +12,7 @@ use labonair_settings_content::{
     appearance::AppearanceContent,
     connections::ConnectionsContent,
     editor::{
-        EditorContent, EditorCursorStyle, EditorDiagnosticMaxSeverity,
+        EditorContent, EditorCursorStyle, EditorDiagnosticMaxSeverity, EditorDocumentColorMode,
         EditorMinimapCurrentLineHighlight, EditorMinimapDisplayIn, EditorMinimapThumb,
         EditorMinimapThumbBorder, EditorMinimapVisibility, EditorModalMode,
         EditorScrollbarVisibility,
@@ -532,6 +532,12 @@ impl EditorSettings {
             .unwrap_or(EditorDiagnosticMaxSeverity::All)
     }
 
+    pub fn lsp_document_colors(&self) -> EditorDocumentColorMode {
+        self.0
+            .editor_lsp_document_colors
+            .unwrap_or(EditorDocumentColorMode::Inlay)
+    }
+
     pub fn error_lens(&self) -> bool {
         self.0.editor_error_lens.unwrap_or(false)
     }
@@ -1007,6 +1013,22 @@ mod tests {
         assert_eq!(settings.error_lens_delay_ms(), 5_000);
         assert_eq!(settings.error_lens_spacing(), 32);
         assert_eq!(settings.error_lens_minimum_column(), 2_000);
+    }
+
+    #[test]
+    fn document_color_mode_defaults_to_inlay_and_accepts_each_mode() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(
+            defaults.lsp_document_colors(),
+            EditorDocumentColorMode::Inlay
+        );
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_lsp_document_colors = Some(EditorDocumentColorMode::Inline);
+        assert_eq!(
+            EditorSettings::from_settings(&content).lsp_document_colors(),
+            EditorDocumentColorMode::Inline
+        );
     }
 
     #[test]

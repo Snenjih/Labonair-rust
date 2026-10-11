@@ -22,11 +22,12 @@ use tokio::time;
 use crate::buffer::{BufferSnapshot, Edit};
 use crate::language_services::{
     CancellationToken, CodeAction, CompletionItem, CompletionKind, CompletionList, Diagnostic,
-    DiagnosticSeverity, DocumentVersion, FoldingRange, HoverContent, InlayHint, InlayHintKind,
-    LanguageId, LanguageServerId, LanguageServiceCapabilities, LanguageServiceEditCapabilities,
-    LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceError,
-    LanguageServiceRequest, LanguageServiceResponse, LanguageServiceResult, LspPosition, LspRange,
-    NavigationTarget, SemanticToken, SignatureHelp,
+    DiagnosticSeverity, DocumentColor, DocumentColorValue, DocumentVersion, FoldingRange,
+    HoverContent, InlayHint, InlayHintKind, LanguageId, LanguageServerId,
+    LanguageServiceCapabilities, LanguageServiceEditCapabilities, LanguageServiceEditRequest,
+    LanguageServiceEditResponse, LanguageServiceError, LanguageServiceRequest,
+    LanguageServiceResponse, LanguageServiceResult, LspPosition, LspRange, NavigationTarget,
+    SemanticToken, SignatureHelp,
 };
 use crate::symbols::{DocumentSymbol, SymbolKind};
 
@@ -402,6 +403,7 @@ impl LocalLanguageServiceProcess {
                         code_actions: false,
                         semantic_tokens: false,
                         inlay_hints: false,
+                        document_colors: false,
                         document_symbols: false,
                         folding_ranges: false,
                         formatting: false,
@@ -766,6 +768,7 @@ impl LocalLanguageServiceProcess {
                 code_actions: false,
                 semantic_tokens: false,
                 inlay_hints: false,
+                document_colors: false,
                 document_symbols: false,
                 folding_ranges: false,
                 formatting: false,
@@ -1068,6 +1071,9 @@ impl LocalLanguageServiceProcess {
             LanguageServiceRequest::InlayHints { .. } => {
                 LanguageServiceResponse::InlayHints(parse_inlay_hints(snapshot, &value))
             }
+            LanguageServiceRequest::DocumentColors => {
+                LanguageServiceResponse::DocumentColors(parse_document_colors(snapshot, &value))
+            }
             LanguageServiceRequest::DocumentSymbols => {
                 LanguageServiceResponse::DocumentSymbols(parse_document_symbols(snapshot, &value))
             }
@@ -1347,6 +1353,7 @@ fn parse_server_capabilities(value: &Value) -> (LanguageServiceCapabilities, Vec
             code_actions: advertised(capabilities.get("codeActionProvider")),
             semantic_tokens: semantic.is_some_and(|value| !value.is_null()),
             inlay_hints: advertised(capabilities.get("inlayHintProvider")),
+            document_colors: advertised(capabilities.get("colorProvider")),
             document_symbols: advertised(capabilities.get("documentSymbolProvider")),
             folding_ranges: advertised(capabilities.get("foldingRangeProvider")),
             formatting: advertised(capabilities.get("documentFormattingProvider")),
@@ -1424,6 +1431,10 @@ fn request_parts(uri: &str, request: &LanguageServiceRequest) -> (&'static str, 
         LanguageServiceRequest::InlayHints { range } => (
             "textDocument/inlayHint",
             json!({ "textDocument": text_document, "range": range_value(*range) }),
+        ),
+        LanguageServiceRequest::DocumentColors => (
+            "textDocument/documentColor",
+            json!({ "textDocument": text_document }),
         ),
         LanguageServiceRequest::DocumentSymbols => (
             "textDocument/documentSymbol",
@@ -1869,6 +1880,41 @@ fn parse_inlay_hints(snapshot: &BufferSnapshot, value: &Value) -> Vec<InlayHint>
         .collect()
 }
 
+fn parse_document_colors(snapshot: &BufferSnapshot, value: &Value) -> Vec<DocumentColor> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let range = parse_range(item.get("range")?)?;
+            if range.start.line >= snapshot.line_count() || range.end.line >= snapshot.line_count()
+            {
+                return None;
+            }
+            if range.start.character > snapshot.line(range.start.line).encode_utf16().count()
+                || range.end.character > snapshot.line(range.end.line).encode_utf16().count()
+            {
+                return None;
+            }
+
+            let value = item.get("color")?;
+            let component = |name: &str| -> Option<u8> {
+                let value = value.get(name)?.as_f64()?;
+                (value.is_finite() && (0.0..=1.0).contains(&value))
+                    .then(|| (value * 255.0).round() as u8)
+            };
+            let color = DocumentColorValue {
+                red: component("red")?,
+                green: component("green")?,
+                blue: component("blue")?,
+                alpha: component("alpha")?,
+            };
+            let source_range = range.to_text_range(snapshot);
+            (source_range.start < source_range.end).then_some(DocumentColor { range, color })
+        })
+        .collect()
+}
+
 fn semantic_modifiers(mask: u64) -> Vec<String> {
     if mask == 0 {
         Vec::new()
@@ -2036,11 +2082,38 @@ mod tests {
     }
 
     #[test]
+    fn document_colors_use_lsp_method_and_ignore_invalid_values() {
+        let (method, params) = request_parts(
+            "file:///colors.css",
+            &LanguageServiceRequest::DocumentColors,
+        );
+        assert_eq!(method, "textDocument/documentColor");
+        assert_eq!(params["textDocument"]["uri"], "file:///colors.css");
+
+        let snap = snapshot("color: #ff00aa;");
+        let colors = parse_document_colors(
+            &snap,
+            &json!([
+                { "range": { "start": { "line": 0, "character": 7 }, "end": { "line": 0, "character": 14 } }, "color": { "red": 1.0, "green": 0.0, "blue": 170.0 / 255.0, "alpha": 0.5 } },
+                { "range": { "start": { "line": 4, "character": 0 }, "end": { "line": 4, "character": 1 } }, "color": { "red": 1.0, "green": 0.0, "blue": 0.0, "alpha": 1.0 } },
+                { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } }, "color": { "red": 1.5, "green": 0.0, "blue": 0.0, "alpha": 1.0 } }
+            ]),
+        );
+        assert_eq!(colors.len(), 1);
+        assert_eq!(colors[0].color.red, 255);
+        assert_eq!(colors[0].color.green, 0);
+        assert_eq!(colors[0].color.blue, 170);
+        assert_eq!(colors[0].color.alpha, 128);
+        assert_eq!(colors[0].range.start.character, 7);
+    }
+
+    #[test]
     fn advertised_capabilities_are_explicit() {
         let (capabilities, types) = parse_server_capabilities(
-            &json!({ "capabilities": { "hoverProvider": true, "typeDefinitionProvider": true, "inlayHintProvider": { "resolveProvider": true }, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
+            &json!({ "capabilities": { "hoverProvider": true, "typeDefinitionProvider": true, "inlayHintProvider": { "resolveProvider": true }, "colorProvider": true, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
         );
         assert!(capabilities.hover);
+        assert!(capabilities.document_colors);
         assert!(capabilities.type_definition);
         assert!(capabilities.inlay_hints);
         assert!(!capabilities.completion);

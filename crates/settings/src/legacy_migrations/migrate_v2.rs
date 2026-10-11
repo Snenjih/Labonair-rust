@@ -491,6 +491,8 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_sticky_context: Some(false),
         editor_diagnostics: Some(true),
         editor_diagnostics_max_severity: Some(EditorDiagnosticMaxSeverity::All),
+        // No v1 equivalent — inherit the shipped document-color presentation.
+        editor_lsp_document_colors: EditorContent::defaults().editor_lsp_document_colors,
         editor_error_lens: Some(false),
         editor_error_lens_delay_ms: Some(150),
         editor_error_lens_spacing: Some(4),

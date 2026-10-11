@@ -209,6 +209,22 @@ pub struct InlayHint {
     pub padding_right: bool,
 }
 
+/// sRGB color channels returned by LSP `textDocument/documentColor`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DocumentColorValue {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+    pub alpha: u8,
+}
+
+/// A source range associated with a color preview by a language server.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DocumentColor {
+    pub range: LspRange,
+    pub color: DocumentColorValue,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FoldingRange {
     pub start_line: usize,
@@ -235,6 +251,7 @@ pub enum LanguageServiceCapability {
     CodeActions,
     SemanticTokens,
     InlayHints,
+    DocumentColors,
     DocumentSymbols,
     FoldingRanges,
     Formatting,
@@ -289,6 +306,7 @@ pub struct LanguageServiceCapabilities {
     pub code_actions: bool,
     pub semantic_tokens: bool,
     pub inlay_hints: bool,
+    pub document_colors: bool,
     pub document_symbols: bool,
     pub folding_ranges: bool,
     pub formatting: bool,
@@ -307,6 +325,7 @@ impl LanguageServiceCapabilities {
         code_actions: true,
         semantic_tokens: true,
         inlay_hints: false,
+        document_colors: false,
         document_symbols: true,
         folding_ranges: true,
         formatting: true,
@@ -325,6 +344,7 @@ impl LanguageServiceCapabilities {
             LanguageServiceCapability::CodeActions => self.code_actions,
             LanguageServiceCapability::SemanticTokens => self.semantic_tokens,
             LanguageServiceCapability::InlayHints => self.inlay_hints,
+            LanguageServiceCapability::DocumentColors => self.document_colors,
             LanguageServiceCapability::DocumentSymbols => self.document_symbols,
             LanguageServiceCapability::FoldingRanges => self.folding_ranges,
             LanguageServiceCapability::Formatting => self.formatting,
@@ -366,6 +386,7 @@ pub enum LanguageServiceRequest {
     InlayHints {
         range: LspRange,
     },
+    DocumentColors,
     DocumentSymbols,
     FoldingRanges,
     Formatting,
@@ -403,6 +424,7 @@ impl LanguageServiceRequest {
             Self::CodeActions { .. } => LanguageServiceCapability::CodeActions,
             Self::SemanticTokens => LanguageServiceCapability::SemanticTokens,
             Self::InlayHints { .. } => LanguageServiceCapability::InlayHints,
+            Self::DocumentColors => LanguageServiceCapability::DocumentColors,
             Self::DocumentSymbols => LanguageServiceCapability::DocumentSymbols,
             Self::FoldingRanges => LanguageServiceCapability::FoldingRanges,
             Self::Formatting => LanguageServiceCapability::Formatting,
@@ -423,6 +445,7 @@ pub enum LanguageServiceResponse {
     CodeActions(Vec<CodeAction>),
     SemanticTokens(Vec<SemanticToken>),
     InlayHints(Vec<InlayHint>),
+    DocumentColors(Vec<DocumentColor>),
     DocumentSymbols(Vec<DocumentSymbol>),
     FoldingRanges(Vec<FoldingRange>),
     Formatting(Vec<Edit>),
@@ -655,6 +678,7 @@ pub struct LanguageServiceSnapshot {
     pub diagnostics: Vec<Diagnostic>,
     pub semantic_tokens: Vec<SemanticToken>,
     pub inlay_hints: Vec<InlayHint>,
+    pub document_colors: Vec<DocumentColor>,
     pub completion: Option<CompletionList>,
     pub signature_help: Option<SignatureHelp>,
     pub hover: Option<HoverContent>,
@@ -666,6 +690,7 @@ pub struct LanguageServiceState {
     diagnostics: Vec<Diagnostic>,
     semantic_tokens: Vec<SemanticToken>,
     inlay_hints: Vec<InlayHint>,
+    document_colors: Vec<DocumentColor>,
     completion: Option<CompletionList>,
     signature_help: Option<SignatureHelp>,
     hover: Option<HoverContent>,
@@ -679,6 +704,7 @@ impl LanguageServiceState {
             diagnostics: Vec::new(),
             semantic_tokens: Vec::new(),
             inlay_hints: Vec::new(),
+            document_colors: Vec::new(),
             completion: None,
             signature_help: None,
             hover: None,
@@ -701,6 +727,7 @@ impl LanguageServiceState {
         self.diagnostics.clear();
         self.semantic_tokens.clear();
         self.inlay_hints.clear();
+        self.document_colors.clear();
         self.completion = None;
         self.signature_help = None;
         self.hover = None;
@@ -723,6 +750,7 @@ impl LanguageServiceState {
             LanguageServiceResponse::Diagnostics(value) => self.diagnostics = value,
             LanguageServiceResponse::SemanticTokens(value) => self.semantic_tokens = value,
             LanguageServiceResponse::InlayHints(value) => self.inlay_hints = value,
+            LanguageServiceResponse::DocumentColors(value) => self.document_colors = value,
             LanguageServiceResponse::Completion(value) => self.completion = Some(value),
             LanguageServiceResponse::SignatureHelp(value) => self.signature_help = value,
             LanguageServiceResponse::Hover(value) => self.hover = value,
@@ -738,6 +766,7 @@ impl LanguageServiceState {
             diagnostics: self.diagnostics.clone(),
             semantic_tokens: self.semantic_tokens.clone(),
             inlay_hints: self.inlay_hints.clone(),
+            document_colors: self.document_colors.clone(),
             completion: self.completion.clone(),
             signature_help: self.signature_help.clone(),
             hover: self.hover.clone(),
@@ -756,6 +785,10 @@ impl LanguageServiceState {
 
     pub fn clear_inlay_hints(&mut self) {
         self.inlay_hints.clear();
+    }
+
+    pub fn clear_document_colors(&mut self) {
+        self.document_colors.clear();
     }
 }
 
@@ -1334,6 +1367,9 @@ impl LocalLanguageService for SyntaxLanguageService {
             LanguageServiceRequest::InlayHints { .. } => {
                 LanguageServiceResponse::InlayHints(Vec::new())
             }
+            LanguageServiceRequest::DocumentColors => {
+                LanguageServiceResponse::DocumentColors(Vec::new())
+            }
             LanguageServiceRequest::DocumentSymbols => LanguageServiceResponse::DocumentSymbols(
                 document_symbols(self.language.language(), snapshot),
             ),
@@ -1476,6 +1512,45 @@ mod tests {
 
         state.set_document_generation(DocumentVersion::new(2), 1);
         assert!(state.snapshot().inlay_hints.is_empty());
+    }
+
+    #[test]
+    fn document_colors_are_revision_bound_and_cleared_on_document_sync() {
+        let color = DocumentColor {
+            range: LspRange {
+                start: LspPosition {
+                    line: 0,
+                    character: 0,
+                },
+                end: LspPosition {
+                    line: 0,
+                    character: 4,
+                },
+            },
+            color: DocumentColorValue {
+                red: 255,
+                green: 0,
+                blue: 128,
+                alpha: 255,
+            },
+        };
+        let mut state = LanguageServiceState::new(DocumentVersion::new(1));
+        assert!(state.apply(LanguageServiceResult {
+            server: LanguageServerId::new("test"),
+            version: DocumentVersion::new(1),
+            generation: 0,
+            response: Ok(LanguageServiceResponse::DocumentColors(vec![color])),
+        }));
+        assert_eq!(state.snapshot().document_colors, vec![color]);
+
+        state.set_document_generation(DocumentVersion::new(2), 1);
+        assert!(state.snapshot().document_colors.is_empty());
+        assert!(!state.apply(LanguageServiceResult {
+            server: LanguageServerId::new("test"),
+            version: DocumentVersion::new(1),
+            generation: 0,
+            response: Ok(LanguageServiceResponse::DocumentColors(vec![color])),
+        }));
     }
 
     #[test]

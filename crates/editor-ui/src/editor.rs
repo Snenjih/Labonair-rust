@@ -32,8 +32,8 @@ use labonair_filesystem::file::{
 #[cfg(test)]
 use labonair_settings::content::editor::EditorModalMode;
 use labonair_settings::content::editor::{
-    EditorDiagnosticMaxSeverity, EditorMinimapCurrentLineHighlight, EditorMinimapDisplayIn,
-    EditorMinimapThumb, EditorMinimapThumbBorder, EditorMinimapVisibility,
+    EditorDiagnosticMaxSeverity, EditorDocumentColorMode, EditorMinimapCurrentLineHighlight,
+    EditorMinimapDisplayIn, EditorMinimapThumb, EditorMinimapThumbBorder, EditorMinimapVisibility,
     EditorScrollbarVisibility,
 };
 use labonair_settings::{EditorSettings, Settings as _, SettingsStore};
@@ -51,20 +51,20 @@ use labonair_editor::{
         FileCapabilities, FileLifecycleEvent, FileState, LineEnding, ReloadDecision, SaveIntent,
     },
     next_match_with_wrap, Anchor, AnchorAffinity, CancellationToken, DisplayConfig, DisplayMap,
-    DisplayRowKind, DisplaySnapshot, Document, DocumentVersion, Edit, EditorSessionId,
-    EditorSessionSnapshot, EditorViewSession, FoldRange, FoldingRange, GitDecorationProvider,
-    GitDecorationRequest, GitDiscardPreview, GitEditorCommand, GitGutterError, GitGutterSnapshot,
-    GitHunkAction, GitHunkActionKind, GitHunkStatus, Helix, HelixKey, HelixMode, HunkActionSink,
-    InlayHint, InlayHintKind, KillRing, Language, LanguageId, LanguageServiceEditRequest,
-    LanguageServiceEditResponse, LanguageServiceRequest, LanguageServiceResponse,
-    LanguageServiceResult, LanguageServiceRuntime, LanguageServiceRuntimeSnapshot,
-    LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus, LanguageServiceSnapshot,
-    LanguageServiceState, LocalLanguageServiceRequest, LspPosition, LspRange, Match, Position,
-    ProjectBufferCandidate, ProjectReplacePlan, ProjectReplaceRequest, ProjectReplaceResult,
-    ProjectReplaceTarget, ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest,
-    ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot, Revision, SavePolicy,
-    SearchError, SearchOptions, SearchQuery, Selection, SelectionSet, SyntaxHighlighter, TextRange,
-    Viewport, Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
+    DisplayRowKind, DisplaySnapshot, Document, DocumentColor, DocumentColorValue, DocumentVersion,
+    Edit, EditorSessionId, EditorSessionSnapshot, EditorViewSession, FoldRange, FoldingRange,
+    GitDecorationProvider, GitDecorationRequest, GitDiscardPreview, GitEditorCommand,
+    GitGutterError, GitGutterSnapshot, GitHunkAction, GitHunkActionKind, GitHunkStatus, Helix,
+    HelixKey, HelixMode, HunkActionSink, InlayHint, InlayHintKind, KillRing, Language, LanguageId,
+    LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceRequest,
+    LanguageServiceResponse, LanguageServiceResult, LanguageServiceRuntime,
+    LanguageServiceRuntimeSnapshot, LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus,
+    LanguageServiceSnapshot, LanguageServiceState, LocalLanguageServiceRequest, LspPosition,
+    LspRange, Match, Position, ProjectBufferCandidate, ProjectReplacePlan, ProjectReplaceRequest,
+    ProjectReplaceResult, ProjectReplaceTarget, ProjectSearchHit, ProjectSearchQuery,
+    ProjectSearchRequest, ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot,
+    Revision, SavePolicy, SearchError, SearchOptions, SearchQuery, Selection, SelectionSet,
+    SyntaxHighlighter, TextRange, Viewport, Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
 };
 use labonair_editor::{build_breadcrumb_state, BreadcrumbState};
 
@@ -763,6 +763,29 @@ fn diagnostic_hover_text(diagnostic: &labonair_editor::Diagnostic) -> String {
         diagnostic.message,
         diagnostic.source.as_str()
     )
+}
+
+fn document_color_at_position(
+    colors: &[DocumentColor],
+    snapshot: &labonair_editor::BufferSnapshot,
+    position: Position,
+) -> Option<DocumentColorValue> {
+    let offset = snapshot.position_to_byte(position);
+    colors.iter().find_map(|color| {
+        let range = color.range.to_text_range(snapshot);
+        (range.start <= offset && offset <= range.end).then_some(color.color)
+    })
+}
+
+fn document_color_hover_text(color: DocumentColorValue) -> String {
+    if color.alpha == u8::MAX {
+        format!("#{:02X}{:02X}{:02X}", color.red, color.green, color.blue)
+    } else {
+        format!(
+            "#{:02X}{:02X}{:02X}{:02X}",
+            color.red, color.green, color.blue, color.alpha
+        )
+    }
 }
 
 fn diagnostic_error_warning_counts(diagnostics: &[labonair_editor::Diagnostic]) -> (usize, usize) {
@@ -1618,6 +1641,11 @@ impl EditorView {
                     {
                         this.request_language_service(LanguageServiceRequest::FoldingRanges, cx);
                     }
+                    if this.prefs.lsp_document_colors() != EditorDocumentColorMode::Off
+                        && this.language_service_snapshot.capabilities.document_colors
+                    {
+                        this.request_language_service(LanguageServiceRequest::DocumentColors, cx);
+                    }
                     this.schedule_inlay_hints(this.prefs.inlay_edit_debounce_ms(), cx);
                 }
                 cx.notify();
@@ -2355,9 +2383,16 @@ impl EditorView {
                 .map(str::to_string)
             })
             .flatten();
+        let color_hover = (self.prefs.lsp_document_colors() != EditorDocumentColorMode::Off)
+            .then(|| {
+                document_color_at_position(&language_state.document_colors, &snapshot, doc_pos)
+                    .map(document_color_hover_text)
+            })
+            .flatten();
         let next = diagnostic_hover
             .map(|text| (mouse_pos, SharedString::from(text)))
             .or_else(|| inlay_hover.map(|text| (mouse_pos, SharedString::from(text))))
+            .or_else(|| color_hover.map(|text| (mouse_pos, SharedString::from(text))))
             .or_else(|| {
                 if self.is_settings_json() {
                     let offset = snapshot.position_to_byte(doc_pos);
@@ -2387,6 +2422,8 @@ impl EditorView {
         }
         let inlay_hints_were_enabled = self.inlay_hints_enabled();
         let inlay_hints_setting_changed = p.inlay_hints() != self.prefs.inlay_hints();
+        let document_color_mode_changed =
+            p.lsp_document_colors() != self.prefs.lsp_document_colors();
         let error_lens_was_enabled = self.prefs.error_lens() && self.prefs.diagnostics();
         let error_lens_delay_changed = p.error_lens_delay_ms() != self.prefs.error_lens_delay_ms();
         self.prefs = p;
@@ -2436,6 +2473,13 @@ impl EditorView {
                 self.inlay_hints_request_serial = None;
                 self.inlay_hints_request_range = None;
                 self.language_service_state.clear_inlay_hints();
+            }
+        }
+        if document_color_mode_changed {
+            if self.prefs.lsp_document_colors() == EditorDocumentColorMode::Off {
+                self.language_service_state.clear_document_colors();
+            } else if self.language_service_snapshot.capabilities.document_colors {
+                self.request_language_service(LanguageServiceRequest::DocumentColors, cx);
             }
         }
         self.language_service_snapshot = self.language_services.snapshot(
@@ -2542,9 +2586,9 @@ impl EditorView {
         snapshot: &labonair_editor::BufferSnapshot,
         config: DisplayConfig,
     ) -> &DisplaySnapshot {
-        let inlay_hints = if self.inlay_hints_enabled() {
-            self.language_service_state
-                .snapshot()
+        let service_state = self.language_service_state.snapshot();
+        let mut inlay_hints = if self.inlay_hints_enabled() {
+            service_state
                 .inlay_hints
                 .into_iter()
                 .filter(|hint| self.inlay_hint_kind_visible(hint.kind))
@@ -2552,6 +2596,23 @@ impl EditorView {
         } else {
             Vec::new()
         };
+        if self.prefs.lsp_document_colors() == EditorDocumentColorMode::Inlay
+            && service_state.version == DocumentVersion::from_revision(snapshot.revision())
+        {
+            inlay_hints.extend(
+                service_state
+                    .document_colors
+                    .into_iter()
+                    .map(|color| InlayHint {
+                        position: color.range.end,
+                        label: " ".into(),
+                        kind: InlayHintKind::Other,
+                        tooltip: None,
+                        padding_left: false,
+                        padding_right: false,
+                    }),
+            );
+        }
         let needs_rebuild = self.display_layout_cache.as_ref().is_none_or(|cache| {
             cache.revision != snapshot.revision()
                 || cache.config != config
@@ -7817,6 +7878,14 @@ impl Render for EditorView {
         } else {
             Vec::new()
         };
+        let document_color_decorations = if self.prefs.lsp_document_colors()
+            != EditorDocumentColorMode::Off
+            && service_state.version == DocumentVersion::from_revision(snapshot.revision())
+        {
+            display.document_color_decorations(&snapshot, &service_state.document_colors)
+        } else {
+            Vec::new()
+        };
 
         let sel = self.doc.selection();
         let cursor = self.doc.cursor;
@@ -8187,6 +8256,50 @@ impl Render for EditorView {
                         .h(px(1.0))
                         .bg(token_color.opacity(0.65)),
                 );
+            }
+            for decoration in document_color_decorations
+                .iter()
+                .filter(|color| color.visual_row == display_row.visual_row)
+            {
+                let color_value = decoration.color;
+                let packed_rgb = (u32::from(color_value.red) << 16)
+                    | (u32::from(color_value.green) << 8)
+                    | u32::from(color_value.blue);
+                let color: gpui::Hsla = gpui::rgb(packed_rgb).into();
+                let color = color.opacity(f32::from(color_value.alpha) / 255.0);
+                let start = decoration.start_column as f32 * char_w;
+                let width = (decoration.end_column - decoration.start_column) as f32 * char_w;
+                match self.prefs.lsp_document_colors() {
+                    EditorDocumentColorMode::Off => {}
+                    EditorDocumentColorMode::Inline => {
+                        row = row.child(
+                            div()
+                                .absolute()
+                                .left(px(start))
+                                .top_0()
+                                .w(px(width))
+                                .h(px(line_h))
+                                .bg(color.opacity(0.2)),
+                        );
+                    }
+                    EditorDocumentColorMode::Inlay => {
+                        let size = char_w.min(line_h);
+                        row = row.child(
+                            div()
+                                .absolute()
+                                .left(px(
+                                    decoration.end_column as f32 * char_w + (char_w - size) * 0.5,
+                                ))
+                                .top(px((line_h - size) * 0.5))
+                                .w(px(size))
+                                .h(px(size))
+                                .rounded(px(2.0))
+                                .border_1()
+                                .border_color(ui_palette.border)
+                                .bg(color),
+                        );
+                    }
+                }
             }
             for diagnostic in diagnostic_decorations
                 .iter()
@@ -9236,6 +9349,67 @@ mod tests {
                 assert_eq!(
                     this.hover.as_ref().map(|(_, text)| text.as_ref()),
                     Some("The inferred type of this value")
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn document_color_hover_shows_the_server_color_value(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("test.css".into(), "color: #ff00aa;", 1);
+                this.metrics = (10.0, 18.0);
+                this.gutter_width = 0.0;
+                this.bounds = Some(gpui::Bounds {
+                    origin: gpui::Point::default(),
+                    size: gpui::Size {
+                        width: px(200.0),
+                        height: px(40.0),
+                    },
+                });
+                let version = DocumentVersion::from_revision(this.editor_revision());
+                let generation = this.language_service_generation;
+                this.language_service_state
+                    .set_document_generation(version, generation);
+                let color = DocumentColor {
+                    range: LspRange {
+                        start: LspPosition {
+                            line: 0,
+                            character: 7,
+                        },
+                        end: LspPosition {
+                            line: 0,
+                            character: 14,
+                        },
+                    },
+                    color: DocumentColorValue {
+                        red: 255,
+                        green: 0,
+                        blue: 170,
+                        alpha: 255,
+                    },
+                };
+                assert!(this.language_service_state.apply(LanguageServiceResult {
+                    server: labonair_editor::LanguageServerId::new("test-lsp"),
+                    version,
+                    generation,
+                    response: Ok(LanguageServiceResponse::DocumentColors(vec![color])),
+                }));
+
+                let snapshot = this.doc.snapshot();
+                let display = this
+                    .display_layout(&snapshot, this.display_config())
+                    .clone();
+                assert_eq!(
+                    display.rows[0].text_projection(&snapshot).text,
+                    "color: #ff00aa ;"
+                );
+                this.update_hover(gpui::point(px(80.0), px(0.0)), cx);
+                assert_eq!(
+                    this.hover.as_ref().map(|(_, text)| text.as_ref()),
+                    Some("#FF00AA")
                 );
             });
         });

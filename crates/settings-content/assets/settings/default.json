@@ -113,6 +113,7 @@
     "editorStickyContext": false,
     "editorDiagnostics": true,
     "editorDiagnosticsMaxSeverity": "all",
+    "editorLspDocumentColors": "inlay",
     "editorErrorLens": false,
     "editorErrorLensDelayMs": 150,
     "editorErrorLensSpacing": 4,

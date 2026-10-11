@@ -92,6 +92,24 @@ impl crate::MergeFrom for EditorDiagnosticMaxSeverity {
     }
 }
 
+/// How editor LSP document colors are presented.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum EditorDocumentColorMode {
+    Off,
+    #[default]
+    Inlay,
+    Inline,
+}
+
+impl crate::MergeFrom for EditorDocumentColorMode {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
 /// How the editor minimap is shown. `Auto` is shown only when the document
 /// extends beyond the visible viewport.
 #[derive(
@@ -249,6 +267,7 @@ pub struct EditorContent {
     pub editor_sticky_context: Option<bool>,
     pub editor_diagnostics: Option<bool>,
     pub editor_diagnostics_max_severity: Option<EditorDiagnosticMaxSeverity>,
+    pub editor_lsp_document_colors: Option<EditorDocumentColorMode>,
     pub editor_error_lens: Option<bool>,
     pub editor_error_lens_delay_ms: Option<u32>,
     pub editor_error_lens_spacing: Option<u32>,
@@ -337,6 +356,7 @@ impl EditorContent {
             editor_sticky_context: Some(false),
             editor_diagnostics: Some(true),
             editor_diagnostics_max_severity: Some(EditorDiagnosticMaxSeverity::All),
+            editor_lsp_document_colors: Some(EditorDocumentColorMode::Inlay),
             editor_error_lens: Some(false),
             editor_error_lens_delay_ms: Some(150),
             editor_error_lens_spacing: Some(4),
@@ -482,5 +502,20 @@ mod tests {
         let vim: EditorContent = serde_json::from_value(serde_json::json!({ "vimMode": true }))
             .expect("legacy Vim mode preference");
         assert_eq!(vim.editor_vim_mode, Some(true));
+    }
+
+    #[test]
+    fn document_color_mode_uses_the_editor_wire_key_and_defaults_to_inlay() {
+        let defaults = serde_json::to_value(EditorContent::defaults()).expect("editor defaults");
+        assert_eq!(defaults["editorLspDocumentColors"], "inlay");
+
+        let parsed: EditorContent = serde_json::from_value(serde_json::json!({
+            "editorLspDocumentColors": "inline"
+        }))
+        .expect("document color setting");
+        assert_eq!(
+            parsed.editor_lsp_document_colors,
+            Some(EditorDocumentColorMode::Inline)
+        );
     }
 }

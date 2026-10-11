@@ -44,9 +44,9 @@ pub use buffer::{
 pub use command_provider::{EditorLanguageCommand, GitEditorCommand};
 pub use diff::{side_by_side, ChangeTag, Diff, DiffLine, Hunk, RowKind, SideCell, SideRow};
 pub use display::{
-    DisplayConfig, DisplayDiagnostic, DisplayInlineHint, DisplayMap, DisplayRow, DisplayRowKind,
-    DisplaySemanticToken, DisplaySnapshot, DisplayTextProjection, FoldRange, Viewport,
-    WhitespaceMode, WhitespaceToken,
+    DisplayConfig, DisplayDiagnostic, DisplayDocumentColor, DisplayInlineHint, DisplayMap,
+    DisplayRow, DisplayRowKind, DisplaySemanticToken, DisplaySnapshot, DisplayTextProjection,
+    FoldRange, Viewport, WhitespaceMode, WhitespaceToken,
 };
 pub use document::{Document, Motion};
 pub use editing::{
@@ -68,13 +68,14 @@ pub use kill_ring::{KillRing, KILL_RING_CAPACITY};
 pub use language::Language;
 pub use language_services::{
     default_registry, BackgroundRequest, CancellationToken, CodeAction, CompletionItem,
-    CompletionKind, CompletionList, Diagnostic, DiagnosticSeverity, DocumentVersion, FoldingRange,
-    HoverContent, InlayHint, InlayHintKind, LanguageId, LanguageServerId,
-    LanguageServiceCapabilities, LanguageServiceCapability, LanguageServiceEditCapabilities,
-    LanguageServiceEditCapability, LanguageServiceEditRequest, LanguageServiceEditResponse,
-    LanguageServiceError, LanguageServiceRegistry, LanguageServiceRequest, LanguageServiceResponse,
-    LanguageServiceResult, LanguageServiceSnapshot, LanguageServiceState, LocalLanguageService,
-    LspPosition, LspRange, NavigationTarget, SemanticToken, SignatureHelp, SyntaxLanguageService,
+    CompletionKind, CompletionList, Diagnostic, DiagnosticSeverity, DocumentColor,
+    DocumentColorValue, DocumentVersion, FoldingRange, HoverContent, InlayHint, InlayHintKind,
+    LanguageId, LanguageServerId, LanguageServiceCapabilities, LanguageServiceCapability,
+    LanguageServiceEditCapabilities, LanguageServiceEditCapability, LanguageServiceEditRequest,
+    LanguageServiceEditResponse, LanguageServiceError, LanguageServiceRegistry,
+    LanguageServiceRequest, LanguageServiceResponse, LanguageServiceResult,
+    LanguageServiceSnapshot, LanguageServiceState, LocalLanguageService, LspPosition, LspRange,
+    NavigationTarget, SemanticToken, SignatureHelp, SyntaxLanguageService,
 };
 pub use lsp_process::{
     ContentLengthFramer, FrameError, LanguageServerTimeoutPolicy, LanguageServiceEvent,

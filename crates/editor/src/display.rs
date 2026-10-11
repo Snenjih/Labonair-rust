@@ -7,7 +7,9 @@
 
 use std::sync::Arc;
 
-use crate::language_services::{Diagnostic, InlayHint, InlayHintKind, SemanticToken};
+use crate::language_services::{
+    Diagnostic, DocumentColor, DocumentColorValue, InlayHint, InlayHintKind, SemanticToken,
+};
 use crate::{BufferSnapshot, Position, Revision, TextRange};
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +29,14 @@ pub struct DisplaySemanticToken {
     pub end_column: usize,
     pub token_type: String,
     pub modifiers: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DisplayDocumentColor {
+    pub visual_row: usize,
+    pub start_column: usize,
+    pub end_column: usize,
+    pub color: DocumentColorValue,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -491,6 +501,27 @@ impl DisplaySnapshot {
             .collect()
     }
 
+    pub fn document_color_decorations(
+        &self,
+        snapshot: &BufferSnapshot,
+        colors: &[DocumentColor],
+    ) -> Vec<DisplayDocumentColor> {
+        colors
+            .iter()
+            .filter_map(|color| {
+                let range = color.range.to_text_range(snapshot);
+                let start = self.position_to_display(snapshot.byte_to_position(range.start))?;
+                let end = self.position_to_display(snapshot.byte_to_position(range.end))?;
+                (start.0 == end.0 && end.1 > start.1).then_some(DisplayDocumentColor {
+                    visual_row: start.0,
+                    start_column: start.1,
+                    end_column: end.1,
+                    color: color.color,
+                })
+            })
+            .collect()
+    }
+
     pub fn whitespace_tokens(
         &self,
         snapshot: &BufferSnapshot,
@@ -893,6 +924,42 @@ mod tests {
             display.position_to_display(Position::new(0, 6)),
             Some((1, 7))
         );
+    }
+
+    #[test]
+    fn document_color_ranges_map_to_display_columns_without_mutating_source() {
+        let source = snapshot("color: #ff00aa;");
+        let color = DocumentColor {
+            range: crate::LspRange {
+                start: crate::LspPosition {
+                    line: 0,
+                    character: 7,
+                },
+                end: crate::LspPosition {
+                    line: 0,
+                    character: 14,
+                },
+            },
+            color: DocumentColorValue {
+                red: 255,
+                green: 0,
+                blue: 170,
+                alpha: 255,
+            },
+        };
+        let display =
+            DisplayMap::build(&source, Viewport::default(), DisplayConfig::default(), &[]);
+
+        assert_eq!(
+            display.document_color_decorations(&source, &[color]),
+            vec![DisplayDocumentColor {
+                visual_row: 0,
+                start_column: 7,
+                end_column: 14,
+                color: color.color,
+            }]
+        );
+        assert_eq!(source.text(), "color: #ff00aa;");
     }
 
     #[test]

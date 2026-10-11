@@ -68,6 +68,7 @@ pub const PROJECT_SETTINGS_WHITELIST: &[(&str, &[&str])] = &[
             "editorStickyContext",
             "editorDiagnostics",
             "editorDiagnosticsMaxSeverity",
+            "editorLspDocumentColors",
             "editorErrorLens",
             "editorErrorLensDelayMs",
             "editorErrorLensSpacing",
@@ -224,12 +225,16 @@ mod tests {
     #[test]
     fn filter_and_parse_keeps_every_whitelisted_leaf() {
         let (content, rejected) = filter_and_parse(
-            r#"{"editor":{"editorTabSize":4,"editorWordWrap":true,"editorGitWordDiff":false}}"#,
+            r#"{"editor":{"editorTabSize":4,"editorWordWrap":true,"editorGitWordDiff":false,"editorLspDocumentColors":"inline"}}"#,
         );
         assert!(rejected.is_empty());
         assert_eq!(content.editor.editor_tab_size, Some(4));
         assert_eq!(content.editor.editor_word_wrap, Some(true));
         assert_eq!(content.editor.editor_git_word_diff, Some(false));
+        assert_eq!(
+            content.editor.editor_lsp_document_colors,
+            Some(labonair_settings_content::editor::EditorDocumentColorMode::Inline)
+        );
     }
 
     #[test]
@@ -243,6 +248,7 @@ mod tests {
     fn project_write_whitelist_matches_the_persisted_contract() {
         assert!(is_project_setting_allowed("general.restoreWindowState"));
         assert!(is_project_setting_allowed("editor.editorTabSize"));
+        assert!(is_project_setting_allowed("editor.editorLspDocumentColors"));
         assert!(!is_project_setting_allowed("general.autostart"));
         assert!(!is_project_setting_allowed("mcp.bridgePort"));
         assert!(!is_project_setting_allowed("general"));
