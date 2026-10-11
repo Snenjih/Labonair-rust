@@ -7786,3 +7786,44 @@ Next safe task: Continue R07-000 with `vim::EndOfLine` classification complete; 
 - Updated the EndOfLine packet, registered-action row, all five bound action rows, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 261 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, action palette, platform dispatch, display-row count behavior, Helix and Visual Block routes, empty-line operator effects, and paired native evidence remain active.
 - Next safe task: Continue R07-000 with `vim::EndOfLineDownward`; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim EndOfLineDownward
+
+~~~text
+Request type: Pinned `g _` last-non-whitespace motion, count/operator/selection routes, and local owner gap; documentation-only classification.
+Owner module: Editor owns target-row scanning, cursor/selections, and operator ranges; Keymap owns the shared Vim/Helix profile; Settings owns Vim and Helix mode values.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: `g _` invokes `vim::EndOfLineDownward` in the shared `VimControl && !menu` profile context. It is distinct from `vim::EndOfLine` and the related `vim::StartOfLineDownward` action bound to `_`. No Helix-specific override was found.
+Public typed contract: Unit action `vim::EndOfLineDownward`, no arguments or aliases. It consumes the pending count (default one), selects the corresponding buffer row, and moves to that row's last non-whitespace character. It is an inclusive Vim motion, uses logical buffer rows even when wrapped, and does not set EndOfLine's infinite horizontal selection goal.
+State owner: Editor owns buffer row content, character classification, cursor, selection goal, and active selections. Vim owns mode, pending count/operator, and forced-motion state. Vim Visual/Visual Line/Visual Block and Helix Normal/Select consume the shared motion through their mode-specific selection path; a pending operator consumes the inclusive range.
+Persistence owner: None for motion state; cursor, selection goal, count, operator, and selection are transient. Text/register effects come from a consuming operator.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-EndOfLineDownward` and shared `KEYBIND-VIM-HELIX-12bf0fe2382a` (`g _`) under `VimControl && !menu`. No platform-default map binds this action.
+Events and registry contributions: Existing Vim motion action and one shared profile row only; no new event or registry contribution proposed.
+Settings: Vim/Helix mode values select the owning behavior; no action-specific setting.
+Notifications: None expected.
+UI-kit components: Existing Editor and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect without running `motion.rs::test_end_of_line_downward` for leading indentation, trailing spaces, and a counted next buffer row. Check empty/whitespace-only lines, tabs/Unicode whitespace, folds/wraps, Visual/Helix modes, and consuming operators independently; the pinned fixture does not establish these routes.
+Visual evidence: No layout change proposed. Paired native macOS Editor and Keymap evidence is required for `g _`, whitespace endpoints, counts, selection/operator effects, and mode state; Linux/Windows dispatch needs separate runtime checks.
+Security impact: None beyond text/register effects from the consuming operator in the active buffer.
+Performance impact: The action scans backward over whitespace on the counted target row; long trailing whitespace, large counts, and multi-selection require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema, shared key, counted buffer-row endpoint, character classifier scan, inclusive kind, direct fixture, and local absence can be classified statically; platform, empty/whitespace-only line, and mode-specific acceptance remain open.
+Documentation updates: New EndOfLineDownward packet; registered-action row; `g _` binding annotation; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action schema, shared key route, motion-kind/scan implementation, focused pinned fixture, and local Vim resolver gap inspected. Static classification packet and parity updates are complete; platform, mode, whitespace edge, and native acceptance remain open.
+Target status: Classify counted last-non-whitespace targets and inclusive operator behavior, distinguish EndOfLine `$`, EndOfLineDownward `g _`, and StartOfLineDownward `_`, and record the local missing route without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no typed EndOfLineDownward action, `_` or `g _` Vim resolver route, shared profile, counted last-non-whitespace scanner, or Helix mode integration; local `$` targets the last row character including trailing whitespace.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Palette, platform dispatch, whitespace-only rows, Visual/Block/Helix modes, operator effects, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::EndOfLineDownward` classification complete; then advance to the next earliest registered action without beginning R07-001 or R09.
+~~~
+
+
+## Vim EndOfLineDownward action classification progress
+
+- Classified counted inclusive `g _` as a logical buffer-row scan to the last non-whitespace character, distinct from `$`/`end` and the `_` StartOfLineDownward action. Recorded the shared VimControl route, included trailing-whitespace scan behavior, and the local missing action/scanner.
+- Inspected the focused pinned fixture for leading indentation, optional trailing spaces, and count to the next buffer row without running. Empty and whitespace-only rows, Unicode whitespace, Visual/Helix, and operator flows remain runtime acceptance.
+- Updated the EndOfLineDownward packet, registered-action row, both `g _` and `_` binding annotations, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final documentation-only gates passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 262 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, action palette, platform dispatch, whitespace edge cases, mode/operator behavior, and paired native evidence remain active.
+- Next safe task: Continue R07-000 with `vim::EndOfParagraph`; do not begin R07-001 or R09.

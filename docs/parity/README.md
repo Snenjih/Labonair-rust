@@ -358,6 +358,7 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-vim-down.md`](action-classification-vim-down.md) — counted Vim buffer-row versus display-row motion, Helix Normal's reversed `j`/`g j` routes, and Labonair's preferred-column gap; platform and native acceptance remain open.
 - [`action-classification-vim-end-of-document.md`](action-classification-vim-end-of-document.md) — counted column-preserving Vim `G`, Helix `ge` and `G` precedence, Ex command entries, and Labonair's Visual Line gap; platform and native acceptance remain open.
 - [`action-classification-vim-end-of-line.md`](action-classification-vim-end-of-line.md) — counted inclusive logical-row versus display-row endpoints, retained EOL goal, Helix `g l` adjustment, and Labonair's missing display-row route; platform and native acceptance remain open.
+- [`action-classification-vim-end-of-line-downward.md`](action-classification-vim-end-of-line-downward.md) — counted inclusive `g _` last-non-whitespace motion, distinct from `$`/`end` and `_`, plus Labonair's missing scanner; platform and mode acceptance remain open.
 - [`titlebar-tab-strip.md`](titlebar-tab-strip.md) — independent titlebar tab
   appearance, input/state matrix, ownership, and evidence packet.
 - [`settings-requirements.md`](settings-requirements.md) — 488 stable IDs for

@@ -74,6 +74,7 @@ The [Vim DoubleQuotes packet](action-classification-vim-double-quotes.md) classi
 The [Vim Down packet](action-classification-vim-down.md) classifies counted buffer-row and display-row movement, linewise operator and selection routes, Helix Normal's reversed row payloads, and Labonair's lost preferred column. Platform dispatch and native acceptance remain open.
 The [Vim EndOfDocument packet](action-classification-vim-end-of-document.md) classifies Vim `Shift-G` counts and column retention, Helix `g e` versus `Shift-G` override behavior, Ex command-table routes, and Labonair's partial local `G` implementation. Platform dispatch and native acceptance remain open.
 The [Vim EndOfLine packet](action-classification-vim-end-of-line.md) classifies counted inclusive logical/display-row endpoints, the persistent EOL goal, Helix `g l` last-character behavior, and the local missing display-row route. Platform dispatch and native acceptance remain open.
+The [Vim EndOfLineDownward packet](action-classification-vim-end-of-line-downward.md) classifies counted inclusive `g _` scanning to the final non-whitespace character, the distinction from `$` and `_`, and Labonair's missing scanner. Platform and mode acceptance remain open.
 
 ## Current Labonair capability reconciliation
 
