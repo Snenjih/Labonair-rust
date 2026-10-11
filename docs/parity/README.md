@@ -21,6 +21,7 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-vim-go-to-previous-tab.md`](action-classification-vim-go-to-previous-tab.md) — counted `gT` navigation within the active Pane, wrap and activation effects, and Labonair's different active-Space tab cycle; runtime acceptance remains open.
 - [`action-classification-vim-go-to-tab.md`](action-classification-vim-go-to-tab.md) — uncounted `gt` next-item activation and counted absolute Pane-item selection, distinct from Labonair's top-level Workspace tab selectors; runtime acceptance remains open.
 - [`action-classification-vim-half-page-left.md`](action-classification-vim-half-page-left.md) — `z shift-h` horizontal half-width scrolling by default and counted full-width multiples, with cursor visibility adjustment; runtime acceptance remains open.
+- [`action-classification-vim-half-page-right.md`](action-classification-vim-half-page-right.md) — `z shift-l` horizontal half-width scrolling by default and counted full-width multiples, including the left-edge gutter adjustment; runtime acceptance remains open.
 - [`action-requirements.md`](action-requirements.md) — stable requirement IDs
   for all 595 action identifiers across the default macOS, Linux, and Windows
   keymaps, with 2,731 binding/context records and four null entries. It records

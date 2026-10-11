@@ -8305,7 +8305,7 @@ Target status: Classify how uncounted and counted `gT` select an item in the act
 Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 Remaining migration edges: Labonair has a Workspace `Previous Tab` command bound to `ctrl-shift-tab` that wraps through tabs in the active Space, but no Vim `gT` action/profile route or previous-item navigation in the active Pane's item collection. Existing `PrevTab` has no count argument.
 Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Pane-vs-workspace scope, count boundaries, empty/single-item behavior, activation/history/focus effects, palette, platform key layout, and paired native evidence remain active goal acceptance gates.
-Next safe task: Continue R07-000 with `vim::GoToTab` classification complete, then advance to the next earliest registered action, `vim::HalfPageLeft` (now in progress); do not begin R07-001 or R09.
+Next safe task: Continue R07-000 with `vim::GoToTab` and `vim::HalfPageLeft` classification complete, then advance to `vim::HalfPageRight` (now in progress); do not begin R07-001 or R09.
 ~~~
 
 
@@ -8315,7 +8315,7 @@ Next safe task: Continue R07-000 with `vim::GoToTab` classification complete, th
 - Inspected `test_activate_item_with_wrap_around` for Pane boundary behavior, plus Labonair's `CommandId::PrevTab`, Ctrl-Shift-Tab descriptor, active-Space `TabStore` cycle, and `adjacent_tab_navigation_wraps_inside_the_source_space`. Tests were inspected, not run. No direct pinned Vim `GoToPreviousTab` fixture or local `gT` route was found.
 - Updated the GoToPreviousTab packet, registered-action row, `g shift-t` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final post-edit documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 274 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Pane/workspace scope, count edges, activation/history/focus behavior, palette, platform, and paired native acceptance remain active.
-- Next safe task: Continue R07-000 with `vim::GoToTab` classification complete, then advance to the next earliest registered action, `vim::HalfPageLeft` (now in progress); do not begin R07-001 or R09.
+- Next safe task: Continue R07-000 with `vim::GoToTab` and `vim::HalfPageLeft` classification complete, then advance to `vim::HalfPageRight` (now in progress); do not begin R07-001 or R09.
 
 ## Pre-change contract — Vim GoToTab
 
@@ -8345,7 +8345,7 @@ Target status: Classify uncounted `gt` next-item activation and counted absolute
 Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 Remaining migration edges: Labonair has top-level Workspace indexed tab selection but no typed Vim GoToTab action, shared `g t` route, or count-based selection within the active Pane's item collection.
 Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Empty/single-item behavior, count extremes, direct palette invocation, platform dispatch, and paired native evidence remain active goal acceptance gates.
-Next safe task: Continue R07-000 with `vim::HalfPageLeft` classification complete, then advance to the next earliest registered action, `vim::HalfPageRight`; do not begin R07-001 or R09.
+Next safe task: Continue R07-000 with `vim::HalfPageRight` classification complete, then advance to the next earliest registered action, `vim::HelixAppend`; do not begin R07-001 or R09.
 ~~~
 
 
@@ -8355,7 +8355,7 @@ Next safe task: Continue R07-000 with `vim::HalfPageLeft` classification complet
 - Inspected the Pane `test_activate_item_with_wrap_around` fixture, which covers wrapped Pane next/previous activation but not the Vim handler or count mapping. Tests were inspected, not run. No direct GoToTab action fixture or local `g t` route was found. Labonair's indexed commands select top-level Workspace tabs.
 - Updated the GoToTab packet, registered-action row, `g t` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 275 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Empty/single-item activation, count extremes, palette, platform dispatch, and paired native acceptance remain active.
-- Next safe task: Continue R07-000 with `vim::HalfPageLeft` classification complete, then advance to the next earliest registered action, `vim::HalfPageRight`; do not begin R07-001 or R09.
+- Next safe task: Continue R07-000 with `vim::HalfPageRight` classification complete, then advance to the next earliest registered action, `vim::HelixAppend`; do not begin R07-001 or R09.
 
 ## Pre-change contract — Vim HalfPageLeft
 
@@ -8385,7 +8385,7 @@ Target status: Classify the default and counted horizontal page-width scroll and
 Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 Remaining migration edges: Labonair stores/clamps horizontal viewport state and exposes scrollbar interaction, but has no typed HalfPageLeft/Vim action, `z shift-h` profile binding, or keyboard page-width route.
 Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Direct-action fixture, edge and mode behavior, hover/single-line cases, palette, platform dispatch, and paired native evidence remain active goal acceptance gates.
-Next safe task: Continue R07-000 with `vim::HalfPageRight`; do not begin R07-001 or R09.
+Next safe task: Continue R07-000 with `vim::HalfPageRight` (now in progress); do not begin R07-001 or R09.
 ~~~
 
 
@@ -8395,4 +8395,44 @@ Next safe task: Continue R07-000 with `vim::HalfPageRight`; do not begin R07-001
 - Inspected `test_horizontal_scroll`, which covers HalfPageRight plus one-column left/right routes but not HalfPageLeft or its count. Tests were inspected, not run. Labonair stores/clamps `scroll_left` and exposes scrollbar positioning, but has no typed action or keyboard page-width route.
 - Updated the HalfPageLeft packet, registered-action row, `z shift-h` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 276 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Direct-left, viewport/wrap edges, selection modes, hover/context-menu, platform dispatch, palette, and paired native acceptance remain active.
-- Next safe task: Continue R07-000 with `vim::HalfPageRight`; do not begin R07-001 or R09.
+- Next safe task: Continue R07-000 with `vim::HalfPageRight` (now in progress); do not begin R07-001 or R09.
+
+## Pre-change contract — Vim HalfPageRight
+
+~~~text
+Request type: Pinned Vim horizontal half-page-right scroll, count/viewport/cursor effects, left-edge gutter adjustment, shared keymap context, and local horizontal-scroll gap; documentation-only classification.
+Owner module: Editor owns the visible viewport, scroll position, selections, and cursor clipping; Vim owns pending count and temporary-mode behavior; Keymap owns the shared `z shift-l` route. Labonair's editor viewport and scroll state are Editor-owned.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: Shared `z shift-l` in `VimControl && !menu`. With no count it scrolls right by half the effective visible page width; with count `N` it scrolls right by `N` page widths.
+Public typed contract: Unit action `vim::HalfPageRight`, no JSON arguments or aliases. The Editor/Vim handler consumes count, clears forced-motion state, exits temporary Normal mode, and scrolls with `ScrollAmount::PageWidth(count)`; absent count defaults to `0.5` page width.
+State owner: Editor owns horizontal scroll and visible selection/cursor; Vim owns transient count/mode; Keymap owns route/context.
+Persistence owner: No action-specific persistence. Viewport state belongs to the Editor; persistence/reopen behavior must be verified separately.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-HalfPageRight`; `KEYBIND-VIM-HELIX-848d02f12a49` (`z shift-l`). Neighbor `z shift-h` invokes HalfPageLeft.
+Events and registry contributions: Existing Vim action and shared profile binding; scrolling updates the Editor scroll manager and may adjust selections to keep an on-screen cursor visible. Starting at horizontal offset zero, positive page-width movement first adds the gutter margin in columns. No new event or registry contribution proposed.
+Settings: Existing Vim mode/profile gates the route. Page width uses visible columns, with the pinned bounded-wrap/preferred-line-length override; no action-specific setting.
+Notifications: None.
+UI-kit components: Existing Editor viewport/scrollbar only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action schema/handler, key route, count path, `ScrollAmount::PageWidth` conversion, Editor horizontal scroll-position update/gutter adjustment, `normal/scroll.rs::test_horizontal_scroll`, local horizontal scroll state/scrollbar path, and local profile route absence; do not run tests.
+Visual evidence: Paired native macOS Editor/Keymap evidence should record viewport columns, long-line content, initial scroll offset including left-edge start, cursor/selections, count, wrap mode, focus/mode, platform, window size, theme, and scale.
+Security impact: None; the action changes only Editor viewport and selection visibility.
+Performance impact: O(1) scroll-position update plus selection visibility adjustment; extreme counts, display-map clamping, gutter conversion, and repeated count precision require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema, route/context, default half-width and counted whole-width calculation, visible-column amount conversion, left-edge gutter adjustment, scroll/cursor adjustment path, direct HalfPageRight fixture, and local horizontal scrollbar path can be classified statically. Bounded-wrap, right edge, VisualBlock, hover/context-menu, single-line, count extremes, palette, platform, and native behavior remain open.
+Documentation updates: New HalfPageRight packet; registered-action row; `z shift-l` binding annotation; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action handler, shared binding/context, count helper, PageWidth conversion, rightward gutter correction and scroll-position path, direct `test_horizontal_scroll` fixture, local horizontal scrollbar state, and no local Vim route inspected. Documentation-only changes are planned; no tests run.
+Target status: Classify default and counted horizontal page-width scrolling to the right, including the left-edge gutter adjustment, without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair stores/clamps horizontal viewport state and exposes scrollbar interaction, but has no typed HalfPageRight/Vim action, `z shift-l` profile binding, or keyboard page-width route.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Bounded-wrap, right-edge, VisualBlock, hover/context-menu, single-line, count extremes, direct palette, platform dispatch, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::HelixAppend`; do not begin R07-001 or R09.
+~~~
+
+
+## Vim HalfPageRight action classification progress
+
+- Classified `z shift-l` as horizontal scrolling by half the effective page width without a count or by `N` full widths with count `N`. Recorded the visible-column calculation, bounded-wrap/preferred-line-length override, left-edge gutter correction, selection visibility adjustment, and navigation-history suppression.
+- Inspected `test_horizontal_scroll`, which directly checks uncounted HalfPageRight in a 12-column viewport and neighboring one-column scroll actions. Tests were inspected, not run. Labonair stores/clamps `scroll_left` and exposes scrollbar positioning, but has no typed action or keyboard page-width route.
+- Updated the HalfPageRight packet, registered-action row, `z shift-l` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 277 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Counted movement, bounded-wrap, right-edge/gutter cases, selection modes, hover/context-menu, platform dispatch, palette, and paired native acceptance remain active.
+- Next safe task: Continue R07-000 with `vim::HelixAppend`; do not begin R07-001 or R09.
