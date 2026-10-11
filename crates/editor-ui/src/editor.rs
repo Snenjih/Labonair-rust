@@ -55,15 +55,16 @@ use labonair_editor::{
     EditorSessionSnapshot, EditorViewSession, FoldRange, GitDecorationProvider,
     GitDecorationRequest, GitDiscardPreview, GitEditorCommand, GitGutterError, GitGutterSnapshot,
     GitHunkAction, GitHunkActionKind, GitHunkStatus, Helix, HelixKey, HelixMode, HunkActionSink,
-    KillRing, Language, LanguageId, LanguageServiceEditRequest, LanguageServiceEditResponse,
-    LanguageServiceRequest, LanguageServiceResponse, LanguageServiceResult, LanguageServiceRuntime,
-    LanguageServiceRuntimeSnapshot, LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus,
-    LanguageServiceSnapshot, LanguageServiceState, LocalLanguageServiceRequest, LspPosition,
-    LspRange, Match, Position, ProjectBufferCandidate, ProjectReplacePlan, ProjectReplaceRequest,
-    ProjectReplaceResult, ProjectReplaceTarget, ProjectSearchHit, ProjectSearchQuery,
-    ProjectSearchRequest, ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot,
-    Revision, SavePolicy, SearchError, SearchOptions, SearchQuery, Selection, SelectionSet,
-    SyntaxHighlighter, TextRange, Viewport, Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
+    InlayHint, InlayHintKind, KillRing, Language, LanguageId, LanguageServiceEditRequest,
+    LanguageServiceEditResponse, LanguageServiceRequest, LanguageServiceResponse,
+    LanguageServiceResult, LanguageServiceRuntime, LanguageServiceRuntimeSnapshot,
+    LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus, LanguageServiceSnapshot,
+    LanguageServiceState, LocalLanguageServiceRequest, LspPosition, LspRange, Match, Position,
+    ProjectBufferCandidate, ProjectReplacePlan, ProjectReplaceRequest, ProjectReplaceResult,
+    ProjectReplaceTarget, ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest,
+    ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot, Revision, SavePolicy,
+    SearchError, SearchOptions, SearchQuery, Selection, SelectionSet, SyntaxHighlighter, TextRange,
+    Viewport, Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
 };
 use labonair_editor::{build_breadcrumb_state, BreadcrumbState};
 
@@ -601,6 +602,7 @@ struct DisplayLayoutCache {
     revision: Revision,
     config: DisplayConfig,
     folds: Vec<FoldRange>,
+    inlay_hints: Vec<InlayHint>,
     layout: DisplaySnapshot,
 }
 
@@ -628,6 +630,7 @@ enum LanguageServiceRequestSlot {
     SignatureHelp,
     Navigation,
     TypeDefinition,
+    InlayHints,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -743,6 +746,7 @@ pub struct EditorView {
     /// Live editor settings mirror (font/indent/line-numbers), refreshed from
     /// the layered `SettingsStore` (T13-003).
     prefs: EditorSettings,
+    inlay_hints_enabled_override: Option<bool>,
     /// Settings-schema hover text (T19-006 Anweisung #5) — `Some((mouse
     /// position, description))` while the mouse is over a key/value in a
     /// `config.json`/`.labonair/settings.json` tab and that key
@@ -779,6 +783,9 @@ pub struct EditorView {
     completion_position: Option<LspPosition>,
     hover_request: Option<Task<()>>,
     hover_position: Option<Position>,
+    inlay_hints_request: Option<Task<()>>,
+    inlay_hints_request_serial: Option<u64>,
+    inlay_hints_request_range: Option<LspRange>,
     signature_help_state: SignatureHelpUiState,
     signature_help_request_serial: Option<u64>,
     signature_help_position: Option<LspPosition>,
@@ -950,6 +957,7 @@ impl EditorView {
             vim,
             helix,
             prefs,
+            inlay_hints_enabled_override: None,
             hover: None,
             git_gutter: GitGutterSnapshot::unavailable("", Revision::default()),
             git_provider: None,
@@ -975,6 +983,9 @@ impl EditorView {
             completion_position: None,
             hover_request: None,
             hover_position: None,
+            inlay_hints_request: None,
+            inlay_hints_request_serial: None,
+            inlay_hints_request_range: None,
             signature_help_state: SignatureHelpUiState::Hidden,
             signature_help_request_serial: None,
             signature_help_position: None,
@@ -1109,6 +1120,9 @@ impl EditorView {
             EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb) => {
                 self.breadcrumb_visible_override = Some(!self.breadcrumbs_visible());
                 cx.notify();
+            }
+            EditorCommandRoute::Ui(EditorUiCommand::ToggleInlayHints) => {
+                self.toggle_inlay_hints(cx);
             }
             EditorCommandRoute::Ui(EditorUiCommand::Rewrap) => {
                 let columns = self.content_width_columns();
@@ -1271,7 +1285,7 @@ impl EditorView {
             return;
         }
         self.cursor_blink_on = true;
-        self.ensure_cursor_visible();
+        self.ensure_cursor_visible(cx);
         self.refresh_matches();
         cx.emit(EditorEvent::Changed);
         if !dirty_before && self.doc.is_dirty() {
@@ -1345,7 +1359,7 @@ impl EditorView {
             .start
             .to_position(&self.doc.snapshot());
         self.doc.set_caret(position, false);
-        self.ensure_cursor_visible();
+        self.ensure_cursor_visible(cx);
         cx.emit(EditorEvent::Changed);
         cx.notify();
     }
@@ -1383,6 +1397,9 @@ impl EditorView {
         let version = DocumentVersion::from_revision(snapshot.revision());
         let generation = self.language_service_generation.saturating_add(1);
         self.language_service_generation = generation;
+        self.inlay_hints_request = None;
+        self.inlay_hints_request_serial = None;
+        self.inlay_hints_request_range = None;
         self.language_service_uri = Some(uri.clone());
         self.language_service_open = true;
         self.language_service_state
@@ -1445,6 +1462,7 @@ impl EditorView {
                     this.language_service_snapshot =
                         runtime.snapshot(this.doc.language, version, generation);
                     this.request_language_service(LanguageServiceRequest::Diagnostics, cx);
+                    this.schedule_inlay_hints(this.prefs.inlay_edit_debounce_ms(), cx);
                 }
                 cx.notify();
             });
@@ -1458,6 +1476,10 @@ impl EditorView {
         request: LanguageServiceRequest,
         cx: &mut Context<Self>,
     ) {
+        let request_range = match &request {
+            LanguageServiceRequest::InlayHints { range } => Some(*range),
+            _ => None,
+        };
         let (slot, request_position) = match &request {
             LanguageServiceRequest::Completion { position, .. } => {
                 (LanguageServiceRequestSlot::Completion, Some(*position))
@@ -1471,6 +1493,9 @@ impl EditorView {
             }
             LanguageServiceRequest::TypeDefinition { position } => {
                 (LanguageServiceRequestSlot::TypeDefinition, Some(*position))
+            }
+            LanguageServiceRequest::InlayHints { .. } => {
+                (LanguageServiceRequestSlot::InlayHints, None)
             }
             _ => (LanguageServiceRequestSlot::Other, None),
         };
@@ -1489,6 +1514,10 @@ impl EditorView {
             LanguageServiceRequestSlot::Navigation | LanguageServiceRequestSlot::TypeDefinition => {
                 self.navigation_request_serial = Some(request_serial);
                 self.navigation_position = request_position;
+            }
+            LanguageServiceRequestSlot::InlayHints => {
+                self.inlay_hints_request_serial = Some(request_serial);
+                self.inlay_hints_request_range = request_range;
             }
             LanguageServiceRequestSlot::Other => {}
         }
@@ -1572,6 +1601,10 @@ impl EditorView {
                     && self.navigation_position == request_position
                     && request_position
                         .is_some_and(|position| self.current_lsp_position() == position)
+            }
+            LanguageServiceRequestSlot::InlayHints => {
+                self.inlay_hints_request_serial == Some(request_serial)
+                    && self.inlay_hints_request_range == Some(self.visible_inlay_range())
             }
         }
     }
@@ -1674,7 +1707,7 @@ impl EditorView {
                         .start
                         .to_position(&self.doc.snapshot());
                     self.doc.set_caret(position, false);
-                    self.ensure_cursor_visible();
+                    self.ensure_cursor_visible(cx);
                     cx.emit(EditorEvent::Changed);
                 }
             }
@@ -1863,6 +1896,52 @@ impl EditorView {
                 );
             });
         }));
+    }
+
+    fn schedule_inlay_hints(&mut self, delay_ms: u64, cx: &mut Context<Self>) {
+        if !self.inlay_hints_enabled()
+            || !self.language_service_open
+            || !self.language_service_snapshot.capabilities.inlay_hints
+        {
+            return;
+        }
+        self.inlay_hints_request_serial = None;
+        self.inlay_hints_request_range = None;
+        self.inlay_hints_request = Some(cx.spawn(async move |view, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(delay_ms))
+                .await;
+            let _ = view.update(cx, |this, cx| {
+                this.inlay_hints_request = None;
+                this.request_visible_inlay_hints(cx);
+            });
+        }));
+    }
+
+    fn request_visible_inlay_hints(&mut self, cx: &mut Context<Self>) {
+        if !self.inlay_hints_enabled()
+            || !self.language_service_open
+            || !self.language_service_snapshot.capabilities.inlay_hints
+        {
+            return;
+        }
+        let range = self.visible_inlay_range();
+        self.request_language_service(LanguageServiceRequest::InlayHints { range }, cx);
+    }
+
+    fn visible_inlay_range(&self) -> LspRange {
+        let snapshot = self.doc.snapshot();
+        let start_line = self.scroll_top.min(snapshot.line_count().saturating_sub(1));
+        let end_line = start_line
+            .saturating_add(self.visible_rows().max(1))
+            .min(snapshot.line_count().saturating_sub(1));
+        LspRange {
+            start: LspPosition::from_position(&snapshot, Position::new(start_line, 0)),
+            end: LspPosition::from_position(
+                &snapshot,
+                Position::new(end_line, snapshot.line_len(end_line)),
+            ),
+        }
     }
 
     /// Debounced hover requests keep pointer movement cheap while exposing
@@ -2089,7 +2168,12 @@ impl EditorView {
         if p == self.prefs {
             return;
         }
+        let inlay_hints_were_enabled = self.inlay_hints_enabled();
+        let inlay_hints_setting_changed = p.inlay_hints() != self.prefs.inlay_hints();
         self.prefs = p;
+        if inlay_hints_setting_changed {
+            self.inlay_hints_enabled_override = None;
+        }
         if !self.prefs.toolbar_quick_actions() && self.buffer_search_open {
             self.buffer_search_open = false;
             self.search_close(cx);
@@ -2118,6 +2202,17 @@ impl EditorView {
                 self.helix = None;
             }
         }
+        let inlay_hints_are_enabled = self.inlay_hints_enabled();
+        if inlay_hints_were_enabled != inlay_hints_are_enabled {
+            if inlay_hints_are_enabled {
+                self.schedule_inlay_hints(0, cx);
+            } else {
+                self.inlay_hints_request = None;
+                self.inlay_hints_request_serial = None;
+                self.inlay_hints_request_range = None;
+                self.language_service_state.clear_inlay_hints();
+            }
+        }
         self.language_service_snapshot = self.language_services.snapshot(
             self.doc.language,
             DocumentVersion::from_revision(self.editor_revision()),
@@ -2130,6 +2225,25 @@ impl EditorView {
     fn breadcrumbs_visible(&self) -> bool {
         self.breadcrumb_visible_override
             .unwrap_or_else(|| self.prefs.toolbar_breadcrumbs())
+    }
+
+    fn inlay_hints_enabled(&self) -> bool {
+        self.inlay_hints_enabled_override
+            .unwrap_or_else(|| self.prefs.inlay_hints())
+    }
+
+    fn toggle_inlay_hints(&mut self, cx: &mut Context<Self>) {
+        let enabled = !self.inlay_hints_enabled();
+        self.inlay_hints_enabled_override = Some(enabled);
+        if enabled {
+            self.schedule_inlay_hints(0, cx);
+        } else {
+            self.inlay_hints_request = None;
+            self.inlay_hints_request_serial = None;
+            self.inlay_hints_request_range = None;
+            self.language_service_state.clear_inlay_hints();
+            cx.notify();
+        }
     }
 
     fn file_limit_bytes(&self) -> u64 {
@@ -2203,25 +2317,55 @@ impl EditorView {
         snapshot: &labonair_editor::BufferSnapshot,
         config: DisplayConfig,
     ) -> &DisplaySnapshot {
+        let inlay_hints = if self.inlay_hints_enabled() {
+            self.language_service_state
+                .snapshot()
+                .inlay_hints
+                .into_iter()
+                .filter(|hint| match hint.kind {
+                    InlayHintKind::Type => self.prefs.inlay_type_hints(),
+                    InlayHintKind::Parameter => self.prefs.inlay_parameter_hints(),
+                    InlayHintKind::Other => self.prefs.inlay_other_hints(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         let needs_rebuild = self.display_layout_cache.as_ref().is_none_or(|cache| {
             cache.revision != snapshot.revision()
                 || cache.config != config
                 || cache.folds != self.folds
+                || cache.inlay_hints != inlay_hints
         });
         if needs_rebuild {
-            let layout = DisplayMap::build(
+            let hinted_columns = inlay_hints
+                .iter()
+                .map(|hint| {
+                    hint.label.chars().count()
+                        + usize::from(hint.padding_left)
+                        + usize::from(hint.padding_right)
+                })
+                .sum::<usize>();
+            let layout_height = snapshot
+                .byte_len()
+                .saturating_add(hinted_columns)
+                .saturating_add(snapshot.line_count())
+                .saturating_add(1);
+            let layout = DisplayMap::build_with_inlay_hints(
                 snapshot,
                 Viewport {
-                    height_rows: snapshot.line_count().saturating_add(1),
+                    height_rows: layout_height,
                     ..Default::default()
                 },
                 config,
                 &self.folds,
+                &inlay_hints,
             );
             self.display_layout_cache = Some(DisplayLayoutCache {
                 revision: snapshot.revision(),
                 config,
                 folds: self.folds.clone(),
+                inlay_hints,
                 layout,
             });
         }
@@ -2257,37 +2401,29 @@ impl EditorView {
     /// Vertical caret motion across visual (wrapped) rows. Returns `false` when
     /// soft-wrap is off so the caller falls back to logical [`Motion`].
     fn wrap_vertical(&mut self, down: bool, extend: bool, cx: &mut Context<Self>) -> bool {
-        let cols = self.wrap_cols();
-        if cols == 0 {
+        if self.wrap_cols() == 0 {
             return false;
         }
         let cur = self.doc.cursor;
         let snapshot = self.doc.snapshot();
-        let seg = cur.column / cols;
-        let cin = cur.column % cols;
-        let last_seg = Wrap { cols }
-            .rows(snapshot.line_len(cur.line))
-            .saturating_sub(1);
-        let last_line = snapshot.line_count().saturating_sub(1);
-        let target = if down {
-            if seg < last_seg {
-                Position::new(cur.line, (seg + 1) * cols + cin)
-            } else if cur.line >= last_line {
-                return true;
-            } else {
-                Position::new(cur.line + 1, cin)
-            }
-        } else if seg > 0 {
-            Position::new(cur.line, (seg - 1) * cols + cin)
-        } else if cur.line == 0 {
-            return true;
+        let config = self.display_config();
+        let layout = self.display_layout(&snapshot, config);
+        let Some((visual_row, display_column)) = layout.position_to_display(cur) else {
+            return false;
+        };
+        let target_row = if down {
+            visual_row.saturating_add(1)
         } else {
-            let p = cur.line - 1;
-            let plast = Wrap { cols }.rows(snapshot.line_len(p)).saturating_sub(1);
-            Position::new(p, plast * cols + cin)
+            let Some(previous) = visual_row.checked_sub(1) else {
+                return true;
+            };
+            previous
+        };
+        let Some(target) = layout.display_to_position(target_row, display_column) else {
+            return true;
         };
         self.doc.set_caret(target, extend);
-        self.ensure_cursor_visible();
+        self.ensure_cursor_visible(cx);
         cx.notify();
         true
     }
@@ -2295,20 +2431,22 @@ impl EditorView {
     /// Home / End across the current visual row. Returns `false` when soft-wrap
     /// is off.
     fn wrap_horizontal(&mut self, end: bool, extend: bool, cx: &mut Context<Self>) -> bool {
-        let cols = self.wrap_cols();
-        if cols == 0 {
+        if self.wrap_cols() == 0 {
             return false;
         }
         let cur = self.doc.cursor;
-        let seg = cur.column / cols;
-        let line_len = self.doc.snapshot().line_len(cur.line);
-        let target = if end {
-            Position::new(cur.line, ((seg + 1) * cols).min(line_len))
-        } else {
-            Position::new(cur.line, seg * cols)
+        let snapshot = self.doc.snapshot();
+        let config = self.display_config();
+        let layout = self.display_layout(&snapshot, config);
+        let Some((visual_row, _)) = layout.position_to_display(cur) else {
+            return false;
+        };
+        let target_column = if end { layout.max_line_width } else { 0 };
+        let Some(target) = layout.display_to_position(visual_row, target_column) else {
+            return false;
         };
         self.doc.set_caret(target, extend);
-        self.ensure_cursor_visible();
+        self.ensure_cursor_visible(cx);
         cx.notify();
         true
     }
@@ -2446,7 +2584,7 @@ impl EditorView {
         let max = self.doc.snapshot().line_count().saturating_sub(1);
         let line = line0.min(max);
         self.doc.set_caret(Position::new(line, 0), false);
-        self.ensure_cursor_visible();
+        self.ensure_cursor_visible(cx);
         cx.notify();
     }
 
@@ -2461,7 +2599,7 @@ impl EditorView {
         let line = position.line.min(snapshot.line_count().saturating_sub(1));
         let column = position.column.min(snapshot.line_len(line));
         self.doc.set_caret(Position::new(line, column), false);
-        self.ensure_cursor_visible();
+        self.ensure_cursor_visible(cx);
         cx.notify();
     }
 
@@ -2659,7 +2797,7 @@ impl EditorView {
             return;
         };
         self.doc.set_caret(position, false);
-        self.ensure_cursor_visible();
+        self.ensure_cursor_visible(cx);
         cx.emit(EditorEvent::Changed);
         cx.notify();
     }
@@ -3224,7 +3362,7 @@ impl EditorView {
         let revision_before = self.editor_revision();
         let dirty_before = self.doc.is_dirty();
         f(&mut self.doc);
-        self.ensure_cursor_visible();
+        self.ensure_cursor_visible(cx);
         self.refresh_matches();
         cx.emit(EditorEvent::Changed);
         if !dirty_before && self.doc.is_dirty() {
@@ -3404,7 +3542,8 @@ impl EditorView {
             .unwrap_or_else(|| snapshot.line_count().saturating_sub(1))
     }
 
-    fn ensure_cursor_visible(&mut self) {
+    fn ensure_cursor_visible(&mut self, cx: &mut Context<Self>) {
+        let old_scroll_top = self.scroll_top;
         let rows = self.visible_rows();
         let line = self.doc.cursor.line;
         if line < self.scroll_top {
@@ -3413,6 +3552,9 @@ impl EditorView {
             self.scroll_top = line + 1 - rows;
         }
         self.clamp_scroll();
+        if self.scroll_top != old_scroll_top {
+            self.schedule_inlay_hints(self.prefs.inlay_scroll_debounce_ms(), cx);
+        }
     }
 
     fn scroll_by(&mut self, lines: isize, cx: &mut Context<Self>) {
@@ -3420,6 +3562,7 @@ impl EditorView {
         let next = (self.scroll_top as isize + lines).clamp(0, max);
         if next as usize != self.scroll_top {
             self.scroll_top = next as usize;
+            self.schedule_inlay_hints(self.prefs.inlay_scroll_debounce_ms(), cx);
             cx.notify();
         }
     }
@@ -3435,6 +3578,7 @@ impl EditorView {
         if next != self.scroll_top {
             self.scroll_top = next;
             self.clamp_scroll();
+            self.schedule_inlay_hints(self.prefs.inlay_scroll_debounce_ms(), cx);
             cx.notify();
         }
     }
@@ -3631,7 +3775,7 @@ impl EditorView {
             error: None,
         });
         if let Some(active) = active {
-            self.select_search_match(active);
+            self.select_search_match(active, cx);
         }
         cx.notify();
         Ok(self.search_count())
@@ -3666,7 +3810,7 @@ impl EditorView {
         }) else {
             return Ok(self.search_count());
         };
-        self.select_search_match(idx);
+        self.select_search_match(idx, cx);
         cx.notify();
         Ok(self.search_count())
     }
@@ -3898,7 +4042,7 @@ impl EditorView {
         if replaced {
             self.refresh_matches();
             if let Some(active) = self.search.as_ref().and_then(|search| search.active) {
-                self.select_search_match(active);
+                self.select_search_match(active, cx);
             }
             cx.notify();
         }
@@ -3919,7 +4063,7 @@ impl EditorView {
         if count > 0 {
             self.refresh_matches();
             if let Some(active) = self.search.as_ref().and_then(|search| search.active) {
-                self.select_search_match(active);
+                self.select_search_match(active, cx);
             }
             cx.notify();
         }
@@ -3950,7 +4094,7 @@ impl EditorView {
         }
     }
 
-    fn select_search_match(&mut self, idx: usize) {
+    fn select_search_match(&mut self, idx: usize, cx: &mut Context<Self>) {
         let Some(s) = &mut self.search else { return };
         let Some(m) = s.matches.get(idx).copied() else {
             return;
@@ -3958,7 +4102,7 @@ impl EditorView {
         s.active = Some(idx);
         self.doc.set_caret(m.start, false);
         self.doc.set_caret(m.end, true);
-        self.ensure_cursor_visible();
+        self.ensure_cursor_visible(cx);
     }
 
     // ── Key handling ────────────────────────────────────────────────────────
@@ -4178,7 +4322,7 @@ impl EditorView {
             vim.on_key(&mut self.doc, key)
         };
         if resp.handled {
-            self.ensure_cursor_visible();
+            self.ensure_cursor_visible(cx);
             self.refresh_matches();
             cx.emit(EditorEvent::Changed);
             if !dirty_before && self.doc.is_dirty() {
@@ -4240,7 +4384,7 @@ impl EditorView {
             return false;
         }
 
-        self.ensure_cursor_visible();
+        self.ensure_cursor_visible(cx);
         self.refresh_matches();
         cx.emit(EditorEvent::Changed);
         if !dirty_before && self.doc.is_dirty() {
@@ -4255,34 +4399,25 @@ impl EditorView {
         true
     }
 
-    fn position_at(&self, p: Point<Pixels>) -> Position {
+    fn position_at(&mut self, p: Point<Pixels>) -> Position {
         let origin = self.bounds.map(|b| b.origin).unwrap_or_default();
         let (cw, lh) = self.metrics;
+        if cw <= 0.0 || lh <= 0.0 {
+            return self.doc.cursor;
+        }
         let x = (f32::from(p.x - origin.x) - self.gutter_width).max(0.0);
         let y = f32::from(p.y - origin.y).max(0.0);
-        let col_hint = ((x / cw) + 0.5) as usize + self.scroll_left;
-        let cols = self.wrap_cols();
-        if cols == 0 {
-            return Position::new(self.scroll_top + (y / lh) as usize, col_hint);
-        }
-        // Walk visual rows from the scroll top to resolve the logical line and
-        // which wrapped segment the click landed on (T06-005).
-        let wrap = Wrap { cols };
         let snapshot = self.doc.snapshot();
-        let count = snapshot.line_count();
-        let mut cum = 0.0f32;
-        let mut line = self.scroll_top;
-        while line < count {
-            let segs = wrap.rows(snapshot.line_len(line));
-            let h = segs as f32 * lh;
-            if y < cum + h || line + 1 == count {
-                let seg = (((y - cum) / lh).max(0.0) as usize).min(segs.saturating_sub(1));
-                return Position::new(line, seg * cols + col_hint);
-            }
-            cum += h;
-            line += 1;
-        }
-        Position::new(count.saturating_sub(1), col_hint)
+        let config = self.display_config();
+        let scroll_top = self.scroll_top;
+        let scroll_left = self.scroll_left;
+        let layout = self.display_layout(&snapshot, config);
+        let first_row = layout.logical_line_to_visual_row(scroll_top);
+        let visual_row = first_row.saturating_add((y / lh) as usize);
+        let display_column = ((x / cw) + 0.5) as usize + scroll_left;
+        layout
+            .display_to_position(visual_row, display_column)
+            .unwrap_or_else(|| Position::new(snapshot.line_count().saturating_sub(1), 0))
     }
 
     fn begin_selection_drag(&mut self, point: Point<Pixels>, shift: bool, alt: bool) {
@@ -6482,7 +6617,7 @@ impl EditorView {
             .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                 this.doc.set_caret(Position::new(line, 0), false);
                 this.outline_open = false;
-                this.ensure_cursor_visible();
+                this.ensure_cursor_visible(cx);
                 cx.emit(EditorEvent::Changed);
                 cx.notify();
             }))
@@ -7460,10 +7595,7 @@ impl Render for EditorView {
             let git_marker = git_decorations
                 .iter()
                 .find(|decoration| decoration.visual_row == display_row.visual_row);
-            let continuation = matches!(
-                display_row.kind,
-                DisplayRowKind::Text { start_column, .. } if start_column > 0
-            );
+            let continuation = display_row.continuation;
             let label = if continuation {
                 String::new()
             } else if let Some(number) = display_row.relative_line_number {
@@ -7559,7 +7691,8 @@ impl Render for EditorView {
         let text_rows = display_rows.iter().map(|display_row| {
             let line = display_row.logical_line();
             let row_top = (display_row.visual_row.saturating_sub(first_visual) as f32) * line_h;
-            let content = display_row.text(&snapshot);
+            let projection = display_row.text_projection(&snapshot);
+            let source_content = display_row.text(&snapshot);
             let mut row = div()
                 .absolute()
                 .top(px(row_top))
@@ -7596,6 +7729,26 @@ impl Render for EditorView {
             } = display_row.kind
             {
                 let first_visible_column = start_column.saturating_add(display.viewport.left_column);
+                if self.prefs.inlay_show_background() {
+                    for hint in &display_row.inline_hints {
+                        let hint_width = hint.label.chars().count()
+                            + usize::from(hint.padding_left)
+                            + usize::from(hint.padding_right);
+                        let hint_column = hint
+                            .display_column
+                            .saturating_sub(display.viewport.left_column);
+                        row = row.child(
+                            div()
+                                .absolute()
+                                .left(px(hint_column as f32 * char_w))
+                                .top(px(2.0))
+                                .w(px((hint_width as f32 * char_w).max(2.0)))
+                                .h(px((line_h - 4.0).max(1.0)))
+                                .rounded(px(2.0))
+                                .bg(accent.opacity(0.1)),
+                        );
+                    }
+                }
                 for column in display_row
                     .indent_guides
                     .iter()
@@ -7620,12 +7773,20 @@ impl Render for EditorView {
                     let lo = start.max(start_column);
                     let hi = end.min(end_column);
                     if hi > lo {
+                        let display_start = display_row
+                            .display_column_for_source_position(Position::new(line, lo))
+                            .unwrap_or_else(|| lo.saturating_sub(start_column))
+                            .saturating_sub(display.viewport.left_column);
+                        let display_end = display_row
+                            .display_column_for_source_position(Position::new(line, hi))
+                            .unwrap_or_else(|| hi.saturating_sub(start_column))
+                            .saturating_sub(display.viewport.left_column);
                         row = row.child(
                             div()
                                 .absolute()
-                                .left(px((lo - start_column - display.viewport.left_column) as f32 * char_w))
+                                .left(px(display_start as f32 * char_w))
                                 .top_0()
-                                .w(px(((hi - lo) as f32 * char_w).max(2.0)))
+                                .w(px(((display_end.saturating_sub(display_start)) as f32 * char_w).max(2.0)))
                                 .h(px(line_h))
                                 .bg(accent.opacity(0.3)),
                         );
@@ -7639,12 +7800,20 @@ impl Render for EditorView {
                         let lo = matched.start.column.max(start_column);
                         let hi = matched.end.column.min(end_column);
                         if hi > lo {
+                            let display_start = display_row
+                                .display_column_for_source_position(Position::new(line, lo))
+                                .unwrap_or_else(|| lo.saturating_sub(start_column))
+                                .saturating_sub(display.viewport.left_column);
+                            let display_end = display_row
+                                .display_column_for_source_position(Position::new(line, hi))
+                                .unwrap_or_else(|| hi.saturating_sub(start_column))
+                                .saturating_sub(display.viewport.left_column);
                             row = row.child(
                                 div()
                                     .absolute()
-                                    .left(px((lo - start_column - display.viewport.left_column) as f32 * char_w))
+                                    .left(px(display_start as f32 * char_w))
                                     .top_0()
-                                    .w(px(((hi - lo) as f32 * char_w).max(2.0)))
+                                    .w(px(((display_end.saturating_sub(display_start)) as f32 * char_w).max(2.0)))
                                     .h(px(line_h))
                                     .bg(accent.opacity(if search.active_match_is(*matched) { 0.45 } else { 0.18 })),
                             );
@@ -7656,10 +7825,14 @@ impl Render for EditorView {
                     if marker_column < start_column || marker_column >= end_column {
                         continue;
                     }
+                    let display_column = display_row
+                        .display_column_for_source_position(Position::new(line, marker_column))
+                        .unwrap_or_else(|| marker_column.saturating_sub(start_column))
+                        .saturating_sub(display.viewport.left_column);
                     row = row.child(
                         div()
                             .absolute()
-                            .left(px((marker_column - start_column) as f32 * char_w + 2.0))
+                            .left(px(display_column as f32 * char_w + 2.0))
                             .top(px(line_h * 0.25))
                             .text_size(px((font_px * 0.55).max(5.0)))
                             .text_color(muted.opacity(0.7))
@@ -7679,20 +7852,36 @@ impl Render for EditorView {
             for run in runs.as_deref().unwrap_or_default() {
                 let len = run.text.len();
                 if let Some(kind) = run.kind {
+                    let start_column = source_content[..byte].chars().count();
+                    let end_column = source_content[..byte + len].chars().count();
+                    let range = projection.project_source_range(start_column, end_column);
+                    if let Some(range) = range {
                     highlights.push((
-                        byte..byte + len,
+                        range,
                         HighlightStyle {
                             color: Some(palette.color(kind)),
                             ..Default::default()
                         },
                     ));
+                    }
                 }
                 byte += len;
             }
+            highlights.extend(projection.inlay_hint_ranges.iter().cloned().map(|range| {
+                (
+                    range,
+                    HighlightStyle {
+                        color: Some(muted),
+                        ..Default::default()
+                    },
+                )
+            }));
             let text = if highlights.is_empty() {
-                div().child(SharedString::from(content)).into_any_element()
+                div()
+                    .child(SharedString::from(projection.text.clone()))
+                    .into_any_element()
             } else {
-                StyledText::new(SharedString::from(content))
+                StyledText::new(SharedString::from(projection.text.clone()))
                     .with_highlights(highlights)
                     .into_any_element()
             };
@@ -7704,10 +7893,6 @@ impl Render for EditorView {
                     .into_any_element()
             } else {
                 text
-            };
-            let row_start = match display_row.kind {
-                DisplayRowKind::Text { start_column, .. } => start_column,
-                DisplayRowKind::FoldPlaceholder { .. } => 0,
             };
             for token in semantic_decorations
                 .iter()
@@ -7743,12 +7928,7 @@ impl Render for EditorView {
                 row = row.child(
                     div()
                         .absolute()
-                        .left(px(
-                            (diagnostic.start_column
-                                .saturating_sub(row_start)
-                                .saturating_sub(display.viewport.left_column)) as f32
-                                * char_w,
-                        ))
+                        .left(px(diagnostic.start_column as f32 * char_w))
                         .bottom_0()
                         .w(px(
                             (diagnostic
@@ -8023,7 +8203,8 @@ impl Render for EditorView {
                     cx.notify();
                 } else if this.selection_drag.is_none() {
                     this.update_hover(ev.position, cx);
-                    this.schedule_language_hover(this.position_at(ev.position), cx);
+                    let position = this.position_at(ev.position);
+                    this.schedule_language_hover(position, cx);
                 }
             }))
             .on_mouse_up(
@@ -8067,25 +8248,6 @@ impl Render for EditorView {
                     this.scroll_by(-(dy.round() as isize).clamp(-8, 8), cx);
                 }
             }))
-    }
-}
-
-/// Soft-wrap geometry (T06-005). `cols == 0` disables wrapping; otherwise a
-/// logical line is broken every `cols` characters (character grid, like a
-/// monospace terminal — no word-boundary breaking, matching CodeMirror's
-/// default `lineWrapping` for code).
-#[derive(Clone, Copy)]
-struct Wrap {
-    cols: usize,
-}
-
-impl Wrap {
-    /// Visual-row count for a logical line of `len` characters (at least 1).
-    fn rows(&self, len: usize) -> usize {
-        if self.cols == 0 {
-            return 1;
-        }
-        len.max(1).div_ceil(self.cols)
     }
 }
 
@@ -8583,6 +8745,100 @@ mod tests {
     }
 
     #[gpui::test]
+    fn toggle_inlay_hints_is_editor_owned_and_overrides_the_default_off_setting(
+        cx: &mut TestAppContext,
+    ) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                assert!(!this.inlay_hints_enabled());
+                assert!(this.dispatch_registered_command(CommandId::EditorToggleInlayHints, cx));
+                assert!(this.inlay_hints_enabled());
+                assert!(this.dispatch_registered_command(CommandId::EditorToggleInlayHints, cx));
+                assert!(!this.inlay_hints_enabled());
+                assert!(this
+                    .language_service_state
+                    .snapshot()
+                    .inlay_hints
+                    .is_empty());
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn inlay_hint_results_are_discarded_after_viewport_changes(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, _cx| {
+                this.doc = Document::from_file("test.rs".into(), "a\nb\nc", 1);
+                this.inlay_hints_request_serial = Some(4);
+                this.inlay_hints_request_range = Some(this.visible_inlay_range());
+                let range = this.inlay_hints_request_range;
+                assert!(this.is_current_language_service_request(
+                    LanguageServiceRequestSlot::InlayHints,
+                    4,
+                    None,
+                ));
+
+                this.scroll_top = 1;
+                assert_ne!(this.visible_inlay_range(), range.expect("requested range"));
+                assert!(!this.is_current_language_service_request(
+                    LanguageServiceRequestSlot::InlayHints,
+                    4,
+                    None,
+                ));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn inlay_hints_project_as_virtual_text_and_respect_kind_settings(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, _cx| {
+                this.doc = Document::from_file("test.rs".into(), "let x=1;", 1);
+                this.inlay_hints_enabled_override = Some(true);
+                let version = DocumentVersion::from_revision(this.editor_revision());
+                let generation = this.language_service_generation;
+                this.language_service_state
+                    .set_document_generation(version, generation);
+                assert!(this.language_service_state.apply(LanguageServiceResult {
+                    server: labonair_editor::LanguageServerId::new("test"),
+                    version,
+                    generation,
+                    response: Ok(LanguageServiceResponse::InlayHints(vec![InlayHint {
+                        position: LspPosition {
+                            line: 0,
+                            character: 5,
+                        },
+                        label: ": i32".into(),
+                        kind: InlayHintKind::Type,
+                        tooltip: None,
+                        padding_left: true,
+                        padding_right: false,
+                    }])),
+                }));
+
+                let snapshot = this.doc.snapshot();
+                let config = this.display_config();
+                let layout = this.display_layout(&snapshot, config);
+                assert_eq!(
+                    layout.rows[0].text_projection(&snapshot).text,
+                    "let x : i32=1;"
+                );
+                assert_eq!(this.doc.text(), "let x=1;");
+
+                this.prefs =
+                    editor_prefs(|settings| settings.editor_inlay_type_hints = Some(false));
+                this.display_layout_cache = None;
+                let config = this.display_config();
+                let layout = this.display_layout(&snapshot, config);
+                assert_eq!(layout.rows[0].text_projection(&snapshot).text, "let x=1;");
+            });
+        });
+    }
+
+    #[gpui::test]
     fn helix_mode_routes_selection_actions_and_insert_input(cx: &mut TestAppContext) {
         cx.update(|cx| {
             install_editor_prefs(cx, |settings| {
@@ -8873,17 +9129,6 @@ mod tests {
                 assert_eq!(this.doc.text(), "abc");
             });
         });
-    }
-
-    #[test]
-    fn wrap_rows_math() {
-        let w = Wrap { cols: 10 };
-        assert_eq!(w.rows(0), 1);
-        assert_eq!(w.rows(1), 1);
-        assert_eq!(w.rows(10), 1);
-        assert_eq!(w.rows(11), 2);
-        assert_eq!(w.rows(25), 3);
-        assert_eq!(Wrap { cols: 0 }.rows(999), 1, "wrap off = one row");
     }
 
     #[test]

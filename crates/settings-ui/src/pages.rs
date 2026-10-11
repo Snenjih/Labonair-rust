@@ -437,6 +437,13 @@ const LANGUAGE_GROUPS: &[Group] = &[(
     paths!("editor":
         "editorDiagnostics",
         "editorSemanticTokens",
+        "editorInlayHints",
+        "editorInlayTypeHints",
+        "editorInlayParameterHints",
+        "editorInlayOtherHints",
+        "editorInlayShowBackground",
+        "editorInlayEditDebounceMs",
+        "editorInlayScrollDebounceMs",
         "editorCompletion",
         "editorHover"
     ),

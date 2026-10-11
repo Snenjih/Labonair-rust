@@ -389,6 +389,7 @@ impl LanguageServiceRuntime {
                 rename: false,
                 code_actions: false,
                 semantic_tokens: false,
+                inlay_hints: false,
                 document_symbols: false,
                 folding_ranges: false,
                 formatting: false,

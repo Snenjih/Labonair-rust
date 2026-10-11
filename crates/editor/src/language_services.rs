@@ -190,6 +190,25 @@ pub struct SemanticToken {
     pub modifiers: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InlayHintKind {
+    Type,
+    Parameter,
+    Other,
+}
+
+/// A virtual inline annotation returned by an LSP provider. Its source
+/// position is tied to the request snapshot and it never edits the buffer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InlayHint {
+    pub position: LspPosition,
+    pub label: String,
+    pub kind: InlayHintKind,
+    pub tooltip: Option<String>,
+    pub padding_left: bool,
+    pub padding_right: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FoldingRange {
     pub start_line: usize,
@@ -215,6 +234,7 @@ pub enum LanguageServiceCapability {
     Rename,
     CodeActions,
     SemanticTokens,
+    InlayHints,
     DocumentSymbols,
     FoldingRanges,
     Formatting,
@@ -268,6 +288,7 @@ pub struct LanguageServiceCapabilities {
     pub rename: bool,
     pub code_actions: bool,
     pub semantic_tokens: bool,
+    pub inlay_hints: bool,
     pub document_symbols: bool,
     pub folding_ranges: bool,
     pub formatting: bool,
@@ -285,6 +306,7 @@ impl LanguageServiceCapabilities {
         rename: true,
         code_actions: true,
         semantic_tokens: true,
+        inlay_hints: false,
         document_symbols: true,
         folding_ranges: true,
         formatting: true,
@@ -302,6 +324,7 @@ impl LanguageServiceCapabilities {
             LanguageServiceCapability::Rename => self.rename,
             LanguageServiceCapability::CodeActions => self.code_actions,
             LanguageServiceCapability::SemanticTokens => self.semantic_tokens,
+            LanguageServiceCapability::InlayHints => self.inlay_hints,
             LanguageServiceCapability::DocumentSymbols => self.document_symbols,
             LanguageServiceCapability::FoldingRanges => self.folding_ranges,
             LanguageServiceCapability::Formatting => self.formatting,
@@ -340,6 +363,9 @@ pub enum LanguageServiceRequest {
         range: LspRange,
     },
     SemanticTokens,
+    InlayHints {
+        range: LspRange,
+    },
     DocumentSymbols,
     FoldingRanges,
     Formatting,
@@ -376,6 +402,7 @@ impl LanguageServiceRequest {
             Self::Rename { .. } => LanguageServiceCapability::Rename,
             Self::CodeActions { .. } => LanguageServiceCapability::CodeActions,
             Self::SemanticTokens => LanguageServiceCapability::SemanticTokens,
+            Self::InlayHints { .. } => LanguageServiceCapability::InlayHints,
             Self::DocumentSymbols => LanguageServiceCapability::DocumentSymbols,
             Self::FoldingRanges => LanguageServiceCapability::FoldingRanges,
             Self::Formatting => LanguageServiceCapability::Formatting,
@@ -395,6 +422,7 @@ pub enum LanguageServiceResponse {
     Rename(Vec<Edit>),
     CodeActions(Vec<CodeAction>),
     SemanticTokens(Vec<SemanticToken>),
+    InlayHints(Vec<InlayHint>),
     DocumentSymbols(Vec<DocumentSymbol>),
     FoldingRanges(Vec<FoldingRange>),
     Formatting(Vec<Edit>),
@@ -626,6 +654,7 @@ pub struct LanguageServiceSnapshot {
     pub generation: u64,
     pub diagnostics: Vec<Diagnostic>,
     pub semantic_tokens: Vec<SemanticToken>,
+    pub inlay_hints: Vec<InlayHint>,
     pub completion: Option<CompletionList>,
     pub signature_help: Option<SignatureHelp>,
     pub hover: Option<HoverContent>,
@@ -636,6 +665,7 @@ pub struct LanguageServiceState {
     generation: u64,
     diagnostics: Vec<Diagnostic>,
     semantic_tokens: Vec<SemanticToken>,
+    inlay_hints: Vec<InlayHint>,
     completion: Option<CompletionList>,
     signature_help: Option<SignatureHelp>,
     hover: Option<HoverContent>,
@@ -648,6 +678,7 @@ impl LanguageServiceState {
             generation: 0,
             diagnostics: Vec::new(),
             semantic_tokens: Vec::new(),
+            inlay_hints: Vec::new(),
             completion: None,
             signature_help: None,
             hover: None,
@@ -669,6 +700,7 @@ impl LanguageServiceState {
         self.generation = generation;
         self.diagnostics.clear();
         self.semantic_tokens.clear();
+        self.inlay_hints.clear();
         self.completion = None;
         self.signature_help = None;
         self.hover = None;
@@ -690,6 +722,7 @@ impl LanguageServiceState {
         match response {
             LanguageServiceResponse::Diagnostics(value) => self.diagnostics = value,
             LanguageServiceResponse::SemanticTokens(value) => self.semantic_tokens = value,
+            LanguageServiceResponse::InlayHints(value) => self.inlay_hints = value,
             LanguageServiceResponse::Completion(value) => self.completion = Some(value),
             LanguageServiceResponse::SignatureHelp(value) => self.signature_help = value,
             LanguageServiceResponse::Hover(value) => self.hover = value,
@@ -704,6 +737,7 @@ impl LanguageServiceState {
             generation: self.generation,
             diagnostics: self.diagnostics.clone(),
             semantic_tokens: self.semantic_tokens.clone(),
+            inlay_hints: self.inlay_hints.clone(),
             completion: self.completion.clone(),
             signature_help: self.signature_help.clone(),
             hover: self.hover.clone(),
@@ -718,6 +752,10 @@ impl LanguageServiceState {
 
     pub fn clear_signature_help(&mut self) {
         self.signature_help = None;
+    }
+
+    pub fn clear_inlay_hints(&mut self) {
+        self.inlay_hints.clear();
     }
 }
 
@@ -1293,6 +1331,9 @@ impl LocalLanguageService for SyntaxLanguageService {
             LanguageServiceRequest::SemanticTokens => LanguageServiceResponse::SemanticTokens(
                 self.semantic_tokens(snapshot, cancellation)?,
             ),
+            LanguageServiceRequest::InlayHints { .. } => {
+                LanguageServiceResponse::InlayHints(Vec::new())
+            }
             LanguageServiceRequest::DocumentSymbols => LanguageServiceResponse::DocumentSymbols(
                 document_symbols(self.language.language(), snapshot),
             ),
@@ -1405,6 +1446,36 @@ mod tests {
         assert!(items
             .iter()
             .all(|item| item.range.to_text_range(&snap).start < snap.byte_len()));
+    }
+
+    #[test]
+    fn inlay_hints_are_capability_gated_and_revision_bound() {
+        assert!(!service(Language::Rust)
+            .capabilities()
+            .supports(LanguageServiceCapability::InlayHints));
+
+        let mut state = LanguageServiceState::new(DocumentVersion::new(1));
+        let hint = InlayHint {
+            position: LspPosition {
+                line: 0,
+                character: 2,
+            },
+            label: ": i32".into(),
+            kind: InlayHintKind::Type,
+            tooltip: None,
+            padding_left: true,
+            padding_right: false,
+        };
+        assert!(state.apply(LanguageServiceResult {
+            server: LanguageServerId::new("test"),
+            version: DocumentVersion::new(1),
+            generation: 0,
+            response: Ok(LanguageServiceResponse::InlayHints(vec![hint.clone()])),
+        }));
+        assert_eq!(state.snapshot().inlay_hints, vec![hint]);
+
+        state.set_document_generation(DocumentVersion::new(2), 1);
+        assert!(state.snapshot().inlay_hints.is_empty());
     }
 
     #[test]

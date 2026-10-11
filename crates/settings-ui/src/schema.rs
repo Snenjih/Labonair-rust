@@ -737,6 +737,41 @@ pub fn all_fields() -> Vec<AnyField> {
             "Show semantic token colours when a local provider supports them."
         ),
         field!(
+            editor.editor_inlay_hints,
+            "editorInlayHints",
+            Switch,
+            "Inlay hints",
+            "Show inline parameter and type hints when a language server supports them."
+        ),
+        field!(
+            editor.editor_inlay_type_hints,
+            "editorInlayTypeHints",
+            Switch,
+            "Type hints",
+            "Show type annotations supplied as inlay hints."
+        ),
+        field!(
+            editor.editor_inlay_parameter_hints,
+            "editorInlayParameterHints",
+            Switch,
+            "Parameter hints",
+            "Show parameter labels supplied as inlay hints."
+        ),
+        field!(
+            editor.editor_inlay_other_hints,
+            "editorInlayOtherHints",
+            Switch,
+            "Other hints",
+            "Show inlay hints without a type or parameter classification."
+        ),
+        field!(
+            editor.editor_inlay_show_background,
+            "editorInlayShowBackground",
+            Switch,
+            "Hint background",
+            "Draw a subtle background behind inline hints."
+        ),
+        field!(
             editor.editor_git_gutter,
             "editorGitGutter",
             Switch,
@@ -858,6 +893,24 @@ pub fn all_fields() -> Vec<AnyField> {
             "Debounce local completion requests.",
             "ms",
             "Only affects local completion providers."
+        ),
+        field_with_details!(
+            editor.editor_inlay_edit_debounce_ms,
+            "editorInlayEditDebounceMs",
+            Int { min: 0, max: 10000, step: 50 },
+            "Inlay edit delay",
+            "Wait after an edit before requesting inlay hints.",
+            "ms",
+            "Applies to the active editor buffer."
+        ),
+        field_with_details!(
+            editor.editor_inlay_scroll_debounce_ms,
+            "editorInlayScrollDebounceMs",
+            Int { min: 0, max: 2000, step: 10 },
+            "Inlay scroll delay",
+            "Wait after scrolling before requesting inlay hints for the viewport.",
+            "ms",
+            "Applies to the active editor buffer."
         ),
         field_with_details!(
             editor.editor_max_file_size_mb,
@@ -1171,6 +1224,38 @@ mod tests {
         let mut content = SettingsContent::default();
         assert!((field.set)(&mut content, Value::Bool(false)));
         assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn editor_inlay_hint_controls_are_registered_and_editable() {
+        let mut content = SettingsContent::default();
+        for path in [
+            "editor.editorInlayHints",
+            "editor.editorInlayTypeHints",
+            "editor.editorInlayParameterHints",
+            "editor.editorInlayOtherHints",
+            "editor.editorInlayShowBackground",
+        ] {
+            let field = all_fields()
+                .into_iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing inlay setting {path}"));
+            assert!(matches!(field.control, FieldControl::Switch));
+            assert!((field.set)(&mut content, Value::Bool(false)));
+            assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+        }
+        for path in [
+            "editor.editorInlayEditDebounceMs",
+            "editor.editorInlayScrollDebounceMs",
+        ] {
+            let field = all_fields()
+                .into_iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing inlay setting {path}"));
+            assert!(matches!(field.control, FieldControl::Int { .. }));
+            assert!((field.set)(&mut content, Value::from(450)));
+            assert_eq!((field.get)(&content), Some(Value::from(450)));
+        }
     }
 
     #[test]

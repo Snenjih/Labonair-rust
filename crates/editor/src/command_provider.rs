@@ -45,6 +45,7 @@ pub enum GitEditorCommand {
 pub enum EditorUiCommand {
     GoToLineColumn,
     ToggleBreadcrumb,
+    ToggleInlayHints,
     Rewrap,
     KillRingCut,
     KillRingYank,
@@ -93,6 +94,9 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         CommandId::EditorGoToLineColumn => EditorCommandRoute::Ui(EditorUiCommand::GoToLineColumn),
         CommandId::EditorToggleBreadcrumb => {
             EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb)
+        }
+        CommandId::EditorToggleInlayHints => {
+            EditorCommandRoute::Ui(EditorUiCommand::ToggleInlayHints)
         }
         CommandId::EditorDeleteLine => EditorCommandRoute::Edit(EditIntent::DeleteLine),
         CommandId::EditorJoinLines => EditorCommandRoute::Edit(EditIntent::JoinLines),
@@ -243,6 +247,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorRedoSelection,
     CommandId::EditorGoToLineColumn,
     CommandId::EditorToggleBreadcrumb,
+    CommandId::EditorToggleInlayHints,
     CommandId::EditorDeleteLine,
     CommandId::EditorJoinLines,
     CommandId::EditorRewrap,
@@ -395,6 +400,13 @@ impl CommandProvider for EditorCommandProvider {
                 "Editor",
             )
             .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(
+                CommandId::EditorToggleInlayHints,
+                "Toggle Inlay Hints",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("ctrl-:", Some(CommandContext::Editor)),
             CommandDescriptor::new(CommandId::EditorDeleteLine, "Delete Line", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("cmd-shift-k", Some(CommandContext::Editor)),
@@ -741,6 +753,16 @@ mod tests {
                 EditorLanguageCommand::GoToTypeDefinition
             ))
         );
+        assert_eq!(
+            route_for_command(CommandId::EditorToggleInlayHints),
+            Some(EditorCommandRoute::Ui(EditorUiCommand::ToggleInlayHints))
+        );
+        let inlay_command = EditorCommandProvider
+            .commands()
+            .into_iter()
+            .find(|command| command.id == CommandId::EditorToggleInlayHints)
+            .expect("Toggle Inlay Hints descriptor");
+        assert_eq!(inlay_command.default_bindings[0].keystrokes, "ctrl-:");
         assert!(EditorCommandProvider
             .commands()
             .iter()

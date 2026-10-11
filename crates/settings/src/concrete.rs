@@ -530,6 +530,44 @@ impl EditorSettings {
         self.0.editor_semantic_tokens.unwrap_or(true)
     }
 
+    pub fn inlay_hints(&self) -> bool {
+        self.0.editor_inlay_hints.unwrap_or(false)
+    }
+
+    pub fn inlay_type_hints(&self) -> bool {
+        self.0.editor_inlay_type_hints.unwrap_or(true)
+    }
+
+    pub fn inlay_parameter_hints(&self) -> bool {
+        self.0.editor_inlay_parameter_hints.unwrap_or(true)
+    }
+
+    pub fn inlay_other_hints(&self) -> bool {
+        self.0.editor_inlay_other_hints.unwrap_or(true)
+    }
+
+    pub fn inlay_show_background(&self) -> bool {
+        self.0.editor_inlay_show_background.unwrap_or(false)
+    }
+
+    pub fn inlay_edit_debounce_ms(&self) -> u64 {
+        u64::from(
+            self.0
+                .editor_inlay_edit_debounce_ms
+                .unwrap_or(700)
+                .min(10_000),
+        )
+    }
+
+    pub fn inlay_scroll_debounce_ms(&self) -> u64 {
+        u64::from(
+            self.0
+                .editor_inlay_scroll_debounce_ms
+                .unwrap_or(50)
+                .min(2_000),
+        )
+    }
+
     pub fn git_gutter(&self) -> bool {
         self.0.editor_git_gutter.unwrap_or(true)
     }
@@ -890,6 +928,31 @@ mod tests {
         content.editor.editor_git_word_diff = Some(false);
         let settings = EditorSettings::from_settings(&content);
         assert!(!settings.git_word_diff());
+    }
+
+    #[test]
+    fn inlay_hints_are_off_by_default_and_can_be_enabled() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(!defaults.inlay_hints());
+        assert!(defaults.inlay_type_hints());
+        assert!(defaults.inlay_parameter_hints());
+        assert!(defaults.inlay_other_hints());
+        assert!(!defaults.inlay_show_background());
+        assert_eq!(defaults.inlay_edit_debounce_ms(), 700);
+        assert_eq!(defaults.inlay_scroll_debounce_ms(), 50);
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_inlay_hints = Some(true);
+        content.editor.editor_inlay_type_hints = Some(false);
+        content.editor.editor_inlay_show_background = Some(true);
+        content.editor.editor_inlay_edit_debounce_ms = Some(20_000);
+        content.editor.editor_inlay_scroll_debounce_ms = Some(25);
+        let settings = EditorSettings::from_settings(&content);
+        assert!(settings.inlay_hints());
+        assert!(!settings.inlay_type_hints());
+        assert!(settings.inlay_show_background());
+        assert_eq!(settings.inlay_edit_debounce_ms(), 10_000);
+        assert_eq!(settings.inlay_scroll_debounce_ms(), 25);
     }
 
     #[test]

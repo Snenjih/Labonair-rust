@@ -44,8 +44,9 @@ pub use buffer::{
 pub use command_provider::{EditorLanguageCommand, GitEditorCommand};
 pub use diff::{side_by_side, ChangeTag, Diff, DiffLine, Hunk, RowKind, SideCell, SideRow};
 pub use display::{
-    DisplayConfig, DisplayDiagnostic, DisplayMap, DisplayRow, DisplayRowKind, DisplaySemanticToken,
-    DisplaySnapshot, FoldRange, Viewport, WhitespaceMode, WhitespaceToken,
+    DisplayConfig, DisplayDiagnostic, DisplayInlineHint, DisplayMap, DisplayRow, DisplayRowKind,
+    DisplaySemanticToken, DisplaySnapshot, DisplayTextProjection, FoldRange, Viewport,
+    WhitespaceMode, WhitespaceToken,
 };
 pub use document::{Document, Motion};
 pub use editing::{
@@ -68,10 +69,10 @@ pub use language::Language;
 pub use language_services::{
     default_registry, BackgroundRequest, CancellationToken, CodeAction, CompletionItem,
     CompletionKind, CompletionList, Diagnostic, DiagnosticSeverity, DocumentVersion, FoldingRange,
-    HoverContent, LanguageId, LanguageServerId, LanguageServiceCapabilities,
-    LanguageServiceCapability, LanguageServiceEditCapabilities, LanguageServiceEditCapability,
-    LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceError,
-    LanguageServiceRegistry, LanguageServiceRequest, LanguageServiceResponse,
+    HoverContent, InlayHint, InlayHintKind, LanguageId, LanguageServerId,
+    LanguageServiceCapabilities, LanguageServiceCapability, LanguageServiceEditCapabilities,
+    LanguageServiceEditCapability, LanguageServiceEditRequest, LanguageServiceEditResponse,
+    LanguageServiceError, LanguageServiceRegistry, LanguageServiceRequest, LanguageServiceResponse,
     LanguageServiceResult, LanguageServiceSnapshot, LanguageServiceState, LocalLanguageService,
     LspPosition, LspRange, NavigationTarget, SemanticToken, SignatureHelp, SyntaxLanguageService,
 };

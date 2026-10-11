@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use crate::language_services::{Diagnostic, SemanticToken};
+use crate::language_services::{Diagnostic, InlayHint, InlayHintKind, SemanticToken};
 use crate::{BufferSnapshot, Position, Revision, TextRange};
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +27,57 @@ pub struct DisplaySemanticToken {
     pub end_column: usize,
     pub token_type: String,
     pub modifiers: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DisplayInlineHint {
+    pub source_column: usize,
+    pub display_column: usize,
+    pub label: String,
+    pub kind: InlayHintKind,
+    pub padding_left: bool,
+    pub padding_right: bool,
+    pub tooltip: Option<String>,
+}
+
+impl DisplayInlineHint {
+    fn width(&self) -> usize {
+        self.label.chars().count()
+            + usize::from(self.padding_left)
+            + usize::from(self.padding_right)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DisplayTextProjection {
+    pub text: String,
+    pub inlay_hint_ranges: Vec<std::ops::Range<usize>>,
+    source_column_offsets: Vec<(usize, usize)>,
+    source_start_column: usize,
+}
+
+impl DisplayTextProjection {
+    /// Map a source-column interval to its byte range in the projected text.
+    /// The start follows hints at that column, while the end precedes hints at
+    /// that column, so syntax spans never acquire virtual hint text.
+    pub fn project_source_range(
+        &self,
+        start_column: usize,
+        end_column: usize,
+    ) -> Option<std::ops::Range<usize>> {
+        if end_column < start_column {
+            return None;
+        }
+        let start = self
+            .source_column_offsets
+            .get(start_column.checked_sub(self.source_start_column)?)?
+            .1;
+        let end = self
+            .source_column_offsets
+            .get(end_column.checked_sub(self.source_start_column)?)?
+            .0;
+        Some(start..end)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -116,9 +167,11 @@ pub enum DisplayRowKind {
 pub struct DisplayRow {
     pub visual_row: usize,
     pub kind: DisplayRowKind,
+    pub continuation: bool,
     pub line_number: Option<usize>,
     pub relative_line_number: Option<usize>,
     pub indent_guides: Vec<usize>,
+    pub inline_hints: Vec<DisplayInlineHint>,
 }
 
 impl DisplayRow {
@@ -173,8 +226,108 @@ impl DisplayRow {
                 logical_line,
                 start_column,
                 end_column,
-            } => Position::new(logical_line, (start_column + column).min(end_column)),
+            } => {
+                let mut display_column = 0usize;
+                let mut source_column = start_column;
+                while source_column <= end_column {
+                    for hint in self
+                        .inline_hints
+                        .iter()
+                        .filter(|hint| hint.source_column == source_column)
+                    {
+                        let hint_end = display_column.saturating_add(hint.width());
+                        if column < hint_end {
+                            return Position::new(logical_line, source_column);
+                        }
+                        display_column = hint_end;
+                    }
+                    if source_column == end_column {
+                        break;
+                    }
+                    if column < display_column.saturating_add(1) {
+                        return Position::new(logical_line, source_column);
+                    }
+                    display_column = display_column.saturating_add(1);
+                    source_column += 1;
+                }
+                Position::new(logical_line, end_column)
+            }
             DisplayRowKind::FoldPlaceholder { start_line, .. } => Position::new(start_line, 0),
+        }
+    }
+
+    pub fn display_column_for_source_position(&self, position: Position) -> Option<usize> {
+        let DisplayRowKind::Text {
+            logical_line,
+            start_column,
+            end_column,
+        } = self.kind
+        else {
+            return None;
+        };
+        if position.line != logical_line
+            || position.column < start_column
+            || position.column > end_column
+        {
+            return None;
+        }
+        let inlay_width = self
+            .inline_hints
+            .iter()
+            .filter(|hint| hint.source_column < position.column)
+            .map(DisplayInlineHint::width)
+            .sum::<usize>();
+        Some(position.column - start_column + inlay_width)
+    }
+
+    pub fn text_projection(&self, snapshot: &BufferSnapshot) -> DisplayTextProjection {
+        let DisplayRowKind::Text {
+            logical_line,
+            start_column,
+            end_column,
+        } = self.kind
+        else {
+            return DisplayTextProjection {
+                text: self.text(snapshot),
+                inlay_hint_ranges: Vec::new(),
+                source_column_offsets: Vec::new(),
+                source_start_column: 0,
+            };
+        };
+        let source = snapshot.line(logical_line);
+        let chars = source.chars().collect::<Vec<_>>();
+        let mut text = String::new();
+        let mut inlay_hint_ranges = Vec::new();
+        let mut source_column_offsets = Vec::with_capacity(end_column - start_column + 1);
+        for source_column in start_column..=end_column {
+            let before_hints = text.len();
+            for hint in self
+                .inline_hints
+                .iter()
+                .filter(|hint| hint.source_column == source_column)
+            {
+                if hint.padding_left {
+                    text.push(' ');
+                }
+                let hint_start = text.len();
+                text.push_str(&hint.label);
+                if hint.padding_right {
+                    text.push(' ');
+                }
+                inlay_hint_ranges.push(hint_start..text.len());
+            }
+            source_column_offsets.push((before_hints, text.len()));
+            if source_column < end_column {
+                if let Some(character) = chars.get(source_column) {
+                    text.push(*character);
+                }
+            }
+        }
+        DisplayTextProjection {
+            text,
+            inlay_hint_ranges,
+            source_column_offsets,
+            source_start_column: start_column,
         }
     }
 }
@@ -257,28 +410,31 @@ impl DisplaySnapshot {
     pub fn position_to_display(&self, position: Position) -> Option<(usize, usize)> {
         let first_row = *self.line_starts.get(position.line)?;
         let display = self.row_for_visual(first_row)?;
-        let (row, column) = match display.kind {
-            DisplayRowKind::Text { .. } => {
-                let width = self.config.wrap_columns.filter(|width| *width > 0);
-                let segment = width.map_or(0, |width| position.column / width);
-                let row = first_row + segment;
-                let display = self.row_for_visual(row)?;
-                let (start, end) = match display.kind {
-                    DisplayRowKind::Text {
-                        start_column,
-                        end_column,
-                        ..
-                    } => (start_column, end_column),
-                    DisplayRowKind::FoldPlaceholder { .. } => (0, 0),
-                };
-                (
-                    row,
-                    position.column.clamp(start, end) - start - self.viewport.left_column,
-                )
-            }
-            DisplayRowKind::FoldPlaceholder { .. } => (first_row, 0),
-        };
-        Some((row, column))
+        if matches!(display.kind, DisplayRowKind::FoldPlaceholder { .. }) {
+            return Some((first_row, 0));
+        }
+        let rows = self
+            .rows
+            .iter()
+            .filter(|row| row.logical_line() == position.line)
+            .collect::<Vec<_>>();
+        let row = rows
+            .iter()
+            .find(|row| {
+                matches!(row.kind, DisplayRowKind::Text { start_column, end_column, .. }
+                    if position.column >= start_column && position.column < end_column)
+            })
+            .or_else(|| {
+                rows.iter().rev().find(|row| {
+                    matches!(row.kind, DisplayRowKind::Text { end_column, .. }
+                        if position.column == end_column)
+                })
+            })?;
+        Some((
+            row.visual_row,
+            row.display_column_for_source_position(position)?
+                .saturating_sub(self.viewport.left_column),
+        ))
     }
 
     pub fn display_to_position(&self, visual_row: usize, column: usize) -> Option<Position> {
@@ -385,6 +541,27 @@ impl DisplaySnapshot {
 
 pub struct DisplayMap;
 
+enum DisplayToken {
+    Source(usize),
+    Hint(DisplayInlineHint),
+}
+
+impl DisplayToken {
+    fn width(&self) -> usize {
+        match self {
+            Self::Source(_) => 1,
+            Self::Hint(hint) => hint.width(),
+        }
+    }
+
+    fn source_column(&self) -> usize {
+        match self {
+            Self::Source(column) => *column,
+            Self::Hint(hint) => hint.source_column,
+        }
+    }
+}
+
 impl DisplayMap {
     pub fn build(
         snapshot: &BufferSnapshot,
@@ -392,10 +569,30 @@ impl DisplayMap {
         config: DisplayConfig,
         folds: &[FoldRange],
     ) -> DisplaySnapshot {
+        Self::build_with_inlay_hints(snapshot, viewport, config, folds, &[])
+    }
+
+    pub fn build_with_inlay_hints(
+        snapshot: &BufferSnapshot,
+        viewport: Viewport,
+        config: DisplayConfig,
+        folds: &[FoldRange],
+        inlay_hints: &[InlayHint],
+    ) -> DisplaySnapshot {
         let wrap = config.wrap_columns.filter(|columns| *columns > 0);
         let mut all_rows = Vec::new();
         let mut line_starts = vec![0; snapshot.line_count()];
         let mut max_line_width = 0;
+        let mut hints_by_line = vec![Vec::new(); snapshot.line_count()];
+        for hint in inlay_hints {
+            let position = hint.position.to_position(snapshot);
+            if position.line < hints_by_line.len() && !hint.label.is_empty() {
+                hints_by_line[position.line].push((position.column, hint.clone()));
+            }
+        }
+        for hints in &mut hints_by_line {
+            hints.sort_by_key(|(column, hint)| (*column, hint.kind as u8, hint.label.clone()));
+        }
         let mut line = 0;
         while line < snapshot.line_count() {
             line_starts[line] = all_rows.len();
@@ -410,9 +607,11 @@ impl DisplayMap {
                         start_line: line,
                         end_line: fold.end_line,
                     },
+                    continuation: false,
                     line_number: line_number(config, line, line),
                     relative_line_number: None,
                     indent_guides: Vec::new(),
+                    inline_hints: Vec::new(),
                 });
                 for start in line_starts
                     .iter_mut()
@@ -425,26 +624,105 @@ impl DisplayMap {
                 continue;
             }
             let length = snapshot.line_len(line);
-            max_line_width = max_line_width.max(length);
-            let rows = wrap.map_or(1, |columns| length.max(1).div_ceil(columns));
-            for segment in 0..rows {
-                let start = wrap.map_or(0, |columns| segment * columns);
-                let end = wrap.map_or(length, |columns| (start + columns).min(length));
-                all_rows.push(DisplayRow {
-                    visual_row: all_rows.len(),
-                    kind: DisplayRowKind::Text {
-                        logical_line: line,
-                        start_column: start,
-                        end_column: end,
-                    },
-                    line_number: line_number(config, line, line),
-                    relative_line_number: None,
-                    indent_guides: if config.indentation_guides && segment == 0 {
-                        indentation_guides(snapshot, line)
-                    } else {
-                        Vec::new()
-                    },
-                });
+            if hints_by_line[line].is_empty() {
+                max_line_width = max_line_width.max(length);
+                let row_count = wrap.map_or(1, |columns| length.max(1).div_ceil(columns));
+                for segment in 0..row_count {
+                    let start = wrap.map_or(0, |columns| segment * columns);
+                    let end = wrap.map_or(length, |columns| (start + columns).min(length));
+                    push_text_row(
+                        &mut all_rows,
+                        snapshot,
+                        config,
+                        TextRowSpec::new(line, start, end, Vec::new(), segment),
+                    );
+                }
+                line += 1;
+                continue;
+            }
+            let mut tokens = Vec::new();
+            let mut line_hints = hints_by_line[line].iter().peekable();
+            for column in 0..=length {
+                while line_hints
+                    .peek()
+                    .is_some_and(|(hint_column, _)| *hint_column == column)
+                {
+                    if let Some((_, hint)) = line_hints.next() {
+                        tokens.push(DisplayToken::Hint(DisplayInlineHint {
+                            source_column: column,
+                            display_column: 0,
+                            label: hint.label.clone(),
+                            kind: hint.kind,
+                            padding_left: hint.padding_left,
+                            padding_right: hint.padding_right,
+                            tooltip: hint.tooltip.clone(),
+                        }));
+                    }
+                }
+                if column < length {
+                    tokens.push(DisplayToken::Source(column));
+                }
+            }
+            let rendered_width = tokens.iter().map(DisplayToken::width).sum::<usize>();
+            max_line_width = max_line_width.max(rendered_width);
+            let mut segment = 0usize;
+            let mut row_start = 0usize;
+            let mut row_end = 0usize;
+            let mut row_width = 0usize;
+            let mut row_has_tokens = false;
+            let mut row_hints = Vec::new();
+            for token in tokens {
+                let token_width = token.width();
+                if wrap.is_some_and(|columns| {
+                    row_has_tokens
+                        && row_width > 0
+                        && row_width.saturating_add(token_width) > columns
+                }) {
+                    push_text_row(
+                        &mut all_rows,
+                        snapshot,
+                        config,
+                        TextRowSpec::new(
+                            line,
+                            row_start,
+                            row_end,
+                            std::mem::take(&mut row_hints),
+                            segment,
+                        ),
+                    );
+                    segment += 1;
+                    row_has_tokens = false;
+                    row_width = 0;
+                }
+                let source_column = token.source_column();
+                if !row_has_tokens {
+                    row_start = source_column;
+                    row_end = source_column;
+                    row_has_tokens = true;
+                }
+                match token {
+                    DisplayToken::Source(column) => row_end = column + 1,
+                    DisplayToken::Hint(mut hint) => {
+                        hint.display_column = row_width;
+                        row_hints.push(hint);
+                    }
+                }
+                row_width = row_width.saturating_add(token_width);
+            }
+            if row_has_tokens {
+                push_text_row(
+                    &mut all_rows,
+                    snapshot,
+                    config,
+                    TextRowSpec::new(line, row_start, row_end, row_hints, segment),
+                );
+            } else {
+                push_text_row(
+                    &mut all_rows,
+                    snapshot,
+                    config,
+                    TextRowSpec::new(line, 0, 0, Vec::new(), 0),
+                );
             }
             line += 1;
         }
@@ -474,6 +752,57 @@ impl DisplayMap {
             config,
         }
     }
+}
+
+struct TextRowSpec {
+    line: usize,
+    start_column: usize,
+    end_column: usize,
+    inline_hints: Vec<DisplayInlineHint>,
+    segment: usize,
+}
+
+impl TextRowSpec {
+    fn new(
+        line: usize,
+        start_column: usize,
+        end_column: usize,
+        inline_hints: Vec<DisplayInlineHint>,
+        segment: usize,
+    ) -> Self {
+        Self {
+            line,
+            start_column,
+            end_column,
+            inline_hints,
+            segment,
+        }
+    }
+}
+
+fn push_text_row(
+    rows: &mut Vec<DisplayRow>,
+    snapshot: &BufferSnapshot,
+    config: DisplayConfig,
+    spec: TextRowSpec,
+) {
+    rows.push(DisplayRow {
+        visual_row: rows.len(),
+        kind: DisplayRowKind::Text {
+            logical_line: spec.line,
+            start_column: spec.start_column,
+            end_column: spec.end_column,
+        },
+        continuation: spec.segment > 0,
+        line_number: line_number(config, spec.line, spec.line),
+        relative_line_number: None,
+        indent_guides: if config.indentation_guides && spec.segment == 0 {
+            indentation_guides(snapshot, spec.line)
+        } else {
+            Vec::new()
+        },
+        inline_hints: spec.inline_hints,
+    });
 }
 
 fn line_number(config: DisplayConfig, line: usize, current_line: usize) -> Option<usize> {
@@ -523,6 +852,47 @@ mod tests {
             Some((1, 1))
         );
         assert_eq!(display.rows[0].text(&source), "äbc");
+    }
+
+    #[test]
+    fn inlay_hints_wrap_and_map_as_virtual_text() {
+        let source = snapshot("let x=1;");
+        let hint = InlayHint {
+            position: crate::LspPosition {
+                line: 0,
+                character: 5,
+            },
+            label: ": i32".into(),
+            kind: InlayHintKind::Type,
+            tooltip: Some("inferred type".into()),
+            padding_left: true,
+            padding_right: false,
+        };
+        let display = DisplayMap::build_with_inlay_hints(
+            &source,
+            Viewport {
+                height_rows: 8,
+                ..Default::default()
+            },
+            DisplayConfig {
+                wrap_columns: Some(8),
+                ..Default::default()
+            },
+            &[],
+            &[hint],
+        );
+        assert_eq!(source.text(), "let x=1;");
+        assert_eq!(display.total_rows, 3);
+        assert_eq!(display.rows[1].text_projection(&source).text, " : i32=1");
+        assert_eq!(
+            display.position_to_display(Position::new(0, 5)),
+            Some((1, 0))
+        );
+        assert_eq!(display.display_to_position(1, 2), Some(Position::new(0, 5)));
+        assert_eq!(
+            display.position_to_display(Position::new(0, 6)),
+            Some((1, 7))
+        );
     }
 
     #[test]

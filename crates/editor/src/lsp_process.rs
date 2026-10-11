@@ -22,11 +22,11 @@ use tokio::time;
 use crate::buffer::{BufferSnapshot, Edit};
 use crate::language_services::{
     CancellationToken, CodeAction, CompletionItem, CompletionKind, CompletionList, Diagnostic,
-    DiagnosticSeverity, DocumentVersion, FoldingRange, HoverContent, LanguageId, LanguageServerId,
-    LanguageServiceCapabilities, LanguageServiceEditCapabilities, LanguageServiceEditRequest,
-    LanguageServiceEditResponse, LanguageServiceError, LanguageServiceRequest,
-    LanguageServiceResponse, LanguageServiceResult, LspPosition, LspRange, NavigationTarget,
-    SemanticToken, SignatureHelp,
+    DiagnosticSeverity, DocumentVersion, FoldingRange, HoverContent, InlayHint, InlayHintKind,
+    LanguageId, LanguageServerId, LanguageServiceCapabilities, LanguageServiceEditCapabilities,
+    LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceError,
+    LanguageServiceRequest, LanguageServiceResponse, LanguageServiceResult, LspPosition, LspRange,
+    NavigationTarget, SemanticToken, SignatureHelp,
 };
 use crate::symbols::{DocumentSymbol, SymbolKind};
 
@@ -401,6 +401,7 @@ impl LocalLanguageServiceProcess {
                         rename: false,
                         code_actions: false,
                         semantic_tokens: false,
+                        inlay_hints: false,
                         document_symbols: false,
                         folding_ranges: false,
                         formatting: false,
@@ -764,6 +765,7 @@ impl LocalLanguageServiceProcess {
                 rename: false,
                 code_actions: false,
                 semantic_tokens: false,
+                inlay_hints: false,
                 document_symbols: false,
                 folding_ranges: false,
                 formatting: false,
@@ -1063,6 +1065,9 @@ impl LocalLanguageServiceProcess {
                     snapshot, &value, &types,
                 ))
             }
+            LanguageServiceRequest::InlayHints { .. } => {
+                LanguageServiceResponse::InlayHints(parse_inlay_hints(snapshot, &value))
+            }
             LanguageServiceRequest::DocumentSymbols => {
                 LanguageServiceResponse::DocumentSymbols(parse_document_symbols(snapshot, &value))
             }
@@ -1341,6 +1346,7 @@ fn parse_server_capabilities(value: &Value) -> (LanguageServiceCapabilities, Vec
             rename: advertised(capabilities.get("renameProvider")),
             code_actions: advertised(capabilities.get("codeActionProvider")),
             semantic_tokens: semantic.is_some_and(|value| !value.is_null()),
+            inlay_hints: advertised(capabilities.get("inlayHintProvider")),
             document_symbols: advertised(capabilities.get("documentSymbolProvider")),
             folding_ranges: advertised(capabilities.get("foldingRangeProvider")),
             formatting: advertised(capabilities.get("documentFormattingProvider")),
@@ -1414,6 +1420,10 @@ fn request_parts(uri: &str, request: &LanguageServiceRequest) -> (&'static str, 
         LanguageServiceRequest::SemanticTokens => (
             "textDocument/semanticTokens/full",
             json!({ "textDocument": text_document }),
+        ),
+        LanguageServiceRequest::InlayHints { range } => (
+            "textDocument/inlayHint",
+            json!({ "textDocument": text_document, "range": range_value(*range) }),
         ),
         LanguageServiceRequest::DocumentSymbols => (
             "textDocument/documentSymbol",
@@ -1800,6 +1810,65 @@ fn parse_semantic_tokens(
         .collect()
 }
 
+fn parse_inlay_hints(snapshot: &BufferSnapshot, value: &Value) -> Vec<InlayHint> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let position = parse_position(item.get("position")?)?;
+            if position.line >= snapshot.line_count()
+                || position.character > snapshot.line(position.line).encode_utf16().count()
+            {
+                return None;
+            }
+            let label_value = item.get("label")?;
+            let label = label_value.as_str().map(str::to_string).or_else(|| {
+                label_value.as_array().map(|parts| {
+                    parts
+                        .iter()
+                        .filter_map(|part| part.get("value").and_then(Value::as_str))
+                        .collect::<String>()
+                })
+            })?;
+            let position_range = LspRange {
+                start: position,
+                end: position,
+            }
+            .to_text_range(snapshot);
+            if position_range.start > snapshot.byte_len() {
+                return None;
+            }
+            let tooltip = item.get("tooltip").and_then(|tooltip| {
+                tooltip.as_str().map(str::to_string).or_else(|| {
+                    tooltip
+                        .get("value")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+            });
+            Some(InlayHint {
+                position,
+                label,
+                kind: match item.get("kind").and_then(Value::as_u64) {
+                    Some(1) => InlayHintKind::Type,
+                    Some(2) => InlayHintKind::Parameter,
+                    _ => InlayHintKind::Other,
+                },
+                tooltip,
+                padding_left: item
+                    .get("paddingLeft")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                padding_right: item
+                    .get("paddingRight")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            })
+        })
+        .collect()
+}
+
 fn semantic_modifiers(mask: u64) -> Vec<String> {
     if mask == 0 {
         Vec::new()
@@ -1933,12 +2002,47 @@ mod tests {
     }
 
     #[test]
+    fn inlay_hints_use_the_lsp_range_and_parse_labels_without_editing_text() {
+        let range = LspRange {
+            start: LspPosition {
+                line: 0,
+                character: 0,
+            },
+            end: LspPosition {
+                line: 0,
+                character: 10,
+            },
+        };
+        let (method, params) = request_parts(
+            "file:///fixture.rs",
+            &LanguageServiceRequest::InlayHints { range },
+        );
+        assert_eq!(method, "textDocument/inlayHint");
+        assert_eq!(params["range"], range_value(range));
+
+        let snap = snapshot("let value = 1;");
+        let hints = parse_inlay_hints(
+            &snap,
+            &json!([
+                { "position": { "line": 0, "character": 9 }, "label": [{ "value": "value" }, { "value": ": i32" }], "kind": 1, "paddingLeft": true },
+                { "position": { "line": 2, "character": 0 }, "label": "stale" }
+            ]),
+        );
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].label, "value: i32");
+        assert_eq!(hints[0].kind, InlayHintKind::Type);
+        assert!(hints[0].padding_left);
+        assert_eq!(snap.text(), "let value = 1;");
+    }
+
+    #[test]
     fn advertised_capabilities_are_explicit() {
         let (capabilities, types) = parse_server_capabilities(
-            &json!({ "capabilities": { "hoverProvider": true, "typeDefinitionProvider": true, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
+            &json!({ "capabilities": { "hoverProvider": true, "typeDefinitionProvider": true, "inlayHintProvider": { "resolveProvider": true }, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
         );
         assert!(capabilities.hover);
         assert!(capabilities.type_definition);
+        assert!(capabilities.inlay_hints);
         assert!(!capabilities.completion);
         assert_eq!(types, vec!["type"]);
     }
