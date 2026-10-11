@@ -325,9 +325,9 @@ pub fn register_palette_action_handlers(
                         .update(cx, |workspace, cx| workspace.reveal_tab(*id, window, cx));
                     true
                 }
-                SubmenuAction::GoToLine(line) => {
+                SubmenuAction::GoToEditorLine { tab_id, line } => {
                     workspace_handle.update(cx, |workspace, cx| {
-                        workspace.active_editor_goto_line(*line, cx)
+                        workspace.goto_editor_line(*tab_id, *line, window, cx)
                     });
                     true
                 }

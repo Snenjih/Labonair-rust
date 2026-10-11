@@ -1,6 +1,7 @@
 //! Editor-owned command metadata.
 
 use crate::editing::{DeleteTarget, EditIntent, SplitIntent};
+use crate::symbols::DocumentSymbol;
 use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider, CommandSubmenu,
     SubmenuAction, SubmenuDescriptor, SubmenuItem, SubmenuSnapshot,
@@ -67,6 +68,16 @@ pub enum EditorCommandRoute {
     Language(EditorLanguageCommand),
     Git(GitEditorCommand),
     Ui(EditorUiCommand),
+}
+
+/// A symbol picker row collected from an open editor buffer in the active
+/// workspace. Workspace supplies the tab identity and display label; symbol
+/// extraction and row presentation remain owned by Editor.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EditorSymbolPickerRow {
+    pub tab_id: u64,
+    pub file_label: String,
+    pub symbol: DocumentSymbol,
 }
 
 /// Resolve an editor-owned command ID without making Workspace understand
@@ -313,17 +324,26 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorOpenProjectDiff,
 ];
 
-pub fn outline_submenu(rows: impl IntoIterator<Item = (usize, String, String)>) -> SubmenuSnapshot {
+pub fn outline_submenu(rows: impl IntoIterator<Item = EditorSymbolPickerRow>) -> SubmenuSnapshot {
     SubmenuSnapshot {
         descriptor: SubmenuDescriptor::new("outline", "Symbols", CommandSubmenu::Outline),
         items: rows
             .into_iter()
-            .map(|(line, title, subtitle)| SubmenuItem {
-                id: line.to_string(),
-                title,
-                subtitle: Some(subtitle),
+            .enumerate()
+            .map(|(index, row)| SubmenuItem {
+                id: format!("{}:{index}", row.tab_id),
+                title: row.symbol.name,
+                subtitle: Some(format!(
+                    "{}  ·  {}  ·  line {}",
+                    row.file_label,
+                    row.symbol.kind.label(),
+                    row.symbol.line + 1
+                )),
                 active: false,
-                action: SubmenuAction::GoToLine(line),
+                action: SubmenuAction::GoToEditorLine {
+                    tab_id: row.tab_id,
+                    line: row.symbol.line,
+                },
                 secondary: None,
             })
             .collect(),
@@ -700,6 +720,35 @@ impl CommandProvider for EditorCommandProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn outline_submenu_targets_the_source_editor_and_line() {
+        let snapshot = outline_submenu([EditorSymbolPickerRow {
+            tab_id: 17,
+            file_label: "src/main.rs".to_string(),
+            symbol: DocumentSymbol {
+                name: "main".to_string(),
+                kind: crate::SymbolKind::Function,
+                line: 8,
+                range: crate::TextRange::new(0, 12),
+                name_range: crate::TextRange::new(3, 7),
+            },
+        }]);
+
+        assert_eq!(snapshot.items.len(), 1);
+        assert_eq!(snapshot.items[0].title, "main");
+        assert_eq!(
+            snapshot.items[0].subtitle.as_deref(),
+            Some("src/main.rs  ·  function  ·  line 9")
+        );
+        assert_eq!(
+            snapshot.items[0].action,
+            SubmenuAction::GoToEditorLine {
+                tab_id: 17,
+                line: 8,
+            }
+        );
+    }
 
     #[test]
     fn executable_editor_ids_have_one_owner_descriptor() {

@@ -235,17 +235,7 @@ impl AppShell {
         register_snapshot(&mut submenus, git_branches);
 
         let symbols = labonair_editor::command_provider::outline_submenu(
-            self.workspace
-                .read(cx)
-                .active_editor_symbols(cx)
-                .into_iter()
-                .map(|s| {
-                    (
-                        s.line,
-                        s.name,
-                        format!("{}  ·  line {}", s.kind.label(), s.line + 1),
-                    )
-                }),
+            self.workspace.read(cx).editor_symbol_picker_rows(cx),
         );
         register_snapshot(&mut submenus, symbols);
 

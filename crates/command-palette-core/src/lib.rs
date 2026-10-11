@@ -245,14 +245,21 @@ impl SubmenuDescriptor {
 pub enum SubmenuAction {
     RunCommand(CommandId),
     SwitchToTab(u64),
-    ConnectHost { host_id: String, sftp: bool },
+    ConnectHost {
+        host_id: String,
+        sftp: bool,
+    },
     SetColorMode(String),
     SetEditorTheme(String),
     SetAppTheme(String),
     SetIconTheme(String),
     RunSnippet(String),
     SwitchBranch(String),
-    GoToLine(usize),
+    /// Activate an editor tab and jump to a symbol line in that document.
+    GoToEditorLine {
+        tab_id: u64,
+        line: usize,
+    },
     ShowStatusBarItem(String),
 }
 

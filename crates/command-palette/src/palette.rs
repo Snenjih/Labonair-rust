@@ -457,8 +457,11 @@ enum RowKey {
     RunSnippet(String),
     /// Check out a git branch by name.
     SwitchBranch(String),
-    /// Jump the active editor's caret to a 0-based line (Go to Symbol).
-    GoToLine(usize),
+    /// Activate an editor tab and jump to a 0-based symbol line.
+    GoToEditorLine {
+        tab_id: u64,
+        line: usize,
+    },
     /// Un-hide a status-bar item by id.
     ShowStatusBarItem(String),
     /// Non-actionable (empty-state placeholder line).
@@ -507,7 +510,10 @@ fn row_key_for_action(action: &SubmenuAction) -> RowKey {
         SubmenuAction::SetIconTheme(id) => RowKey::SetIconTheme(id.clone()),
         SubmenuAction::RunSnippet(id) => RowKey::RunSnippet(id.clone()),
         SubmenuAction::SwitchBranch(name) => RowKey::SwitchBranch(name.clone()),
-        SubmenuAction::GoToLine(line) => RowKey::GoToLine(*line),
+        SubmenuAction::GoToEditorLine { tab_id, line } => RowKey::GoToEditorLine {
+            tab_id: *tab_id,
+            line: *line,
+        },
         SubmenuAction::ShowStatusBarItem(id) => RowKey::ShowStatusBarItem(id.clone()),
     }
 }
@@ -997,10 +1003,10 @@ where
                     SubmenuAction::SwitchBranch(name),
                 )));
             }
-            RowKey::GoToLine(line) => {
+            RowKey::GoToEditorLine { tab_id, line } => {
                 self.close(cx);
                 cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
-                    SubmenuAction::GoToLine(line),
+                    SubmenuAction::GoToEditorLine { tab_id, line },
                 )));
             }
             RowKey::ShowStatusBarItem(id) => {

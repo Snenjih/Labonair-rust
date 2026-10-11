@@ -1721,30 +1721,67 @@ impl Workspace {
         Some(self.editors.get(&active.id)?.read(cx).cursor_line_col())
     }
 
-    /// Document symbols of the active editor tab (palette "Go to Symbol").
-    pub fn active_editor_symbols(&self, cx: &App) -> Vec<labonair_editor::DocumentSymbol> {
-        let Some(active) = self.tabs.read(cx).active().cloned() else {
-            return Vec::new();
-        };
-        if active.kind != TabKind::Editor {
-            return Vec::new();
+    /// Symbols from every editor tab in the active space, for the Editor-owned
+    /// Go to Symbol palette. This is a live open-buffer projection; it does
+    /// not scan closed files or build a second project index.
+    pub fn editor_symbol_picker_rows(
+        &self,
+        cx: &App,
+    ) -> Vec<labonair_editor::command_provider::EditorSymbolPickerRow> {
+        let active_space = self.spaces.read(cx).active_id();
+        let editors = self
+            .tabs
+            .read(cx)
+            .tabs_in_space(active_space)
+            .into_iter()
+            .filter(|tab| tab.kind == TabKind::Editor)
+            .map(|tab| (tab.id, tab.label()))
+            .collect::<Vec<_>>();
+
+        let mut rows = Vec::new();
+        for (tab_id, file_label) in editors {
+            let Some(editor) = self.editors.get(&tab_id) else {
+                continue;
+            };
+            rows.extend(
+                editor
+                    .read(cx)
+                    .document_symbols()
+                    .into_iter()
+                    .map(
+                        |symbol| labonair_editor::command_provider::EditorSymbolPickerRow {
+                            tab_id,
+                            file_label: file_label.clone(),
+                            symbol,
+                        },
+                    ),
+            );
         }
-        self.editors
-            .get(&active.id)
-            .map(|e| e.read(cx).document_symbols())
-            .unwrap_or_default()
+        rows
     }
 
-    /// Jump the active editor's caret to `line0` (0-based).
-    pub fn active_editor_goto_line(&self, line0: usize, cx: &mut Context<Self>) {
-        let Some(active) = self.tabs.read(cx).active().cloned() else {
-            return;
-        };
-        if active.kind != TabKind::Editor {
+    /// Activate an editor tab from the current space and move its caret to a
+    /// symbol definition selected from the Go to Symbol palette.
+    pub fn goto_editor_line(
+        &mut self,
+        tab_id: u64,
+        line0: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let active_space = self.spaces.read(cx).active_id();
+        let valid_target = self
+            .tabs
+            .read(cx)
+            .get(tab_id)
+            .is_some_and(|tab| tab.kind == TabKind::Editor && tab.space_id == active_space);
+        if !valid_target {
             return;
         }
-        if let Some(e) = self.editors.get(&active.id) {
-            e.update(cx, |e, cx| e.goto_line(line0, cx));
+
+        self.reveal_tab(tab_id, window, cx);
+        if let Some(editor) = self.editors.get(&tab_id) {
+            editor.update(cx, |editor, cx| editor.goto_line(line0, cx));
         }
     }
 
