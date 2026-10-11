@@ -19,8 +19,13 @@ pub enum EditIntent {
     DeleteForward,
     Move { motion: Motion, extend: bool },
     AddCursor(Position),
+    AddCursorAbove,
+    AddCursorBelow,
     SelectNextOccurrence,
+    SelectPreviousOccurrence,
     SelectAllOccurrences,
+    UndoSelection,
+    RedoSelection,
     ExpandSelection,
     ShrinkSelection,
     DuplicateLines,
@@ -194,8 +199,13 @@ impl Document {
             EditIntent::DeleteForward => self.multi_delete(true),
             EditIntent::Move { motion, extend } => self.multi_move(motion, extend),
             EditIntent::AddCursor(position) => self.add_cursor(position),
+            EditIntent::AddCursorAbove => self.add_cursors_vertical(false),
+            EditIntent::AddCursorBelow => self.add_cursors_vertical(true),
             EditIntent::SelectNextOccurrence => self.select_next_occurrence(),
+            EditIntent::SelectPreviousOccurrence => self.select_previous_occurrence(),
             EditIntent::SelectAllOccurrences => self.select_all_occurrences(),
+            EditIntent::UndoSelection => self.selection_history_step(false),
+            EditIntent::RedoSelection => self.selection_history_step(true),
             EditIntent::ExpandSelection => self.expand_selection(),
             EditIntent::ShrinkSelection => self.shrink_selection(),
             EditIntent::DuplicateLines => self.duplicate_lines(),
@@ -279,6 +289,43 @@ impl Document {
         }
         selections.push(Selection::collapsed(Anchor::new(at, AnchorAffinity::After)));
         let next = SelectionSet::from_selections(selections, self.selection_set().primary_index());
+        self.set_selection_set(next);
+        EditorCommandResult::changed(EditorViewEvent::SelectionChanged)
+    }
+
+    fn add_cursors_vertical(&mut self, below: bool) -> EditorCommandResult {
+        let snapshot = self.snapshot();
+        let current = self.selection_set();
+        let line_count = snapshot.line_count();
+        let mut selections = current.selections().to_vec();
+        for selection in current.selections() {
+            let anchor = selection.anchor.resolve(&snapshot);
+            let head = selection.head.resolve(&snapshot);
+            let (Some(anchor_line), Some(head_line)) = (
+                vertical_target_line(anchor.line, below, line_count),
+                vertical_target_line(head.line, below, line_count),
+            ) else {
+                continue;
+            };
+            let anchor_column = anchor
+                .column
+                .min(snapshot.line(anchor_line).chars().count());
+            let head_column = head.column.min(snapshot.line(head_line).chars().count());
+            selections.push(Selection {
+                anchor: Anchor::new(
+                    snapshot.position_to_byte(Position::new(anchor_line, anchor_column)),
+                    selection.anchor.affinity(),
+                ),
+                head: Anchor::new(
+                    snapshot.position_to_byte(Position::new(head_line, head_column)),
+                    selection.head.affinity(),
+                ),
+            });
+        }
+        let next = SelectionSet::from_selections(selections, current.primary_index());
+        if next == current {
+            return EditorCommandResult::unchanged();
+        }
         self.set_selection_set(next);
         EditorCommandResult::changed(EditorViewEvent::SelectionChanged)
     }
@@ -368,6 +415,71 @@ impl Document {
             selections,
             current.primary_index().saturating_add(1),
         ));
+        EditorCommandResult::changed(EditorViewEvent::SelectionChanged)
+    }
+
+    fn select_previous_occurrence(&mut self) -> EditorCommandResult {
+        let snapshot = self.snapshot();
+        let current = self.selection_set();
+        let primary = current.primary().range().resolve(&snapshot);
+        let query_text = if primary.is_empty() {
+            word_at(&snapshot, primary.start).unwrap_or_default()
+        } else {
+            snapshot.text_range(primary)
+        };
+        if query_text.is_empty() {
+            return EditorCommandResult::unchanged();
+        }
+        let matches = find_all(
+            &snapshot,
+            &SearchQuery {
+                text: query_text,
+                ..Default::default()
+            },
+        );
+        let Some(previous) = matches
+            .iter()
+            .copied()
+            .rev()
+            .find(|matched| matched.text_range(&snapshot).end <= primary.start)
+            .or_else(|| matches.last().copied())
+        else {
+            return EditorCommandResult::unchanged();
+        };
+        if current
+            .selections()
+            .iter()
+            .any(|selection| selection.range().resolve(&snapshot) == previous.text_range(&snapshot))
+        {
+            return EditorCommandResult::unchanged();
+        }
+        let mut selections = current.selections().to_vec();
+        selections.push(Selection {
+            anchor: Anchor::new(
+                snapshot.position_to_byte(previous.start),
+                AnchorAffinity::Before,
+            ),
+            head: Anchor::new(
+                snapshot.position_to_byte(previous.end),
+                AnchorAffinity::After,
+            ),
+        });
+        self.set_selection_set(SelectionSet::from_selections(
+            selections,
+            current.primary_index().saturating_add(1),
+        ));
+        EditorCommandResult::changed(EditorViewEvent::SelectionChanged)
+    }
+
+    fn selection_history_step(&mut self, redo: bool) -> EditorCommandResult {
+        let changed = if redo {
+            self.redo_selection()
+        } else {
+            self.undo_selection()
+        };
+        if !changed {
+            return EditorCommandResult::unchanged();
+        }
         EditorCommandResult::changed(EditorViewEvent::SelectionChanged)
     }
 
@@ -743,6 +855,15 @@ fn mapped_selections(before: &SelectionSet, edits: &[Edit]) -> SelectionSet {
     SelectionSet::from_selections(selections, before.primary_index())
 }
 
+fn vertical_target_line(line: usize, below: bool, line_count: usize) -> Option<usize> {
+    let target = if below {
+        line.checked_add(1)?
+    } else {
+        line.checked_sub(1)?
+    };
+    (target < line_count).then_some(target)
+}
+
 fn map_offset(mut offset: usize, edits: &[Edit], affinity: AnchorAffinity) -> usize {
     let mut delta = 0isize;
     for edit in edits {
@@ -1045,6 +1166,54 @@ mod tests {
         assert_eq!(document.text(), "a a");
         document.undo();
         assert_eq!(document.text(), "ax ax");
+    }
+
+    #[test]
+    fn add_cursor_above_and_below_preserves_columns_and_clamps_short_lines() {
+        let mut document = doc("abc\nxy\n1234");
+        document.set_caret(Position::new(1, 2), false);
+        document.execute_edit(EditIntent::AddCursorAbove);
+        assert_eq!(document.selection_set().len(), 2);
+        assert!(document
+            .selection_set()
+            .ranges(&document.snapshot())
+            .iter()
+            .any(|range| range.start == 2));
+
+        document.execute_edit(EditIntent::AddCursorBelow);
+        let snapshot = document.snapshot();
+        let positions = document
+            .selection_set()
+            .selections()
+            .iter()
+            .map(|selection| selection.head.resolve(&snapshot))
+            .collect::<Vec<_>>();
+        assert!(positions.contains(&Position::new(2, 2)));
+        assert_eq!(positions.len(), 3);
+    }
+
+    #[test]
+    fn previous_occurrence_wraps_and_selection_undo_redo_are_independent() {
+        let mut document = doc("foo foo foo");
+        document.set_caret(Position::new(0, 0), false);
+        document.execute_edit(EditIntent::SelectPreviousOccurrence);
+        let snapshot = document.snapshot();
+        assert!(document
+            .selection_set()
+            .ranges(&snapshot)
+            .contains(&TextRange::new(8, 11)));
+
+        document.execute_edit(EditIntent::UndoSelection);
+        assert_eq!(document.selection_set().len(), 1);
+        assert_eq!(document.text(), "foo foo foo");
+        document.execute_edit(EditIntent::RedoSelection);
+        assert_eq!(document.selection_set().len(), 2);
+
+        document.execute_edit(EditIntent::Insert("x".into()));
+        assert_eq!(document.text(), "xfoo foo x");
+        let selection_after_edit = document.selection_set();
+        assert!(!document.execute_edit(EditIntent::UndoSelection).changed);
+        assert_eq!(document.selection_set(), selection_after_edit);
     }
 
     #[test]

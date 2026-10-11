@@ -52,6 +52,8 @@ pub struct Document {
     /// Canonical selection state. The public cursor/anchor fields below are
     /// kept as a one-selection compatibility view for the existing adapters.
     selections: SelectionSet,
+    selection_undo: Vec<SelectionSet>,
+    selection_redo: Vec<SelectionSet>,
     /// Preferred column for vertical motion (sticky like every real editor).
     goal_column: Option<usize>,
 }
@@ -73,6 +75,8 @@ impl Document {
             lifecycle: FileLifecycle::new(),
             history: History::default(),
             selections: SelectionSet::default(),
+            selection_undo: Vec::new(),
+            selection_redo: Vec::new(),
             goal_column: None,
         }
     }
@@ -90,6 +94,8 @@ impl Document {
             lifecycle,
             history: History::default(),
             selections: SelectionSet::default(),
+            selection_undo: Vec::new(),
+            selection_redo: Vec::new(),
             goal_column: None,
         }
     }
@@ -125,6 +131,8 @@ impl Document {
             lifecycle,
             history: History::default(),
             selections: SelectionSet::default(),
+            selection_undo: Vec::new(),
+            selection_redo: Vec::new(),
             goal_column: None,
         }
     }
@@ -154,6 +162,8 @@ impl Document {
             lifecycle,
             history: History::default(),
             selections: SelectionSet::default(),
+            selection_undo: Vec::new(),
+            selection_redo: Vec::new(),
             goal_column: None,
         }
     }
@@ -241,6 +251,7 @@ impl Document {
         self.selections =
             SelectionSet::single(Selection::collapsed(Anchor::new(0, AnchorAffinity::After)));
         self.history.clear();
+        self.clear_selection_history();
         self.goal_column = None;
         Ok(event)
     }
@@ -292,16 +303,61 @@ impl Document {
 
     /// Replace the canonical selection set without changing document text.
     pub fn set_selection_set(&mut self, selections: SelectionSet) {
+        let previous = self.selection_set();
+        self.record_selection_change(previous, &selections);
         self.selections = selections;
         self.restore_selection(&self.selections.clone());
         self.history.break_coalescing();
     }
 
     pub fn select_all(&mut self) {
+        let previous = self.selection_set();
         self.anchor = Some(Position::default());
         self.cursor = self.buffer.end();
         self.selections = self.compatibility_selection_set();
+        let next = self.selection_set();
+        self.record_selection_change(previous, &next);
         self.history.break_coalescing();
+    }
+
+    /// Step backward through selection-only state changes without changing
+    /// the document text or its ordinary undo/redo history.
+    pub fn undo_selection(&mut self) -> bool {
+        let Some(previous) = self.selection_undo.pop() else {
+            return false;
+        };
+        self.selection_redo.push(self.selection_set());
+        self.restore_selection(&previous);
+        self.history.break_coalescing();
+        true
+    }
+
+    /// Reapply a selection state previously undone with [`Self::undo_selection`].
+    pub fn redo_selection(&mut self) -> bool {
+        let Some(next) = self.selection_redo.pop() else {
+            return false;
+        };
+        self.selection_undo.push(self.selection_set());
+        self.restore_selection(&next);
+        self.history.break_coalescing();
+        true
+    }
+
+    fn record_selection_change(&mut self, previous: SelectionSet, next: &SelectionSet) {
+        if previous == *next {
+            return;
+        }
+        const MAX_SELECTION_HISTORY: usize = 100;
+        if self.selection_undo.len() == MAX_SELECTION_HISTORY {
+            self.selection_undo.remove(0);
+        }
+        self.selection_undo.push(previous);
+        self.selection_redo.clear();
+    }
+
+    fn clear_selection_history(&mut self) {
+        self.selection_undo.clear();
+        self.selection_redo.clear();
     }
 
     fn begin_or_extend(&mut self, extend: bool) {
@@ -378,6 +434,7 @@ impl Document {
             Err(_) => return false,
         };
         self.history.record(transaction, applied.inverse);
+        self.clear_selection_history();
         self.restore_selection(&selection_after);
         let _ = self.lifecycle.sync_buffer(&self.buffer.text());
         self.goal_column = None;
@@ -461,6 +518,7 @@ impl Document {
         let Some(transactions) = self.history.undo() else {
             return;
         };
+        self.clear_selection_history();
         let mut final_selection = None;
         for transaction in transactions {
             let rebased = transaction.with_base_revision(self.buffer.revision(), EditSource::Undo);
@@ -480,6 +538,7 @@ impl Document {
         let Some(transactions) = self.history.redo() else {
             return;
         };
+        self.clear_selection_history();
         let mut final_selection = None;
         for transaction in transactions {
             let rebased = transaction.with_base_revision(self.buffer.revision(), EditSource::Redo);
@@ -606,6 +665,7 @@ impl Document {
     }
 
     pub fn move_caret(&mut self, motion: Motion, extend: bool) {
+        let previous_selection = self.selection_set();
         self.history.break_coalescing();
         self.begin_or_extend(extend);
         let vertical = matches!(
@@ -657,10 +717,13 @@ impl Document {
             self.anchor = None;
         }
         self.selections = self.compatibility_selection_set();
+        let next_selection = self.selection_set();
+        self.record_selection_change(previous_selection, &next_selection);
     }
 
     /// Place the caret at `pos` (mouse click). `extend` keeps the anchor.
     pub fn set_caret(&mut self, pos: Position, extend: bool) {
+        let previous_selection = self.selection_set();
         self.history.break_coalescing();
         self.begin_or_extend(extend);
         self.cursor = self.buffer.clamp(pos);
@@ -669,6 +732,8 @@ impl Document {
             self.anchor = None;
         }
         self.selections = self.compatibility_selection_set();
+        let next_selection = self.selection_set();
+        self.record_selection_change(previous_selection, &next_selection);
     }
 }
 

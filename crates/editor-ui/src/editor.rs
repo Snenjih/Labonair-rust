@@ -625,7 +625,7 @@ impl EditorView {
     /// route selection and the associated edit, split, language, or Git
     /// behavior stay inside the Editor owner.
     pub fn dispatch_registered_command(&mut self, id: CommandId, cx: &mut Context<Self>) -> bool {
-        let Some(route) = route_for_command(id, self.cursor_position()) else {
+        let Some(route) = route_for_command(id) else {
             return false;
         };
         match route {

@@ -1,6 +1,5 @@
 //! Editor-owned command metadata.
 
-use crate::buffer::Position;
 use crate::editing::{EditIntent, SplitIntent};
 use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider, CommandSubmenu,
@@ -40,7 +39,6 @@ pub enum GitEditorCommand {
 }
 
 /// Typed route selected by the Editor owner for an executable command ID.
-/// Workspace only forwards the resulting intent to the active EditorView.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditorCommandRoute {
     Edit(EditIntent),
@@ -50,16 +48,22 @@ pub enum EditorCommandRoute {
 }
 
 /// Resolve an editor-owned command ID without making Workspace understand
-/// editor behavior. The current caret is supplied only for Add Cursor.
-pub fn route_for_command(id: CommandId, cursor: Position) -> Option<EditorCommandRoute> {
+/// editor behavior.
+pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
     let route = match id {
-        CommandId::EditorAddCursor => EditorCommandRoute::Edit(EditIntent::AddCursor(cursor)),
+        CommandId::EditorAddCursor => EditorCommandRoute::Edit(EditIntent::AddCursorBelow),
+        CommandId::EditorAddCursorAbove => EditorCommandRoute::Edit(EditIntent::AddCursorAbove),
         CommandId::EditorSelectNextOccurrence => {
             EditorCommandRoute::Edit(EditIntent::SelectNextOccurrence)
+        }
+        CommandId::EditorSelectPreviousOccurrence => {
+            EditorCommandRoute::Edit(EditIntent::SelectPreviousOccurrence)
         }
         CommandId::EditorSelectAllOccurrences => {
             EditorCommandRoute::Edit(EditIntent::SelectAllOccurrences)
         }
+        CommandId::EditorUndoSelection => EditorCommandRoute::Edit(EditIntent::UndoSelection),
+        CommandId::EditorRedoSelection => EditorCommandRoute::Edit(EditIntent::RedoSelection),
         CommandId::EditorExpandSelection => EditorCommandRoute::Edit(EditIntent::ExpandSelection),
         CommandId::EditorShrinkSelection => EditorCommandRoute::Edit(EditIntent::ShrinkSelection),
         CommandId::EditorDuplicateLines => EditorCommandRoute::Edit(EditIntent::DuplicateLines),
@@ -150,8 +154,12 @@ pub struct EditorCommandProvider;
 /// a second, drifting command inventory in the shell.
 pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorAddCursor,
+    CommandId::EditorAddCursorAbove,
     CommandId::EditorSelectNextOccurrence,
+    CommandId::EditorSelectPreviousOccurrence,
     CommandId::EditorSelectAllOccurrences,
+    CommandId::EditorUndoSelection,
+    CommandId::EditorRedoSelection,
     CommandId::EditorExpandSelection,
     CommandId::EditorShrinkSelection,
     CommandId::EditorDuplicateLines,
@@ -217,9 +225,18 @@ impl CommandProvider for EditorCommandProvider {
                 .with_contexts(&[CommandContext::Editor])
                 .with_icon(CommandIcon::FileCode)
                 .with_submenu(CommandSubmenu::Outline),
-            CommandDescriptor::new(CommandId::EditorAddCursor, "Add Cursor", "Editor")
+            CommandDescriptor::new(CommandId::EditorAddCursor, "Add Cursor Below", "Editor")
                 .with_contexts(&[CommandContext::Editor])
-                .with_default_binding("cmd-alt-down", Some(CommandContext::Editor)),
+                .with_default_binding("cmd-alt-down", Some(CommandContext::Editor))
+                .with_default_binding("cmd-ctrl-n", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
+                CommandId::EditorAddCursorAbove,
+                "Add Cursor Above",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("cmd-alt-up", Some(CommandContext::Editor))
+            .with_default_binding("cmd-ctrl-p", Some(CommandContext::Editor)),
             CommandDescriptor::new(
                 CommandId::EditorSelectNextOccurrence,
                 "Select Next Occurrence",
@@ -228,11 +245,25 @@ impl CommandProvider for EditorCommandProvider {
             .with_contexts(&[CommandContext::Editor])
             .with_default_binding("cmd-d", Some(CommandContext::Editor)),
             CommandDescriptor::new(
+                CommandId::EditorSelectPreviousOccurrence,
+                "Select Previous Occurrence",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("ctrl-cmd-d", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
                 CommandId::EditorSelectAllOccurrences,
                 "Select All Occurrences",
                 "Editor",
             )
-            .with_contexts(&[CommandContext::Editor]),
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("cmd-shift-l", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorUndoSelection, "Undo Selection", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-u", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorRedoSelection, "Redo Selection", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-shift-u", Some(CommandContext::Editor)),
             CommandDescriptor::new(
                 CommandId::EditorExpandSelection,
                 "Expand Selection",
@@ -411,20 +442,66 @@ mod tests {
 
     #[test]
     fn route_contract_rejects_non_editor_commands_and_preserves_typed_actions() {
-        assert!(route_for_command(CommandId::NewEditorTab, Position::new(0, 0)).is_none());
+        assert!(route_for_command(CommandId::NewEditorTab).is_none());
         for id in EXECUTABLE_EDITOR_COMMAND_IDS {
             assert!(
-                route_for_command(*id, Position::new(0, 0)).is_some(),
+                route_for_command(*id).is_some(),
                 "executable editor command {id:?} must have an owner route"
             );
         }
         assert_eq!(
-            route_for_command(CommandId::EditorSelectNextOccurrence, Position::new(2, 4)),
+            route_for_command(CommandId::EditorSelectNextOccurrence),
             Some(EditorCommandRoute::Edit(EditIntent::SelectNextOccurrence))
         );
         assert_eq!(
-            route_for_command(CommandId::EditorNextGitChange, Position::new(0, 0)),
+            route_for_command(CommandId::EditorAddCursorAbove),
+            Some(EditorCommandRoute::Edit(EditIntent::AddCursorAbove))
+        );
+        assert_eq!(
+            route_for_command(CommandId::EditorSelectPreviousOccurrence),
+            Some(EditorCommandRoute::Edit(
+                EditIntent::SelectPreviousOccurrence
+            ))
+        );
+        assert_eq!(
+            route_for_command(CommandId::EditorUndoSelection),
+            Some(EditorCommandRoute::Edit(EditIntent::UndoSelection))
+        );
+        assert_eq!(
+            route_for_command(CommandId::EditorNextGitChange),
             Some(EditorCommandRoute::Git(GitEditorCommand::NextChange))
+        );
+    }
+
+    #[test]
+    fn multi_selection_commands_expose_cursor_and_selection_history_bindings() {
+        let commands = EditorCommandProvider.commands();
+        let bindings = |id| {
+            commands
+                .iter()
+                .find(|command| command.id == id)
+                .expect("editor command descriptor")
+                .default_bindings
+                .iter()
+                .map(|binding| binding.keystrokes.as_str())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            bindings(CommandId::EditorAddCursorAbove),
+            vec!["cmd-alt-up", "cmd-ctrl-p"]
+        );
+        assert_eq!(
+            bindings(CommandId::EditorAddCursor),
+            vec!["cmd-alt-down", "cmd-ctrl-n"]
+        );
+        assert_eq!(
+            bindings(CommandId::EditorSelectPreviousOccurrence),
+            vec!["ctrl-cmd-d"]
+        );
+        assert_eq!(bindings(CommandId::EditorUndoSelection), vec!["cmd-u"]);
+        assert_eq!(
+            bindings(CommandId::EditorRedoSelection),
+            vec!["cmd-shift-u"]
         );
     }
 
