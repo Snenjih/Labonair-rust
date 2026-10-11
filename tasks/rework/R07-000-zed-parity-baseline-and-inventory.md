@@ -7246,3 +7246,45 @@ Next safe task: Continue R07-000 with vim::ConvertToRot47; do not begin R07-001 
 - First gate pass: passed git diff --check, scripts/check_documentation.py (43 normative docs; 248 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
 - No Rust build, tests, palette/profile dispatch, native behavior, or paired visual evidence were run. These remain active goal acceptance gates. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 with vim::ConvertToRot47; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim ConvertToRot47 transformation
+
+~~~text
+Request type: Pinned registered-action, printable-ASCII transform, inactive profile candidate, and related operator-palette route; documentation-only.
+Owner module: Editor owns text transforms, selection state, and document edits; Keymap owns shared profile and user bindings; Settings owns Vim/Helix mode values; Command Palette owns existing Vim action discovery.
+Canonical capability crate: labonair-editor; profile composition in labonair-keymap.
+Canonical user entry points: Focused Vim/Helix Command Palette discovery for vim::ConvertToRot47 performs the direct mode-derived transform. Registered vim::PushRot47 can start a separate Rot47 operator from the palette and be followed by a motion/object. Both shared g ? keymap candidates (Normal PushRot47 and Visual ConvertToRot47) are commented out; there is no active key binding or platform-default binding.
+Public typed contract: Registered unit action vim::ConvertToRot47; applies the printable ASCII ROT47 mapping to mode-derived Editor ranges. Code points U+0021 through U+007E rotate; space, controls, DEL, and non-ASCII scalars remain unchanged. No arguments, settings, or persistence-specific values.
+State owner: Editor owns selections, cursor positions, modal state, and edited text. The direct action consumes count and forced-motion state; range and resulting mode follow the shared manipulate_text rules. PushRot47 owns the separate operator state and motion/object range.
+Persistence owner: No action-specific persistence; transformed content follows ordinary document save/undo. Vim/Helix settings and profile bindings use their existing owners.
+Commands and keymap entries: ACT-REGISTRY-LINUX-vim-ConvertToRot47; related ACT-REGISTRY-LINUX-vim-PushRot47. No active KEYBIND requirement ID exists; vim.json's g ? candidates are comments. No platform-default map binds the vim:: actions.
+Events and registry contributions: Existing Vim action registrations, generic palette route, and Editor text-edit transaction; no new contribution.
+Settings: Vim Mode and Helix Mode gate palette discovery; no ROT47-specific setting.
+Notifications: None expected.
+UI-kit components: Existing Editor selection and Command Palette only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect all pinned Vim ROT47 source/test references without running them. Source search found the transform and PushRot47 operator wiring but no direct ROT47 fixture. Future acceptance needs direct palette transform, palette-started operator, no-op ranges, and every character-range boundary.
+Visual evidence: Text-edit behavior requires paired native macOS Editor evidence for selection, cursor, and mode; no layout change is planned. Palette discovery and all-platform route behavior remain open.
+Security impact: None beyond editing the focused local buffer.
+Performance impact: One transform pass per active selection; large ranges and multi-cursor edits need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static printable-ASCII mapping, absence of active key rows, registered direct/push actions, and local owner gap can be classified; palette discoverability, operator completion, mode transitions, and native behavior remain pending.
+Documentation updates: New ConvertToRot47 packet; registered-action row; packet index; commands.keymap/editor.text crosswalks; Linux/Windows layer note; task progress. No memory note unless a new non-obvious bug or API issue is verified.
+Current status: Pre-change contract and docs-only ROT47 classification recorded; palette-only direct transform, separate PushRot47 operator route, inactive shared g ? candidates, printable-ASCII boundaries, and local owner gap classified; runtime/native acceptance remains open.
+Target status: Classify the palette-only direct transform and separate PushRot47 operator route, record the commented-out g ? candidates and missing local ROT47 workflow, and leave runtime acceptance open.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no ROT47 direct action, palette route, PushRot47 operator, or shared profile route.
+Failed/unavailable gates: No failures in the docs-only scope. First and second passes passed git diff --check, scripts/check_documentation.py (43 normative docs; 249 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue. Rust build/tests, palette/operator dispatch, native behavior, and paired visual evidence were not run in this slice and remain goal acceptance gates.
+Next safe task: Continue R07-000 with vim::ConvertToUpperCase; do not begin R07-001 or R09.
+~~~
+
+
+## Vim ConvertToRot47 transformation classification progress
+
+- Classified the registered direct action as a palette-discovered, mode-derived printable-ASCII transform, and PushRot47 as a separate palette-started operator that requires a motion/object. The shared Vim g ? direct and operator candidates are comments, with no active key binding or platform-default route.
+- Recorded the mapping boundaries: U+0021 through U+007E rotate across the 94 printable ASCII characters; spaces, control characters, DEL, and non-ASCII scalars are unchanged. No direct ROT47 fixture or Labonair implementation route was found.
+- Updated the new ConvertToRot47 packet, registered-action row, packet index, commands.keymap/editor.text crosswalks, Linux/Windows layer note, and this task record.
+- First gate pass: passed git diff --check, scripts/check_documentation.py (43 normative docs; 249 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue. Second pass after recording task progress also passed the same checks.
+- No Rust build, tests, palette/operator dispatch, native behavior, or paired visual evidence were run. These remain active goal acceptance gates. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 with vim::ConvertToUpperCase; do not begin R07-001 or R09.
