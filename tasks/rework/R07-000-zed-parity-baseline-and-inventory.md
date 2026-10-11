@@ -8749,3 +8749,42 @@ Next safe task: Continue R07-000 with `vim::HelixInsert` (now in progress); do n
 - Updated the HelixInsert packet, registered-action row, Normal/Select/alias keymap annotations, Linux/Windows profile note, Helix Mode setting row, parity README, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 285 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests and native visual acceptance remain outstanding for the overall goal.
 - Next safe task: Continue R07-000 with `vim::HelixInsertEndOfLine`; do not begin R07-001 or R09.
+
+## Vim HelixInsertEndOfLine action classification progress
+
+- Classified Helix Normal `shift-a` as selection-aware insertion at the logical row end. A nonempty forward range first moves left from its exclusive head, preventing a full-line selection that ends at column 0 of the next row from targeting that next row. The action starts change recording and enters Insert mode without editing text.
+- Inspected the action schema/handler, `next_line_end`/logical EOL helper, Helix-specific override of shared `InsertEndOfLine`, absence of a Helix Select `shift-a` row, both direct cases in `test_helix_insert_end_of_line`, Insert Escape/count/repeat handling, and Labonair's local single-cursor `A`. Fixtures were inspected, not run. Reversed/multiple selections, display-map edges, counts, and Escape results remain open.
+- Updated the HelixInsertEndOfLine packet, registered-action row, Helix-specific and shared `shift-a` annotations, Linux/Windows profile note, Helix Mode setting row, parity README, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 286 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests and native visual acceptance remain outstanding for the overall goal.
+- Next safe task: Continue R07-000 with `vim::HelixJumpToWord`; do not begin R07-001 or R09.
+
+## Pre-change contract — Vim HelixInsertEndOfLine
+
+~~~text
+Request type: Pinned Helix Normal `shift-a` insertion at the current line end, selection-aware line targeting, count/Escape lifecycle, and distinction from Vim/Helix InsertEndOfLine and Visual InsertAfter; documentation-only classification.
+Owner module: Editor/Vim owns selection-to-line mapping, Insert mode, text edits, and repeat recording; Keymap owns mode-scoped `shift-a` dispatch. Labonair's current text/caret state belongs to `labonair-editor`; a Helix profile route belongs to `labonair-keymap` and its mode value to Settings.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: `shift-a` in `VimControl && vim_mode == helix_normal && !menu && !BufferSearchBar`. The shared `(vim_mode == normal || vim_mode == helix_normal) && !menu` route to `vim::InsertEndOfLine` is overridden in Helix Normal. Helix Select has no `shift-a` row; Vim Visual `shift-a` uses InsertAfter.
+Public typed contract: Unit action `vim::HelixInsertEndOfLine`, no JSON arguments or aliases. It starts Vim change recording, enters Insert, selects the relevant head point for each current selection, maps it to that buffer line's end, and collapses the selection there with no selection goal. For a nonempty forward selection it moves one display point left from the exclusive end first, avoiding the next row when selection ends at column 0.
+State owner: Editor owns selections and text transactions; Vim owns Helix/Insert mode, transient count, and repeat recording; Keymap/Settings gate the Helix Normal context.
+Persistence owner: Entry itself does not edit text or persist state. Subsequent typed input is recorded through the Editor; selection restoration and count/repeat lifecycle remain to be accepted.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-HelixInsertEndOfLine`; `KEYBIND-VIM-HELIX-5af32121bd5d` (`shift-a`, `VimControl && vim_mode == helix_normal && !menu && !BufferSearchBar`). Related override `KEYBIND-VIM-HELIX-b4f30cc642ac` maps shared Vim Normal/Helix Normal `shift-a` to `vim::InsertEndOfLine`; Visual `shift-a` is `vim::InsertAfter`.
+Events and registry contributions: Existing Vim action and shared Keymap rows; Editor selection update and subsequent Insert transactions only. No new event or registry contribution is proposed.
+Settings: `SET-keymap-helix-mode` enables Helix Normal/Select contexts; `SET-keymap-vim-mode` enables the Vim/Helix layer. No action-specific setting.
+Notifications: None.
+UI-kit components: Existing Editor cursor/selection and Insert-mode UI only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action schema/handler, `next_line_end` and EOL clipping, shared/override/Visual/Select `shift-a` routes, direct `test_helix_insert_end_of_line`, Insert Escape/count/repeat path, and local `A`; do not run tests.
+Visual evidence: Paired native macOS Editor/Keymap evidence should record mode/profile, focus, selection shape/direction, selected buffer rows, insertion point, Insert mode, count, typed/no-edit Escape path, platform, viewport/wrapping, theme, and scale.
+Security impact: None; the action positions selections in the active Editor.
+Performance impact: O(number of selections) plus display/buffer position mapping; multi-selection and wrapping costs need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Registry, handler, head-to-line-end calculation, direct forward-selection fixtures, shared Vim override, and local A route can be classified statically. Empty and reversed selections, multiple selections, wrapped/folded/inlay rows, EOF, count/repeat, Escape restoration, palette, platform dispatch, and native behavior remain open.
+Documentation updates: New HelixInsertEndOfLine packet; registered-action row; Helix Normal `shift-a` binding annotation and related route note; Linux/Windows profile note; Helix Mode setting row; parity README; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action schema/handler, line-end helper, HelixNormal and shared `shift-a` rows, absence of Helix Select `shift-a`, direct test fixture, Insert Escape count path, and local Vim `A` implementation inspected. Documentation-only changes are planned; no tests run.
+Target status: Classify Helix Normal `shift-a` as a selection-aware move to the current line end followed by Insert mode, distinct from generic Vim EndOfLine insertion and Helix Select/Vim Visual routes, without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair's local Vim `A` moves its single cursor to logical line end and enters Insert; there is no Helix mode or multi-selection target correction. The pinned direct fixture establishes two forward-selection cases but not the full range/direction/display map behavior.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Empty/EOF, forward/reversed/multiple ranges, selection ending at next-row column 0, wraps/folds/inlays, Insert Escape/count/repeat, palette, platform dispatch, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::HelixInsertEndOfLine` (now in progress); do not begin R07-001 or R09.
+~~~
