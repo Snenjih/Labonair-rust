@@ -38,6 +38,13 @@ pub enum GitEditorCommand {
     OpenProjectDiff,
 }
 
+/// Editor UI actions that change a local navigation surface rather than
+/// document content or a language-service request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EditorUiCommand {
+    GoToLineColumn,
+}
+
 /// Typed route selected by the Editor owner for an executable command ID.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditorCommandRoute {
@@ -45,6 +52,7 @@ pub enum EditorCommandRoute {
     Split(SplitIntent),
     Language(EditorLanguageCommand),
     Git(GitEditorCommand),
+    Ui(EditorUiCommand),
 }
 
 /// Resolve an editor-owned command ID without making Workspace understand
@@ -62,13 +70,21 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         CommandId::EditorSelectAllOccurrences => {
             EditorCommandRoute::Edit(EditIntent::SelectAllOccurrences)
         }
+        CommandId::EditorSelectAll => EditorCommandRoute::Edit(EditIntent::SelectAll),
+        CommandId::EditorDuplicateSelection => {
+            EditorCommandRoute::Edit(EditIntent::DuplicateSelection)
+        }
         CommandId::EditorUndoSelection => EditorCommandRoute::Edit(EditIntent::UndoSelection),
         CommandId::EditorRedoSelection => EditorCommandRoute::Edit(EditIntent::RedoSelection),
+        CommandId::EditorGoToLineColumn => EditorCommandRoute::Ui(EditorUiCommand::GoToLineColumn),
         CommandId::EditorExpandSelection => EditorCommandRoute::Edit(EditIntent::ExpandSelection),
         CommandId::EditorShrinkSelection => EditorCommandRoute::Edit(EditIntent::ShrinkSelection),
         CommandId::EditorDuplicateLines => EditorCommandRoute::Edit(EditIntent::DuplicateLines),
         CommandId::EditorMoveLines => {
             EditorCommandRoute::Edit(EditIntent::MoveLines { down: true })
+        }
+        CommandId::EditorMoveLinesUp => {
+            EditorCommandRoute::Edit(EditIntent::MoveLines { down: false })
         }
         CommandId::EditorIndent => {
             EditorCommandRoute::Edit(EditIntent::Indent { unit: "  ".into() })
@@ -158,12 +174,16 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorSelectNextOccurrence,
     CommandId::EditorSelectPreviousOccurrence,
     CommandId::EditorSelectAllOccurrences,
+    CommandId::EditorSelectAll,
     CommandId::EditorUndoSelection,
     CommandId::EditorRedoSelection,
+    CommandId::EditorGoToLineColumn,
     CommandId::EditorExpandSelection,
     CommandId::EditorShrinkSelection,
     CommandId::EditorDuplicateLines,
+    CommandId::EditorDuplicateSelection,
     CommandId::EditorMoveLines,
+    CommandId::EditorMoveLinesUp,
     CommandId::EditorIndent,
     CommandId::EditorOutdent,
     CommandId::EditorToggleComment,
@@ -258,12 +278,21 @@ impl CommandProvider for EditorCommandProvider {
             )
             .with_contexts(&[CommandContext::Editor])
             .with_default_binding("cmd-shift-l", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorSelectAll, "Select All", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-a", Some(CommandContext::Editor)),
             CommandDescriptor::new(CommandId::EditorUndoSelection, "Undo Selection", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("cmd-u", Some(CommandContext::Editor)),
             CommandDescriptor::new(CommandId::EditorRedoSelection, "Redo Selection", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("cmd-shift-u", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
+                CommandId::EditorGoToLineColumn,
+                "Go to Line/Column…",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(
                 CommandId::EditorExpandSelection,
                 "Expand Selection",
@@ -281,8 +310,18 @@ impl CommandProvider for EditorCommandProvider {
             CommandDescriptor::new(CommandId::EditorDuplicateLines, "Duplicate Lines", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("cmd-shift-d", Some(CommandContext::Editor)),
-            CommandDescriptor::new(CommandId::EditorMoveLines, "Move Lines", "Editor")
-                .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(
+                CommandId::EditorDuplicateSelection,
+                "Duplicate Selection",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(CommandId::EditorMoveLinesUp, "Move Line Up", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("alt-up", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorMoveLines, "Move Line Down", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("alt-down", Some(CommandContext::Editor)),
             CommandDescriptor::new(CommandId::EditorIndent, "Indent", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("cmd-]", Some(CommandContext::Editor)),

@@ -32,7 +32,9 @@ use labonair_settings::{EditorSettings, Settings as _, SettingsStore};
 use labonair_editor::document_symbols;
 use labonair_editor::{
     apply_text_policies,
-    command_provider::{route_for_command, EditorCommandRoute, EditorLanguageCommand},
+    command_provider::{
+        route_for_command, EditorCommandRoute, EditorLanguageCommand, EditorUiCommand,
+    },
     document::Motion,
     editing::{EditorCommand, EditorCommandResult, SplitIntent},
     find,
@@ -56,9 +58,9 @@ use crate::syntax_theme::EditorPalette;
 use labonair_notifications::{notification_center, Notification};
 use labonair_theme::{modal_scrim, ThemeStore};
 use labonair_ui_kit::{
-    banner, button, context_menu, text_field, text_field_surface, text_input, ButtonSize,
-    ButtonVariant, InputEvent, InputState, ListItem, MenuItem, Palette, Severity, TextFieldState,
-    Tooltip,
+    banner, button, context_menu, icon_button_builder, popover_menu, text_field,
+    text_field_surface, text_input, ButtonSize, ButtonVariant, IconButtonShape, IconName,
+    InputEvent, InputState, ListItem, MenuItem, Palette, Severity, TextFieldState, Tooltip,
 };
 
 /// Editor → workspace notifications.
@@ -324,6 +326,8 @@ pub struct EditorView {
     /// Editor-owned folded logical ranges, persisted through the editor session
     /// contract and embedded by Workspace in its outer session snapshot.
     folds: Vec<FoldRange>,
+    selection_menu_anchor: Option<Point<Pixels>>,
+    outline_open: bool,
     /// Editor-internal groups. Workspace pane layouts remain a separate
     /// capability; this tree is changed only by Editor commands.
     editor_splits: labonair_editor::EditorSplitTree,
@@ -389,6 +393,8 @@ pub struct EditorView {
     code_actions: Option<Vec<labonair_editor::CodeAction>>,
     rename_requested: bool,
     rename_input: Option<Entity<InputState>>,
+    go_to_line_requested: bool,
+    go_to_line_input: Option<Entity<InputState>>,
     format_on_save_in_flight: bool,
     cursor_blink_on: bool,
     editor_focused: bool,
@@ -491,6 +497,8 @@ impl EditorView {
             scroll_top: 0,
             scroll_left: 0,
             folds: Vec::new(),
+            selection_menu_anchor: None,
+            outline_open: false,
             editor_splits: labonair_editor::EditorSplitTree::default(),
             split_drag_last: None,
             metrics: (8.0, 18.0),
@@ -533,6 +541,8 @@ impl EditorView {
             code_actions: None,
             rename_requested: false,
             rename_input: None,
+            go_to_line_requested: false,
+            go_to_line_input: None,
             format_on_save_in_flight: false,
             cursor_blink_on: true,
             editor_focused: false,
@@ -639,6 +649,10 @@ impl EditorView {
                 self.execute_language_command(command, cx);
             }
             EditorCommandRoute::Git(command) => self.execute_git_command(command, cx),
+            EditorCommandRoute::Ui(EditorUiCommand::GoToLineColumn) => {
+                self.go_to_line_requested = true;
+                cx.notify();
+            }
         }
         true
     }
@@ -1390,6 +1404,27 @@ impl EditorView {
         cx.notify();
     }
 
+    fn submit_go_to_line_column(&mut self, value: &str, cx: &mut Context<Self>) {
+        self.go_to_line_requested = false;
+        self.go_to_line_input = None;
+        if let Some(position) = parse_line_column(value) {
+            self.goto_position(position, cx);
+        } else {
+            notify_info(
+                cx,
+                "Go to Line/Column",
+                "Enter a positive line number, optionally followed by :column.",
+            );
+            cx.notify();
+        }
+    }
+
+    fn cancel_go_to_line_column(&mut self, cx: &mut Context<Self>) {
+        self.go_to_line_requested = false;
+        self.go_to_line_input = None;
+        cx.notify();
+    }
+
     fn ensure_rename_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.rename_requested || self.rename_input.is_some() {
             return;
@@ -1412,6 +1447,28 @@ impl EditorView {
             .detach();
         window.focus(&input.read(cx).focus_handle(cx));
         self.rename_input = Some(input);
+    }
+
+    fn ensure_go_to_line_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.go_to_line_requested || self.go_to_line_input.is_some() {
+            return;
+        }
+        let input = cx.new(|cx| {
+            text_field(window, cx)
+                .placeholder("Line or line:column")
+                .default_value("")
+        });
+        let view = cx.entity();
+        window
+            .subscribe(&input, cx, move |input, event: &InputEvent, _window, cx| {
+                if let InputEvent::PressEnter { secondary: false } = event {
+                    let value = input.read(cx).value().to_string();
+                    view.update(cx, |this, cx| this.submit_go_to_line_column(&value, cx));
+                }
+            })
+            .detach();
+        window.focus(&input.read(cx).focus_handle(cx));
+        self.go_to_line_input = Some(input);
     }
 
     fn apply_service_edits(&mut self, edits: Vec<Edit>, cx: &mut Context<Self>) {
@@ -3009,6 +3066,17 @@ impl EditorView {
         let ks = &ev.keystroke;
         let m = &ks.modifiers;
 
+        if self.go_to_line_requested
+            && ks.key.as_str() == "escape"
+            && !m.platform
+            && !m.control
+            && !m.alt
+        {
+            self.cancel_go_to_line_column(cx);
+            cx.stop_propagation();
+            return;
+        }
+
         if self.completion_visible {
             let handled = match ks.key.as_str() {
                 "escape" if !m.platform && !m.control && !m.alt => {
@@ -4367,6 +4435,129 @@ impl EditorView {
             .into_any_element()
     }
 
+    fn render_editor_toolbar(&mut self, palette: Palette, cx: &mut Context<Self>) -> AnyElement {
+        let trigger = icon_button_builder("editor-selections-menu", palette, IconName::ListTree)
+            .size(ButtonSize::IconSm)
+            .shape(IconButtonShape::Square)
+            .selected(self.selection_menu_anchor.is_some())
+            .tooltip("Selections")
+            .render()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, event: &MouseDownEvent, _window, cx| {
+                    this.selection_menu_anchor = if this.selection_menu_anchor.is_some() {
+                        None
+                    } else {
+                        Some(Point {
+                            x: event.position.x,
+                            y: event.position.y + px(4.0),
+                        })
+                    };
+                    cx.notify();
+                }),
+            );
+        div()
+            .flex()
+            .items_center()
+            .justify_end()
+            .w_full()
+            .h(px(28.0))
+            .px_2()
+            .flex_shrink_0()
+            .bg(palette.bg)
+            .border_b_1()
+            .border_color(palette.border)
+            .child(trigger)
+            .into_any_element()
+    }
+
+    fn render_selection_menu(
+        &self,
+        palette: Palette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let anchor = self.selection_menu_anchor?;
+        let editor = cx.entity();
+        let command_item = |id: CommandId, label: &'static str, disabled: bool| {
+            let editor = editor.clone();
+            MenuItem::new(id.action_name(), label)
+                .disabled(disabled)
+                .on_click(move |_, _window, app| {
+                    editor.update(app, |this, cx| {
+                        this.selection_menu_anchor = None;
+                        let _ = this.dispatch_registered_command(id, cx);
+                        cx.notify();
+                    });
+                })
+        };
+        let has_git_hunks =
+            !self.git_gutter.hunks.is_empty() && self.git_snapshot_is_current(&self.git_gutter);
+        let show_outline = editor.clone();
+        let outline_item = MenuItem::new("editor-open-symbol-outline", "Go to Symbol").on_click(
+            move |_, _window, app| {
+                show_outline.update(app, |this, cx| {
+                    this.selection_menu_anchor = None;
+                    this.outline_open = true;
+                    cx.notify();
+                });
+            },
+        );
+        let dismiss_editor = editor.clone();
+        let dismiss = move |_window: &mut Window, app: &mut App| {
+            dismiss_editor.update(app, |this, cx| {
+                this.selection_menu_anchor = None;
+                cx.notify();
+            });
+        };
+        let items = vec![
+            MenuItem::label("Selections"),
+            command_item(CommandId::EditorSelectAll, "Select All", false),
+            command_item(
+                CommandId::EditorSelectNextOccurrence,
+                "Select Next Occurrence",
+                false,
+            ),
+            command_item(
+                CommandId::EditorSelectPreviousOccurrence,
+                "Select Previous Occurrence",
+                false,
+            ),
+            command_item(
+                CommandId::EditorSelectAllOccurrences,
+                "Select All Occurrences",
+                false,
+            ),
+            command_item(CommandId::EditorExpandSelection, "Expand Selection", false),
+            command_item(CommandId::EditorShrinkSelection, "Shrink Selection", false),
+            command_item(CommandId::EditorAddCursorAbove, "Add Cursor Above", false),
+            command_item(CommandId::EditorAddCursor, "Add Cursor Below", false),
+            MenuItem::separator(),
+            MenuItem::label("Navigation and Lines"),
+            outline_item,
+            command_item(CommandId::EditorGoToLineColumn, "Go to Line/Column…", false),
+            command_item(CommandId::EditorNextDiagnostic, "Next Problem", false),
+            command_item(
+                CommandId::EditorPreviousDiagnostic,
+                "Previous Problem",
+                false,
+            ),
+            command_item(CommandId::EditorNextGitChange, "Next Hunk", !has_git_hunks),
+            command_item(
+                CommandId::EditorPreviousGitChange,
+                "Previous Hunk",
+                !has_git_hunks,
+            ),
+            command_item(CommandId::EditorMoveLinesUp, "Move Line Up", false),
+            command_item(CommandId::EditorMoveLines, "Move Line Down", false),
+            command_item(
+                CommandId::EditorDuplicateSelection,
+                "Duplicate Selection",
+                false,
+            ),
+        ];
+        Some(popover_menu(anchor, palette, dismiss, items))
+    }
+
     /// Render the editor-local path and current symbol context. This is part
     /// of the editor surface, not a new shell chrome zone.
     fn render_breadcrumb(
@@ -4517,6 +4708,7 @@ impl EditorView {
             )))
             .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                 this.doc.set_caret(Position::new(line, 0), false);
+                this.outline_open = false;
                 this.ensure_cursor_visible();
                 cx.emit(EditorEvent::Changed);
                 cx.notify();
@@ -4932,6 +5124,81 @@ impl EditorView {
             .into_any_element()
     }
 
+    fn render_go_to_line_dialog(
+        &self,
+        input: &Entity<InputState>,
+        palette: Palette,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let input_for_submit = input.clone();
+        let field_state = if input.read(cx).focus_handle(cx).is_focused(window) {
+            TextFieldState::Focused
+        } else {
+            TextFieldState::Normal
+        };
+        div()
+            .absolute()
+            .top(px(12.0))
+            .right(px(92.0))
+            .w(px(320.0))
+            .p_2()
+            .rounded_md()
+            .border_1()
+            .border_color(palette.border)
+            .bg(palette.popover)
+            .shadow_md()
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(palette.muted)
+                    .child("Go to line or line:column"),
+            )
+            .child(text_field_surface(
+                "editor-go-to-line-input",
+                palette,
+                field_state,
+                text_input(input, palette),
+            ))
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_1()
+                    .mt_1()
+                    .child(
+                        button(
+                            "editor-go-to-line-cancel",
+                            palette,
+                            ButtonVariant::Subtle,
+                            ButtonSize::Xs,
+                        )
+                        .child("Cancel")
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, _window, cx| {
+                                this.cancel_go_to_line_column(cx);
+                            },
+                        )),
+                    )
+                    .child(
+                        button(
+                            "editor-go-to-line-submit",
+                            palette,
+                            ButtonVariant::Filled,
+                            ButtonSize::Xs,
+                        )
+                        .child("Go")
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _window, cx| {
+                                let value = input_for_submit.read(cx).value().to_string();
+                                this.submit_go_to_line_column(&value, cx);
+                            },
+                        )),
+                    ),
+            )
+            .into_any_element()
+    }
+
     fn symbols_for_snapshot(
         &mut self,
         snapshot: &labonair_editor::BufferSnapshot,
@@ -4979,6 +5246,7 @@ impl Focusable for EditorView {
 impl Render for EditorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.ensure_rename_input(window, cx);
+        self.ensure_go_to_line_input(window, cx);
         let theme = self.theme.read(cx);
         let bg = theme.background();
         let fg = theme.foreground();
@@ -5051,6 +5319,7 @@ impl Render for EditorView {
         let palette = EditorPalette::resolve(theme.editor_theme(), theme);
         let ui_palette = Palette::from_theme(theme);
         let rename_input = self.rename_input.clone();
+        let go_to_line_input = self.go_to_line_input.clone();
         let symbols = self.symbols_for_snapshot(&snapshot);
         let fold_candidates = fold_ranges_from_symbols(&symbols, &snapshot);
         let breadcrumb_state = build_breadcrumb_state(
@@ -5554,8 +5823,9 @@ impl Render for EditorView {
             .flex_1()
             .min_w_0()
             .min_h_0();
-        buffer_surface =
-            buffer_surface.child(self.render_breadcrumb(breadcrumb_state, ui_palette, cx));
+        buffer_surface = buffer_surface
+            .child(self.render_breadcrumb(breadcrumb_state, ui_palette, cx))
+            .child(self.render_editor_toolbar(ui_palette, cx));
         if show_text_area {
             let mut editor_surface_container = div().relative().flex_1().min_w_0().min_h_0();
             if minimap {
@@ -5568,7 +5838,7 @@ impl Render for EditorView {
             }
             buffer_surface = buffer_surface.child(editor_surface_container);
         }
-        if self.prefs.show_outline() {
+        if self.prefs.show_outline() || self.outline_open {
             buffer_surface = buffer_surface.child(self.render_outline(&symbols, ui_palette, cx));
         }
 
@@ -5588,6 +5858,7 @@ impl Render for EditorView {
             .children(file_status)
             .children(self.render_language_service_status(cx))
             .child(buffer_surface)
+            .children(self.render_selection_menu(ui_palette, cx))
             .when(self.vim.is_some(), |d| d.child(self.render_vim_status(cx)))
             .when(
                 self.prefs.show_cursor_position() || self.prefs.show_selection_stats(),
@@ -5613,6 +5884,11 @@ impl Render for EditorView {
                 rename_input
                     .as_ref()
                     .map(|input| self.render_rename_dialog(input, ui_palette, window, cx)),
+            )
+            .children(
+                go_to_line_input
+                    .as_ref()
+                    .map(|input| self.render_go_to_line_dialog(input, ui_palette, window, cx)),
             )
             .children(self.render_hover_tooltip(cx))
             .children(self.render_git_context_menu(cx))
@@ -5685,6 +5961,22 @@ fn notify_info(cx: &mut App, title: &str, body: &str) {
     });
 }
 
+fn parse_line_column(value: &str) -> Option<Position> {
+    let (line, column) = value
+        .trim()
+        .split_once(':')
+        .map_or((value, None), |(line, column)| (line, Some(column)));
+    let line = line.trim().parse::<usize>().ok()?;
+    let column = match column {
+        Some(column) => column.trim().parse::<usize>().ok()?,
+        None => 1,
+    };
+    if line == 0 || column == 0 {
+        return None;
+    }
+    Some(Position::new(line - 1, column - 1))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5692,6 +5984,16 @@ mod tests {
     use labonair_editor::SearchOptions;
     use labonair_settings::content::editor::EditorContent;
     use labonair_settings::{SettingsContent, SettingsLayer, SettingsStore};
+
+    #[test]
+    fn line_column_parser_uses_one_based_user_coordinates() {
+        assert_eq!(parse_line_column("12"), Some(Position::new(11, 0)));
+        assert_eq!(parse_line_column(" 12 : 5 "), Some(Position::new(11, 4)));
+        assert_eq!(parse_line_column("0"), None);
+        assert_eq!(parse_line_column("1:0"), None);
+        assert_eq!(parse_line_column("one"), None);
+        assert_eq!(parse_line_column("1:2:3"), None);
+    }
 
     /// Build an [`EditorSettings`] with `f` applied to a default `editor` area.
     fn editor_prefs(f: impl FnOnce(&mut EditorContent)) -> EditorSettings {

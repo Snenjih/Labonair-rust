@@ -24,8 +24,10 @@ pub enum EditIntent {
     SelectNextOccurrence,
     SelectPreviousOccurrence,
     SelectAllOccurrences,
+    SelectAll,
     UndoSelection,
     RedoSelection,
+    DuplicateSelection,
     ExpandSelection,
     ShrinkSelection,
     DuplicateLines,
@@ -204,8 +206,10 @@ impl Document {
             EditIntent::SelectNextOccurrence => self.select_next_occurrence(),
             EditIntent::SelectPreviousOccurrence => self.select_previous_occurrence(),
             EditIntent::SelectAllOccurrences => self.select_all_occurrences(),
+            EditIntent::SelectAll => self.select_all_intent(),
             EditIntent::UndoSelection => self.selection_history_step(false),
             EditIntent::RedoSelection => self.selection_history_step(true),
+            EditIntent::DuplicateSelection => self.duplicate_selection(),
             EditIntent::ExpandSelection => self.expand_selection(),
             EditIntent::ShrinkSelection => self.shrink_selection(),
             EditIntent::DuplicateLines => self.duplicate_lines(),
@@ -366,6 +370,16 @@ impl Document {
         }
         self.set_selection_set(SelectionSet::from_selections(selections, 0));
         EditorCommandResult::changed(EditorViewEvent::SelectionChanged)
+    }
+
+    fn select_all_intent(&mut self) -> EditorCommandResult {
+        let before = self.selection_set();
+        self.select_all();
+        if self.selection_set() == before {
+            EditorCommandResult::unchanged()
+        } else {
+            EditorCommandResult::changed(EditorViewEvent::SelectionChanged)
+        }
     }
 
     fn select_next_occurrence(&mut self) -> EditorCommandResult {
@@ -560,6 +574,51 @@ impl Document {
             EditSource::Typing,
             Some("Duplicate lines".into()),
         )
+    }
+
+    fn duplicate_selection(&mut self) -> EditorCommandResult {
+        let snapshot = self.snapshot();
+        let ranges = self.selection_set().ranges(&snapshot);
+        let selected = ranges
+            .into_iter()
+            .filter(|range| !range.is_empty())
+            .collect::<Vec<_>>();
+        if selected.is_empty() {
+            return self.duplicate_lines();
+        }
+        let edits = selected
+            .iter()
+            .map(|range| {
+                Edit::new(
+                    TextRange::new(range.end, range.end),
+                    snapshot.text_range(*range),
+                )
+            })
+            .collect::<Vec<_>>();
+        let after = selected
+            .iter()
+            .map(|range| {
+                Selection::collapsed(Anchor::new(
+                    map_offset(range.end, &edits, AnchorAffinity::After),
+                    AnchorAffinity::After,
+                ))
+            })
+            .collect::<Vec<_>>();
+        if !self.apply_edits(
+            edits.clone(),
+            SelectionSet::from_selections(after, 0),
+            EditSource::Paste,
+            Some("Duplicate selection".into()),
+        ) {
+            return EditorCommandResult::unchanged();
+        }
+        EditorCommandResult {
+            changed: true,
+            events: vec![EditorViewEvent::EditApplied {
+                source: EditSource::Paste,
+                edit_count: edits.len(),
+            }],
+        }
     }
 
     fn move_lines(&mut self, down: bool) -> EditorCommandResult {
@@ -1214,6 +1273,21 @@ mod tests {
         let selection_after_edit = document.selection_set();
         assert!(!document.execute_edit(EditIntent::UndoSelection).changed);
         assert_eq!(document.selection_set(), selection_after_edit);
+    }
+
+    #[test]
+    fn select_all_and_duplicate_selection_are_transactional() {
+        let mut document = doc("abcd");
+        document.set_caret(Position::new(0, 1), false);
+        document.set_caret(Position::new(0, 3), true);
+        document.execute_edit(EditIntent::DuplicateSelection);
+        assert_eq!(document.text(), "abcbcd");
+        assert_eq!(document.cursor, Position::new(0, 5));
+        document.undo();
+        assert_eq!(document.text(), "abcd");
+
+        document.execute_edit(EditIntent::SelectAll);
+        assert_eq!(document.selected_text().as_deref(), Some("abcd"));
     }
 
     #[test]
