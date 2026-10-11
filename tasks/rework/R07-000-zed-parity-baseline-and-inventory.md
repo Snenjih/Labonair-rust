@@ -8075,3 +8075,43 @@ Next safe task: Continue R07-000 with `vim::FirstNonWhitespace` after this packe
 - Updated the FindCommand packet, registered-action row, colon binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final post-edit documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 268 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Platform dispatch, native palette/search focus, regex/smartcase/wrap/error behavior, query-history lifecycle, and paired macOS evidence remain active.
 - Next safe task: Continue R07-000 with `vim::FirstNonWhitespace`; do not begin R07-001 or R09.
+
+## Pre-change contract — Vim FirstNonWhitespace
+
+~~~text
+Request type: Pinned Vim/Helix line-start motion, soft-wrapped display-row behavior, operator consumers, and local owner gap; documentation-only classification.
+Owner module: Editor owns cursor, selection, and display-row mapping; Vim owns motion, mode, count, and operator dispatch; Keymap owns shared Vim/Helix profile routes; Settings owns mode/profile and editor wrapping values.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: Shared Vim `^` moves to the first non-whitespace character on the current logical line; `g ^` applies the same motion to the current soft-wrapped display row. Helix Normal/Select uses `g s` for the current logical line. `Shift-I` is the separate InsertFirstNonWhitespace action; `0` and `_` are separate motions.
+Public typed contract: `vim::FirstNonWhitespace { display_lines: bool }`, optional field defaulting to false, no aliases. It emits an exclusive `Motion::FirstNonWhitespace`, resets horizontal selection goal, is not added to the jump list, and ignores motion count when determining the target.
+State owner: Editor owns active cursor/selection set and DisplaySnapshot; Vim owns the pending operator/mode/count/forced-motion state; Keymap owns mode-specific dispatch.
+Persistence owner: None; the action moves caret/selections and may feed an existing edit operator but stores no independent state.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-FirstNonWhitespace`; `KEYBIND-VIM-HELIX-9643ef26df23` (`^`); `KEYBIND-VIM-HELIX-f2de7cc67532` (`g ^`, display_lines true); `KEYBIND-VIM-HELIX-cb1d5049795d` (Helix `g s`); related but separate `KEYBIND-VIM-HELIX-a86b2d217038` (`Shift-I`, InsertFirstNonWhitespace).
+Events and registry contributions: Existing Vim motion action and three shared profile rows only; no new event or registry contribution proposed.
+Settings: Vim/Helix profile settings gate the applicable routes; editor wrapping affects displayed rows for `g ^`. No action-specific setting.
+Notifications: None.
+UI-kit components: Existing Editor caret/selection and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action schema, motion handler/kind, logical/display line helper, normal/visual/Helix/operator paths, whitespace classifier, local `^` helper, `test_jump_to_first_non_whitespace`, macOS-only `test_wrapped_lines`, `test_visual_block_mode`, and `test_special_registers` without running tests.
+Visual evidence: No permanent layout change proposed. Paired native macOS Editor/Keymap evidence must record caret/selection across indentation, blank rows, soft-wrapped display rows, modes, and operator ranges, with viewport width, profile, scale, theme, and platform.
+Security impact: None; motion acts on the active document's selection state.
+Performance impact: The pinned scan is linear in leading whitespace from the relevant line/display-row start. Long whitespace runs and multi-cursor movement require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema, three profile rows, exclusive motion kind, scan/wrap behavior, normal/display-row/Visual Block/`d ^` fixtures, and local `^` route can be classified statically; Helix, full operator behavior, blank-final-line, palette, platform, and native acceptance remain open.
+Documentation updates: New FirstNonWhitespace packet; registered-action row; all three profile binding annotations; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action schema, profile rows, count/operator/mode routes, whitespace scan, existing local `^`, local blank-line fallback, normal/display-row/Visual Block/`d ^` fixtures inspected. First and final post-edit documentation-only gate sets passed: diff check, documentation checker (43 normative docs, 269 Markdown files), queue checker (46 tasks; R07-000 active), and `docs`, `agents`, `knowledge`, `settings`, and `queue` scopes.
+Target status: Classify logical-line and display-line motion, Helix alias, count/operator semantics, blank-line behavior, and Labonair's partial route without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has a partial logical-line `^` route, but no typed motion action, `g ^` display-row route, Helix `g s`, or soft-wrapped Vim motion. Its all-whitespace helper jumps to column zero instead of preserving a nonzero cursor as the pinned newline-terminated behavior does.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Platform dispatch, selection/operator behavior, direct palette invocation, wrapped-row behavior, blank-line edge cases, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::GoToColumn` after this packet; do not begin R07-001 or R09.
+~~~
+
+
+## Vim FirstNonWhitespace action classification progress
+
+- Classified the shared Vim `^` logical-row route, `g ^` with `display_lines: true`, and Helix Normal/Select `g s` route. Recorded the exclusive motion kind, selection goal, jump-list policy, count handling, operator/Visual/Helix consumers, and separate Shift-I, `0`, and `_` actions.
+- Inspected the logical/display-row line start, language-scope whitespace classification, newline and final-row branches, registration schema, local `resolve_motion('^')`/`first_non_blank` fallback, `test_jump_to_first_non_whitespace`, macOS-only `test_wrapped_lines`, Visual Block `^`, and `d ^` register fixtures. Fixtures were inspected, not run; no Helix `g s`, count/forced-motion, or unusual blank-final-row fixture was found.
+- Updated the FirstNonWhitespace packet, registered-action row, all three shared profile annotations, Linux/Windows note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final post-edit documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 269 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Wrapped-row, Helix, operator, palette, blank-line, platform, and paired native acceptance remain active.
+- Next safe task: Continue R07-000 with `vim::GoToColumn`; do not begin R07-001 or R09.
