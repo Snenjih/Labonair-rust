@@ -310,6 +310,22 @@ impl Document {
         self.history.break_coalescing();
     }
 
+    /// Update a selection while a pointer gesture is in progress. Call
+    /// [`Self::commit_selection_change`] once the gesture ends so one drag
+    /// contributes a single entry to selection undo history.
+    pub fn set_selection_set_transient(&mut self, selections: SelectionSet) {
+        self.selections = selections;
+        self.restore_selection(&self.selections.clone());
+        self.history.break_coalescing();
+    }
+
+    /// Record the completed pointer or keyboard gesture as one selection
+    /// history step.
+    pub fn commit_selection_change(&mut self, previous: SelectionSet) {
+        let next = self.selection_set();
+        self.record_selection_change(previous, &next);
+    }
+
     pub fn select_all(&mut self) {
         let previous = self.selection_set();
         self.anchor = Some(Position::default());
@@ -840,6 +856,32 @@ mod tests {
             d.selection(),
             Some((Position::new(0, 1), Position::new(0, 4)))
         );
+    }
+
+    #[test]
+    fn transient_pointer_selection_is_one_undoable_step() {
+        let mut d = Document::from_file("f".into(), "abcdef", 0);
+        let previous = d.selection_set();
+        let anchor = Anchor::new(1, AnchorAffinity::Before);
+
+        for offset in [2, 4, 5] {
+            d.set_selection_set_transient(SelectionSet::single(Selection {
+                anchor,
+                head: Anchor::new(offset, AnchorAffinity::After),
+            }));
+        }
+        d.commit_selection_change(previous);
+
+        assert_eq!(d.selected_text().as_deref(), Some("bcde"));
+        assert!(d.undo_selection());
+        assert_eq!(d.selected_text(), None);
+        assert_eq!(d.cursor, Position::default());
+        assert!(
+            !d.undo_selection(),
+            "the drag creates only one history step"
+        );
+        assert!(d.redo_selection());
+        assert_eq!(d.selected_text().as_deref(), Some("bcde"));
     }
 
     #[test]

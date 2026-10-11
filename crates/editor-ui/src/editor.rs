@@ -17,9 +17,9 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     canvas, div, px, relative, AnyElement, App, AppContext, Bounds, ClickEvent, ClipboardItem,
     Context, Entity, EventEmitter, FocusHandle, Focusable, HighlightStyle, InteractiveElement,
-    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels,
-    Point, Render, ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, StyledText,
-    Task, Window,
+    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, Pixels, Point, Render, ScrollWheelEvent, SharedString,
+    StatefulInteractiveElement, Styled, StyledText, Task, Window,
 };
 use labonair_command_palette_core::CommandId;
 use labonair_filesystem::file::{
@@ -39,18 +39,19 @@ use labonair_editor::{
     editing::{EditorCommand, EditorCommandResult, SplitIntent},
     find,
     lifecycle::{FileCapabilities, FileLifecycleEvent, FileState, ReloadDecision, SaveIntent},
-    next_match_with_wrap, CancellationToken, DisplayConfig, DisplayMap, DisplayRowKind,
-    DisplaySnapshot, Document, DocumentVersion, Edit, EditorSessionId, EditorSessionSnapshot,
-    EditorViewSession, FoldRange, GitDecorationProvider, GitDecorationRequest, GitDiscardPreview,
-    GitEditorCommand, GitGutterError, GitGutterSnapshot, GitHunkAction, GitHunkActionKind,
-    GitHunkStatus, HunkActionSink, Language, LanguageId, LanguageServiceEditRequest,
-    LanguageServiceEditResponse, LanguageServiceRequest, LanguageServiceResponse,
-    LanguageServiceResult, LanguageServiceRuntime, LanguageServiceRuntimeSnapshot,
-    LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus, LanguageServiceSnapshot,
-    LanguageServiceState, LocalLanguageServiceRequest, LspPosition, LspRange, Match, Position,
-    ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest, ProjectSearchResult,
-    ProjectSearchSession, ProjectSearchSnapshot, Revision, SavePolicy, SearchError, SearchQuery,
-    SyntaxHighlighter, TextRange, Viewport, Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
+    next_match_with_wrap, Anchor, AnchorAffinity, CancellationToken, DisplayConfig, DisplayMap,
+    DisplayRowKind, DisplaySnapshot, Document, DocumentVersion, Edit, EditorSessionId,
+    EditorSessionSnapshot, EditorViewSession, FoldRange, GitDecorationProvider,
+    GitDecorationRequest, GitDiscardPreview, GitEditorCommand, GitGutterError, GitGutterSnapshot,
+    GitHunkAction, GitHunkActionKind, GitHunkStatus, HunkActionSink, Language, LanguageId,
+    LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceRequest,
+    LanguageServiceResponse, LanguageServiceResult, LanguageServiceRuntime,
+    LanguageServiceRuntimeSnapshot, LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus,
+    LanguageServiceSnapshot, LanguageServiceState, LocalLanguageServiceRequest, LspPosition,
+    LspRange, Match, Position, ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest,
+    ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot, Revision, SavePolicy,
+    SearchError, SearchQuery, Selection, SelectionSet, SyntaxHighlighter, TextRange, Viewport, Vim,
+    VimKey, VimMode, VimOptions, WhitespaceMode,
 };
 use labonair_editor::{build_breadcrumb_state, BreadcrumbState};
 
@@ -89,6 +90,15 @@ struct EditorSearch {
 struct EditorSplitDrag {
     path: labonair_editor::splits::SplitPath,
     orientation: labonair_editor::SplitOrientation,
+}
+
+/// A pointer gesture keeps its original selection state so a drag is one
+/// selection-history step regardless of how many mouse-move events it emits.
+#[derive(Clone, Debug)]
+struct EditorSelectionDrag {
+    previous: SelectionSet,
+    preserved: Vec<Selection>,
+    anchor: Anchor,
 }
 
 const EDITOR_SCROLLBAR_SIZE: f32 = 10.0;
@@ -327,6 +337,7 @@ pub struct EditorView {
     /// contract and embedded by Workspace in its outer session snapshot.
     folds: Vec<FoldRange>,
     selection_menu_anchor: Option<Point<Pixels>>,
+    selection_drag: Option<EditorSelectionDrag>,
     outline_open: bool,
     /// Editor-internal groups. Workspace pane layouts remain a separate
     /// capability; this tree is changed only by Editor commands.
@@ -498,6 +509,7 @@ impl EditorView {
             scroll_left: 0,
             folds: Vec::new(),
             selection_menu_anchor: None,
+            selection_drag: None,
             outline_open: false,
             editor_splits: labonair_editor::EditorSplitTree::default(),
             split_drag_last: None,
@@ -3296,6 +3308,68 @@ impl EditorView {
         Position::new(count.saturating_sub(1), col_hint)
     }
 
+    fn begin_selection_drag(&mut self, point: Point<Pixels>, shift: bool, alt: bool) {
+        let previous = self.doc.selection_set();
+        let snapshot = self.doc.snapshot();
+        let position = self.position_at(point);
+        let head = Anchor::new(snapshot.position_to_byte(position), AnchorAffinity::After);
+
+        let (preserved, anchor) = if shift && !alt {
+            let primary_index = previous.primary_index();
+            let anchor = previous.primary().anchor;
+            let preserved = previous
+                .selections()
+                .iter()
+                .enumerate()
+                .filter_map(|(index, selection)| (index != primary_index).then_some(*selection))
+                .collect();
+            (preserved, anchor)
+        } else if alt {
+            (
+                previous.selections().to_vec(),
+                Anchor::new(head.offset(), AnchorAffinity::Before),
+            )
+        } else {
+            (
+                Vec::new(),
+                Anchor::new(head.offset(), AnchorAffinity::Before),
+            )
+        };
+
+        let mut selections = preserved.clone();
+        selections.push(Selection { anchor, head });
+        let selection_set = SelectionSet::from_selections(selections, preserved.len());
+        self.doc.set_selection_set_transient(selection_set);
+        self.selection_drag = Some(EditorSelectionDrag {
+            previous,
+            preserved,
+            anchor,
+        });
+    }
+
+    fn update_selection_drag(&mut self, point: Point<Pixels>) {
+        let Some(drag) = self.selection_drag.clone() else {
+            return;
+        };
+        let snapshot = self.doc.snapshot();
+        let position = self.position_at(point);
+        let head = Anchor::new(snapshot.position_to_byte(position), AnchorAffinity::After);
+        let mut selections = drag.preserved;
+        let primary = selections.len();
+        selections.push(Selection {
+            anchor: drag.anchor,
+            head,
+        });
+        self.doc
+            .set_selection_set_transient(SelectionSet::from_selections(selections, primary));
+    }
+
+    fn finish_selection_drag(&mut self) {
+        if let Some(drag) = self.selection_drag.take() {
+            self.doc.commit_selection_change(drag.previous);
+        }
+    }
+
     fn render_scrollbars(
         &self,
         display: &labonair_editor::DisplaySnapshot,
@@ -3384,8 +3458,8 @@ impl EditorView {
                             geometry,
                             cx,
                         );
-                        cx.stop_propagation();
                     }
+                    cx.stop_propagation();
                 }),
             )
             .on_drag_move(cx.listener(
@@ -3455,8 +3529,8 @@ impl EditorView {
                             geometry,
                             cx,
                         );
-                        cx.stop_propagation();
                     }
+                    cx.stop_propagation();
                 }),
             )
             .on_drag_move(cx.listener(
@@ -4453,6 +4527,7 @@ impl EditorView {
                             y: event.position.y + px(4.0),
                         })
                     };
+                    cx.stop_propagation();
                     cx.notify();
                 }),
             );
@@ -5868,16 +5943,41 @@ impl Render for EditorView {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, ev: &MouseDownEvent, window, cx| {
+                    if !this
+                        .bounds
+                        .is_some_and(|bounds| bounds.contains(&ev.position))
+                    {
+                        return;
+                    }
                     window.focus(&this.focus_handle);
-                    let pos = this.position_at(ev.position);
-                    this.doc.set_caret(pos, ev.modifiers.shift);
+                    this.begin_selection_drag(ev.position, ev.modifiers.shift, ev.modifiers.alt);
+                    cx.stop_propagation();
                     cx.notify();
                 }),
             )
             .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _window, cx| {
-                this.update_hover(ev.position, cx);
-                this.schedule_language_hover(this.position_at(ev.position), cx);
+                if ev.pressed_button == Some(MouseButton::Left) && this.selection_drag.is_some() {
+                    this.update_selection_drag(ev.position);
+                    cx.notify();
+                } else if this.selection_drag.is_none() {
+                    this.update_hover(ev.position, cx);
+                    this.schedule_language_hover(this.position_at(ev.position), cx);
+                }
             }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _ev: &MouseUpEvent, _window, cx| {
+                    this.finish_selection_drag();
+                    cx.notify();
+                }),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, _ev: &MouseUpEvent, _window, cx| {
+                    this.finish_selection_drag();
+                    cx.notify();
+                }),
+            )
             .children(self.render_language_service_overlay(cx))
             .children(self.render_signature_help(cx))
             .children(
@@ -6020,6 +6120,38 @@ mod tests {
             let theme = cx.new(|_| ThemeStore::new(gpui::WindowAppearance::Light));
             cx.new(|cx| EditorView::new(theme, cx))
         })
+    }
+
+    #[gpui::test]
+    fn alt_pointer_drag_adds_a_secondary_selection_and_undoes_as_one_step(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, _cx| {
+                this.metrics = (10.0, 18.0);
+                this.gutter_width = 0.0;
+                this.bounds = Some(gpui::Bounds {
+                    origin: gpui::Point::default(),
+                    size: gpui::Size {
+                        width: px(120.0),
+                        height: px(80.0),
+                    },
+                });
+                this.doc = Document::from_file("test.txt".into(), "abcdef", 1);
+                this.doc.cursor = Position::new(0, 1);
+
+                this.begin_selection_drag(gpui::point(px(30.0), px(0.0)), false, true);
+                this.update_selection_drag(gpui::point(px(50.0), px(0.0)));
+                this.finish_selection_drag();
+
+                let selections = this.doc.selection_set();
+                assert_eq!(selections.len(), 2);
+                assert_eq!(this.doc.selected_text().as_deref(), Some("de"));
+                assert!(this.doc.undo_selection());
+                assert_eq!(this.doc.selection_set().len(), 1);
+                assert_eq!(this.doc.cursor, Position::new(0, 1));
+                assert!(!this.doc.undo_selection());
+            });
+        });
     }
 
     #[test]
