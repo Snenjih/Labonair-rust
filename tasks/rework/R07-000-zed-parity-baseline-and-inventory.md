@@ -6909,3 +6909,45 @@ Next safe task: Continue R07-000 with `vim::Class`; do not begin R07-001 or R09.
 - Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, direct-action or palette dispatch, read-only/count/register runtime behavior, native behavior, or paired visual evidence were run; these remain R07-000 acceptance gates.
 - Next safe task: Continue R07-000 with `vim::Class`; do not begin R07-001 or R09.
 ~~~
+
+## Pre-change contract — Vim Class text object
+
+~~~text
+Request type: Pinned registered-action, syntax-backed text-object, and shared Vim/Helix profile inventory; documentation-only.
+Owner module: Editor owns action dispatch, selection, operator state, and modal transitions; Language/Syntax owns grammar text-object ranges; Keymap owns shared mode/user bindings; Settings owns Vim/Helix mode values; Command Palette owns existing Vim action discovery.
+Canonical capability crate: `labonair-editor`; language query integration remains within the Editor capability; profile composition in `labonair-keymap`.
+Canonical user entry point: Vim object letter `c` in pending `a`, `i`, or `cs` contexts; Helix type object letter `t` in pending `a`, `i`, `helix_next`, or `helix_previous` contexts while Helix mode is enabled. Focused-Editor Command Palette discovery is conditional on Vim/Helix, but invocation without a pending object/operator context does not select a range.
+Public typed contract: Existing registered unit action `vim::Class`, mapped to `Object::Class` and language `InsideClass`/`AroundClass` query captures. Labonair has class symbol discovery but no syntax-backed Editor text-object action or range.
+State owner: Editor owns cursor/selections, pending text-object operator, and Vim/Helix mode. Language grammar queries supply the class capture ranges. The pinned `Class` range ignores text-object count; around selections target Visual Line, inside selections target Visual, and Helix current/next/previous type selection uses the same Class range adapter.
+Persistence owner: None for selection or object state. Settings persists Vim/Helix mode values; Keymap persists profile and user bindings.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-Class`; Vim `KEYBIND-VIM-HELIX-5f44df1dbbb2` (`c`, `vim_operator == a || i || cs || helix_next || helix_previous`); Helix type `KEYBIND-VIM-HELIX-f021a4fe05af` (`t`, `(vim_operator == a || i || helix_next || helix_previous) && helix_mode`); no platform-default binding. Helix `c` is separately bound to `vim::Comment`.
+Events and registry contributions: Existing Vim action registration, shared mode layer, Language Tree-sitter text-object queries, and generic palette route; no new event, registry, or shell-wide conditional.
+Settings: Existing Vim/Helix mode values gate the shared layer and Vim action palette namespace; no Class-specific setting.
+Notifications: None. If no applicable syntax range exists, no class range is selected and the pending operation resolves without a new message; exact mode behavior depends on the caller.
+UI-kit components: Existing Editor, Keymap, language syntax, and Command Palette only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect the pinned language `test_text_objects` Rust fixture and Helix `test_helix_treesitter_object_keys` fixture without running them. No focused Vim `vim::Class` `ac`/`ic` test was found. Future owner work needs Vim inside/around selection and operator behavior, Visual expansion, count, missing grammar/range, nested captures, Helix current/next/previous Type behavior, palette with and without pending context, and language coverage.
+Visual evidence: No local layout change; native macOS binding, selection, and palette behavior remain unverified, with Linux and Windows profile dispatch checked separately.
+Security impact: None beyond ordinary local Editor selection or operator effects.
+Performance impact: No local runtime work; query cost and repeated object navigation need language-scale acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static action registration, Vim/Helix contexts, syntax-range algorithm, language fixture, Helix fixture, and local text-object gap can be classified; direct Vim/runtime and native acceptance remain pending.
+Documentation updates: New Class packet; registered-action row; both shared keybinding annotations; Linux/Windows layer note; packet index; `commands.keymap` and `editor.text` crosswalks; normative parity summary; task record. No memory note unless the audit discovers a non-obvious bug or API issue.
+Current status: Pre-change contract recorded; source and local-owner audit complete; parity packet and crosswalk updates not yet made.
+Target status: Separate Vim Class inside/around captures from Helix Type mapping and generic class symbol discovery; identify context-dependent entry points, range/mode behavior, language dependency, and missing local owner route without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair's Class symbol extraction supports symbol discovery only; no class text-object range, operator integration, Helix mode, Vim/Helix profile, or action/palette route exists.
+Failed/unavailable gates: No gates run yet. This is a docs-only classification; tests, Rust build, profile/palette dispatch, syntax coverage, native behavior, and paired visual acceptance are not requested or run in this slice.
+Next safe task: Continue R07-000 with `vim::ClearExchange`; do not begin R07-001 or R09.
+~~~
+
+
+## Progress — Vim Class text object
+
+- Added [action-classification-vim-class.md](../../docs/parity/action-classification-vim-class.md) for ACT-REGISTRY-LINUX-vim-Class.
+- Classified the shared Vim c binding and Helix t-as-Type route, including Helix ]t/[t next/previous selection, syntax capture fallback behavior, visual-mode targets, and the count-insensitive Class range. Distinguished grammar-backed text-object selection from local class-symbol discovery.
+- Inspected the generic Rust InsideClass/AroundClass language fixture and the Helix Type/Comment fixture without running them. No focused Vim ac/ic dispatch fixture was found.
+- Updated the registered-action row, both shared keybinding annotations, Linux/Windows layer note, packet index, commands.keymap and editor.text crosswalks, normative parity summary, and this task record. No memory note was needed because the audit found no new non-obvious bug or API discovery.
+- Passed git diff --check, scripts/check_documentation.py (43 normative docs; 241 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
+- Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, profile/palette dispatch, syntax coverage, native behavior, or paired visual evidence were run; these remain R07-000 acceptance gates.
+- Next safe task: Continue R07-000 with vim::ClearExchange; do not begin R07-001 or R09.

@@ -345,6 +345,11 @@ records Vim Normal `Shift-C`, its exclusive register-backed change to a buffer
 line end, the separate Helix DuplicateBelow chord, and Labonair's partial
 uppercase-C route. Count, register, palette, platform, and paired macOS
 acceptance remain open. The independent
+[`Vim Class text-object crosswalk`](parity/action-classification-vim-class.md)
+records the shared Vim c and Helix Type routes, grammar-backed inside/around
+ranges, directional Helix selection, and missing local text-object action.
+Language coverage, profile dispatch, palette context, and paired macOS
+acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and
