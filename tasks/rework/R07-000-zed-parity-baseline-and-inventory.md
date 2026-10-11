@@ -8266,7 +8266,7 @@ Target status: Classify counted backward reference cycling, wrapping, result map
 Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 Remaining migration edges: Labonair has a Go to References command and LSP service response, but no current-relative cycle, count/wrap behavior, `[ r` route, or typed GoToPreviousReference action; the local response selects only the first returned target.
 Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Cross-file and multibuffer mapping, no-result/error presentation, palette, selection/mode transitions, platform key dispatch, and paired native evidence remain active goal acceptance gates.
-Next safe task: Continue R07-000 with `vim::GoToPreviousTab` after this packet; do not begin R07-001 or R09.
+Next safe task: Continue R07-000 with `vim::GoToTab`, `vim::HalfPageLeft`, and `vim::HalfPageRight` classification complete, then advance to `vim::HelixAppend` (now in progress); do not begin R07-001 or R09.
 ~~~
 
 
@@ -8276,7 +8276,7 @@ Next safe task: Continue R07-000 with `vim::GoToPreviousTab` after this packet; 
 - Inspected the four-location `test_next_prev_reference` fixture, which covers both directions, wrap, and counts but not the Vim key action or cross-file, selection, and mode cases. Tests were inspected, not run. Labonair's `EditorGoToReferences` command uses its LSP contract but selects only the first result.
 - Updated the GoToPreviousReference packet, registered-action row, `[ r` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final post-edit documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 273 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Palette, cross-file mapping, no-result/error behavior, mode/selection, platform, and paired native acceptance remain active.
-- Next safe task: Continue R07-000 with `vim::GoToPreviousTab`; do not begin R07-001 or R09.
+- Next safe task: Continue R07-000 with `vim::GoToTab`, `vim::HalfPageLeft`, and `vim::HalfPageRight` classification complete, then advance to `vim::HelixAppend` (now in progress); do not begin R07-001 or R09.
 ## Pre-change contract — Vim GoToPreviousTab
 
 ~~~text
@@ -8305,7 +8305,7 @@ Target status: Classify how uncounted and counted `gT` select an item in the act
 Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 Remaining migration edges: Labonair has a Workspace `Previous Tab` command bound to `ctrl-shift-tab` that wraps through tabs in the active Space, but no Vim `gT` action/profile route or previous-item navigation in the active Pane's item collection. Existing `PrevTab` has no count argument.
 Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Pane-vs-workspace scope, count boundaries, empty/single-item behavior, activation/history/focus effects, palette, platform key layout, and paired native evidence remain active goal acceptance gates.
-Next safe task: Continue R07-000 with `vim::GoToTab` and `vim::HalfPageLeft` classification complete, then advance to `vim::HalfPageRight` (now in progress); do not begin R07-001 or R09.
+Next safe task: Continue R07-000 with `vim::GoToTab`, `vim::HalfPageLeft`, and `vim::HalfPageRight` classification complete, then advance to `vim::HelixAppend` (now in progress); do not begin R07-001 or R09.
 ~~~
 
 
@@ -8315,7 +8315,7 @@ Next safe task: Continue R07-000 with `vim::GoToTab` and `vim::HalfPageLeft` cla
 - Inspected `test_activate_item_with_wrap_around` for Pane boundary behavior, plus Labonair's `CommandId::PrevTab`, Ctrl-Shift-Tab descriptor, active-Space `TabStore` cycle, and `adjacent_tab_navigation_wraps_inside_the_source_space`. Tests were inspected, not run. No direct pinned Vim `GoToPreviousTab` fixture or local `gT` route was found.
 - Updated the GoToPreviousTab packet, registered-action row, `g shift-t` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final post-edit documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 274 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Pane/workspace scope, count edges, activation/history/focus behavior, palette, platform, and paired native acceptance remain active.
-- Next safe task: Continue R07-000 with `vim::GoToTab` and `vim::HalfPageLeft` classification complete, then advance to `vim::HalfPageRight` (now in progress); do not begin R07-001 or R09.
+- Next safe task: Continue R07-000 with `vim::GoToTab`, `vim::HalfPageLeft`, and `vim::HalfPageRight` classification complete, then advance to `vim::HelixAppend` (now in progress); do not begin R07-001 or R09.
 
 ## Pre-change contract — Vim GoToTab
 
@@ -8345,7 +8345,7 @@ Target status: Classify uncounted `gt` next-item activation and counted absolute
 Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 Remaining migration edges: Labonair has top-level Workspace indexed tab selection but no typed Vim GoToTab action, shared `g t` route, or count-based selection within the active Pane's item collection.
 Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Empty/single-item behavior, count extremes, direct palette invocation, platform dispatch, and paired native evidence remain active goal acceptance gates.
-Next safe task: Continue R07-000 with `vim::HalfPageRight` classification complete, then advance to the next earliest registered action, `vim::HelixAppend`; do not begin R07-001 or R09.
+Next safe task: Continue R07-000 with `vim::HalfPageRight` classification complete, then advance to the next earliest registered action, `vim::HelixAppend` (now in progress); do not begin R07-001 or R09.
 ~~~
 
 
@@ -8355,7 +8355,7 @@ Next safe task: Continue R07-000 with `vim::HalfPageRight` classification comple
 - Inspected the Pane `test_activate_item_with_wrap_around` fixture, which covers wrapped Pane next/previous activation but not the Vim handler or count mapping. Tests were inspected, not run. No direct GoToTab action fixture or local `g t` route was found. Labonair's indexed commands select top-level Workspace tabs.
 - Updated the GoToTab packet, registered-action row, `g t` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 275 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Empty/single-item activation, count extremes, palette, platform dispatch, and paired native acceptance remain active.
-- Next safe task: Continue R07-000 with `vim::HalfPageRight` classification complete, then advance to the next earliest registered action, `vim::HelixAppend`; do not begin R07-001 or R09.
+- Next safe task: Continue R07-000 with `vim::HalfPageRight` classification complete, then advance to the next earliest registered action, `vim::HelixAppend` (now in progress); do not begin R07-001 or R09.
 
 ## Pre-change contract — Vim HalfPageLeft
 
@@ -8425,7 +8425,7 @@ Target status: Classify default and counted horizontal page-width scrolling to t
 Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 Remaining migration edges: Labonair stores/clamps horizontal viewport state and exposes scrollbar interaction, but has no typed HalfPageRight/Vim action, `z shift-l` profile binding, or keyboard page-width route.
 Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Bounded-wrap, right-edge, VisualBlock, hover/context-menu, single-line, count extremes, direct palette, platform dispatch, and paired native evidence remain active goal acceptance gates.
-Next safe task: Continue R07-000 with `vim::HelixAppend`; do not begin R07-001 or R09.
+Next safe task: Continue R07-000 with `vim::HelixAppend` (now in progress); do not begin R07-001 or R09.
 ~~~
 
 
@@ -8435,4 +8435,44 @@ Next safe task: Continue R07-000 with `vim::HelixAppend`; do not begin R07-001 o
 - Inspected `test_horizontal_scroll`, which directly checks uncounted HalfPageRight in a 12-column viewport and neighboring one-column scroll actions. Tests were inspected, not run. Labonair stores/clamps `scroll_left` and exposes scrollbar positioning, but has no typed action or keyboard page-width route.
 - Updated the HalfPageRight packet, registered-action row, `z shift-l` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 277 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Counted movement, bounded-wrap, right-edge/gutter cases, selection modes, hover/context-menu, platform dispatch, palette, and paired native acceptance remain active.
-- Next safe task: Continue R07-000 with `vim::HelixAppend`; do not begin R07-001 or R09.
+- Next safe task: Continue R07-000 with `vim::HelixAppend` (now in progress); do not begin R07-001 or R09.
+
+## Pre-change contract — Vim HelixAppend
+
+~~~text
+Request type: Pinned Helix `a` append from Helix Normal and Helix Select, multi-selection endpoint behavior, Insert/Escape restoration, and Labonair's Vim-only append gap; documentation-only classification.
+Owner module: Editor/Vim owns mode transitions, selections, insertion, and transient append restoration; Keymap owns the Helix mode routes. Labonair's existing single-cursor Vim state machine belongs to `labonair-editor`; future profile route belongs to `labonair-keymap` and the Helix-mode value to Settings.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry points: In Helix Normal, `a` under `VimControl && vim_mode == helix_normal && !menu && !BufferSearchBar`; in Helix Select, `a` under `vim_mode == helix_select`. Both dispatch `vim::HelixAppend`.
+Public typed contract: Unit action `vim::HelixAppend`, no JSON arguments or aliases. It records the change, switches to Insert, collapses each empty cursor one display step right or each nonempty selection to its ordered end, and saves the original ranges plus the resulting cursors for the Insert/Escape path.
+State owner: Vim owns Normal/Select/Insert modes and transient append-selection state; Editor owns display selections and document edits; Keymap/Settings gate Helix mode.
+Persistence owner: No action-specific setting or persistence. Inserted text follows Editor buffer persistence; selection restoration is transient.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-HelixAppend`; `KEYBIND-VIM-HELIX-94fcfa5159bd` (Helix Normal `a`); `KEYBIND-VIM-HELIX-b981e342d5c0` (Helix Select `a`). Related Helix `i` routes use HelixInsert; Vim Normal/Visual `a` routes are distinct.
+Events and registry contributions: Existing unit action, two shared keymap rows, Editor selection updates, and Insert-mode transaction/recording; no new event or registry contribution proposed.
+Settings: `SET-keymap-helix-mode` enables Helix contexts; `SET-keymap-vim-mode` enables the Vim action layer. No action-specific setting or count-based append behavior is declared.
+Notifications: None.
+UI-kit components: Existing Editor buffer/selection and mode status surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action schema/handler, Helix Normal/Select key contexts, action count use, pre-append/cursor anchor capture, Escape restoration guard and mode return, `test_helix_select_append`, nearby insert/append tests, and local Vim `a` behavior/mode list; do not run tests.
+Visual evidence: Paired native macOS Editor/Keymap evidence should record Helix mode, starting Normal/Select mode, empty/nonempty and reversed/multiple selections, inserted/no-input path, cursor/range after Escape, focus, profile, platform, viewport, theme, and scale.
+Security impact: None; the action inserts user text and changes selections in the active Editor.
+Performance impact: O(number of selections) to capture and collapse ranges; multi-cursor limits, anchor validity through edits, and edit transaction lifecycle require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema, both shared key routes, selection-end/cursor-right rules, Insert transition, guarded no-edit Escape restoration, direct Helix Select fixture, local single-cursor Vim `a`, and absence of local Helix modes can be classified statically. Normal-mode, multiple/reversed selection, no-edit restore, typed-edit escape, count, palette, platform, and native acceptance remain open.
+Documentation updates: New HelixAppend packet; registered-action row; both Helix `a` binding annotations; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action declaration/handler, both binding rows, append-state structure, Escape restore guard, `test_helix_select_append`, neighboring insert route, local Vim mode enum and `a` behavior inspected. Documentation-only changes are planned; no tests run.
+Target status: Classify selection-aware Helix append and guarded Escape restoration while distinguishing local single-cursor Vim append without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair's Vim Normal `a` enters Insert after the current character for its single cursor, but there is no Helix Normal/Select mode, multi-selection append, Helix action route, or selection restoration on an empty Insert session.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. No-edit restore, multiple/reversed selection, inserted-text cursor, mode/settings interaction, palette, platform dispatch, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::HelixCollapseSelection`; do not begin R07-001 or R09.
+~~~
+
+
+## Vim HelixAppend action classification progress
+
+- Classified Helix Normal/Select `a` as the same unit action: empty cursors move one display step right, nonempty ranges collapse to their ordered end, and the action enters Insert while saving original and post-append ranges. Escape restores original ranges only when there was no insert transaction and the cursors remain at their recorded append positions.
+- Inspected `test_helix_select_append`, which enters Insert after one selected character from Helix Select; it does not cover no-edit Escape restoration, multiple/reversed selections, typed input, or Helix Normal's direct `a` route. Tests were inspected, not run. Labonair has single-cursor Vim Normal `a`, but no Helix Normal/Select mode or selection-restore path.
+- Updated the HelixAppend packet, registered-action row, both `a` binding annotations, Linux/Windows profile note, parity index, feature crosswalk, Helix Mode setting row, and task record. Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 278 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Multi-selection, no-edit restore, count, undo/escape, settings/profile interaction, palette, platform dispatch, and paired native acceptance remain active.
+- Next safe task: Continue R07-000 with `vim::HelixCollapseSelection`; do not begin R07-001 or R09.
