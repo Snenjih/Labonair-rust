@@ -8593,3 +8593,42 @@ Next safe task: Continue R07-000 with `vim::HelixDuplicateAbove` (now in progres
 - Updated the HelixDuplicateAbove packet, registered-action row, `alt-shift-c` binding annotation, Linux/Windows profile note, Helix Mode setting row, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 281 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Count edges, destination ordering/collisions, short-row skipping, wrapping/folds/inlays, palette, platform dispatch, and paired native acceptance remain active.
 - Next safe task: Continue R07-000 with `vim::HelixDuplicateBelow`; do not begin R07-001 or R09.
+
+## Pre-change contract — Vim HelixDuplicateBelow
+
+~~~text
+Request type: Pinned Helix `shift-c` selection duplication below, count, row-fit search, orientation/order, and Labonair's different duplicate-lines command; documentation-only classification.
+Owner module: Editor/Vim owns selection duplication and display/buffer coordinate conversion; Keymap owns the shared `shift-c` route. Labonair's current Editor selection and duplicate-line edit belong to `labonair-editor`; a Helix profile route belongs to `labonair-keymap` and its mode value to Settings.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: `shift-c` in `(vim_mode == helix_normal || vim_mode == helix_select) && !menu`. The action creates up to the count (default one) additional copies of each selection on eligible rows below it.
+Public typed contract: Unit action `vim::HelixDuplicateBelow`, no JSON arguments or aliases. It consumes the Vim count and duplicates each selection as a display range; below destinations move by display row until both endpoint UTF-16 columns fit, preserving endpoint orientation and adding the original plus new ranges to the Editor selection set in input order.
+State owner: Editor owns display selections and snapshot mapping; Vim owns transient count and Helix mode; Keymap/Settings gate the Helix context.
+Persistence owner: No document persistence; the action changes selection state only and does not edit text.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-HelixDuplicateBelow`; `KEYBIND-VIM-HELIX-ebbe6f18c16f` (`shift-c`, `(vim_mode == helix_normal || vim_mode == helix_select) && !menu`). In Vim Normal the same key is a separate ChangeToEndOfLine action.
+Events and registry contributions: Existing Vim action and shared Keymap row; Editor selection-set update only. No edit transaction, register write, or new event/registry contribution is proposed.
+Settings: `SET-keymap-helix-mode` enables Helix Normal/Select contexts; `SET-keymap-vim-mode` enables the Vim/Helix layer. No action-specific setting.
+Notifications: None.
+UI-kit components: Existing Editor selection/caret only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action schema/handler, shared `shift-c` route, count default and iteration, below row-fit algorithm and display/buffer conversion, selection ordering/orientation, direct duplication fixtures, local Duplicate Lines command, and missing Helix mode; do not run tests.
+Visual evidence: Paired native macOS Editor/Keymap evidence should record initial selection ranges and direction, destination rows, count, skipped short rows, multiple selections, line length/wrap/inlay configuration, resulting selection order, focus/profile, platform, viewport, theme, and scale.
+Security impact: None; the action changes only the active Editor's transient selections.
+Performance impact: O(number of selections times traversed display rows), bounded by document rows per selection; large multi-selection sets and very large count values need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema/handler, count default and per-selection expansion, below-route ID/context, display/buffer column conversion, direct Below/count/backward/UTF-16/inlay fixtures, and local text-editing Duplicate Lines command can be classified statically. Count edges, wrapping/folding/inlay interactions, overlapping destinations, platform dispatch, palette, and native behavior remain open.
+Documentation updates: New HelixDuplicateBelow packet; registered-action row; `shift-c` binding annotation; Linux/Windows profile note; Helix Mode setting note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action registration/handler, shared duplication algorithm, count handling, direct Below/Above/backward/count/UTF-16/inlay fixtures, shared binding, local duplicate-line edit, and absence of local Helix mode inspected. Documentation-only changes are planned; no tests run.
+Target status: Classify count-based selection replication below eligible display rows without editing content or claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair's `Duplicate Lines` edits selected physical lines below; it has no selection-only multi-cursor duplication, below-row search, Helix profile route, or Helix mode.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Count zero/extremes, selection order/overlap, physical vs display rows, short-row skipping, Unicode/inlay/wrap/fold cases, palette, platform dispatch, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::HelixDuplicateBelow` (now in progress); do not begin R07-001 or R09.
+~~~
+
+## Vim HelixDuplicateBelow action classification progress
+
+- Classified `shift-c` as selection-only duplication below, with one additional copy by default and up to `N` successful copies per original selection for count `N`. The search moves through display rows, skips rows too short for both UTF-16 endpoint columns, preserves oriented ranges and input selection order, and stops at the display-map boundary; it does not edit text. Vim Normal `Shift-C` remains the separate ChangeToEndOfLine action.
+- Inspected `test_selection_duplication` for direct Below routing, short-row skipping, and the bottom boundary; `test_selection_duplication_count` for count capping; and backward, multiline, multibyte, and inlay fixtures. Tests were inspected, not run. Labonair's `Duplicate Lines` edits physical lines below instead of reproducing selection ranges.
+- Updated the HelixDuplicateBelow packet, registered-action row, `shift-c` binding annotation, Linux/Windows profile note, Helix Mode setting row, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 282 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Count edges, selection ordering/collisions, short-row and display-map cases, palette, platform dispatch, and paired native acceptance remain active.
+- Next safe task: Continue R07-000 with `vim::HelixGotoLastModification`; do not begin R07-001 or R09.

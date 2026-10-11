@@ -26,6 +26,7 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-vim-helix-collapse-selection.md`](action-classification-vim-helix-collapse-selection.md) — Helix `;` per-selection collapse, the overlapping Select/shared keymap rows, and Labonair's missing Helix route; runtime acceptance remains open.
 - [`action-classification-vim-helix-delete.md`](action-classification-vim-helix-delete.md) — Helix Normal/Select `d`, per-selection deletion, Vim register/mark updates, Undo selection restoration, and Labonair's missing Helix route; runtime acceptance remains open.
 - [`action-classification-vim-helix-duplicate-above.md`](action-classification-vim-helix-duplicate-above.md) — counted Helix `alt-shift-c` selection copies above eligible display rows and Labonair's distinct text-editing Duplicate Lines command; runtime acceptance remains open.
+- [`action-classification-vim-helix-duplicate-below.md`](action-classification-vim-helix-duplicate-below.md) — counted Helix `shift-c` selection copies below eligible display rows, distinct from Vim Normal `Shift-C` and Labonair's text-editing Duplicate Lines command; runtime acceptance remains open.
 - [`action-requirements.md`](action-requirements.md) — stable requirement IDs
   for all 595 action identifiers across the default macOS, Linux, and Windows
   keymaps, with 2,731 binding/context records and four null entries. It records
