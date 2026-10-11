@@ -7204,3 +7204,45 @@ Next safe task: Continue R07-000 with vim::ConvertToRot13; do not begin R07-001 
 - First gate pass: passed git diff --check, scripts/check_documentation.py (43 normative docs; 247 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
 - No Rust build, tests, profile or palette dispatch, native behavior, or paired visual evidence were run. These remain active goal acceptance gates. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 with vim::ConvertToRot13; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim ConvertToRot13 transformation
+
+~~~text
+Request type: Pinned registered-action, mode-dependent character transform, Vim Visual binding, and motion-operator distinction; documentation-only.
+Owner module: Editor owns text transforms, selection state, and document edits; Keymap owns shared profile and user bindings; Settings owns Vim/Helix mode values; Command Palette owns existing Vim action discovery.
+Canonical capability crate: labonair-editor; profile composition in labonair-keymap.
+Canonical user entry points: Vim Visual g ? invokes vim::ConvertToRot13 directly over the selected range. Vim Normal g ? starts the separate vim::PushRot13 operator, completed by a motion/object. Focused Vim/Helix Command Palette discovery exposes the registered direct action when a mode is enabled. No active Helix direct key binding was found; ROT47's commented g ? candidates are inactive.
+Public typed contract: Registered unit action vim::ConvertToRot13; applies the ASCII A-Z/a-z ROT13 transform through the mode-aware Editor text manipulation path. Non-ASCII characters, digits, punctuation, and whitespace pass through unchanged. No arguments, settings, or persistence-specific values.
+State owner: Editor owns selections, cursor positions, modal state, and edited text. The direct action consumes count and forced-motion state; direct range and resulting mode depend on Vim/Helix mode. The separate PushRot13 operator owns motion-range conversion.
+Persistence owner: No action-specific persistence; transformed content follows ordinary document save/undo. Vim/Helix settings and profile bindings use their existing owners.
+Commands and keymap entries: ACT-REGISTRY-LINUX-vim-ConvertToRot13; KEYBIND-VIM-HELIX-45608077ee29 (g ?, Vim Visual direct action); KEYBIND-VIM-HELIX-9ee8c30586f4 (g ?, Vim Normal PushRot13 operator). No platform-default map binds the vim:: action.
+Events and registry contributions: Existing Vim action registration, shared mode profile, generic palette route, and Editor text-edit transaction; no new contribution.
+Settings: Vim Mode and Helix Mode gate profile and palette discovery; no ROT13-specific setting.
+Notifications: None expected.
+UI-kit components: Existing Editor selection and Command Palette only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect pinned test_convert_to_rot13 and test_change_rot13_motion/object fixtures without running them. Direct fixture covers Vim Visual characterwise/linewise/blockwise selection, Unicode non-ASCII characters, punctuation, and digits; operator fixtures cover motion/object ranges. No direct Helix transform fixture was found.
+Visual evidence: Text-edit behavior requires paired native macOS Editor evidence for selection, cursor, and mode; no layout change is planned. Cross-platform shared-profile dispatch remains open.
+Security impact: None beyond editing the focused local buffer.
+Performance impact: One transform pass per active selection; large ranges and multi-cursor edits need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static ASCII transform, Visual direct route, Normal operator route, and local owner gap can be classified; palette behavior, platform dispatch, mode transitions, and native behavior remain pending.
+Documentation updates: New ConvertToRot13 packet; registered-action row; Visual and Normal keybinding annotations; Linux/Windows layer note; packet index; commands.keymap/editor.text crosswalks; task progress. No memory note unless a new non-obvious bug or API issue is verified.
+Current status: Pre-change contract and docs-only ConvertToRot13 classification recorded; direct Visual action, Normal operator, ASCII transform, inactive ROT47 candidate, and local owner gap classified; runtime/native acceptance remains open.
+Target status: Classify the direct Visual action and ASCII transform separately from the Normal motion operator; document the inactive ROT47 candidate and missing local ROT13 workflow without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no ROT13 transform action, Vim operator/profile route, Helix route, or palette action.
+Failed/unavailable gates: No failures in the docs-only scope. First pass passed git diff --check, documentation and rework-queue scripts, and verify scopes docs, agents, knowledge, settings, and queue. Rust build/tests, profile/palette dispatch, native behavior, and paired visual evidence were not run in this slice and remain goal acceptance gates.
+Next safe task: Continue R07-000 with vim::ConvertToRot47; do not begin R07-001 or R09.
+~~~
+
+
+## Vim ConvertToRot13 transformation classification progress
+
+- Classified Vim Visual g ? as the direct ROT13 action and Vim Normal g ? as a separate motion/object operator; the ASCII transform preserves case and leaves all non-ASCII characters, digits, punctuation, and whitespace unchanged. The commented ROT47 candidates remain inactive.
+- Confirmed the inspected Visual fixture covers characterwise, linewise, and blockwise ranges; separate fixtures cover the Normal motion/object operator. No direct Helix transform fixture or Labonair ROT13 action was found.
+- Updated the new ConvertToRot13 packet, registered-action row, Visual and Normal binding annotations, Linux/Windows layer note, packet index, commands.keymap/editor.text crosswalks, and this task record.
+- First gate pass: passed git diff --check, scripts/check_documentation.py (43 normative docs; 248 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
+- No Rust build, tests, palette/profile dispatch, native behavior, or paired visual evidence were run. These remain active goal acceptance gates. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 with vim::ConvertToRot47; do not begin R07-001 or R09.
