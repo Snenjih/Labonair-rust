@@ -19,8 +19,8 @@ use gpui::{
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use labonair_editor::{
-    ProjectSearchOptions, ProjectSearchQuery, ProjectSearchStatus, SearchCaseMode, SearchError,
-    SearchOptions, SearchQuery, SearchScope,
+    ProjectReplaceStatus, ProjectSearchOptions, ProjectSearchQuery, ProjectSearchStatus,
+    SearchCaseMode, SearchError, SearchOptions, SearchQuery, SearchScope,
 };
 use labonair_ui_kit::{
     button, button_disabled, search_field, search_input, text_field, text_field_surface,
@@ -229,6 +229,9 @@ impl SearchOverlay {
     }
 
     fn replace_one(&mut self, cx: &mut Context<Self>) {
+        if self.scope == SearchScope::Project {
+            return;
+        }
         let Some(replace_input) = &self.replace_input else {
             return;
         };
@@ -251,6 +254,22 @@ impl SearchOverlay {
             return;
         };
         let replacement = replace_input.read(cx).value().to_string();
+        if self.target == SearchTarget::Editor && self.scope == SearchScope::Project {
+            match self.workspace.update(cx, |workspace, cx| {
+                workspace.project_replace_all(&replacement, cx)
+            }) {
+                Some(Ok(_)) => {
+                    self.error = None;
+                    cx.notify();
+                }
+                Some(Err(_error)) => {
+                    self.error = None;
+                    cx.notify();
+                }
+                _ => cx.notify(),
+            }
+            return;
+        }
         match self
             .workspace
             .update(cx, |w, cx| w.search_replace_all(&replacement, cx))
@@ -325,13 +344,25 @@ impl Render for SearchOverlay {
         let count = project_count.unwrap_or(self.count);
         let has_error = self.error.is_some() || project_error.is_some();
         let has_matches = count.1 > 0 && !has_error;
-        let can_replace = replacement_actions_enabled(
+        let can_replace_file = replacement_actions_enabled(
             self.target,
             self.scope,
             has_matches,
             has_error,
             self.workspace.read(cx).search_can_replace(cx),
         );
+        let can_replace_project = project_snapshot.as_ref().is_some_and(|snapshot| {
+            snapshot.status == ProjectSearchStatus::Ready
+                && !snapshot.truncated
+                && !snapshot.hits.is_empty()
+                && !matches!(&snapshot.replacement_status, ProjectReplaceStatus::Applying)
+                && !has_error
+        });
+        let can_replace_one = can_replace_file;
+        let can_replace_all = match self.scope {
+            SearchScope::CurrentFile => can_replace_file,
+            SearchScope::Project => can_replace_project,
+        };
         let (cur, total) = count;
         let count_label = if has_error {
             "Invalid pattern".to_string()
@@ -356,6 +387,22 @@ impl Render for SearchOverlay {
         let project_truncated = project_snapshot
             .as_ref()
             .is_some_and(|snapshot| snapshot.truncated);
+        let project_replace_message = project_snapshot.as_ref().and_then(|snapshot| {
+            match &snapshot.replacement_status {
+                ProjectReplaceStatus::Idle => None,
+                ProjectReplaceStatus::Applying => Some("Replacing open files…".to_string()),
+                ProjectReplaceStatus::Complete {
+                    files_changed: 0, ..
+                } => Some("No matching open files to replace; closed files were unchanged.".to_string()),
+                ProjectReplaceStatus::Complete {
+                    files_changed,
+                    replacements,
+                } => Some(format!(
+                    "Updated {replacements} matches in {files_changed} open files. Changes are unsaved and undoable; closed files were unchanged."
+                )),
+                ProjectReplaceStatus::Error(message) => Some(message.clone()),
+            }
+        });
         let project_rows = project_snapshot.as_ref().map(|snapshot| {
             snapshot
                 .hits
@@ -446,7 +493,7 @@ impl Render for SearchOverlay {
             )
             .child("↓")
         };
-        let replace_one_button = if can_replace {
+        let replace_one_button = if can_replace_one {
             button(
                 "search-replace-one",
                 palette,
@@ -468,16 +515,21 @@ impl Render for SearchOverlay {
             )
             .child("Replace")
         };
-        let replace_all_button = if can_replace {
+        let replace_all_button = if can_replace_all {
             button(
                 "search-replace-all",
                 palette,
                 ButtonVariant::OutlinedGhost,
                 ButtonSize::Xs,
             )
-            .child("All")
+            .child(if self.scope == SearchScope::Project {
+                "Open"
+            } else {
+                "All"
+            })
             .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                if this.count.1 > 0 && this.error.is_none() {
+                let has_actionable_matches = this.scope == SearchScope::Project || this.count.1 > 0;
+                if has_actionable_matches && this.error.is_none() {
                     this.replace_all(cx)
                 }
             }))
@@ -488,7 +540,11 @@ impl Render for SearchOverlay {
                 ButtonVariant::OutlinedGhost,
                 ButtonSize::Xs,
             )
-            .child("All")
+            .child(if self.scope == SearchScope::Project {
+                "Open"
+            } else {
+                "All"
+            })
         };
         div()
             .id("search-overlay")
@@ -751,6 +807,25 @@ impl Render for SearchOverlay {
                             .text_xs()
                             .text_color(palette.muted)
                             .child("Results truncated; refine the query."),
+                    )
+                })
+                .when_some(project_replace_message, |d, message| {
+                    d.child(
+                        div()
+                            .text_xs()
+                            .text_color(
+                                if matches!(
+                                    project_snapshot
+                                        .as_ref()
+                                        .map(|snapshot| &snapshot.replacement_status),
+                                    Some(ProjectReplaceStatus::Error(_))
+                                ) {
+                                    palette.error
+                                } else {
+                                    palette.muted
+                                },
+                            )
+                            .child(message),
                     )
                 })
             })

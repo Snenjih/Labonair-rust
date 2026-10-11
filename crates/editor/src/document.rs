@@ -19,7 +19,7 @@ use crate::lifecycle::{
     FileLifecycleEvent, FileSessionMetadata, FileSnapshot, FileState, LineEnding, ReloadDecision,
     SaveIntent,
 };
-use crate::search::{self, SearchError, SearchQuery};
+use crate::search::{self, ProjectSearchQuery, SearchError, SearchQuery};
 
 /// Caret movement primitives (keyboard navigation).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -617,6 +617,35 @@ impl Document {
         }
     }
 
+    /// Replace every match of a project query in this buffer as one undoable
+    /// transaction. Workspace applies this to open buffers found by the
+    /// Editor-owned project search; disk files use the same Editor matcher.
+    pub fn replace_project_all_checked(
+        &mut self,
+        query: &ProjectSearchQuery,
+        replacement: &str,
+    ) -> Result<usize, SearchError> {
+        let snapshot = self.buffer.snapshot();
+        let edits = search::replace_project_all_checked(&snapshot, query, replacement)?;
+        if edits.is_empty() {
+            return Ok(0);
+        }
+        let edit_count = edits.len();
+        let cursor = self.buffer.position_to_byte(self.cursor);
+        let after_cursor = map_offset_through_edits(cursor, &edits, AnchorAffinity::After);
+        let after = selection_set_from_offsets(None, after_cursor);
+        if self.apply_edit(
+            edits,
+            after,
+            EditSource::Replace,
+            Some("Replace project matches".to_string()),
+        ) {
+            Ok(edit_count)
+        } else {
+            Ok(0)
+        }
+    }
+
     /// Replace the indexed match as one undoable transaction. The index is in
     /// the order returned by the immutable search snapshot.
     pub fn replace_one(
@@ -930,6 +959,27 @@ mod tests {
         assert_eq!(d.text(), "one one");
         d.redo();
         assert_eq!(d.text(), "two two");
+    }
+
+    #[test]
+    fn project_replace_all_is_one_undoable_document_transaction() {
+        let mut document = Document::from_file("main.rs".into(), "cat12 scat34 CAT5", 0);
+        let query = ProjectSearchQuery::new(
+            r"(cat)(\d+)",
+            crate::search::ProjectSearchOptions {
+                regex: true,
+                whole_word: true,
+                ..Default::default()
+            },
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        );
+
+        assert_eq!(document.replace_project_all_checked(&query, "$2-$1"), Ok(2));
+        assert_eq!(document.text(), "12-cat scat34 5-CAT");
+        document.undo();
+        assert_eq!(document.text(), "cat12 scat34 CAT5");
+        document.redo();
+        assert_eq!(document.text(), "12-cat scat34 5-CAT");
     }
 
     #[test]

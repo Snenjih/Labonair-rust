@@ -57,10 +57,11 @@ use labonair_editor::{
     LanguageServiceResponse, LanguageServiceResult, LanguageServiceRuntime,
     LanguageServiceRuntimeSnapshot, LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus,
     LanguageServiceSnapshot, LanguageServiceState, LocalLanguageServiceRequest, LspPosition,
-    LspRange, Match, Position, ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest,
-    ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot, Revision, SavePolicy,
-    SearchError, SearchOptions, SearchQuery, Selection, SelectionSet, SyntaxHighlighter, TextRange,
-    Viewport, Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
+    LspRange, Match, Position, ProjectBufferCandidate, ProjectReplacePlan, ProjectReplaceRequest,
+    ProjectReplaceResult, ProjectReplaceTarget, ProjectSearchHit, ProjectSearchQuery,
+    ProjectSearchRequest, ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot,
+    Revision, SavePolicy, SearchError, SearchOptions, SearchQuery, Selection, SelectionSet,
+    SyntaxHighlighter, TextRange, Viewport, Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
 };
 use labonair_editor::{build_breadcrumb_state, BreadcrumbState};
 
@@ -3551,6 +3552,131 @@ impl EditorView {
             cx.notify();
         }
         accepted
+    }
+
+    pub fn begin_project_replace(
+        &mut self,
+        replacement: impl Into<String>,
+        cx: &mut Context<Self>,
+    ) -> Result<ProjectReplaceRequest, SearchError> {
+        let request = self.project_search.begin_replace(replacement)?;
+        cx.notify();
+        Ok(request)
+    }
+
+    pub fn complete_project_replace(
+        &mut self,
+        plan: &ProjectReplacePlan,
+        replacements: usize,
+        cx: &mut Context<Self>,
+    ) -> Result<ProjectReplaceResult, SearchError> {
+        if plan.replacements != replacements {
+            let error = SearchError {
+                message: "project replacement count changed while applying the plan".to_string(),
+            };
+            self.project_search
+                .fail_replace(plan.generation, error.message.clone());
+            cx.notify();
+            return Err(error);
+        }
+        let result = ProjectReplaceResult {
+            generation: plan.generation,
+            matched_paths: plan.matched_paths.clone(),
+            files_changed: plan.targets.len(),
+            replacements,
+        };
+        if !self.project_search.accept_replace(result.clone()) {
+            return Err(SearchError {
+                message: "project replacement request is stale".to_string(),
+            });
+        }
+        cx.notify();
+        Ok(result)
+    }
+
+    pub fn fail_project_replace(
+        &mut self,
+        generation: u64,
+        message: impl Into<String>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let accepted = self.project_search.fail_replace(generation, message);
+        if accepted {
+            cx.notify();
+        }
+        accepted
+    }
+
+    pub fn project_buffer_candidate(&self) -> Option<ProjectBufferCandidate> {
+        Some(ProjectBufferCandidate {
+            path: self.path()?.to_string_lossy().into_owned(),
+            snapshot: self.doc.snapshot(),
+            can_edit: self.doc.can_edit(),
+        })
+    }
+
+    pub fn plan_project_replace(
+        &self,
+        request: &ProjectReplaceRequest,
+        buffers: &[ProjectBufferCandidate],
+    ) -> Result<ProjectReplacePlan, SearchError> {
+        let snapshot = self.project_search.snapshot();
+        if snapshot.generation != request.generation
+            || snapshot.replacement_status != labonair_editor::ProjectReplaceStatus::Applying
+        {
+            return Err(SearchError {
+                message: "project replacement request is stale".to_string(),
+            });
+        }
+        labonair_editor::plan_project_replace(request, &snapshot.hits, buffers)
+    }
+
+    pub fn apply_project_replace_target(
+        &mut self,
+        request: &ProjectReplaceRequest,
+        target: &ProjectReplaceTarget,
+        cx: &mut Context<Self>,
+    ) -> Result<usize, SearchError> {
+        if self
+            .path()
+            .as_deref()
+            .map(|path| path.to_string_lossy().into_owned())
+            != Some(target.path.clone())
+            || self.editor_revision() != target.revision
+        {
+            return Err(SearchError {
+                message: format!(
+                    "{} changed before replacement could be applied",
+                    target.path
+                ),
+            });
+        }
+        if !self.doc.can_edit() {
+            return Err(SearchError {
+                message: format!("{} is read-only", target.path),
+            });
+        }
+        let count = self
+            .doc
+            .replace_project_all_checked(&request.query, &request.replacement)?;
+        if count != target.replacements {
+            return Err(SearchError {
+                message: format!(
+                    "{} changed before replacement could be applied",
+                    target.path
+                ),
+            });
+        }
+        if count > 0 {
+            self.search = None;
+            self.clamp_scroll();
+            self.resync_syntax();
+            self.sync_language_service_document(cx);
+            self.refresh_git(cx);
+            cx.emit(EditorEvent::Changed);
+            cx.notify();
+        }
+        Ok(count)
     }
 
     pub fn project_search_snapshot(&self) -> ProjectSearchSnapshot {

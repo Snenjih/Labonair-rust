@@ -128,7 +128,8 @@ use crate::views::terminal::TerminalView;
 use labonair_background_host::BackgroundHost;
 use labonair_editor::{
     FileFinderCandidate, FileFinderQuery, FileFinderResult, LanguageServiceRuntime, Position,
-    ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, SearchError, SearchQuery,
+    ProjectReplaceResult, ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, SearchError,
+    SearchQuery,
 };
 use labonair_editor_ui::{EditorEvent, EditorView};
 use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
@@ -1988,6 +1989,77 @@ impl Workspace {
         let id = self.tabs.read(cx).active_id();
         let editor = self.editors.get(&id).cloned()?;
         Some(editor.update(cx, |editor, cx| editor.search_replace_all(replacement, cx)))
+    }
+
+    /// Replace matches from the active project search in matching open editor
+    /// buffers. Each buffer change is one Editor-owned undoable transaction;
+    /// closed files remain untouched until the project result view can review
+    /// and save cross-file changes safely.
+    pub fn project_replace_all(
+        &mut self,
+        replacement: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<Result<ProjectReplaceResult, SearchError>> {
+        let active_id = self.tabs.read(cx).active_id();
+        let active_editor = self.editors.get(&active_id).cloned()?;
+        let request = match active_editor.update(cx, |editor, cx| {
+            editor.begin_project_replace(replacement.to_string(), cx)
+        }) {
+            Ok(request) => request,
+            Err(error) => return Some(Err(error)),
+        };
+        let mut buffers = Vec::with_capacity(self.editors.len());
+        let mut editors_by_path = std::collections::HashMap::new();
+        for editor in self.editors.values() {
+            if let Some(candidate) = editor.read(cx).project_buffer_candidate() {
+                editors_by_path.insert(candidate.path.clone(), editor.clone());
+                buffers.push(candidate);
+            }
+        }
+        let plan = match active_editor
+            .read(cx)
+            .plan_project_replace(&request, &buffers)
+        {
+            Ok(plan) => plan,
+            Err(error) => {
+                active_editor.update(cx, |editor, cx| {
+                    editor.fail_project_replace(request.generation, error.message.clone(), cx);
+                });
+                return Some(Err(error));
+            }
+        };
+
+        let mut replacements = 0;
+        for target in &plan.targets {
+            let Some(editor) = editors_by_path.get(&target.path).cloned() else {
+                let error = SearchError {
+                    message: format!("{} is no longer open", target.path),
+                };
+                active_editor.update(cx, |editor, cx| {
+                    editor.fail_project_replace(request.generation, error.message.clone(), cx);
+                });
+                return Some(Err(error));
+            };
+            match editor.update(cx, |editor, cx| {
+                editor.apply_project_replace_target(&request, target, cx)
+            }) {
+                Ok(count) => replacements += count,
+                Err(error) => {
+                    active_editor.update(cx, |editor, cx| {
+                        editor.fail_project_replace(request.generation, error.message.clone(), cx);
+                    });
+                    return Some(Err(error));
+                }
+            }
+        }
+        let result = match active_editor.update(cx, |editor, cx| {
+            editor.complete_project_replace(&plan, replacements, cx)
+        }) {
+            Ok(result) => result,
+            Err(error) => return Some(Err(error)),
+        };
+        cx.notify();
+        Some(Ok(result))
     }
 
     pub fn search_can_replace(&self, cx: &App) -> bool {
