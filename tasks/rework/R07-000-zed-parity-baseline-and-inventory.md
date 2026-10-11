@@ -7663,3 +7663,44 @@ Next safe task: Continue R07-000 with `vim::DoubleQuotes` classification complet
 - Updated the DoubleQuotes packet, registered-action row, shared binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 258 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, Helix directional selection, palette behavior, platform dispatch, paired native evidence remain active.
 - Next safe task: Continue R07-000 with the next earliest registered action; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim Down
+
+~~~text
+Request type: Pinned vertical Vim/Helix motion action, shared keymap routes, operator/selection behavior, and local owner gap; documentation-only classification.
+Owner module: Editor owns cursor movement, selections, folds, and motion effects; Keymap owns the shared Vim/Helix profile and user overrides; Settings owns Vim and Helix mode values.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry points: Shared Vim profile binds `j`, Down, and Ctrl-J to `vim::Down` with the default `display_lines: false`; `g j` and `g down` set it true. Helix Normal overrides `j` and Down to true and `g j`/`g down` to false. The shared mode context also applies in Vim Visual/Visual Line/Visual Block and Helix Select where their mode predicates match.
+Public typed contract: `vim::Down { display_lines: bool }`, default false, no aliases. False advances by buffer rows; true advances by rendered display rows, including wrapped segments. The action consumes the pending count and dispatches through the active Vim/Helix mode. Down is linewise for Vim operators regardless of the display-lines argument.
+State owner: Editor owns cursor positions, preferred horizontal/wrapped-row goal, visual selections, folds, and display layout. Vim owns mode, pending operator, and count. Helix owns Normal/Select interpretation. Normal movement preserves its horizontal goal across short rows; display-line movement uses display geometry; Visual, block, and Helix Select extend according to their selection rules. Pending delete/change/yank and other motion operators consume the linewise motion range.
+Persistence owner: None for motion state; cursor, goal, count, operator, and selection state are transient. No text or register change occurs for a bare movement.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-Down`; shared `KEYBIND-VIM-HELIX-9c0c32270aaa`, `e138f555b184`, `ac35d080f76f`, `d82bb38710df`, and `a0df35879ad3`; Helix Normal overrides `96ab9226ec6a`, `6dbdef067170`, `47363d2ac13e`, and `c26667027eca`. No platform-default map binds this action.
+Events and registry contributions: Existing Vim movement action and shared profile only; no new event or registry contribution proposed.
+Settings: Vim/Helix mode values select the owning mode; there is no Down-specific setting.
+Notifications: None expected.
+UI-kit components: Existing Editor and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect without running pinned `test_count_down`, `test_wrapped_lines`, `test_wrapped_motions`, `test_selection_goal`, and fold-motion fixtures for count clamping, logical versus display rows, preferred-column behavior, and folded lines. These fixtures are source evidence, not Labonair acceptance.
+Visual evidence: No layout change proposed. Paired native macOS Editor and Keymap evidence remains required for logical/display-row movement, wraps, Visual/Helix selection, folds, and linewise operators; Linux/Windows profile dispatch needs separate runtime checks.
+Security impact: None; movement and operator effects remain within the active Editor buffer and selected ranges.
+Performance impact: Counted movement, folded-row traversal, layout-dependent display movement, multi-selection, and large counts require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema, shared and Helix override routes, line/display motion implementation, operator/selection dispatch, representative fixtures, and local j-path gap can be classified statically; platform dispatch, palette behavior, visual geometry, and paired native acceptance remain open.
+Documentation updates: New Down packet; registered-action row; all shared Down binding annotations; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action schema, all nine shared/Helix binding rows, logical/display motion implementation, operator modes, representative count/wrap/fold fixtures, and local j resolver/document cursor path inspected. Static classification packet and parity updates are complete; platform dispatch, palette behavior, Helix profile acceptance, and native evidence remain open.
+Target status: Classify buffer-row and display-row movement, count and preferred-column behavior, Vim operators and Visual modes, Helix Normal overrides and Select behavior, folds/wrapping, and the local j-path limitations without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no typed `vim::Down` action, shared Vim/Helix profile or `display_lines` route. Its local `j`/Enter resolver selects logical linewise motion but loses the preferred column through `Document::set_caret` and has no wrapped-display-row motion.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Palette behavior, platform dispatch, count extremes, selection modes, wraps/folds, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::Down` classification complete; then advance to the next earliest registered action without beginning R07-001 or R09.
+~~~
+
+
+## Vim Down action classification progress
+
+- Classified shared Vim `j`/Down/Ctrl-J as counted buffer-row movement and `g j`/`g down` as display-row movement; recorded the Helix Normal overrides that reverse these payloads, linewise operator classification, selection modes, preferred-column/wrapped-row goal behavior, fold-aware mapping, and the local Vim gap.
+- Inspected pinned count, wrapping, goal, and fold fixtures without running. Helix contains general cursor-motion coverage but no focused Down count, wrapped-row, or profile-override fixture.
+- Updated the Down packet, registered-action row, all nine shared/Helix binding annotations, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 259 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, action palette, platform dispatch, wrapped/folded geometry, Helix profile overrides, and paired native evidence remain active.
+- Next safe task: Continue R07-000 with `vim::EndOfDocument`; do not begin R07-001 or R09.
