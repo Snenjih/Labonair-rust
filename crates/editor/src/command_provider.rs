@@ -1,6 +1,6 @@
 //! Editor-owned command metadata.
 
-use crate::editing::{EditIntent, SplitIntent};
+use crate::editing::{DeleteTarget, EditIntent, SplitIntent};
 use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider, CommandSubmenu,
     SubmenuAction, SubmenuDescriptor, SubmenuItem, SubmenuSnapshot,
@@ -85,6 +85,24 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         CommandId::EditorDeleteLine => EditorCommandRoute::Edit(EditIntent::DeleteLine),
         CommandId::EditorJoinLines => EditorCommandRoute::Edit(EditIntent::JoinLines),
         CommandId::EditorRewrap => EditorCommandRoute::Ui(EditorUiCommand::Rewrap),
+        CommandId::EditorDeleteToBeginningOfLine => {
+            EditorCommandRoute::Edit(EditIntent::DeleteTo(DeleteTarget::LineStart))
+        }
+        CommandId::EditorDeleteToEndOfLine => {
+            EditorCommandRoute::Edit(EditIntent::DeleteTo(DeleteTarget::LineEnd))
+        }
+        CommandId::EditorDeleteToNextWordEnd => {
+            EditorCommandRoute::Edit(EditIntent::DeleteTo(DeleteTarget::NextWordEnd))
+        }
+        CommandId::EditorDeleteToPreviousWordStart => {
+            EditorCommandRoute::Edit(EditIntent::DeleteTo(DeleteTarget::PreviousWordStart))
+        }
+        CommandId::EditorDeleteToNextSubwordEnd => {
+            EditorCommandRoute::Edit(EditIntent::DeleteTo(DeleteTarget::NextSubwordEnd))
+        }
+        CommandId::EditorDeleteToPreviousSubwordStart => {
+            EditorCommandRoute::Edit(EditIntent::DeleteTo(DeleteTarget::PreviousSubwordStart))
+        }
         CommandId::EditorExpandSelection => EditorCommandRoute::Edit(EditIntent::ExpandSelection),
         CommandId::EditorShrinkSelection => EditorCommandRoute::Edit(EditIntent::ShrinkSelection),
         CommandId::EditorDuplicateLines => EditorCommandRoute::Edit(EditIntent::DuplicateLines),
@@ -190,6 +208,12 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorDeleteLine,
     CommandId::EditorJoinLines,
     CommandId::EditorRewrap,
+    CommandId::EditorDeleteToBeginningOfLine,
+    CommandId::EditorDeleteToEndOfLine,
+    CommandId::EditorDeleteToNextWordEnd,
+    CommandId::EditorDeleteToPreviousWordStart,
+    CommandId::EditorDeleteToNextSubwordEnd,
+    CommandId::EditorDeleteToPreviousSubwordStart,
     CommandId::EditorExpandSelection,
     CommandId::EditorShrinkSelection,
     CommandId::EditorDuplicateLines,
@@ -314,6 +338,51 @@ impl CommandProvider for EditorCommandProvider {
             CommandDescriptor::new(CommandId::EditorDeleteLine, "Delete Line", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("cmd-shift-k", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
+                CommandId::EditorDeleteToBeginningOfLine,
+                "Delete to Beginning of Line",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("cmd-backspace", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
+                CommandId::EditorDeleteToEndOfLine,
+                "Delete to End of Line",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("cmd-delete", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
+                CommandId::EditorDeleteToNextWordEnd,
+                "Delete to Next Word End",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("alt-delete", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
+                CommandId::EditorDeleteToPreviousWordStart,
+                "Delete to Previous Word Start",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("alt-backspace", Some(CommandContext::Editor))
+            .with_default_binding("ctrl-w", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
+                CommandId::EditorDeleteToNextSubwordEnd,
+                "Delete to Next Subword End",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("ctrl-alt-delete", Some(CommandContext::Editor))
+            .with_default_binding("ctrl-alt-d", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
+                CommandId::EditorDeleteToPreviousSubwordStart,
+                "Delete to Previous Subword Start",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("ctrl-alt-backspace", Some(CommandContext::Editor))
+            .with_default_binding("ctrl-alt-h", Some(CommandContext::Editor)),
             CommandDescriptor::new(CommandId::EditorJoinLines, "Join Lines", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("ctrl-j", Some(CommandContext::Editor)),
@@ -624,6 +693,54 @@ mod tests {
             route_for_command(CommandId::EditorRewrap),
             Some(EditorCommandRoute::Ui(EditorUiCommand::Rewrap))
         );
+    }
+
+    #[test]
+    fn delete_to_boundary_commands_are_editor_owned_and_have_mac_defaults() {
+        let commands = EditorCommandProvider.commands();
+        let cases = [
+            (
+                CommandId::EditorDeleteToBeginningOfLine,
+                "cmd-backspace",
+                DeleteTarget::LineStart,
+            ),
+            (
+                CommandId::EditorDeleteToEndOfLine,
+                "cmd-delete",
+                DeleteTarget::LineEnd,
+            ),
+            (
+                CommandId::EditorDeleteToNextWordEnd,
+                "alt-delete",
+                DeleteTarget::NextWordEnd,
+            ),
+            (
+                CommandId::EditorDeleteToPreviousWordStart,
+                "alt-backspace",
+                DeleteTarget::PreviousWordStart,
+            ),
+            (
+                CommandId::EditorDeleteToNextSubwordEnd,
+                "ctrl-alt-delete",
+                DeleteTarget::NextSubwordEnd,
+            ),
+            (
+                CommandId::EditorDeleteToPreviousSubwordStart,
+                "ctrl-alt-backspace",
+                DeleteTarget::PreviousSubwordStart,
+            ),
+        ];
+        for (id, binding, target) in cases {
+            let command = commands
+                .iter()
+                .find(|command| command.id == id)
+                .expect("delete to boundary descriptor");
+            assert_eq!(command.default_bindings[0].keystrokes, binding);
+            assert_eq!(
+                route_for_command(id),
+                Some(EditorCommandRoute::Edit(EditIntent::DeleteTo(target)))
+            );
+        }
     }
 
     #[test]

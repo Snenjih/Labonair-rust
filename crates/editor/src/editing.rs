@@ -24,6 +24,7 @@ pub enum EditIntent {
     DeleteSelections,
     DeleteLine,
     JoinLines,
+    DeleteTo(DeleteTarget),
     Rewrap {
         columns: usize,
     },
@@ -59,6 +60,16 @@ pub enum EditIntent {
         unit: String,
     },
     TypeBracket(char),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeleteTarget {
+    LineStart,
+    LineEnd,
+    PreviousWordStart,
+    NextWordEnd,
+    PreviousSubwordStart,
+    NextSubwordEnd,
 }
 
 /// Named compatibility type for a single entry in a multi-selection.
@@ -224,6 +235,7 @@ impl Document {
             EditIntent::DeleteSelections => self.delete_selections(),
             EditIntent::DeleteLine => self.delete_lines(),
             EditIntent::JoinLines => self.join_lines(),
+            EditIntent::DeleteTo(target) => self.delete_to(target),
             EditIntent::Rewrap { columns } => self.rewrap(columns),
             EditIntent::Move { motion, extend } => self.multi_move(motion, extend),
             EditIntent::AddCursor(position) => self.add_cursor(position),
@@ -407,6 +419,50 @@ impl Document {
             EditSource::Typing,
             Some("Join lines".into()),
         )
+    }
+
+    fn delete_to(&mut self, target: DeleteTarget) -> EditorCommandResult {
+        let snapshot = self.snapshot();
+        let text = snapshot.text();
+        let targets = self
+            .selection_set()
+            .selections()
+            .iter()
+            .filter_map(|selection| {
+                let range = selection.range().resolve(&snapshot);
+                if !range.is_empty() {
+                    return Some((range, String::new()));
+                }
+                let position = snapshot.byte_to_position(range.start);
+                let boundary = match target {
+                    DeleteTarget::LineStart => snapshot.line_start_byte(position.line),
+                    DeleteTarget::LineEnd => snapshot.line_end_byte(position.line),
+                    DeleteTarget::PreviousWordStart => {
+                        word_delete_boundary(&text, range.start, false, false)
+                    }
+                    DeleteTarget::NextWordEnd => {
+                        word_delete_boundary(&text, range.start, true, false)
+                    }
+                    DeleteTarget::PreviousSubwordStart => {
+                        word_delete_boundary(&text, range.start, false, true)
+                    }
+                    DeleteTarget::NextSubwordEnd => {
+                        word_delete_boundary(&text, range.start, true, true)
+                    }
+                };
+                let range = TextRange::new(range.start.min(boundary), range.start.max(boundary));
+                (!range.is_empty()).then_some((range, String::new()))
+            })
+            .collect();
+        let label = match target {
+            DeleteTarget::LineStart => "Delete to line start",
+            DeleteTarget::LineEnd => "Delete to line end",
+            DeleteTarget::PreviousWordStart => "Delete to previous word start",
+            DeleteTarget::NextWordEnd => "Delete to next word end",
+            DeleteTarget::PreviousSubwordStart => "Delete to previous subword start",
+            DeleteTarget::NextSubwordEnd => "Delete to next subword end",
+        };
+        self.apply_targets(targets, false, EditSource::Delete, Some(label.into()))
     }
 
     fn rewrap(&mut self, columns: usize) -> EditorCommandResult {
@@ -1150,6 +1206,64 @@ impl Document {
     }
 }
 
+fn word_delete_boundary(text: &str, offset: usize, forward: bool, subword: bool) -> usize {
+    let characters = text.char_indices().collect::<Vec<_>>();
+    let mut index = characters.partition_point(|(start, _)| *start < offset);
+    if forward {
+        while index < characters.len() && !is_word_character(characters[index].1) {
+            index += 1;
+        }
+        if index == characters.len() {
+            return text.len();
+        }
+        index += 1;
+        while index < characters.len()
+            && is_word_character(characters[index].1)
+            && (!subword || !is_subword_boundary(&characters, index))
+        {
+            index += 1;
+        }
+        characters
+            .get(index)
+            .map_or(text.len(), |(start, _)| *start)
+    } else {
+        while index > 0 && !is_word_character(characters[index - 1].1) {
+            index -= 1;
+        }
+        while index > 0
+            && is_word_character(characters[index - 1].1)
+            && (!subword || !is_subword_boundary(&characters, index))
+        {
+            index -= 1;
+        }
+        characters.get(index).map_or(0, |(start, _)| *start)
+    }
+}
+
+fn is_word_character(character: char) -> bool {
+    character.is_alphanumeric() || character == '_'
+}
+
+fn is_subword_boundary(characters: &[(usize, char)], index: usize) -> bool {
+    let Some((_, right)) = characters.get(index) else {
+        return false;
+    };
+    let Some((_, left)) = index.checked_sub(1).and_then(|index| characters.get(index)) else {
+        return false;
+    };
+    if !is_word_character(*left) || !is_word_character(*right) || *left == '_' || *right == '_' {
+        return true;
+    }
+    if left.is_numeric() != right.is_numeric() || (left.is_lowercase() && right.is_uppercase()) {
+        return true;
+    }
+    left.is_uppercase()
+        && right.is_uppercase()
+        && characters
+            .get(index + 1)
+            .is_some_and(|(_, next)| next.is_lowercase())
+}
+
 fn rewrap_lines(lines: &[String], columns: usize) -> Option<String> {
     let first = lines.first()?;
     let indentation_len = first.len() - first.trim_start().len();
@@ -1712,6 +1826,52 @@ mod tests {
         ));
         document.execute_edit(EditIntent::DeleteLine);
         assert_eq!(document.text(), "two\nthree");
+    }
+
+    #[test]
+    fn delete_to_line_boundaries_supports_multiple_cursors_and_undo() {
+        let mut document = doc("ab cd\nef gh");
+        document.set_caret(Position::new(0, 1), false);
+        document.execute_edit(EditIntent::AddCursor(Position::new(1, 1)));
+        document.execute_edit(EditIntent::DeleteTo(DeleteTarget::LineEnd));
+        assert_eq!(document.text(), "a\ne");
+        document.undo();
+        assert_eq!(document.text(), "ab cd\nef gh");
+
+        let mut start = doc("alpha beta");
+        start.set_caret(Position::new(0, 6), false);
+        start.execute_edit(EditIntent::DeleteTo(DeleteTarget::LineStart));
+        assert_eq!(start.text(), "beta");
+    }
+
+    #[test]
+    fn delete_to_word_and_subword_boundaries_handles_unicode_and_selections() {
+        let mut next_word = doc("one, two three");
+        next_word.set_caret(Position::new(0, 0), false);
+        next_word.execute_edit(EditIntent::DeleteTo(DeleteTarget::NextWordEnd));
+        assert_eq!(next_word.text(), ", two three");
+
+        let mut previous_word = doc("one two");
+        previous_word.set_caret(Position::new(0, 7), false);
+        previous_word.execute_edit(EditIntent::DeleteTo(DeleteTarget::PreviousWordStart));
+        assert_eq!(previous_word.text(), "one ");
+
+        let mut next_subword = doc("parseHTTPValue42");
+        next_subword.set_caret(Position::new(0, 0), false);
+        next_subword.execute_edit(EditIntent::DeleteTo(DeleteTarget::NextSubwordEnd));
+        assert_eq!(next_subword.text(), "HTTPValue42");
+
+        let mut previous_subword = doc("λValue42_part");
+        let end = previous_subword.snapshot().end();
+        previous_subword.set_caret(end, false);
+        previous_subword.execute_edit(EditIntent::DeleteTo(DeleteTarget::PreviousSubwordStart));
+        assert_eq!(previous_subword.text(), "λValue42_");
+
+        let mut selected = doc("delete this");
+        selected.set_caret(Position::new(0, 0), false);
+        selected.set_caret(Position::new(0, 6), true);
+        selected.execute_edit(EditIntent::DeleteTo(DeleteTarget::NextWordEnd));
+        assert_eq!(selected.text(), " this");
     }
 
     #[test]

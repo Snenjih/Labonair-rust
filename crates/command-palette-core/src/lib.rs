@@ -106,6 +106,12 @@ pub enum CommandId {
     EditorDeleteLine,
     EditorJoinLines,
     EditorRewrap,
+    EditorDeleteToBeginningOfLine,
+    EditorDeleteToEndOfLine,
+    EditorDeleteToNextWordEnd,
+    EditorDeleteToPreviousWordStart,
+    EditorDeleteToNextSubwordEnd,
+    EditorDeleteToPreviousSubwordStart,
     EditorExpandSelection,
     EditorShrinkSelection,
     EditorDuplicateLines,
@@ -558,6 +564,30 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::EditorDeleteLine, "editor.delete-line"),
     (CommandId::EditorJoinLines, "editor.join-lines"),
     (CommandId::EditorRewrap, "editor.rewrap"),
+    (
+        CommandId::EditorDeleteToBeginningOfLine,
+        "editor.delete-to-beginning-of-line"
+    ),
+    (
+        CommandId::EditorDeleteToEndOfLine,
+        "editor.delete-to-end-of-line"
+    ),
+    (
+        CommandId::EditorDeleteToNextWordEnd,
+        "editor.delete-to-next-word-end"
+    ),
+    (
+        CommandId::EditorDeleteToPreviousWordStart,
+        "editor.delete-to-previous-word-start"
+    ),
+    (
+        CommandId::EditorDeleteToNextSubwordEnd,
+        "editor.delete-to-next-subword-end"
+    ),
+    (
+        CommandId::EditorDeleteToPreviousSubwordStart,
+        "editor.delete-to-previous-subword-start"
+    ),
     (CommandId::EditorExpandSelection, "editor.expand-selection"),
     (CommandId::EditorShrinkSelection, "editor.shrink-selection"),
     (CommandId::EditorDuplicateLines, "editor.duplicate-lines"),
