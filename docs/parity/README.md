@@ -29,6 +29,7 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-vim-helix-duplicate-below.md`](action-classification-vim-helix-duplicate-below.md) — counted Helix `shift-c` selection copies below eligible display rows, distinct from Vim Normal `Shift-C` and Labonair's text-editing Duplicate Lines command; runtime acceptance remains open.
 - [`action-classification-vim-helix-goto-last-modification.md`](action-classification-vim-helix-goto-last-modification.md) — Helix `g .` jump to the current Vim edit mark, distinct from change-list traversal and dot-repeat; runtime acceptance remains open.
 - [`action-classification-vim-helix-goto-line.md`](action-classification-vim-helix-goto-line.md) — counted Helix `shift-g` jump to a clamped one-based line at column 0, distinct from Vim `G` and the Go to Line prompt; runtime acceptance remains open.
+- [`action-classification-vim-helix-insert.md`](action-classification-vim-helix-insert.md) — Helix Normal `i` collapses nonempty ranges to their start and enters Insert, distinct from Helix Select `i` and the shared InsertBefore alias; runtime acceptance remains open.
 - [`action-requirements.md`](action-requirements.md) — stable requirement IDs
   for all 595 action identifiers across the default macOS, Linux, and Windows
   keymaps, with 2,731 binding/context records and four null entries. It records

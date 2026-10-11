@@ -8710,3 +8710,42 @@ Next safe task: Continue R07-000 with `vim::HelixGotoLine` (now in progress); do
 - Updated the HelixGotoLine packet, registered-action row, `shift-g` binding annotation, Linux/Windows profile note, Helix Mode setting row, parity README, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 284 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests and native visual acceptance remain outstanding for the overall goal.
 - Next safe task: Continue R07-000 with `vim::HelixInsert`; do not begin R07-001 or R09.
+
+## Pre-change contract — Vim HelixInsert
+
+~~~text
+Request type: Pinned Helix Normal `i` entry into Insert mode, selection collapse, count/repeat handoff, and distinction from Helix Select's `i` and generic InsertBefore; documentation-only classification.
+Owner module: Editor/Vim owns selection positioning, Insert-mode transition, edit recording, and Escape behavior; Keymap owns mode-scoped `i` dispatch. Labonair's current single-cursor Vim state and text edits belong to `labonair-editor`; a Helix route belongs to `labonair-keymap` and its mode value to Settings.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: `i` in `VimControl && vim_mode == helix_normal && !menu && !BufferSearchBar`. Helix Select `i` is a separate route to `vim::InsertBefore`; shared `insert` also maps to InsertBefore.
+Public typed contract: Unit action `vim::HelixInsert`, no JSON arguments or aliases. It starts Vim change recording, collapses each nonempty Helix Normal selection to its ordered start, preserves empty cursor points, then switches the Vim addon to Insert mode.
+State owner: Editor owns selections and text transactions; Vim owns Helix/Insert mode, transient count, and repeat recording; Keymap/Settings gate Helix Normal contexts.
+Persistence owner: Entry itself does not edit text or persist state. Typed content is recorded through the Editor during Insert mode; selection restoration and count/repeat lifecycle remain to be accepted.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-HelixInsert`; `KEYBIND-VIM-HELIX-84adab6e6e44` (`i`, `VimControl && vim_mode == helix_normal && !menu && !BufferSearchBar`). Helix Select `i` is `KEYBIND-VIM-HELIX-a18dd5eeb9c1` → `vim::InsertBefore`; generic `insert` is `KEYBIND-VIM-HELIX-d22a7f2c782d` → `vim::InsertBefore`.
+Events and registry contributions: Existing Vim action and shared Keymap rows; Editor selection update and subsequent Insert transactions only. No new event or registry contribution is proposed.
+Settings: `SET-keymap-helix-mode` enables Helix Normal/Select contexts; `SET-keymap-vim-mode` enables the Vim/Helix layer. No action-specific setting.
+Notifications: None.
+UI-kit components: Existing Editor cursor/selection and Insert-mode UI only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action schema/handler, direct `test_insert_selected`, `test_insert_mode_stickiness`, Insert Escape/NormalBefore path, count and repeat machinery, Helix Normal and Select keymap rows, and local single-cursor `i`; do not run tests.
+Visual evidence: Paired native macOS Editor/Keymap evidence should record mode/profile settings, input focus, starting caret and selection direction/range, insertion point, Insert mode, typed/no-edit path, Escape result, count, platform, viewport, theme, and scale.
+Security impact: None; the action enters the active Editor's Insert mode.
+Performance impact: O(number of selections) for collapse plus ordinary Editor mode transition; multi-cursor scale and large selections need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Registry, Helix Normal binding, selection-collapse handler, Insert mode transition, direct selected-range and mode fixture expectations, and distinct local/Helix Select routes can be classified statically. Counted insertion, empty/multiple/reversed cursor ranges, Escape after no edit/edit/undo, stale append state, palette, platform dispatch, and native behavior remain open.
+Documentation updates: New HelixInsert packet; registered-action row; `i` binding annotation and Helix Select distinction; Linux/Windows profile note; Helix Mode setting row; parity README; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action schema, handler, Vim change recording, Helix Normal and Select bindings, generic InsertBefore alias, `test_insert_selected`, `test_insert_mode_stickiness`, NormalBefore Escape/count route, repeat helper, and local single-cursor `i` route inspected. Documentation-only changes are planned; no tests run.
+Target status: Classify `i` in Helix Normal as beginning insertion at the selected character's start (or the empty cursor point) and entering Insert mode, without conflating it with Helix Select's InsertBefore route or claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has a single-cursor Vim `i` route but no Helix mode, Helix selection model, or mode-scoped Helix Insert route. The pinned direct fixture proves only one forward nonempty range and a separate empty-cursor mode transition; other selection, count, Escape, and repeat outcomes are open.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Empty/EOF/multicursor/reversed selections, count handling, Insert Escape restoration, edits followed by undo, buffer/focus transitions, palette, platform dispatch, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::HelixInsert` (now in progress); do not begin R07-001 or R09.
+~~~
+
+## Vim HelixInsert action classification progress
+
+- Classified Helix Normal `i` as beginning Insert mode at the start of every nonempty selection while leaving empty cursor points in place. The action starts change recording and does not edit text on entry. Helix Select `i` and the shared `insert` alias use `InsertBefore` instead.
+- Inspected the action schema/handler, Helix Normal/Select/alias keymap rows, `test_insert_selected`, `test_insert_mode_stickiness`, Insert Escape/count handling, repeatable-insert matching, and Labonair's single-cursor local `i`. Fixtures were inspected, not run. Counted Helix insertion and selected-range restoration on Escape remain open.
+- Updated the HelixInsert packet, registered-action row, Normal/Select/alias keymap annotations, Linux/Windows profile note, Helix Mode setting row, parity README, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 285 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests and native visual acceptance remain outstanding for the overall goal.
+- Next safe task: Continue R07-000 with `vim::HelixInsertEndOfLine`; do not begin R07-001 or R09.
