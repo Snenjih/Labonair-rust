@@ -7867,4 +7867,45 @@ Next safe task: Continue R07-000 with `vim::EndOfParagraph` classification compl
 - Inspected the count/blank-row and whitespace-row motion fixtures plus the end-paragraph delete fixture without running. Platform dispatch, keyboard layouts, Helix mode behavior, remaining EOF/operator cases, and jump-list interaction remain runtime acceptance.
 - Updated the EndOfParagraph packet, registered-action row, `}` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final documentation-only gates passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 263 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, action palette, platform/key-layout dispatch, mode/operator edge cases, jump history, and paired native evidence remain active.
-- Next safe task: Continue R07-000 with `vim::EndRepeat`; do not begin R07-001 or R09.
+- Next safe task: Continue R07-000 with `vim::EndRepeat` classification complete; then advance to the next earliest registered action without beginning R07-001 or R09.
+
+
+## Pre-change contract — Vim EndRepeat
+
+~~~text
+Request type: Pinned dot-repeat completion sentinel, replay state/mode cleanup, and local owner gap; documentation-only classification.
+Owner module: Editor/Vim owns recorded actions, replayer state, and mode transitions; Keymap owns the user-facing `.` route to `vim::Repeat`.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: Indirect only: `.` invokes `vim::Repeat`; its recorded-action sequence dispatches `vim::EndRepeat` as the terminal sentinel. EndRepeat has no direct key binding. Macro `ToggleRecord` and `ReplayLastRecording` are separate actions.
+Public typed contract: Unit action `vim::EndRepeat`, no arguments or aliases. When the dot-repeat replayer reaches it, the action clears `VimGlobals.dot_replaying` and switches Vim to Normal mode. Temporary-mode replay may append `InsertBefore` after it. If focus moves before the sentinel can run, replayer exhaustion takes the queue and clears `dot_replaying`; replay also aborts after 10,000 steps. The fallback does not perform the sentinel's mode transition.
+State owner: Editor owns active-item focus and buffer transaction finalization. Vim owns recorded actions, `dot_replaying`, the transient Replayer queue/index, and mode; Keymap owns `.` dispatch.
+Persistence owner: None; replay queue, repeat flag, and mode are transient runtime state. Replayed edits use the active document and register state.
+Commands and keymap entries: No EndRepeat binding; related `KEYBIND-VIM-HELIX-971da043074c` (`.` → `vim::Repeat`, shared VimControl profile) and `KEYBIND-VIM-HELIX-26f2d9ffb99b` (`.` → `vim::Repeat`, Helix Select). No platform-default EndRepeat binding.
+Events and registry contributions: Existing registered Vim action and `vim::Repeat` replay sequence only; no new event or registry contribution proposed.
+Settings: No action-specific setting; Vim/Helix mode values select the calling behavior.
+Notifications: None expected.
+UI-kit components: Existing Editor and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect without running `normal/repeat.rs::test_dot_repeat`, `normal/repeat.rs::test_repeat_completion`, `normal/repeat.rs::test_repeat_after_blur_resets_dot_replaying`, and `normal/repeat.rs::test_undo_repeated_insert`. Check direct invocation, cancellation, action-dispatch failure, mode restoration, and transaction behavior independently; pinned tests do not establish Labonair acceptance.
+Visual evidence: No layout change proposed. Paired native macOS Editor and Keymap evidence is required for `.`, replay completion, modes, focus loss, and final document/undo state; Linux/Windows dispatch needs separate runtime checks.
+Security impact: Replays recorded user actions in the active Editor; focus changes, stale targets, and cancellation require acceptance.
+Performance impact: Replayer schedules actions sequentially and has a 10,000-step abort; long recorded changes and focus-switch actions require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema, lack of direct key binding, `.` caller, appended sentinel, mode reset, replayer exhaustion fallback, focused fixtures, and local absence can be classified statically; palette exposure, direct invocation, platform dispatch, and paired native acceptance remain open.
+Documentation updates: New EndRepeat packet; registered-action row; `.` Repeat binding annotations; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action schema, `. -> Repeat` caller, appended sentinel, handler state/mode changes, focus-loss and 10,000-step cleanup, focused fixtures, and local replay gap inspected. Static classification packet and parity updates are complete; palette, direct invocation, platform, mode, and native acceptance remain open.
+Target status: Classify EndRepeat as the internal dot-repeat terminator, document normal-mode and replay-state cleanup, distinguish it from macro recording/playback, and record the replayer recovery path without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no `.` `vim::Repeat` route, typed EndRepeat action, replay queue, recorded change pipeline, temporary-mode restoration, or focus-loss/step-limit recovery.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Palette exposure, direct invocation, action/focus failure, mode recovery, platform dispatch, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::EndRepeat` classification complete; then advance to the next earliest registered action without beginning R07-001 or R09.
+~~~
+
+
+## Vim EndRepeat action classification progress
+
+- Classified `vim::EndRepeat` as the internal sentinel that terminates dot-repeat playback, clears `dot_replaying`, and restores Normal mode. Recorded the focus-loss and 10,000-step fail-safe, distinct from macro recording/playback.
+- Inspected the ordinary repeat, completion, and focus-loss fixtures without running. Direct action invocation, palette exposure, platform routing, mode recovery, and failure/cancellation cases remain runtime acceptance.
+- Updated the EndRepeat packet, unbound-action row, both `.` Repeat binding annotations, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final documentation-only gates passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 264 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, action palette, direct-invocation behavior, platform dispatch, focus/mode recovery, and paired native evidence remain active.
+- Next safe task: Continue R07-000 with `vim::Enter`; do not begin R07-001 or R09.
