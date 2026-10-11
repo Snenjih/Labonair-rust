@@ -138,6 +138,24 @@ pub struct FileSessionMetadata {
     pub bom: Bom,
 }
 
+/// Current text-file serialization choices for an open document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileFormat {
+    pub line_ending: LineEnding,
+    pub encoding: Encoding,
+    pub bom: Bom,
+}
+
+impl From<&FileSnapshot> for FileFormat {
+    fn from(snapshot: &FileSnapshot) -> Self {
+        Self {
+            line_ending: snapshot.line_ending,
+            encoding: snapshot.encoding,
+            bom: snapshot.bom,
+        }
+    }
+}
+
 impl FileSnapshot {
     pub fn new(
         identity: FileIdentity,
@@ -268,6 +286,7 @@ pub struct FileLifecycle {
     state: FileState,
     accepted: Option<FileSnapshot>,
     observed: Option<FileIdentity>,
+    current_format: Option<FileFormat>,
 }
 
 impl Default for FileLifecycle {
@@ -282,6 +301,7 @@ impl FileLifecycle {
             state: FileState::New,
             accepted: None,
             observed: None,
+            current_format: None,
         }
     }
 
@@ -294,12 +314,18 @@ impl FileLifecycle {
     }
 
     pub fn session_metadata(&self) -> Option<FileSessionMetadata> {
-        self.accepted.as_ref().map(|snapshot| FileSessionMetadata {
+        let snapshot = self.accepted.as_ref()?;
+        let format = self.current_format?;
+        Some(FileSessionMetadata {
             identity: snapshot.identity.clone(),
-            line_ending: snapshot.line_ending,
-            encoding: snapshot.encoding,
-            bom: snapshot.bom,
+            line_ending: format.line_ending,
+            encoding: format.encoding,
+            bom: format.bom,
         })
+    }
+
+    pub fn current_format(&self) -> Option<FileFormat> {
+        self.current_format
     }
 
     pub fn path(&self) -> Option<&Path> {
@@ -309,9 +335,12 @@ impl FileLifecycle {
     }
 
     pub fn is_dirty(&self, current_text: &str) -> bool {
-        self.accepted
-            .as_ref()
-            .is_some_and(|snapshot| snapshot.text != current_text)
+        self.accepted.as_ref().is_some_and(|snapshot| {
+            snapshot.text != current_text
+                || self
+                    .current_format
+                    .is_some_and(|format| format != FileFormat::from(snapshot))
+        })
     }
 
     pub fn can_edit(&self) -> bool {
@@ -376,6 +405,7 @@ impl FileLifecycle {
             FileState::Clean
         })?;
         let identity = snapshot.identity.clone();
+        self.current_format = Some(FileFormat::from(&snapshot));
         self.accepted = Some(snapshot);
         self.observed = None;
         Ok(FileLifecycleEvent::Reloaded { identity })
@@ -402,6 +432,9 @@ impl FileLifecycle {
             Bom::None,
             capabilities,
         ));
+        if let Some(snapshot) = self.accepted.as_ref() {
+            self.current_format = Some(FileFormat::from(snapshot));
+        }
         self.observed = None;
         Ok(())
     }
@@ -460,6 +493,44 @@ impl FileLifecycle {
             return Ok(Some(FileLifecycleEvent::DirtyChanged { dirty: false }));
         }
         Ok(None)
+    }
+
+    /// Change the serialization line ending and reconcile the dirty state
+    /// against both text and accepted file metadata.
+    pub fn set_line_ending(
+        &mut self,
+        line_ending: LineEnding,
+        current_text: &str,
+    ) -> Result<Option<FileLifecycleEvent>, FileLifecycleError> {
+        if line_ending == LineEnding::Mixed {
+            return Err(FileLifecycleError::InvalidDecision);
+        }
+        if !self.can_edit() {
+            return Err(FileLifecycleError::ReadOnly);
+        }
+        if !matches!(
+            self.state,
+            FileState::Clean | FileState::Dirty | FileState::Conflict
+        ) {
+            return Err(FileLifecycleError::UnsupportedState(
+                self.state.name().to_string(),
+            ));
+        }
+        if self.accepted.is_none() {
+            return Err(FileLifecycleError::UnsupportedState(
+                self.state.name().to_string(),
+            ));
+        }
+        let Some(format) = self.current_format.as_mut() else {
+            return Err(FileLifecycleError::UnsupportedState(
+                self.state.name().to_string(),
+            ));
+        };
+        if format.line_ending == line_ending {
+            return Ok(None);
+        }
+        format.line_ending = line_ending;
+        self.sync_buffer(current_text)
     }
 
     pub fn observe_external(
@@ -549,6 +620,7 @@ impl FileLifecycle {
             FileState::Clean
         })?;
         let identity = snapshot.identity.clone();
+        self.current_format = Some(FileFormat::from(&snapshot));
         self.accepted = Some(snapshot);
         self.observed = None;
         Ok(FileLifecycleEvent::Saved { identity })
@@ -693,6 +765,54 @@ mod tests {
         assert_eq!(detect_line_ending("a\r\nb\nc"), LineEnding::Mixed);
         assert_eq!(normalize_line_endings("a\r\nb\rc\n"), "a\nb\nc\n");
         assert_eq!(apply_line_ending("a\nb", LineEnding::CrLf), "a\r\nb");
+    }
+
+    #[test]
+    fn line_ending_changes_are_dirty_and_revert_to_clean() {
+        let mut lifecycle = FileLifecycle::new();
+        lifecycle.begin_loading().unwrap();
+        lifecycle.accept_loaded(snapshot("a.txt", 1)).unwrap();
+
+        assert_eq!(
+            lifecycle
+                .set_line_ending(LineEnding::CrLf, "one\ntwo")
+                .unwrap(),
+            Some(FileLifecycleEvent::DirtyChanged { dirty: true })
+        );
+        assert_eq!(lifecycle.state(), &FileState::Dirty);
+        assert_eq!(
+            lifecycle.current_format().unwrap().line_ending,
+            LineEnding::CrLf
+        );
+        assert_eq!(
+            lifecycle.session_metadata().unwrap().line_ending,
+            LineEnding::CrLf
+        );
+
+        assert_eq!(
+            lifecycle
+                .set_line_ending(LineEnding::Lf, "one\ntwo")
+                .unwrap(),
+            Some(FileLifecycleEvent::DirtyChanged { dirty: false })
+        );
+        assert_eq!(lifecycle.state(), &FileState::Clean);
+        assert_eq!(
+            lifecycle.current_format().unwrap().line_ending,
+            LineEnding::Lf
+        );
+    }
+
+    #[test]
+    fn mixed_line_endings_cannot_be_selected_as_a_serialization_style() {
+        let mut lifecycle = FileLifecycle::new();
+        lifecycle.begin_loading().unwrap();
+        lifecycle.accept_loaded(snapshot("a.txt", 1)).unwrap();
+
+        assert_eq!(
+            lifecycle.set_line_ending(LineEnding::Mixed, "one\ntwo"),
+            Err(FileLifecycleError::InvalidDecision)
+        );
+        assert_eq!(lifecycle.state(), &FileState::Clean);
     }
 
     #[test]

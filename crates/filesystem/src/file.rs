@@ -694,7 +694,12 @@ pub fn save_editor_file_lifecycle_sync(
         path: target.clone(),
         message: e.to_string(),
     })?;
-    snapshot_from_bytes(&target, &meta, serialized.as_bytes())
+    let mut snapshot = snapshot_from_bytes(&target, &meta, serialized.as_bytes())?;
+    snapshot.line_ending = match line_ending {
+        StorageLineEnding::Mixed => StorageLineEnding::Lf,
+        selected => selected,
+    };
+    Ok(snapshot)
 }
 
 // Compatibility boundary for the AI file tools. The editor/workspace uses
@@ -768,4 +773,44 @@ pub async fn fs_file_exists(path: String) -> bool {
     })
     .await
     .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn save_keeps_selected_line_ending_for_single_line_files() {
+        let path = std::env::temp_dir().join(format!(
+            "labonair-single-line-eol-{}-{}.txt",
+            std::process::id(),
+            NEXT_TEMP_FILE.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::write(&path, b"plain text").expect("create test input");
+        let path_text = path.to_string_lossy().to_string();
+        let loaded = load_editor_file_lifecycle_sync(&path_text, None).expect("load test input");
+        let EditorLifecycleLoad::Text { snapshot } = loaded else {
+            panic!("test input should load as text");
+        };
+
+        let saved = save_editor_file_lifecycle_sync(
+            &path_text,
+            "plain text",
+            StorageLineEnding::CrLf,
+            StorageBom::None,
+            &snapshot.identity,
+            StorageSaveIntent::Normal,
+        )
+        .expect("save test input");
+
+        assert_eq!(saved.line_ending, StorageLineEnding::CrLf);
+        assert_eq!(
+            std::fs::read(&path).expect("read saved input"),
+            b"plain text"
+        );
+        std::fs::remove_file(path).expect("remove test input");
+    }
 }

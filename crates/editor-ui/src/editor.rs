@@ -38,7 +38,9 @@ use labonair_editor::{
     document::Motion,
     editing::{EditIntent, EditorCommand, EditorCommandResult, SplitIntent},
     find,
-    lifecycle::{FileCapabilities, FileLifecycleEvent, FileState, ReloadDecision, SaveIntent},
+    lifecycle::{
+        FileCapabilities, FileLifecycleEvent, FileState, LineEnding, ReloadDecision, SaveIntent,
+    },
     next_match_with_wrap, Anchor, AnchorAffinity, CancellationToken, DisplayConfig, DisplayMap,
     DisplayRowKind, DisplaySnapshot, Document, DocumentVersion, Edit, EditorSessionId,
     EditorSessionSnapshot, EditorViewSession, FoldRange, GitDecorationProvider,
@@ -337,6 +339,7 @@ pub struct EditorView {
     /// contract and embedded by Workspace in its outer session snapshot.
     folds: Vec<FoldRange>,
     selection_menu_anchor: Option<Point<Pixels>>,
+    line_ending_menu_anchor: Option<Point<Pixels>>,
     selection_drag: Option<EditorSelectionDrag>,
     outline_open: bool,
     /// Editor-internal groups. Workspace pane layouts remain a separate
@@ -509,6 +512,7 @@ impl EditorView {
             scroll_left: 0,
             folds: Vec::new(),
             selection_menu_anchor: None,
+            line_ending_menu_anchor: None,
             selection_drag: None,
             outline_open: false,
             editor_splits: labonair_editor::EditorSplitTree::default(),
@@ -2350,6 +2354,7 @@ impl EditorView {
     /// Load `path` into this view, replacing any current document.
     pub fn open_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         self.close_language_service_document();
+        self.line_ending_menu_anchor = None;
         self.pending_navigation = None;
         self.doc = Document::loading(path.clone());
         self.recovery_prompt = None;
@@ -2455,6 +2460,7 @@ impl EditorView {
         let Some(path) = self.doc.path.clone() else {
             return;
         };
+        self.line_ending_menu_anchor = None;
         self.invalidate_git_requests();
         self.git_gutter =
             GitGutterSnapshot::loading(path.to_string_lossy().to_string(), self.editor_revision());
@@ -2540,7 +2546,12 @@ impl EditorView {
         }
         let content = self.doc.text();
         let expected = Self::storage_identity(file_snapshot.identity.clone());
-        let line_ending = Self::storage_line_ending(file_snapshot.line_ending);
+        let line_ending = Self::storage_line_ending(
+            self.doc
+                .file_format()
+                .map(|format| format.line_ending)
+                .unwrap_or(file_snapshot.line_ending),
+        );
         let bom = Self::storage_bom(file_snapshot.bom);
         let write = cx.background_executor().spawn(async move {
             let current = stat_editor_file_sync(&path_str)?;
@@ -4553,11 +4564,65 @@ impl EditorView {
                 selected_chars
             ));
         }
-        let right = format!(
+        let right_label = format!(
             "{} · {} lines",
             self.doc.language.label(),
             snapshot.line_count()
         );
+        let mut right = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(SharedString::from(right_label));
+        let file_format = match self.doc.file_state() {
+            FileState::Clean
+            | FileState::Dirty
+            | FileState::Conflict
+            | FileState::ReadOnly
+            | FileState::Missing => self.doc.file_format(),
+            _ => None,
+        };
+        if let Some(format) = file_format {
+            let ending_label = format.line_ending.as_str();
+            let can_change_line_ending = self.doc.can_edit()
+                && matches!(
+                    self.doc.file_state(),
+                    FileState::Clean | FileState::Dirty | FileState::Conflict
+                );
+            if can_change_line_ending {
+                let trigger = button(
+                    "editor-line-ending-menu",
+                    palette,
+                    ButtonVariant::Transparent,
+                    ButtonSize::Xs,
+                )
+                .child(SharedString::from(ending_label))
+                .tooltip(|window, cx| Tooltip::new("Change line ending").build(window, cx))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, event: &MouseDownEvent, _window, cx| {
+                        this.line_ending_menu_anchor = Some(Point {
+                            x: event.position.x,
+                            y: event.position.y + px(4.0),
+                        });
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                );
+                right = right.child(trigger);
+            } else {
+                right = right.child(SharedString::from(ending_label));
+            }
+            let mut encoding = div()
+                .flex()
+                .items_center()
+                .text_color(palette.muted)
+                .child(SharedString::from(format.encoding.as_str()));
+            if format.bom == labonair_editor::lifecycle::Bom::Utf8 {
+                encoding = encoding.child("BOM");
+            }
+            right = right.child(encoding);
+        }
         div()
             .flex()
             .items_center()
@@ -4572,8 +4637,61 @@ impl EditorView {
             .text_xs()
             .text_color(palette.muted)
             .child(SharedString::from(left.join("  ·  ")))
-            .child(SharedString::from(right))
+            .child(right)
             .into_any_element()
+    }
+
+    fn render_line_ending_menu(
+        &self,
+        palette: Palette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let anchor = self.line_ending_menu_anchor?;
+        let current = self.doc.file_format()?.line_ending;
+        let can_edit = self.doc.can_edit()
+            && matches!(
+                self.doc.file_state(),
+                FileState::Clean | FileState::Dirty | FileState::Conflict
+            );
+        let editor = cx.entity();
+        let item_editor = editor.clone();
+        let item = move |line_ending: LineEnding, id: &'static str| {
+            let editor = item_editor.clone();
+            MenuItem::new(id, line_ending.as_str())
+                .checked(current == line_ending)
+                .disabled(!can_edit)
+                .on_click(move |_, _window, app| {
+                    editor.update(app, |this, cx| {
+                        this.line_ending_menu_anchor = None;
+                        match this.doc.set_line_ending(line_ending) {
+                            Ok(Some(_)) => cx.emit(EditorEvent::Changed),
+                            Ok(None) => {}
+                            Err(error) => {
+                                notify(cx, "Line ending change failed", &error.to_string())
+                            }
+                        }
+                        cx.notify();
+                    });
+                })
+        };
+        let dismiss_editor = editor;
+        let dismiss = move |_window: &mut Window, app: &mut App| {
+            dismiss_editor.update(app, |this, cx| {
+                this.line_ending_menu_anchor = None;
+                cx.notify();
+            });
+        };
+        Some(popover_menu(
+            anchor,
+            palette,
+            dismiss,
+            vec![
+                MenuItem::label("Line endings"),
+                item(LineEnding::Lf, "editor-line-ending-lf"),
+                item(LineEnding::CrLf, "editor-line-ending-crlf"),
+                item(LineEnding::Cr, "editor-line-ending-cr"),
+            ],
+        ))
     }
 
     fn render_editor_toolbar(
@@ -6032,11 +6150,9 @@ impl Render for EditorView {
             .children(self.render_language_service_status(cx))
             .child(buffer_surface)
             .children(self.render_selection_menu(ui_palette, cx))
+            .children(self.render_line_ending_menu(ui_palette, cx))
             .when(self.vim.is_some(), |d| d.child(self.render_vim_status(cx)))
-            .when(
-                self.prefs.show_cursor_position() || self.prefs.show_selection_stats(),
-                |d| d.child(self.render_editor_status(cx)),
-            )
+            .child(self.render_editor_status(cx))
             .on_key_down(cx.listener(Self::on_key))
             .on_mouse_down(
                 MouseButton::Left,

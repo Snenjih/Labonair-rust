@@ -15,8 +15,9 @@ use crate::buffer::{
 use crate::history::History;
 use crate::language::Language;
 use crate::lifecycle::{
-    FileCapabilities, FileIdentity, FileLifecycle, FileLifecycleError, FileLifecycleEvent,
-    FileSessionMetadata, FileSnapshot, FileState, ReloadDecision, SaveIntent,
+    FileCapabilities, FileFormat, FileIdentity, FileLifecycle, FileLifecycleError,
+    FileLifecycleEvent, FileSessionMetadata, FileSnapshot, FileState, LineEnding, ReloadDecision,
+    SaveIntent,
 };
 use crate::search::{self, SearchError, SearchQuery};
 
@@ -201,6 +202,18 @@ impl Document {
 
     pub fn session_file_metadata(&self) -> Option<FileSessionMetadata> {
         self.lifecycle.session_metadata()
+    }
+
+    pub fn file_format(&self) -> Option<FileFormat> {
+        self.lifecycle.current_format()
+    }
+
+    pub fn set_line_ending(
+        &mut self,
+        line_ending: LineEnding,
+    ) -> Result<Option<FileLifecycleEvent>, FileLifecycleError> {
+        let current_text = self.buffer.text();
+        self.lifecycle.set_line_ending(line_ending, &current_text)
     }
 
     pub fn observed_identity(&self) -> Option<&FileIdentity> {
