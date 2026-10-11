@@ -7745,3 +7745,44 @@ Next safe task: Continue R07-000 with `vim::EndOfDocument` classification comple
 - Updated the EndOfDocument packet, registered-action row, bound and override binding annotations, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 260 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, Ex command-line behavior, Helix keymap precedence, platform dispatch, operator/selection runtime behavior, and native evidence remain active.
 - Next safe task: Continue R07-000 with `vim::EndOfLine`; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim EndOfLine
+
+~~~text
+Request type: Pinned logical/display line-end motion, counted and operator/selection behavior, Helix adapter, and local owner gap; documentation-only classification.
+Owner module: Editor owns line endpoints, display geometry, selection goals, and operator ranges; Keymap owns shared Vim/Helix bindings; Settings owns mode values.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry points: In `VimControl && !menu`, `end` and `$` invoke `vim::EndOfLine` with `display_lines: false`; `g $` and `g end` set it true. Helix Normal/Select `g l` maps to the same action with the default false payload. `g _` invokes the separate `vim::EndOfLineDownward` action and is outside this classification.
+Public typed contract: `vim::EndOfLine { display_lines: bool }`, optional Boolean default false, no aliases. False moves to the logical buffer-row end; true moves to the rendered display-row end. A count selects a one-based buffer-row offset from the current row even when `display_lines` is true, after which the action targets that row's current display segment. The Vim motion is inclusive for operators and records a horizontal goal at infinity.
+State owner: Editor owns buffer/display rows, cursor, selection, layout, and retained horizontal goal. Vim owns active mode, count, pending operator, and forced-motion state. Helix Normal collapses to the last character rather than the position after it; Helix Select adjusts the endpoint to include that last character. Visual Block has a distinct path for display-line EOL versus buffer-row EOL.
+Persistence owner: None for motion state; cursor, goal, count, operator, and selection are transient. Text/register effects come from a consuming operator.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-EndOfLine`; `KEYBIND-VIM-HELIX-a3ad2a7d9dae` (`end`), `a8cf3f9c7339` (`$`), `a1e946c8a040` (`g $` with display lines), `f637c19298c3` (`g end` with display lines), and `bf684b4b3933` (Helix `g l`). No platform-default map binds the action.
+Events and registry contributions: Existing Vim motion action and shared profile rows only; no new event or registry contribution proposed.
+Settings: Vim/Helix mode values select the owning behavior; no EndOfLine-specific setting.
+Notifications: None expected.
+UI-kit components: Existing Editor and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect without running `test_end_of_line_with_times`, `test_end_of_line_with_neovim`, `test_wrapped_lines`, `test_end_of_line_with_vertical_motion`, `test_clipping_with_inlay_hints_end_of_line`, `test_g_l_end_of_line`, `test_helix_select_end_of_line`, `test_delete_end_of_line`, and `test_change_end_of_line`. Keep `EndOfLineDownward` and forced-motion operator fixtures distinct.
+Visual evidence: No layout change proposed. Paired native macOS Editor and Keymap evidence is required for `$`/`g $`, wraps, count, Visual/Block/Helix selection, and EOL goal retention; Linux/Windows dispatch needs separate runtime checks.
+Security impact: None beyond edits and register contents produced by a consuming operator in the active buffer.
+Performance impact: Buffer-row target lookup, display-row geometry, folded rows, large counts, inlay hints, and multi-selection require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action argument/default, key routes, count/endpoint algorithm, inclusive operator kind, Helix last-character adaptation, representative tests, and local `$` gap can be classified statically; platform dispatch, empty-row outcomes, and paired native acceptance remain open.
+Documentation updates: New EndOfLine packet; registered-action row; all five shared/Helix binding annotations; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action schema, all five keymap routes, endpoint/count and goal code, Visual/Block and Helix adapters, representative fixtures, and local `$` resolver inspected. Static classification packet and parity updates are complete; platform dispatch, palette, EOL goal, empty-line, and native acceptance remain open.
+Target status: Classify logical versus rendered endpoints, buffer-row counts, inclusive operators, retained EOL goal, Visual Block exception, Helix `g l` last-character behavior, and the local missing display-row route without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair's local Vim `$` resolver has a counted inclusive logical-row endpoint, but no typed `vim::EndOfLine` action, `end` key route, shared Vim/Helix profile, `display_lines` variant, Helix `g l` adapter, or retained EOL goal across vertical motion.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Palette behavior, platform dispatch, wrapped rows, EOL goal, Visual/Block/Helix modes, empty-line operator effects, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::EndOfLine` classification complete; then advance to the next earliest registered action without beginning R07-001 or R09.
+~~~
+
+
+## Vim EndOfLine action classification progress
+
+- Classified `$`/`end` as logical-row endpoints and `g $`/`g end` as display-row endpoints. Recorded buffer-row count targeting for both payloads, inclusive motion/operator kind, infinite EOL goal retention, the Visual Block path distinction, Helix `g l`'s last-character adjustment, and the local `$` implementation gap.
+- Inspected count/clipping, wrap, EOL goal, inlay, Visual, Helix, delete/change, and forced-motion fixtures without running. Local Labonair has no focused EOL Vim fixture.
+- Updated the EndOfLine packet, registered-action row, all five bound action rows, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 261 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, action palette, platform dispatch, display-row count behavior, Helix and Visual Block routes, empty-line operator effects, and paired native evidence remain active.
+- Next safe task: Continue R07-000 with `vim::EndOfLineDownward`; do not begin R07-001 or R09.
