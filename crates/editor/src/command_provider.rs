@@ -82,6 +82,7 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
             EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb)
         }
         CommandId::EditorDeleteLine => EditorCommandRoute::Edit(EditIntent::DeleteLine),
+        CommandId::EditorJoinLines => EditorCommandRoute::Edit(EditIntent::JoinLines),
         CommandId::EditorExpandSelection => EditorCommandRoute::Edit(EditIntent::ExpandSelection),
         CommandId::EditorShrinkSelection => EditorCommandRoute::Edit(EditIntent::ShrinkSelection),
         CommandId::EditorDuplicateLines => EditorCommandRoute::Edit(EditIntent::DuplicateLines),
@@ -185,6 +186,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorGoToLineColumn,
     CommandId::EditorToggleBreadcrumb,
     CommandId::EditorDeleteLine,
+    CommandId::EditorJoinLines,
     CommandId::EditorExpandSelection,
     CommandId::EditorShrinkSelection,
     CommandId::EditorDuplicateLines,
@@ -309,6 +311,9 @@ impl CommandProvider for EditorCommandProvider {
             CommandDescriptor::new(CommandId::EditorDeleteLine, "Delete Line", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("cmd-shift-k", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorJoinLines, "Join Lines", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("ctrl-j", Some(CommandContext::Editor)),
             CommandDescriptor::new(
                 CommandId::EditorExpandSelection,
                 "Expand Selection",
@@ -573,6 +578,22 @@ mod tests {
         assert_eq!(
             route_for_command(CommandId::EditorDeleteLine),
             Some(EditorCommandRoute::Edit(EditIntent::DeleteLine))
+        );
+    }
+
+    #[test]
+    fn join_lines_is_an_editor_owned_command_with_the_default_binding() {
+        let command = EditorCommandProvider
+            .commands()
+            .into_iter()
+            .find(|command| command.id == CommandId::EditorJoinLines)
+            .expect("Join Lines descriptor");
+        assert_eq!(command.id.action_name(), "editor.join-lines");
+        assert_eq!(command.default_bindings.len(), 1);
+        assert_eq!(command.default_bindings[0].keystrokes, "ctrl-j");
+        assert_eq!(
+            route_for_command(CommandId::EditorJoinLines),
+            Some(EditorCommandRoute::Edit(EditIntent::JoinLines))
         );
     }
 

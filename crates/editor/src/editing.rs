@@ -23,6 +23,7 @@ pub enum EditIntent {
     /// Remove non-empty selections without deleting at empty carets.
     DeleteSelections,
     DeleteLine,
+    JoinLines,
     Move {
         motion: Motion,
         extend: bool,
@@ -219,6 +220,7 @@ impl Document {
             EditIntent::DeleteForward => self.multi_delete(true),
             EditIntent::DeleteSelections => self.delete_selections(),
             EditIntent::DeleteLine => self.delete_lines(),
+            EditIntent::JoinLines => self.join_lines(),
             EditIntent::Move { motion, extend } => self.multi_move(motion, extend),
             EditIntent::AddCursor(position) => self.add_cursor(position),
             EditIntent::AddCursorAbove => self.add_cursors_vertical(false),
@@ -355,6 +357,51 @@ impl Document {
             false,
             EditSource::Delete,
             Some("Delete lines".into()),
+        )
+    }
+
+    fn join_lines(&mut self) -> EditorCommandResult {
+        let snapshot = self.snapshot();
+        let last_line = snapshot.line_count().saturating_sub(1);
+        let mut boundaries = self
+            .selection_set()
+            .ranges(&snapshot)
+            .into_iter()
+            .flat_map(|range| {
+                let start = snapshot.byte_to_position(range.start).line;
+                let end = snapshot.byte_to_position(range.end).line;
+                let end_exclusive = if range.is_empty() || start == end {
+                    start.saturating_add(1)
+                } else {
+                    end
+                };
+                start..end_exclusive.min(last_line)
+            })
+            .collect::<Vec<_>>();
+        boundaries.sort_unstable();
+        boundaries.dedup();
+        let targets = boundaries
+            .into_iter()
+            .map(|line| {
+                let left = snapshot.line(line);
+                let right = snapshot.line(line + 1);
+                let trimmed_right = right.trim_start();
+                let indentation_bytes = right.len() - trimmed_right.len();
+                let replacement = if !left.is_empty() && !trimmed_right.is_empty() {
+                    " "
+                } else {
+                    ""
+                };
+                let start = snapshot.line_end_byte(line);
+                let end = snapshot.line_start_byte(line + 1) + indentation_bytes;
+                (TextRange::new(start, end), replacement.to_string())
+            })
+            .collect();
+        self.apply_targets(
+            targets,
+            false,
+            EditSource::Typing,
+            Some("Join lines".into()),
         )
     }
 
@@ -1502,6 +1549,63 @@ mod tests {
         ));
         document.execute_edit(EditIntent::DeleteLine);
         assert_eq!(document.text(), "two\nthree");
+    }
+
+    #[test]
+    fn join_lines_removes_the_line_ending_and_indentation_as_one_transaction() {
+        let mut document = doc("hello\n  world");
+        document.set_caret(Position::new(0, 2), false);
+
+        let result = document.execute_edit(EditIntent::JoinLines);
+        assert!(result.changed);
+        assert_eq!(document.text(), "hello world");
+        document.undo();
+        assert_eq!(document.text(), "hello\n  world");
+    }
+
+    #[test]
+    fn join_lines_handles_last_line_empty_lines_and_multiple_cursors() {
+        let mut last_line = doc("one\ntwo");
+        last_line.set_caret(Position::new(1, 0), false);
+        assert!(!last_line.execute_edit(EditIntent::JoinLines).changed);
+        assert_eq!(last_line.text(), "one\ntwo");
+
+        let mut empty = doc("one\n\ntwo");
+        empty.set_caret(Position::new(0, 0), false);
+        empty.execute_edit(EditIntent::JoinLines);
+        assert_eq!(empty.text(), "one\ntwo");
+
+        let mut multiple = doc("a\nb\nc");
+        multiple.set_caret(Position::new(0, 0), false);
+        multiple.execute_edit(EditIntent::AddCursor(Position::new(1, 0)));
+        multiple.execute_edit(EditIntent::JoinLines);
+        assert_eq!(multiple.text(), "a b c");
+        multiple.undo();
+        assert_eq!(multiple.text(), "a\nb\nc");
+    }
+
+    #[test]
+    fn join_lines_joins_each_line_boundary_covered_by_a_selection() {
+        let mut document = doc("a\nb\nc");
+        let snapshot = document.snapshot();
+        document.set_selection_set(SelectionSet::from_selections(
+            vec![Selection {
+                anchor: Anchor::new(
+                    snapshot.position_to_byte(Position::new(0, 0)),
+                    AnchorAffinity::Before,
+                ),
+                head: Anchor::new(
+                    snapshot.position_to_byte(Position::new(2, 0)),
+                    AnchorAffinity::After,
+                ),
+            }],
+            0,
+        ));
+
+        document.execute_edit(EditIntent::JoinLines);
+        assert_eq!(document.text(), "a b c");
+        document.undo();
+        assert_eq!(document.text(), "a\nb\nc");
     }
 
     #[test]
