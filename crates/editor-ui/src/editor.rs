@@ -52,7 +52,7 @@ use labonair_editor::{
     },
     next_match_with_wrap, Anchor, AnchorAffinity, CancellationToken, DisplayConfig, DisplayMap,
     DisplayRowKind, DisplaySnapshot, Document, DocumentVersion, Edit, EditorSessionId,
-    EditorSessionSnapshot, EditorViewSession, FoldRange, GitDecorationProvider,
+    EditorSessionSnapshot, EditorViewSession, FoldRange, FoldingRange, GitDecorationProvider,
     GitDecorationRequest, GitDiscardPreview, GitEditorCommand, GitGutterError, GitGutterSnapshot,
     GitHunkAction, GitHunkActionKind, GitHunkStatus, Helix, HelixKey, HelixMode, HunkActionSink,
     InlayHint, InlayHintKind, KillRing, Language, LanguageId, LanguageServiceEditRequest,
@@ -526,6 +526,33 @@ fn fold_ranges_from_symbols(
     ranges
 }
 
+fn fold_ranges_from_lsp(
+    ranges: &[FoldingRange],
+    snapshot: &labonair_editor::BufferSnapshot,
+) -> Vec<FoldRange> {
+    let line_count = snapshot.line_count();
+    let mut ranges = ranges
+        .iter()
+        .filter(|range| range.start_line < line_count && range.end_line < line_count)
+        .filter_map(|range| FoldRange::new(range.start_line, range.end_line))
+        .collect::<Vec<_>>();
+    ranges.sort_by_key(|range| (range.start_line, range.end_line));
+    ranges.dedup();
+    ranges
+}
+
+fn fold_candidates(
+    server_ranges: &[FoldRange],
+    symbols: &[labonair_editor::DocumentSymbol],
+    snapshot: &labonair_editor::BufferSnapshot,
+) -> Vec<FoldRange> {
+    if server_ranges.is_empty() {
+        fold_ranges_from_symbols(symbols, snapshot)
+    } else {
+        server_ranges.to_vec()
+    }
+}
+
 fn fold_marker_for_line(
     candidates: &[FoldRange],
     folds: &[FoldRange],
@@ -631,6 +658,7 @@ enum LanguageServiceRequestSlot {
     Navigation,
     TypeDefinition,
     InlayHints,
+    FoldingRanges,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -710,6 +738,9 @@ pub struct EditorView {
     /// Editor-owned folded logical ranges, persisted through the editor session
     /// contract and embedded by Workspace in its outer session snapshot.
     folds: Vec<FoldRange>,
+    /// Server fold ranges are refreshed for each document generation. Empty
+    /// or unavailable results fall back to the local symbol ranges.
+    server_fold_ranges: Vec<FoldRange>,
     selection_menu_anchor: Option<Point<Pixels>>,
     line_ending_menu_anchor: Option<Point<Pixels>>,
     encoding_menu_anchor: Option<Point<Pixels>>,
@@ -791,6 +822,7 @@ pub struct EditorView {
     signature_help_position: Option<LspPosition>,
     navigation_request_serial: Option<u64>,
     navigation_position: Option<LspPosition>,
+    folding_ranges_request_serial: Option<u64>,
     language_service_request_serial: u64,
     code_actions: Option<Vec<labonair_editor::CodeAction>>,
     rename_requested: bool,
@@ -933,6 +965,7 @@ impl EditorView {
             scroll_top: 0,
             scroll_left: 0,
             folds: Vec::new(),
+            server_fold_ranges: Vec::new(),
             selection_menu_anchor: None,
             line_ending_menu_anchor: None,
             encoding_menu_anchor: None,
@@ -991,6 +1024,7 @@ impl EditorView {
             signature_help_position: None,
             navigation_request_serial: None,
             navigation_position: None,
+            folding_ranges_request_serial: None,
             language_service_request_serial: 0,
             code_actions: None,
             rename_requested: false,
@@ -1397,6 +1431,8 @@ impl EditorView {
         let version = DocumentVersion::from_revision(snapshot.revision());
         let generation = self.language_service_generation.saturating_add(1);
         self.language_service_generation = generation;
+        self.server_fold_ranges.clear();
+        self.folding_ranges_request_serial = None;
         self.inlay_hints_request = None;
         self.inlay_hints_request_serial = None;
         self.inlay_hints_request_range = None;
@@ -1462,6 +1498,12 @@ impl EditorView {
                     this.language_service_snapshot =
                         runtime.snapshot(this.doc.language, version, generation);
                     this.request_language_service(LanguageServiceRequest::Diagnostics, cx);
+                    if this.language_service_snapshot.source
+                        == LanguageServiceRuntimeSource::LocalProcess
+                        && this.language_service_snapshot.capabilities.folding_ranges
+                    {
+                        this.request_language_service(LanguageServiceRequest::FoldingRanges, cx);
+                    }
                     this.schedule_inlay_hints(this.prefs.inlay_edit_debounce_ms(), cx);
                 }
                 cx.notify();
@@ -1497,6 +1539,9 @@ impl EditorView {
             LanguageServiceRequest::InlayHints { .. } => {
                 (LanguageServiceRequestSlot::InlayHints, None)
             }
+            LanguageServiceRequest::FoldingRanges => {
+                (LanguageServiceRequestSlot::FoldingRanges, None)
+            }
             _ => (LanguageServiceRequestSlot::Other, None),
         };
         self.language_service_request_serial =
@@ -1518,6 +1563,9 @@ impl EditorView {
             LanguageServiceRequestSlot::InlayHints => {
                 self.inlay_hints_request_serial = Some(request_serial);
                 self.inlay_hints_request_range = request_range;
+            }
+            LanguageServiceRequestSlot::FoldingRanges => {
+                self.folding_ranges_request_serial = Some(request_serial);
             }
             LanguageServiceRequestSlot::Other => {}
         }
@@ -1605,6 +1653,9 @@ impl EditorView {
             LanguageServiceRequestSlot::InlayHints => {
                 self.inlay_hints_request_serial == Some(request_serial)
                     && self.inlay_hints_request_range == Some(self.visible_inlay_range())
+            }
+            LanguageServiceRequestSlot::FoldingRanges => {
+                self.folding_ranges_request_serial == Some(request_serial)
             }
         }
     }
@@ -1694,6 +1745,9 @@ impl EditorView {
                     "Type Definition unavailable",
                     &response_error_text(&response),
                 );
+            } else if slot == LanguageServiceRequestSlot::FoldingRanges {
+                self.server_fold_ranges.clear();
+                cx.notify();
             }
             return;
         };
@@ -1755,6 +1809,10 @@ impl EditorView {
             }
             LanguageServiceResponse::SignatureHelp(None) => {
                 self.signature_help_state = SignatureHelpUiState::Empty;
+                cx.notify();
+            }
+            LanguageServiceResponse::FoldingRanges(ranges) => {
+                self.server_fold_ranges = fold_ranges_from_lsp(&ranges, &self.doc.snapshot());
                 cx.notify();
             }
             _ => {}
@@ -3612,7 +3670,7 @@ impl EditorView {
     fn execute_fold_command(&mut self, command: EditorUiCommand, cx: &mut Context<Self>) {
         let snapshot = self.doc.snapshot();
         let symbols = self.symbols_for_snapshot(&snapshot);
-        let candidates = fold_ranges_from_symbols(&symbols, &snapshot);
+        let candidates = fold_candidates(&self.server_fold_ranges, &symbols, &snapshot);
         let before = self.folds.clone();
         match command {
             EditorUiCommand::Fold => {
@@ -7563,7 +7621,7 @@ impl Render for EditorView {
         let rename_input = self.rename_input.clone();
         let go_to_line_input = self.go_to_line_input.clone();
         let symbols = self.symbols_for_snapshot(&snapshot);
-        let fold_candidates = fold_ranges_from_symbols(&symbols, &snapshot);
+        let fold_candidates = fold_candidates(&self.server_fold_ranges, &symbols, &snapshot);
         let breadcrumb_state = build_breadcrumb_state(
             self.doc.file_state(),
             self.doc.path.as_deref(),
@@ -9348,6 +9406,90 @@ mod tests {
             fold_ranges_within(&candidates, outer),
             vec![outer, middle, inner]
         );
+    }
+
+    #[test]
+    fn lsp_fold_ranges_are_validated_and_fall_back_to_symbols() {
+        let snapshot = labonair_editor::EditorBuffer::from_text("abc\ndef\nghi").snapshot();
+        let server_ranges = fold_ranges_from_lsp(
+            &[
+                FoldingRange {
+                    start_line: 1,
+                    end_line: 2,
+                    kind: Some("region".into()),
+                },
+                FoldingRange {
+                    start_line: 1,
+                    end_line: 2,
+                    kind: None,
+                },
+                FoldingRange {
+                    start_line: 2,
+                    end_line: 1,
+                    kind: None,
+                },
+                FoldingRange {
+                    start_line: 0,
+                    end_line: 3,
+                    kind: None,
+                },
+            ],
+            &snapshot,
+        );
+        let server_range = FoldRange::new(1, 2).expect("valid server range");
+        assert_eq!(server_ranges, vec![server_range]);
+
+        let symbol_range = FoldRange::new(0, 2).expect("valid symbol range");
+        let symbols = vec![labonair_editor::DocumentSymbol {
+            name: "section".into(),
+            kind: labonair_editor::symbols::SymbolKind::Function,
+            line: 0,
+            range: TextRange::new(0, 8),
+            name_range: TextRange::new(0, 3),
+        }];
+        assert_eq!(
+            fold_candidates(&[], &symbols, &snapshot),
+            vec![symbol_range]
+        );
+        assert_eq!(
+            fold_candidates(&server_ranges, &symbols, &snapshot),
+            vec![server_range]
+        );
+    }
+
+    #[gpui::test]
+    fn lsp_folding_response_updates_editor_fold_candidates(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("test.rs".into(), "a\nb\nc", 1);
+                this.folding_ranges_request_serial = Some(9);
+                this.apply_language_service_response(
+                    Ok(LanguageServiceResponse::FoldingRanges(vec![FoldingRange {
+                        start_line: 0,
+                        end_line: 2,
+                        kind: Some("region".into()),
+                    }])),
+                    LanguageServiceRequestSlot::FoldingRanges,
+                    cx,
+                );
+                assert_eq!(
+                    this.server_fold_ranges,
+                    vec![FoldRange::new(0, 2).expect("fold range")]
+                );
+                assert!(this.is_current_language_service_request(
+                    LanguageServiceRequestSlot::FoldingRanges,
+                    9,
+                    None,
+                ));
+                this.folding_ranges_request_serial = Some(10);
+                assert!(!this.is_current_language_service_request(
+                    LanguageServiceRequestSlot::FoldingRanges,
+                    9,
+                    None,
+                ));
+            });
+        });
     }
 
     #[gpui::test]
