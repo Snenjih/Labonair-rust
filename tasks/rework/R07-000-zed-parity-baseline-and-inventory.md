@@ -6821,3 +6821,47 @@ Next safe task: Continue R07-000 with `vim::ChangeListOlder`; do not begin R07-0
 - Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, profile/palette dispatch, anchor restoration, native behavior, or paired visual evidence were run; these remain R07-000 acceptance gates.
 - Next safe task: Continue R07-000 with `vim::ChangeListOlder`; do not begin R07-001 or R09.
 ~~~
+
+## Pre-change contract — Vim ChangeListOlder action
+
+~~~text
+Request type: Pinned registered-action, Editor change-list, and shared-profile inventory; documentation-only.
+Owner module: Editor owns edit-position recording, transient change-list state, and selection navigation; Keymap owns shared mode/user bindings; Settings owns Vim/Helix mode values; Command Palette owns existing Vim action discovery.
+Canonical capability crate: `labonair-editor`; profile composition in `labonair-keymap`.
+Canonical user entry point: Shared `g ;` under `VimControl && !menu`; focused-Editor Command Palette when Vim/Helix is enabled.
+Public typed contract: Existing registered unit action `vim::ChangeListOlder`; Labonair has no Editor change-list state or navigation action. Keep it distinct from document undo/redo history, Git changed-line navigation, and Workspace navigation history.
+State owner: Pinned Editor stores transient edit-position anchor groups and an optional current index, populated by Editor edit events. This paired action consumes Vim count (default one), moves toward older entries, and clamps at the oldest group. If navigation has not started, the index begins one past the end, so the first older request selects the newest recorded group; a later newer request moves forward from that position.
+Persistence owner: No change-list persistence. Settings persists Vim/Helix mode values; Keymap persists profile and user bindings. Edited document contents retain ordinary Editor persistence.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-ChangeListOlder`; shared `KEYBIND-VIM-HELIX-e9e063fe4820` (`g ;`, `VimControl && !menu`); no platform-default binding. Related newer action is `vim::ChangeListNewer` on `g ,` and is a separate inventory item.
+Events and registry contributions: Existing Vim action registration, Editor `Edited` event hook for recording entries, shared mode layer, and generic palette route; navigation adds no event or registry.
+Settings: Existing Vim/Helix mode values gate the shared layer and Vim action palette namespace; no change-list-specific setting.
+Notifications: None. An empty list leaves selections unchanged; navigation has no user-facing message.
+UI-kit components: Existing Editor, Command Palette, and Keymap only; no new UI control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect pinned `test_change_list_insert` and `test_change_list_delete` source fixtures without running them. Future owner work needs exact first-older/newer direction, count traversal and oldest clamp, multi-cursor anchor groups, grouped same-row edits, Insert-mode offset, and edit-after-navigation reset.
+Visual evidence: No local layout change; native macOS key/palette behavior remains unverified, with Linux and Windows profile dispatch checked separately.
+Security impact: None beyond ordinary local Editor selection changes.
+Performance impact: No local runtime work; pinned traversal indexes an in-memory vector and selection restoration resolves saved anchors.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static action/profile/source audit, transient state transitions, fixtures, and local owner gap can be classified; native dispatch and acceptance remain pending.
+Documentation updates: New ChangeListOlder packet; registered-action row; shared key binding annotation; non-macOS layer note; packet index; `commands.keymap` and `editor.text` crosswalks; normative parity summary; task record. No memory note unless the audit discovers a non-obvious bug or API issue.
+Current status: Pre-change contract recorded; source and local-owner audit complete; parity packet and crosswalk updates not yet made.
+Target status: State precise older-navigation semantics, identify the canonical owner and user routes, and record the absence of a local change list without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has document undo/redo history and Git changed-line navigation, but neither records edit-position groups for Vim navigation. Native macOS dispatch and palette exposure remain unverified.
+Failed/unavailable gates: No gates run yet. This is a docs-only classification; tests, Rust build, profile/palette dispatch, native behavior, and paired visual acceptance are not requested or run in this slice.
+Next safe task: Continue R07-000 with the next registered Vim action after `vim::ChangeListOlder`; do not begin R07-001 or R09.
+~~~
+
+## Progress — classify Vim ChangeListOlder action
+
+~~~text
+- Added [action-classification-vim-change-list-older.md](../../docs/parity/action-classification-vim-change-list-older.md) for ACT-REGISTRY-LINUX-vim-ChangeListOlder.
+- Recorded the shared `g ;` binding (KEYBIND-VIM-HELIX-e9e063fe4820) in `VimControl && !menu`, with no platform-default binding. The context covers Vim Normal, Visual, Operator, Helix Normal, and Helix Select; active platform dispatch remains unverified.
+- Classified older traversal, initial unset-index behavior, count-based movement, oldest-entry clamp, point-selection restoration, empty-list no-op, and the paired `g ,` newer action's use of the same transient anchor list. Inspected `test_change_list_insert` and `test_change_list_delete` source fixtures without running tests.
+- Audited the local Editor route: document undo/redo history and Git changed-line navigation exist, but no edit-position change list, `g ;` Vim action, shared profile route, or palette descriptor exists. Runtime code was not changed.
+- Updated the registered-action row, shared binding annotation, Linux/Windows layer note, packet index, `commands.keymap` and `editor.text` crosswalks, normative parity summary, and this task record. No memory note was needed because the audit found no new non-obvious bug or API discovery.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative docs; 239 Markdown files), `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active), and `python3 scripts/verify.py --scope docs`, `agents`, `knowledge`, `settings`, and `queue`.
+- Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, profile/palette dispatch, anchor restoration, native behavior, or paired visual evidence were run; these remain R07-000 acceptance gates.
+- Next safe task: Continue R07-000 with `vim::ChangeToEndOfLine`; do not begin R07-001 or R09.
+~~~

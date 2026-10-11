@@ -336,6 +336,10 @@ and paired macOS acceptance remain open. The independent
 records shared `g ,` navigation through transient edit-position anchors,
 counted movement, and the missing local change-list route. Profile dispatch,
 anchor restoration, and paired macOS acceptance remain open. The independent
+[`Vim ChangeListOlder action crosswalk`](parity/action-classification-vim-change-list-older.md)
+records shared `g ;` navigation toward older edit-position anchors, counted
+movement, and the same missing local change-list route. Profile dispatch,
+anchor restoration, and paired macOS acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and
