@@ -703,6 +703,43 @@ fn response_error_text(
         .unwrap_or_else(|| "language service returned an invalid response".to_string())
 }
 
+fn diagnostic_at_position<'a>(
+    diagnostics: &'a [labonair_editor::Diagnostic],
+    snapshot: &labonair_editor::BufferSnapshot,
+    position: Position,
+) -> Option<&'a labonair_editor::Diagnostic> {
+    let offset = snapshot.position_to_byte(position);
+    diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            let range = diagnostic.range.to_text_range(snapshot);
+            range.start <= offset && offset <= range.end
+        })
+        .min_by_key(|diagnostic| {
+            let range = diagnostic.range.to_text_range(snapshot);
+            (diagnostic.severity, range.end.saturating_sub(range.start))
+        })
+}
+
+fn diagnostic_hover_text(diagnostic: &labonair_editor::Diagnostic) -> String {
+    let severity = match diagnostic.severity {
+        labonair_editor::language_services::DiagnosticSeverity::Error => "Error",
+        labonair_editor::language_services::DiagnosticSeverity::Warning => "Warning",
+        labonair_editor::language_services::DiagnosticSeverity::Information => "Information",
+        labonair_editor::language_services::DiagnosticSeverity::Hint => "Hint",
+    };
+    let code = diagnostic
+        .code
+        .as_deref()
+        .map(|code| format!(" ({code})"))
+        .unwrap_or_default();
+    format!(
+        "{severity}{code}: {}\n{}",
+        diagnostic.message,
+        diagnostic.source.as_str()
+    )
+}
+
 fn completion_kind_label(kind: labonair_editor::CompletionKind) -> &'static str {
     match kind {
         labonair_editor::CompletionKind::Keyword => "keyword",
@@ -1433,6 +1470,9 @@ impl EditorView {
         self.language_service_generation = generation;
         self.server_fold_ranges.clear();
         self.folding_ranges_request_serial = None;
+        self.hover = None;
+        self.hover_request = None;
+        self.hover_position = None;
         self.inlay_hints_request = None;
         self.inlay_hints_request_serial = None;
         self.inlay_hints_request_range = None;
@@ -2174,44 +2214,35 @@ impl EditorView {
                 == Some(".labonair")
     }
 
-    /// Byte offset into the document text for a buffer [`Position`]
-    /// (line/column are char-based; this walks prior lines' byte lengths
-    /// plus the target line's char-to-byte offset for the column — exact
-    /// for the schema-hover lookup's purposes).
-    fn byte_offset_for(&self, pos: Position) -> usize {
-        let snapshot = self.doc.snapshot();
-        let mut offset = 0usize;
-        for i in 0..pos.line.min(snapshot.line_count()) {
-            offset += snapshot.line(i).len() + 1;
-        }
-        if pos.line < snapshot.line_count() {
-            let line = snapshot.line(pos.line);
-            offset += line
-                .char_indices()
-                .nth(pos.column)
-                .map(|(b, _)| b)
-                .unwrap_or(line.len());
-        }
-        offset
-    }
-
-    /// Recompute [`Self::hover`] for a mouse position over the text area
-    /// (T19-006 Anweisung #5). No-op (clears hover) unless
-    /// [`Self::is_settings_json`] and the cursor lands inside a JSON pair
-    /// whose key path has a schema description.
+    /// Recompute [`Self::hover`] for a mouse position over the text area.
     fn update_hover(&mut self, mouse_pos: Point<Pixels>, cx: &mut Context<Self>) {
-        let next = if self.is_settings_json() {
-            let doc_pos = self.position_at(mouse_pos);
-            let offset = self.byte_offset_for(doc_pos);
-            let text = self.doc.snapshot().text();
-            labonair_settings_json::json_path_at_offset(&text, offset).and_then(|path| {
-                let refs: Vec<&str> = path.iter().map(String::as_str).collect();
-                labonair_settings::description_for_path(&refs)
-                    .map(|desc| (mouse_pos, SharedString::from(desc)))
-            })
+        let snapshot = self.doc.snapshot();
+        let doc_pos = self.position_at(mouse_pos);
+        let diagnostic_hover = if self.prefs.diagnostics() {
+            diagnostic_at_position(
+                &self.language_service_state.snapshot().diagnostics,
+                &snapshot,
+                doc_pos,
+            )
+            .map(diagnostic_hover_text)
         } else {
             None
         };
+        let next = diagnostic_hover
+            .map(|text| (mouse_pos, SharedString::from(text)))
+            .or_else(|| {
+                if self.is_settings_json() {
+                    let offset = snapshot.position_to_byte(doc_pos);
+                    let text = snapshot.text();
+                    labonair_settings_json::json_path_at_offset(&text, offset).and_then(|path| {
+                        let refs: Vec<&str> = path.iter().map(String::as_str).collect();
+                        labonair_settings::description_for_path(&refs)
+                            .map(|desc| (mouse_pos, SharedString::from(desc)))
+                    })
+                } else {
+                    None
+                }
+            });
         let changed = next.is_some() || self.hover.is_some();
         self.hover = next;
         if changed {
@@ -5665,8 +5696,8 @@ impl EditorView {
             )
     }
 
-    /// The schema-hover tooltip (T19-006 Anweisung #5) — a small floating
-    /// card glued to the last mouse position, shown only while
+    /// The schema or diagnostic hover tooltip — a small floating card
+    /// glued to the last mouse position, shown only while
     /// [`Self::hover`] is `Some`. A window-relative absolute overlay rather
     /// than GPUI's trigger-based `.tooltip()` widget: that widget attaches
     /// to one fixed element, but the hover target here is a specific
@@ -7983,6 +8014,18 @@ impl Render for EditorView {
                 .iter()
                 .filter(|diagnostic| diagnostic.visual_row == display_row.visual_row)
             {
+                let (diagnostic_color, underline_height) = match diagnostic.severity {
+                    labonair_editor::language_services::DiagnosticSeverity::Error => {
+                        (ui_palette.error, 2.0)
+                    }
+                    labonair_editor::language_services::DiagnosticSeverity::Warning => {
+                        (ui_palette.warning, 1.5)
+                    }
+                    labonair_editor::language_services::DiagnosticSeverity::Information
+                    | labonair_editor::language_services::DiagnosticSeverity::Hint => {
+                        (ui_palette.info, 1.0)
+                    }
+                };
                 row = row.child(
                     div()
                         .absolute()
@@ -7995,8 +8038,8 @@ impl Render for EditorView {
                                 .max(1) as f32)
                                 * char_w,
                         ))
-                        .h(px(1.0))
-                        .bg(accent.opacity(0.85)),
+                        .h(px(underline_height))
+                        .bg(diagnostic_color.opacity(0.9)),
                 );
             }
             for decoration in git_inline_decorations
@@ -9246,6 +9289,102 @@ mod tests {
             Severity::Warning,
             EditorDiagnosticMaxSeverity::Error
         ));
+    }
+
+    #[test]
+    fn diagnostic_hover_prefers_highest_severity_and_includes_source_details() {
+        use labonair_editor::language_services::DiagnosticSeverity as Severity;
+
+        let snapshot = labonair_editor::EditorBuffer::from_text("aλbc").snapshot();
+        let range = |start, end| LspRange {
+            start: LspPosition {
+                line: 0,
+                character: start,
+            },
+            end: LspPosition {
+                line: 0,
+                character: end,
+            },
+        };
+        let diagnostics = vec![
+            labonair_editor::Diagnostic {
+                range: range(1, 3),
+                severity: Severity::Warning,
+                message: "review this expression".into(),
+                source: labonair_editor::LanguageServerId::new("test-lsp"),
+                code: None,
+            },
+            labonair_editor::Diagnostic {
+                range: range(1, 2),
+                severity: Severity::Error,
+                message: "invalid token".into(),
+                source: labonair_editor::LanguageServerId::new("test-lsp"),
+                code: Some("E101".into()),
+            },
+        ];
+
+        let found = diagnostic_at_position(&diagnostics, &snapshot, Position::new(0, 1))
+            .expect("diagnostic at the cursor");
+        assert_eq!(found.severity, Severity::Error);
+        assert_eq!(
+            diagnostic_hover_text(found),
+            "Error (E101): invalid token\ntest-lsp"
+        );
+        assert!(diagnostic_at_position(&diagnostics, &snapshot, Position::new(0, 4)).is_none());
+    }
+
+    #[gpui::test]
+    fn diagnostic_messages_appear_when_hovering_the_source_range(cx: &mut TestAppContext) {
+        use labonair_editor::language_services::DiagnosticSeverity;
+
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("test.rs".into(), "abc", 1);
+                this.metrics = (10.0, 18.0);
+                this.gutter_width = 0.0;
+                this.bounds = Some(gpui::Bounds {
+                    origin: gpui::Point::default(),
+                    size: gpui::Size {
+                        width: px(100.0),
+                        height: px(40.0),
+                    },
+                });
+                let version = DocumentVersion::from_revision(this.editor_revision());
+                let generation = this.language_service_generation;
+                this.language_service_state
+                    .set_document_generation(version, generation);
+                assert!(this.language_service_state.apply(LanguageServiceResult {
+                    server: labonair_editor::LanguageServerId::new("test-lsp"),
+                    version,
+                    generation,
+                    response: Ok(LanguageServiceResponse::Diagnostics(vec![
+                        labonair_editor::Diagnostic {
+                            range: LspRange {
+                                start: LspPosition {
+                                    line: 0,
+                                    character: 1,
+                                },
+                                end: LspPosition {
+                                    line: 0,
+                                    character: 2,
+                                },
+                            },
+                            severity: DiagnosticSeverity::Warning,
+                            message: "suspicious value".into(),
+                            source: labonair_editor::LanguageServerId::new("test-lsp"),
+                            code: Some("W17".into()),
+                        },
+                    ])),
+                }));
+
+                this.update_hover(gpui::point(px(5.0), px(0.0)), cx);
+                assert_eq!(
+                    this.hover.as_ref().map(|(_, text)| text.as_ref()),
+                    Some("Warning (W17): suspicious value\ntest-lsp")
+                );
+            });
+        });
     }
 
     #[test]
