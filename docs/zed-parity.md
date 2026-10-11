@@ -317,6 +317,11 @@ acceptance remain open. The independent
 records the registered but unbound action, `:delmarks` missing-argument
 route, Critical Cancel prompt, and Notification Center reconciliation.
 Palette/Ex dispatch and paired macOS acceptance remain open. The independent
+[`Vim AutoIndent action crosswalk`](parity/action-classification-vim-auto-indent.md)
+records the shared `=` bindings in Vim Visual and Helix Normal/Select, syntax
+range reindent behavior, Vim Normal's separate `PushAutoIndent` operator path,
+and the local insertion-only intent gap. Profile dispatch and paired macOS
+acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and

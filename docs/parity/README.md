@@ -60,7 +60,9 @@ source-side research. It records current evidence without claiming parity.
   `q` remains MiniQuotes), one `a`-bound Argument text object in the shared
   Vim/Helix layer (with parser-backed selection and unsupported `cs` and
   directional Helix consumers), and one registered-unbound ArgumentRequired
-  action reached by `:delmarks` without a mark argument, 19 Outline/OutlinePanel actions (six
+  action reached by `:delmarks` without a mark argument; the registered
+  `vim::AutoIndent` action has shared `=` bindings for Vim Visual and Helix
+  Normal/Select ([Vim AutoIndent packet](action-classification-vim-auto-indent.md)); 19 Outline/OutlinePanel actions (six
   default-macOS-bound IDs and 13 registered-unbound panel actions; six of the
   latter occur in seven Vim/Helix entries), one Editor Go to
   Line action,

@@ -6641,3 +6641,49 @@ Next safe task: Continue R07-000 with `vim::AutoIndent`; do not begin R07-001 or
 - Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, Vim action palette or Ex dispatch, prompt dismissal/retry, Notification Center behavior, or paired visual evidence were run; these remain goal acceptance gates.
 - Next safe task: Continue R07-000 with `vim::AutoIndent`; do not begin R07-001 or R09.
 ~~~
+
+## Pre-change contract — Vim AutoIndent action
+
+~~~text
+Request type: Pinned registered-action and shared-profile behavior inventory; documentation-only.
+Owner module: Editor owns syntax-based reindentation, current selection, and Vim/Helix mode transitions; Keymap owns profile and user bindings; Settings owns Vim/Helix mode and language indentation values; Command Palette owns existing Editor-action discovery.
+Canonical capability crate: `labonair-editor`; profile composition in `labonair-keymap`.
+Canonical user entry point: Shared Vim/Helix profile `=` in Vim Visual and Helix Normal/Select; focused-Editor Vim action palette when the mode namespace is enabled. Vim Normal `=` is the separate `vim::PushAutoIndent` operator path.
+Public typed contract: Existing registered `vim::AutoIndent` unit action; Labonair has no equivalent registered action. The local `EditIntent::AutoIndent { unit }` is an internal insertion-indent operation, not selected-line syntax reindentation.
+State owner: Editor owns selections, buffer text, language syntax, and transient Vim/Helix mode. Keymap owns selected profile and user override data.
+Persistence owner: Settings persists Vim/Helix mode and language indentation values; Keymap persists selected profiles and custom bindings. Reindent edits use normal Editor document transactions; no separate result state is persisted.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-AutoIndent`; shared `=` Visual binding `KEYBIND-VIM-HELIX-eb4a7edc66e0`; shared `=` Helix Normal/Select binding `KEYBIND-VIM-HELIX-6fec4f2e94e5`; no platform-default binding. Keep Normal Vim `=` → `vim::PushAutoIndent` (`KEYBIND-VIM-HELIX-241e22eb2206`) distinct.
+Events and registry contributions: Existing Editor action registration, mode profile, and generic palette route; no new event, registry, or shell-wide condition.
+Settings: No action-specific setting. Syntax reindent uses language syntax indent queries and language indent size; the existing `auto_indent` mode controls automatic newline indentation and is not shown in this `autoindent_ranges` path. Local Settings has a global tab-size value but no language-specific indentation configuration.
+Notifications: None; read-only, single-line, or unavailable syntax paths may leave the text unchanged. No new notification surface.
+UI-kit components: Existing Editor, Command Palette, and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only; inspect pinned `test_indent_gv`, `test_indent_hx`, and `test_autoindent_op` fixtures without running tests. No focused direct `vim::AutoIndent` action test was found. Future implementation needs selected-range, syntax-supported/unsupported, read-only, single-line, count, mode-transition, and profile-context coverage.
+Visual evidence: No local UI change; native macOS key/palette dispatch and Vim/Helix mode transition evidence remain acceptance requirements, with Linux and Windows profile dispatch verified separately.
+Security impact: None beyond ordinary local buffer edits.
+Performance impact: No local runtime work. Pinned syntax indentation runs through deferred language-buffer requests; future selection ranges must remain responsive on large buffers.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static action registration, shared binding rows, handler behavior, language indentation path, and local owner gap can be classified; native dispatch, mode transition, and paired acceptance remain pending.
+Documentation updates: New AutoIndent packet; registered-action row; existing shared binding row annotations; non-macOS profile note; parity packet index; `commands.keymap` and `editor.text` crosswalks; normative parity summary; this task record.
+Current status: Static pinned action/profile analysis, Labonair owner-route audit, packet and crosswalk updates complete; all required documentation-only gates passed.
+Target status: Record syntax-range behavior and distinguish Vim Visual/Helix direct AutoIndent from Vim Normal's PushAutoIndent operator without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Local Editor has no selected-line syntax reindent action, Vim/Helix built-in profile layer, or language indentation settings. Its similarly named `EditIntent::AutoIndent` inserts a whitespace prefix from the preceding line. The pinned handler switches visual modes, including Helix Select, to `Mode::Normal`; native transition behavior needs verification.
+Failed/unavailable gates: No documentation or queue gate failed. Rust tests/build, key/profile dispatch, palette invocation, language syntax behavior, and native/visual acceptance were not run for this documentation-only classification and remain R07-000 acceptance work.
+Next safe task: Continue R07-000 with `vim::BackQuotes`; do not begin R07-001 or R09.
+~~~
+
+
+## Progress — classify Vim AutoIndent
+
+~~~text
+- Added [action-classification-vim-auto-indent.md](../../docs/parity/action-classification-vim-auto-indent.md) for ACT-REGISTRY-LINUX-vim-AutoIndent.
+- Recorded the lack of a platform-default binding and the shared `=` bindings in Vim Visual (KEYBIND-VIM-HELIX-eb4a7edc66e0) and Helix Normal/Select (KEYBIND-VIM-HELIX-6fec4f2e94e5). Kept Vim Normal `=` → `vim::PushAutoIndent` (KEYBIND-VIM-HELIX-241e22eb2206) as a distinct operator route.
+- Classified handler count/selection handling, read-only and single-line behavior, syntax-query reindent, language indent size, skipped blank lines, unchanged/no-syntax cases, and the source-requested Visual/Helix Select transition to `Mode::Normal`. No focused direct-action test was found; inspected fixtures were not executed.
+- Distinguished the existing `auto_indent` newline-insertion setting from `autoindent_ranges`, which uses syntax indentation queries and language indent size. The local settings crate has a global tab size but no language-specific indentation values.
+- Mapped future action ownership to `labonair-editor`, shared/profile and user binding to `labonair-keymap`, and mode/language values to Settings. Local `EditIntent::AutoIndent` only inserts a whitespace prefix at an empty cursor and has no dedicated command, keymap, or palette route; there is no selected-line syntax reindent path.
+- Updated the registered-action row, existing shared Visual and Helix binding row notes, Linux/Windows shared layer note, parity packet index, `commands.keymap` and `editor.text` crosswalks, normative parity summary, and this task record.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative docs; 235 Markdown files), `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active), and `python3 scripts/verify.py --scope docs`, `agents`, `knowledge`, `settings`, and `queue`.
+- Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, Vim/Helix profile or palette dispatch, syntax reindent interaction, or paired visual evidence were run; these remain goal acceptance gates.
+- Next safe task: Continue R07-000 with `vim::BackQuotes`; do not begin R07-001 or R09.
+~~~
