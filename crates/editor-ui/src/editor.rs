@@ -957,6 +957,12 @@ impl EditorView {
                 self.breadcrumb_visible_override = Some(!self.breadcrumbs_visible());
                 cx.notify();
             }
+            EditorCommandRoute::Ui(EditorUiCommand::Rewrap) => {
+                let columns = self.content_width_columns();
+                let columns = if columns <= 1 { 80 } else { columns };
+                let _ =
+                    self.execute_command(EditorCommand::Edit(EditIntent::Rewrap { columns }), cx);
+            }
         }
         true
     }

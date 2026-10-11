@@ -44,6 +44,7 @@ pub enum GitEditorCommand {
 pub enum EditorUiCommand {
     GoToLineColumn,
     ToggleBreadcrumb,
+    Rewrap,
 }
 
 /// Typed route selected by the Editor owner for an executable command ID.
@@ -83,6 +84,7 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         }
         CommandId::EditorDeleteLine => EditorCommandRoute::Edit(EditIntent::DeleteLine),
         CommandId::EditorJoinLines => EditorCommandRoute::Edit(EditIntent::JoinLines),
+        CommandId::EditorRewrap => EditorCommandRoute::Ui(EditorUiCommand::Rewrap),
         CommandId::EditorExpandSelection => EditorCommandRoute::Edit(EditIntent::ExpandSelection),
         CommandId::EditorShrinkSelection => EditorCommandRoute::Edit(EditIntent::ShrinkSelection),
         CommandId::EditorDuplicateLines => EditorCommandRoute::Edit(EditIntent::DuplicateLines),
@@ -187,6 +189,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorToggleBreadcrumb,
     CommandId::EditorDeleteLine,
     CommandId::EditorJoinLines,
+    CommandId::EditorRewrap,
     CommandId::EditorExpandSelection,
     CommandId::EditorShrinkSelection,
     CommandId::EditorDuplicateLines,
@@ -314,6 +317,10 @@ impl CommandProvider for EditorCommandProvider {
             CommandDescriptor::new(CommandId::EditorJoinLines, "Join Lines", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("ctrl-j", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorRewrap, "Rewrap Paragraphs", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-k cmd-q", Some(CommandContext::Editor))
+                .with_default_binding("cmd-k q", Some(CommandContext::Editor)),
             CommandDescriptor::new(
                 CommandId::EditorExpandSelection,
                 "Expand Selection",
@@ -594,6 +601,28 @@ mod tests {
         assert_eq!(
             route_for_command(CommandId::EditorJoinLines),
             Some(EditorCommandRoute::Edit(EditIntent::JoinLines))
+        );
+    }
+
+    #[test]
+    fn rewrap_is_an_editor_owned_command_with_both_chord_bindings() {
+        let command = EditorCommandProvider
+            .commands()
+            .into_iter()
+            .find(|command| command.id == CommandId::EditorRewrap)
+            .expect("Rewrap descriptor");
+        assert_eq!(command.id.action_name(), "editor.rewrap");
+        assert_eq!(
+            command
+                .default_bindings
+                .iter()
+                .map(|binding| binding.keystrokes.as_str())
+                .collect::<Vec<_>>(),
+            vec!["cmd-k cmd-q", "cmd-k q"]
+        );
+        assert_eq!(
+            route_for_command(CommandId::EditorRewrap),
+            Some(EditorCommandRoute::Ui(EditorUiCommand::Rewrap))
         );
     }
 

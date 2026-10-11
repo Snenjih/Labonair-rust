@@ -24,6 +24,9 @@ pub enum EditIntent {
     DeleteSelections,
     DeleteLine,
     JoinLines,
+    Rewrap {
+        columns: usize,
+    },
     Move {
         motion: Motion,
         extend: bool,
@@ -221,6 +224,7 @@ impl Document {
             EditIntent::DeleteSelections => self.delete_selections(),
             EditIntent::DeleteLine => self.delete_lines(),
             EditIntent::JoinLines => self.join_lines(),
+            EditIntent::Rewrap { columns } => self.rewrap(columns),
             EditIntent::Move { motion, extend } => self.multi_move(motion, extend),
             EditIntent::AddCursor(position) => self.add_cursor(position),
             EditIntent::AddCursorAbove => self.add_cursors_vertical(false),
@@ -402,6 +406,97 @@ impl Document {
             false,
             EditSource::Typing,
             Some("Join lines".into()),
+        )
+    }
+
+    fn rewrap(&mut self, columns: usize) -> EditorCommandResult {
+        let snapshot = self.snapshot();
+        let line_count = snapshot.line_count();
+        let mut spans = self
+            .selection_set()
+            .ranges(&snapshot)
+            .into_iter()
+            .filter_map(|range| {
+                let start_position = snapshot.byte_to_position(range.start);
+                let mut first = start_position.line;
+                let mut last = snapshot.byte_to_position(range.end).line;
+                if !range.is_empty()
+                    && last > first
+                    && snapshot.byte_to_position(range.end).column == 0
+                {
+                    last -= 1;
+                }
+
+                if range.is_empty() {
+                    if snapshot.line(first).trim().is_empty() {
+                        return None;
+                    }
+                    while first > 0 && !snapshot.line(first - 1).trim().is_empty() {
+                        first -= 1;
+                    }
+                    while last + 1 < line_count && !snapshot.line(last + 1).trim().is_empty() {
+                        last += 1;
+                    }
+                } else {
+                    if !snapshot.line(first).trim().is_empty() {
+                        while first > 0 && !snapshot.line(first - 1).trim().is_empty() {
+                            first -= 1;
+                        }
+                    }
+                    if !snapshot.line(last).trim().is_empty() {
+                        while last + 1 < line_count && !snapshot.line(last + 1).trim().is_empty() {
+                            last += 1;
+                        }
+                    }
+                }
+                Some((first, last))
+            })
+            .collect::<Vec<_>>();
+        spans.sort_unstable();
+        let mut merged_spans: Vec<(usize, usize)> = Vec::new();
+        for (first, last) in spans {
+            if let Some((_, previous_last)) = merged_spans.last_mut() {
+                if first <= *previous_last {
+                    *previous_last = (*previous_last).max(last);
+                    continue;
+                }
+            }
+            merged_spans.push((first, last));
+        }
+
+        let mut targets = Vec::new();
+        for (first, last) in merged_spans {
+            let mut paragraph_start = None;
+            for line in first..=last.saturating_add(1).min(line_count) {
+                let is_end = line >= last.saturating_add(1).min(line_count);
+                let is_blank = !is_end && snapshot.line(line).trim().is_empty();
+                if is_blank || is_end {
+                    if let Some(start_line) = paragraph_start.take() {
+                        let end_line = line - 1;
+                        let lines = (start_line..=end_line)
+                            .map(|line| snapshot.line(line).to_string())
+                            .collect::<Vec<_>>();
+                        let Some(replacement) = rewrap_lines(&lines, columns) else {
+                            continue;
+                        };
+                        let start = snapshot.line_start_byte(start_line);
+                        let end = snapshot.line_end_byte(end_line);
+                        let range = TextRange::new(start, end);
+                        if snapshot.text_range(range) != replacement {
+                            targets.push((range, replacement));
+                        }
+                    }
+                } else if paragraph_start.is_none() {
+                    paragraph_start = Some(line);
+                }
+            }
+        }
+
+        self.apply_targets(
+            targets,
+            false,
+            EditSource::Typing,
+            Some("Rewrap paragraphs".into()),
         )
     }
 
@@ -1055,6 +1150,74 @@ impl Document {
     }
 }
 
+fn rewrap_lines(lines: &[String], columns: usize) -> Option<String> {
+    let first = lines.first()?;
+    let indentation_len = first.len() - first.trim_start().len();
+    let indentation = &first[..indentation_len];
+    let first_content = &first[indentation_len..];
+    let comment_marker = ["///", "//", "#", "*", "--", ";", "%"]
+        .into_iter()
+        .find(|marker| first_content.starts_with(marker));
+    let repeat_comment_marker = comment_marker.is_some_and(|marker| {
+        lines.iter().all(|line| {
+            let content = line.trim_start();
+            content.starts_with(marker)
+        })
+    });
+    let marker = repeat_comment_marker.then_some(comment_marker).flatten();
+    let marker_spacing = marker
+        .filter(|marker| {
+            first_content[marker.len()..]
+                .chars()
+                .next()
+                .is_some_and(char::is_whitespace)
+        })
+        .map(|_| " ")
+        .unwrap_or("");
+    let prefix = match marker {
+        Some(marker) => format!("{indentation}{marker}{marker_spacing}"),
+        None => indentation.to_string(),
+    };
+    let words = lines
+        .iter()
+        .flat_map(|line| {
+            let mut content = line.trim_start();
+            if let Some(marker) = marker {
+                content = content.strip_prefix(marker).unwrap_or(content).trim_start();
+            }
+            content.split_whitespace()
+        })
+        .collect::<Vec<_>>();
+    if words.is_empty() {
+        return None;
+    }
+
+    let prefix_columns = prefix.chars().count();
+    let width = columns.max(prefix_columns.saturating_add(1)).max(1);
+    let mut output = Vec::new();
+    let mut current = prefix.clone();
+    let mut current_columns = prefix_columns;
+    for word in words {
+        let word_columns = word.chars().count();
+        let separator_columns = usize::from(current_columns > prefix_columns);
+        if current_columns + separator_columns + word_columns > width
+            && current_columns > prefix_columns
+        {
+            output.push(current);
+            current = prefix.clone();
+            current_columns = prefix_columns;
+        }
+        if current_columns > prefix_columns {
+            current.push(' ');
+            current_columns += 1;
+        }
+        current.push_str(word);
+        current_columns += word_columns;
+    }
+    output.push(current);
+    Some(output.join("\n"))
+}
+
 fn mapped_selections(before: &SelectionSet, edits: &[Edit]) -> SelectionSet {
     let selections = before
         .selections()
@@ -1606,6 +1769,39 @@ mod tests {
         assert_eq!(document.text(), "a b c");
         document.undo();
         assert_eq!(document.text(), "a\nb\nc");
+    }
+
+    #[test]
+    fn rewrap_formats_the_current_paragraph_to_the_requested_width_and_undoes() {
+        let mut document = doc("alpha beta gamma delta");
+        document.set_caret(Position::new(0, 7), false);
+
+        let result = document.execute_edit(EditIntent::Rewrap { columns: 12 });
+        assert!(result.changed);
+        assert_eq!(document.text(), "alpha beta\ngamma delta");
+        document.undo();
+        assert_eq!(document.text(), "alpha beta gamma delta");
+    }
+
+    #[test]
+    fn rewrap_preserves_comment_prefixes_and_blank_paragraph_boundaries() {
+        let mut comment = doc("  // alpha beta gamma delta");
+        comment.set_caret(Position::new(0, 0), false);
+        comment.execute_edit(EditIntent::Rewrap { columns: 16 });
+        assert_eq!(comment.text(), "  // alpha beta\n  // gamma delta");
+
+        let mut paragraphs = doc("alpha beta gamma\n\nsecond paragraph words");
+        paragraphs.execute_edit(EditIntent::SelectAll);
+        paragraphs.execute_edit(EditIntent::Rewrap { columns: 11 });
+        assert_eq!(
+            paragraphs.text(),
+            "alpha beta\ngamma\n\nsecond\nparagraph\nwords"
+        );
+        paragraphs.undo();
+        assert_eq!(
+            paragraphs.text(),
+            "alpha beta gamma\n\nsecond paragraph words"
+        );
     }
 
     #[test]
