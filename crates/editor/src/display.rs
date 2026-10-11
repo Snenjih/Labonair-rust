@@ -548,6 +548,43 @@ mod tests {
     }
 
     #[test]
+    fn indentation_guides_follow_leading_columns_and_setting() {
+        let source = snapshot("a\n  b\n    c");
+        let viewport = Viewport {
+            height_rows: 8,
+            ..Default::default()
+        };
+        let enabled = DisplayMap::build(
+            &source,
+            viewport,
+            DisplayConfig {
+                indentation_guides: true,
+                ..Default::default()
+            },
+            &[],
+        );
+        assert_eq!(
+            enabled
+                .rows
+                .iter()
+                .map(|row| row.indent_guides.clone())
+                .collect::<Vec<_>>(),
+            vec![vec![], vec![2], vec![2, 4]]
+        );
+
+        let disabled = DisplayMap::build(
+            &source,
+            viewport,
+            DisplayConfig {
+                indentation_guides: false,
+                ..Default::default()
+            },
+            &[],
+        );
+        assert!(disabled.rows.iter().all(|row| row.indent_guides.is_empty()));
+    }
+
+    #[test]
     fn scroll_is_clamped_and_line_numbers_are_relative() {
         let source = snapshot("a\nb\nc");
         let display = DisplayMap::build(

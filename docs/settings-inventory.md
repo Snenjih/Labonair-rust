@@ -59,7 +59,9 @@ means a runtime module, not merely serialization or the generated Settings UI.
 | `editor` | `editorFontFamily`, `editorFontSize`, `editorLineHeight`, `editorTabSize`, `editorWordWrap`, `editorLineNumbers`, `editorRelativeLineNumbers`, `editorIndentWithTabs` | native editor settings adapter; Global + Project where whitelisted | Keep |
 | `editor` | `editorFormatOnSave` | no current native editor consumer | Remove; legacy input remains deserializable only |
 | `editor` | `editorShowOutline` | `workspace` Editor view (`EditorSettings::show_outline` in `workspace/src/views/editor.rs`) renders an inline document-symbol list; the Settings UI exposes “Code outline”; Global, default false | Keep |
-| `editor` | `editorTrimTrailingWhitespace`, `editorInsertFinalNewline`, `editorBracketMatching`, `editorShowCursorPosition`, `editorShowSelectionStats`, `editorIndentationGuides` | no current native editor consumer | Remove; legacy input remains deserializable only |
+| `editor` | `editorIndentationGuides` | `EditorSettings::indentation_guides` configures `DisplayMap`; `editor-ui` renders guide columns in text rows and Settings exposes the switch; Global + safe Project values | Keep |
+| `editor` | `editorSelectionsMenu` | `EditorSettings::selections_menu` controls the editor toolbar's selection actions; Settings exposes the switch; Global | Keep |
+| `editor` | `editorTrimTrailingWhitespace`, `editorInsertFinalNewline`, `editorBracketMatching`, `editorShowCursorPosition`, `editorShowSelectionStats` | no current native editor consumer | Remove; legacy input remains deserializable only |
 | `editor` | `editorAutoSave`, `editorAutoSaveDelay`, `editorAutocompleteDebounceMs`, `editorMaxFileSizeMb` | no current native editor consumer | Remove; legacy input remains deserializable only |
 | `editor` | `editorVimMode`, `vimHlsearch`, `vimIncsearch`, `vimSmartcase` | editor Vim runtime; Global + safe Project values | Keep |
 | `editor` | `editorTheme` | syntax-theme selection persistence; Global + safe Project values | Keep as value, no management page |

@@ -5642,6 +5642,25 @@ impl Render for EditorView {
                 ..
             } = display_row.kind
             {
+                let first_visible_column = start_column.saturating_add(display.viewport.left_column);
+                for column in display_row
+                    .indent_guides
+                    .iter()
+                    .copied()
+                    .filter(|column| *column >= first_visible_column)
+                {
+                    row = row.child(
+                        div()
+                            .absolute()
+                            .left(px(
+                                column.saturating_sub(first_visible_column) as f32 * char_w,
+                            ))
+                            .top_0()
+                            .w(px(1.0))
+                            .h(px(line_h))
+                            .bg(muted.opacity(0.25)),
+                    );
+                }
                 if let Some((s, e)) = sel {
                     let start = if line == s.line { s.column } else { 0 };
                     let end = if line == e.line { e.column } else { snapshot.line_len(line) };

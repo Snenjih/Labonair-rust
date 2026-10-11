@@ -159,7 +159,6 @@ macro_rules! field {
 /// migration/unknown-key compatibility, but a visible control would falsely
 /// advertise a runtime consumer that the inventory explicitly removed.
 const UI_REMOVED_FIELDS: &[&str] = &[
-    "editor.editorIndentationGuides",
     "editor.editorBracketMatching",
     "editor.editorTrimTrailingWhitespace",
     "editor.editorInsertFinalNewline",
@@ -1029,6 +1028,15 @@ mod tests {
         let mut content = SettingsContent::default();
         assert!((field.set)(&mut content, Value::Bool(false)));
         assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn editor_indentation_guides_is_an_exposed_switch() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorIndentationGuides")
+            .expect("editor indentation-guides setting");
+        assert!(matches!(field.control, FieldControl::Switch));
     }
 
     #[test]
