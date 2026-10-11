@@ -313,6 +313,10 @@ records the active shared `a` binding, parser-backed comma-item selection,
 asymmetric comma-inclusive around range, and unsupported `cs` and Helix
 directional consumers. Language-dependent dispatch and paired macOS
 acceptance remain open. The independent
+[`Vim ArgumentRequired action crosswalk`](parity/action-classification-vim-argument-required.md)
+records the registered but unbound action, `:delmarks` missing-argument
+route, Critical Cancel prompt, and Notification Center reconciliation.
+Palette/Ex dispatch and paired macOS acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and

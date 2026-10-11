@@ -59,7 +59,8 @@ source-side research. It records current evidence without claiming parity.
   AnyQuotes palette action whose commented `q` candidate is inactive (active
   `q` remains MiniQuotes), one `a`-bound Argument text object in the shared
   Vim/Helix layer (with parser-backed selection and unsupported `cs` and
-  directional Helix consumers), 19 Outline/OutlinePanel actions (six
+  directional Helix consumers), and one registered-unbound ArgumentRequired
+  action reached by `:delmarks` without a mark argument, 19 Outline/OutlinePanel actions (six
   default-macOS-bound IDs and 13 registered-unbound panel actions; six of the
   latter occur in seven Vim/Helix entries), one Editor Go to
   Line action,
@@ -132,6 +133,9 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-vim-argument.md`](action-classification-vim-argument.md) —
   the shared `a` binding, parser-backed comma-item selection, asymmetric
   comma-inclusive around range, and unsupported `cs`/Helix directional routes.
+- [`action-classification-vim-argument-required.md`](action-classification-vim-argument-required.md) —
+  the no-argument `:delmarks` fallback, registered Critical Cancel prompt,
+  unbound action-palette route, and Notification Center contract boundary.
 - [`action-classification-terminal-clear.md`](action-classification-terminal-clear.md) —
   the pinned saved-screen/cwd-history effect, platform bindings, Labonair's ANSI
   PTY command route, and native scrollback/runtime acceptance gaps.

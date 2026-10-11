@@ -6594,3 +6594,50 @@ Next safe task: Continue R07-000 with `vim::ArgumentRequired`; do not begin R07-
 - Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, Vim/Helix dispatch, palette invocation, native selection/editing, or paired visual evidence were run; these remain goal acceptance gates.
 - Next safe task: Continue R07-000 with `vim::ArgumentRequired`; do not begin R07-001 or R09.
 ~~~
+
+
+## Pre-change contract — Vim ArgumentRequired action
+
+~~~text
+Request type: Pinned registered-action and Ex-command workflow inventory; documentation-only.
+Owner module: Editor owns the Vim Ex-command parser, mark commands, and action handling; Keymap owns optional user bindings; the existing Command Palette owns action discovery; Notifications owns Labonair's user-message record and statusbar presentation.
+Canonical capability crate: `labonair-editor`; the canonical message owner is `labonair-notifications-core`, with UI-kit/dialog primitives used only if the accepted flow needs a correction surface.
+Canonical user entry point: In a Vim/Helix Editor, invoke `:delmarks` without a mark argument; alternatively discover `vim: argument required` in the focused Editor Command Palette while Vim/Helix is enabled, or bind it through Keymap.
+Public typed contract: Existing registered unit action `vim::ArgumentRequired`; no Labonair action or Ex-command equivalent exists.
+State owner: Editor owns Vim command parsing and mark behavior; the prompt itself carries no mutable state.
+Persistence owner: No state is persisted by this action. Any mark storage remains with the Editor owner; optional user bindings remain with Keymap.
+Commands and keymap entries: Registered action `ACT-REGISTRY-LINUX-vim-ArgumentRequired`; Ex-command `:delmarks` uses it when called without args and without bang. No platform-default or built-in Vim/Helix binding exists.
+Events and registry contributions: Existing action registration, Vim namespace filter, and command-palette interceptor; no new event, registry, or shell-wide conditional.
+Settings: Existing user-scoped Vim/Helix mode values control namespace visibility; no action-specific setting.
+Notifications: Pinned handler opens a Critical prompt titled `Argument required`, with no detail and a single `Cancel` button. Labonair's contract sends user-visible error explanations through the Notification Center and forbids toast/duplicate local banners; preserve the correction/retry flow and document any required modal reconciliation.
+UI-kit components: No current local control. If an accepted implementation requires a correction dialog, use existing shared dialog surfaces; do not add a local alert style.
+Allowed dependency changes: None.
+Tests: Documentation-only; inspect command parser/action source only and do not add or run tests. Future owner work needs missing-argument, retry, valid marks, bang, cancellation, and notification/dialog coverage.
+Visual evidence: No local UI change; paired native macOS prompt/notification behavior remains required for acceptance.
+Security impact: None beyond local Editor mark state.
+Performance impact: No local runtime work; the missing-argument branch only parses the submitted command and opens a prompt, and no measurement is available.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Linux action registration, empty default/profile binding search, the live `:delmarks` command route, prompt handler, and local Ex-command gap can be classified statically; macOS registration, direct palette, prompt dismissal, retry, and visual evidence remain pending.
+Documentation updates: New ArgumentRequired packet; registered-action row; parity packet index; `commands.keymap` and `editor.text` crosswalks; normative summary; this task record.
+Current status: Pinned action registration, `:delmarks` command path, Labonair route audit, and crosswalk updates complete; all required documentation and active-queue gates passed.
+Target status: Distinguish the required-argument prompt from valid/bang/invalid-mark command paths, preserve its entry point, and record the message-surface contract boundary without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Local Vim Ex parsing has no `:delmarks`, mark deletion, or ArgumentRequired action. Pinned action uses a dismiss-only Critical prompt; Labonair's sole global message presentation is the statusbar Notification Center and its modal-overlay allowance is limited to decisions/corrections.
+Failed/unavailable gates: No documentation or queue gate failed. Tests, Rust gates, palette dispatch, Ex-command prompt interaction, and native/visual acceptance were not run for this documentation-only classification and remain R07-000 acceptance work.
+Next safe task: Continue R07-000 with `vim::AutoIndent`; do not begin R07-001 or R09.
+~~~
+
+## Progress — classify Vim ArgumentRequired action
+
+~~~text
+- Added [action-classification-vim-argument-required.md](../../docs/parity/action-classification-vim-argument-required.md) for ACT-REGISTRY-LINUX-vim-ArgumentRequired.
+- Recorded that the unit action is registered but has no platform-default or built-in Vim/Helix key binding; Vim namespace discovery makes it directly available in the focused Editor palette when Vim/Helix is enabled.
+- Traced the live Ex-command path: `:delmarks` with no argument and no bang dispatches ArgumentRequired; `:delmarks mark-name` takes the private DeleteMarks::Marks path; `:delmarks!` takes the DeleteMarks::AllLocal path. Invalid mark syntax displays a separate `Invalid argument: …` prompt.
+- Classified the action's Critical prompt title, absent detail/input, single Cancel button, non-mutating behavior, and user retry path. No focused source test for this action or command was found; the source and command table were inspected but not executed.
+- Mapped the command/action to `labonair-editor`, optional binding to Keymap, and user-message state to the Notification Center contract. Recorded the explicit gap between the pinned dismiss-only modal and Labonair's notification-only error messaging plus correction-dialog rule; owner is Editor with Notifications, and the reconciliation remains open.
+- Confirmed local `run_ex` has no `:delmarks`/mark command or ArgumentRequired action. No local notification route or command descriptor exists for this workflow.
+- Updated the registered-action row, parity packet index, `commands.keymap` and `editor.text` crosswalks, normative parity summary, and this task record. No overlay binding row was invented for the unbound action.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative docs; 234 Markdown files), `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active), and `python3 scripts/verify.py --scope docs`, `agents`, `knowledge`, `settings`, and `queue`.
+- Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, Vim action palette or Ex dispatch, prompt dismissal/retry, Notification Center behavior, or paired visual evidence were run; these remain goal acceptance gates.
+- Next safe task: Continue R07-000 with `vim::AutoIndent`; do not begin R07-001 or R09.
+~~~
