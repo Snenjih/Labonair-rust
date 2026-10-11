@@ -7454,3 +7454,45 @@ Next safe task: Continue R07-000 with vim::Decrement after completing this Curre
 - First and final docs-only passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs; 253 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`.
 - No Rust build or tests were run. Vim/platform dispatch, palette behavior, all operator effects, shell-filter handling, and paired native evidence remain active goal acceptance gates.
 - Next safe task: Continue R07-000 with `vim::Decrement`; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim Decrement
+
+~~~text
+Request type: Pinned Vim numeric and boolean decrement action, shared profile routes, and local-owner gap; documentation-only classification.
+Owner module: Editor owns numeric/toggle edits, selection and mode transitions, and undo transactions; Keymap owns the shared Vim/Helix profile and user overrides; Settings owns Vim and Helix mode values.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry points: `ctrl-x` in Vim Normal, Visual, and Helix Select; `g ctrl-x` in Vim Visual with `step: true`; and `ctrl-x` in Helix Normal through the shared Normal/Helix Normal context. Registry action `vim::Decrement` may also be offered by the Vim action palette, but palette availability, direct invocation, and focus restoration are not established by this classification.
+Public typed contract: `vim::Decrement { step: bool = false }`. The action consumes Vim count (default one) and forced-motion state, decrements the selected numeric token(s) by the count or toggles a recognized Boolean pair. The Visual stepped route applies `-count` to the first numeric target, `-2*count` to the second, and continues by count multiples in target order; Boolean targets toggle once regardless of the delta.
+State owner: Editor owns active selections, buffer ranges, resulting anchors, and document edits. Vim owns mode, count, and forced-motion state. Each invocation edits found targets in one Editor transaction, updates selection/cursor anchors, and requests Normal; when Helix mode is enabled the pinned mode helper remaps that request to Helix Normal. Visual marks are stored before the edit.
+Persistence owner: No action-specific setting or persistent action state. Text changes use ordinary document save and undo; counts and selections are transient.
+Commands and keymap entries: ACT-REGISTRY-LINUX-vim-Decrement. Shared Vim profile IDs KEYBIND-VIM-HELIX-6ba6e6edaae5 (`ctrl-x`, Vim Normal), -1c08c786a667 (`ctrl-x`, Vim Visual), -e11bb7edd4e1 (`g ctrl-x`, Vim Visual, `{"step":true}`), and -0fffa38964b3 (`ctrl-x`, Helix Select). The later KEYBIND-VIM-HELIX-a2e2cf471ff7 binds `ctrl-x` in `(vim_mode == normal || vim_mode == helix_normal) && !menu`; it duplicates the Normal action while adding Helix Normal and excluding menus. Effective chord dispatch and user overrides still require runtime verification.
+Events and registry contributions: Existing typed Vim action and shared profile rows only; no new event or registry contribution is proposed.
+Settings: Vim Mode and Helix Mode gate the relevant profile contexts; no Decrement-specific setting.
+Notifications: None expected for valid edits. Invalid or absent target behavior and recovery must be verified.
+UI-kit components: Existing Editor and Keymap profile surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect, without running, test_increment, test_increment_with_dot, test_increment_with_leading_zeros, test_increment_with_leading_zeros_and_zero, test_increment_with_changing_leading_zeros, test_increment_with_two_dots, test_increment_sign_change, test_increment_sign_change_with_leading_zeros, test_increment_bin_wrapping_and_padding, test_increment_hex_wrapping_and_padding, test_increment_wrapping, test_increment_inline, test_increment_hex_casing, test_increment_radix, test_increment_steps, test_increment_negative_numbers, test_increment_toggle, test_increment_order, test_increment_visual_partial_number, test_increment_markdown_list_markers_multiline, and test_increment_with_multibyte_characters. These are pinned-source fixtures, not Labonair acceptance evidence.
+Visual evidence: No layout change is proposed. Accepted action/profile behavior still needs paired native macOS Editor and Keymap evidence, with Linux and Windows shared-profile dispatch checked separately.
+Security impact: No new permission boundary. Edits are confined to the active buffer; ordinary persistence and undo apply.
+Performance impact: Target scanning is line-local and scales with selected rows, active cursors, and token lengths. Large selections, many cursors, large counts, and malformed/unsupported tokens require runtime acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema, shared profile contexts, token formats, target scanning, selection behavior, and representative fixtures can be classified from the pinned source. Local Vim numeric/toggle behavior, palette route, effective cross-platform dispatch, and native acceptance remain open.
+Documentation updates: New Decrement packet; registered-action row; five shared binding annotations; Linux/Windows profile note; packet index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action schema, profile routes, parsing and formatting behavior, selection effects, representative pinned fixtures, and missing local Vim route inspected. Static classification remains to be recorded; platform and native acceptance remain open.
+Target status: Classify `vim::Decrement` across Normal, Visual, and Helix routes; distinguish ordinary repeated decrement from stepped Visual decrement; record supported numeric and boolean forms, selection/cursor transitions, local owner gap, and remaining acceptance gates.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Local `labonair-editor` has no Vim Decrement action or numeric/boolean Vim-profile route; any platform-level `ctrl-x` behavior is a separate action and does not establish Vim parity.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Palette/profile runtime behavior, numeric and toggle effects in Labonair, undo grouping, platform dispatch, and paired visual evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::DeleteLeft` after completing this Decrement classification; do not begin R07-001 or R09.
+~~~
+
+
+## Vim Decrement action classification progress
+
+- Classified `vim::Decrement` across Vim Normal, Visual, Helix Normal, and Helix Select. Recorded signed decimal, binary and hexadecimal formats, Boolean pairs, current-line target scanning, partial selection behavior, count handling, stepped Visual route, cursor collapse, and the duplicate Normal/Helix Normal `ctrl-x` declaration.
+- Updated the Decrement packet, registered-action row, all five shared binding annotations, Linux/Windows profile note, parity index, feature crosswalk, and this task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Pinned fixtures were inspected without running. The local Vim editor has no numeric/Boolean decrement action or corresponding shared profile route.
+- First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 254 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`.
+- Rust build/tests, palette and profile dispatch, local action behavior, undo grouping, platform acceptance, and paired native evidence remain active goal acceptance gates.
+- Next safe task: Continue R07-000 with `vim::DeleteLeft`; do not begin R07-001 or R09.
