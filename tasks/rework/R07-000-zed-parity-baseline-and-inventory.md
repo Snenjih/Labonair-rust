@@ -7662,7 +7662,7 @@ Next safe task: Continue R07-000 with `vim::DoubleQuotes` classification complet
 - Inspected pinned quote, escape, delete, surround-change, and AnyPair fixtures without running; no focused Helix DoubleQuotes Next/Previous fixture was found. Labonair has no corresponding quote object or mode routes.
 - Updated the DoubleQuotes packet, registered-action row, shared binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 258 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, Helix directional selection, palette behavior, platform dispatch, paired native evidence remain active.
-- Next safe task: Continue R07-000 with the next earliest registered action; do not begin R07-001 or R09.
+- Next safe task: Continue R07-000 with `vim::Down`; do not begin R07-001 or R09.
 
 
 ## Pre-change contract — Vim Down
@@ -7704,3 +7704,44 @@ Next safe task: Continue R07-000 with `vim::Down` classification complete; then 
 - Updated the Down packet, registered-action row, all nine shared/Helix binding annotations, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 259 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, action palette, platform dispatch, wrapped/folded geometry, Helix profile overrides, and paired native evidence remain active.
 - Next safe task: Continue R07-000 with `vim::EndOfDocument`; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim EndOfDocument
+
+~~~text
+Request type: Pinned document-end action, count/column semantics, Helix-specific `ge` override, Ex command entries, and local owner comparison; documentation-only classification.
+Owner module: Editor owns document targets, cursor/selection effects, and linewise operator ranges; Keymap owns the shared Vim/Helix profile and overrides; Settings owns Vim and Helix mode values.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry points: Vim `Shift-G` uses `vim::EndOfDocument`; with no count it targets the last buffer row, and with a count it targets that one-based row. Vim `g e` remains `vim::PreviousWordEnd`. Helix `g e` overrides that sequence with `vim::EndOfDocument` and targets column 0 of the final row, ignoring count. Helix Normal/Select `Shift-G` is overridden by the separate `vim::HelixGotoLine` action. The Vim Ex command registry also associates `$` and `%` tokens with `EndOfDocument`; exact parse/dispatch behavior requires runtime acceptance.
+Public typed contract: Unit action `vim::EndOfDocument`, no arguments or aliases. In Vim the linewise motion preserves the current column, clipped to the target row; count selects a one-based destination row and no count selects the final buffer row. In Helix `g e` ignores count and targets column 0 of the final buffer row. The action is linewise for Vim operators.
+State owner: Editor owns buffer rows, target excerpts, selection anchors, and cursor positions. Vim owns pending count/operator and mode. Helix Normal collapses cursor/selections to its target; Helix Select extends the active range to the target. Vim Visual and Visual Line selection use the Vim linewise motion path. Text/register effects come from consuming operators.
+Persistence owner: None for motion state; count, operator, cursor, and selection are transient. No text or register change occurs for a bare movement.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-EndOfDocument`; `KEYBIND-VIM-HELIX-f186365b474f` (`Shift-G` in `VimControl && !menu`) is overridden in Helix Normal/Select by `KEYBIND-VIM-HELIX-5d6dfd3d88fc` (`vim::HelixGotoLine`); `KEYBIND-VIM-HELIX-6521a302005f` binds Helix `g e` to EndOfDocument and overrides Vim `KEYBIND-VIM-HELIX-d7dc78571efc` (`PreviousWordEnd`). Ex command registry tokens `$` and `%` also map to EndOfDocument. No platform-default map binds this action.
+Events and registry contributions: Existing Vim motion action, shared profile, mode-specific override, and Ex command entries only; no new event or registry contribution proposed.
+Settings: Vim/Helix mode values select the owning behavior; no EndOfDocument-specific setting.
+Notifications: None expected.
+UI-kit components: Existing Editor, Keymap, and Vim command surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect without running pinned `test_end_of_document_710`, `normal.rs::test_end_of_document`, `test_delete_end_of_document`, `test_change_end_of_document`, `test_helix_goto_line`, and `test_helix_end_of_document`. Check counted Vim rows, retained/clipped column, Helix `ge` column 0/count behavior, Helix `Shift-G` override, selection collapse/extension, and linewise operator flows.
+Visual evidence: No layout change proposed. Paired native macOS Editor and Keymap evidence is required for Vim `G`, Helix `ge` and `G`, Visual/Select effects, and operator ranges; Linux/Windows profile and Ex-command dispatch require separate runtime checks.
+Security impact: None beyond text and register effects performed by a consuming operator in the active buffer.
+Performance impact: Target-row lookup and linewise range expansion are bounded by the selected buffer/excerpt; large counts, multi-selection, and large-buffer operator effects require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema, target/column/count semantics, Helix route override, command-table entries, representative fixtures, and local G gaps can be classified statically; palette behavior, Ex parsing, platform dispatch, and paired native acceptance remain open.
+Documentation updates: New EndOfDocument packet; registered-action row; Vim/Helix binding annotations including `PreviousWordEnd` and `HelixGotoLine` precedence; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action schema, all relevant Vim/Helix keymap routes and overrides, document target logic, Ex-command table entries, fixtures, and local `G` path inspected. Static classification packet and parity updates are complete; platform dispatch, palette, Ex parsing, and native acceptance remain open.
+Target status: Classify Vim `G` counts/column and operator behavior, Helix `ge`/`G` distinction, Helix selection effects, Ex command entries, and local Visual Line/Helix gaps without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair's local Vim resolver has counted linewise `G` but no typed `vim::EndOfDocument`, Helix `ge`/HelixGotoLine distinction, or shared profile. Its `VisualLine` motion path clears selection because only ordinary Visual mode extends, and its local Ex command surface does not establish the pinned `$`/`%` routes.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Palette behavior, Ex parser/dispatch, platform behavior, Helix mode routes, operators, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::EndOfDocument` classification complete; then advance to the next earliest registered action without beginning R07-001 or R09.
+~~~
+
+
+## Vim EndOfDocument action classification progress
+
+- Classified Vim `Shift-G` as a counted linewise action that preserves the current column; Helix `g e` as an uncounted jump to column 0 of the final row; Helix Normal/Select `Shift-G` as the separate HelixGotoLine action; and Vim `g e` as PreviousWordEnd. Recorded the Ex command table's `$`/`%` entries and Labonair's partial local `G` route with its Visual Line selection gap.
+- Inspected Vim default/count, linewise operator, Helix `ge`/`G`, and wrapped-delete fixtures without running. Exact Ex parsing, palette behavior, platform dispatch, and paired native evidence remain unverified.
+- Updated the EndOfDocument packet, registered-action row, bound and override binding annotations, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 260 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, Ex command-line behavior, Helix keymap precedence, platform dispatch, operator/selection runtime behavior, and native evidence remain active.
+- Next safe task: Continue R07-000 with `vim::EndOfLine`; do not begin R07-001 or R09.

@@ -72,6 +72,7 @@ The [Vim DeleteRight packet](action-classification-vim-delete-right.md) classifi
 The [Vim DeleteToEndOfLine packet](action-classification-vim-delete-to-end-of-line.md) classifies Normal and Helix Normal `shift-d` as counted EndOfLine deletion, records the distinct Visual route, and identifies Labonair D's count and blank-row gaps. Platform dispatch and native acceptance remain open.
 The [Vim DoubleQuotes packet](action-classification-vim-double-quotes.md) classifies same-row Vim inside/around and `cs` quote behavior, Helix directional boundaries, the AnyPair current-selection distinction, and Labonair's missing object workflow. Platform dispatch and native acceptance remain open.
 The [Vim Down packet](action-classification-vim-down.md) classifies counted buffer-row and display-row movement, linewise operator and selection routes, Helix Normal's reversed row payloads, and Labonair's lost preferred column. Platform dispatch and native acceptance remain open.
+The [Vim EndOfDocument packet](action-classification-vim-end-of-document.md) classifies Vim `Shift-G` counts and column retention, Helix `g e` versus `Shift-G` override behavior, Ex command-table routes, and Labonair's partial local `G` implementation. Platform dispatch and native acceptance remain open.
 
 ## Current Labonair capability reconciliation
 
