@@ -8022,7 +8022,7 @@ Target status: Classify how the first range is selected/highlighted, how a later
 Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 Remaining migration edges: Labonair has no Exchange operator, typed action, transient saved range/highlight, `cx` mode context, shared keymap route, or Vim action-palette descriptor.
 Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Visual and palette dispatch, mode/focus recovery, multiple selections, exact endpoint/overlap cases, undo/repeat/recording, platform dispatch, and paired native evidence remain active goal acceptance gates.
-Next safe task: Continue R07-000 with `vim::Exchange` classification complete and proceed to `vim::FindCommand`; do not begin R07-001 or R09.
+Next safe task: Continue R07-000 with `vim::FindCommand` classification; do not begin R07-001 or R09.
 ~~~
 
 
@@ -8033,4 +8033,45 @@ Next safe task: Continue R07-000 with `vim::Exchange` classification complete an
 - Inspected the action/Command Palette registration, Vim namespace gate, operator stack and motion/object consumers, range/highlight implementation, all five focused Exchange/ClearExchange fixtures, and the local Editor gap. Fixtures were inspected, not run; Visual/Helix, palette focus, multi-selection, exact endpoint, history/recording, and platform acceptance remain open.
 - Updated the Exchange packet, registered-action row, `cx` start/current-line/cancel binding annotations, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final post-edit documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 267 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Action palette dispatch, Visual/Helix behavior, multi-selection, endpoint cases, undo/repeat/recording, platform dispatch, and paired native evidence remain active.
-- Next safe task: Continue R07-000 with `vim::Exchange` classification complete and proceed to `vim::FindCommand`; do not begin R07-001 or R09.
+- Next safe task: Continue R07-000 with `vim::FindCommand` classification; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim FindCommand
+
+~~~text
+Request type: Pinned Vim Ex-search action, command-interceptor route, BufferSearchBar behavior, and local owner gap; documentation-only classification.
+Owner module: Editor owns the active searchable item, BufferSearchBar, matches, and selection; Vim owns Ex command parsing and action dispatch; Keymap owns the colon and direct search profile entries; Settings owns smartcase and wrap values; Command Palette hosts query input and invokes the interceptor.
+Canonical capability crates: labonair-editor and labonair-keymap; the existing typed Command Palette/interceptor contract remains the composition route.
+Canonical user entry point: In Vim Normal mode, `:` opens Command Palette input; `:/pattern` searches forward and `:?pattern` searches backward. Direct `/` and `?` remain separate interactive `vim::Search` actions. Counted colon dispatch follows `vim::CountCommand`.
+Public typed contract: Required-field action `vim::FindCommand { query: String, backwards: bool }`, no deprecated aliases. The interceptor parses optional Ex ranges and returns this action when the remaining query begins with `/` or `?`.
+State owner: Vim owns transient Ex input and direction; Command Palette owns transient query/result/focus; Editor and BufferSearchBar own the active query, regex options, result set, match selection, query error, and local history.
+Persistence owner: No FindCommand-specific persistence. The pinned BufferSearchBar keeps a bounded 50-entry in-memory SearchHistory using ReplacePreviousIfContains; Editor Settings own smartcase and search-wrap values.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-FindCommand`; `KEYBIND-VIM-HELIX-8a40bf95c177` (`:` in Vim Normal); separate direct search rows `KEYBIND-VIM-HELIX-3a0758fa56d6` and `KEYBIND-VIM-HELIX-fbe3f183edbe`; counted colon is `KEYBIND-VIM-HELIX-734cca507839`.
+Events and registry contributions: Existing parameterized Vim action, command interceptor, BufferSearchBar, and shared keymap entries only; no new event or registry contribution proposed.
+Settings: Existing Vim mode/profile values; `use_smartcase_search` overrides case sensitivity from uppercase query content; Editor `search_wrap` controls match-boundary wrapping. No new setting proposed.
+Notifications: Invalid regex is exposed as the BufferSearchBar query error; no separate toast or notification route.
+UI-kit components: Existing Command Palette and BufferSearchBar/Search UI only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect FindCommand action/handler, command interceptor, buffer search implementation/history, settings, local Vim search, and `command.rs::test_command_search` without running tests.
+Visual evidence: No layout change proposed. Paired native macOS Command Palette, Keymap, and Editor evidence must record the Ex query, direction, match selection, errors, and smartcase/wrap settings. Linux/Windows dispatch needs separate runtime verification.
+Security impact: No external access; search reads and selects within the active searchable item.
+Performance impact: Search is asynchronous and uses the existing BufferSearchBar matcher; large-buffer regex latency and cancellation/focus interactions need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Registry schema, colon/interceptor route, direct-search distinction, search-bar options/history/error path, focused command fixture, and local gap can be classified statically; dispatch/focus, regex and settings behavior, wrap/no-match behavior, history lifecycle, and native platform acceptance remain open.
+Documentation updates: New FindCommand packet; registered-action row; colon binding annotation; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action schema, direct-vs-Ex routes, async search-bar behavior, local literal-search route, and focused command fixture inspected. First and final post-edit documentation-only gate sets passed: diff check, documentation checker (43 normative docs, 268 Markdown files), queue checker (46 tasks; R07-000 active), and `docs`, `agents`, `knowledge`, `settings`, and `queue` scopes.
+Target status: Classify the parameterized Ex search command, the interactive-search distinction, search-bar options/history/results, and Labonair's missing Ex handoff without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no Vim Ex search parser/interceptor, typed FindCommand, colon-to-search action result, or BufferSearchBar handoff. Its direct Vim search is literal by default and stores only one last query/direction.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Platform dispatch, native palette/search focus, option/error/wrap behavior, history lifecycle, and paired evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::FirstNonWhitespace` after this packet; do not begin R07-001 or R09.
+~~~
+
+
+## Vim FindCommand action classification progress
+
+- Classified `vim::FindCommand` as the required-query result of the Vim Ex interceptor for `:/pattern` and `:?pattern`; recorded the shared colon-to-Command-Palette entry separately from the direct `/` and `?` `vim::Search` bindings and the counted-colon CountCommand route.
+- Inspected the action handler, range-prefix/interceptor path, BufferSearchBar show/query/search flow, regex and smartcase override, 50-entry in-memory history policy, async forward/backward match selection, wrap/error handling, and local Vim literal-search implementation. The focused `test_command_search` fixture was inspected, not run; palette focus and end-to-end behavior remain unverified.
+- Updated the FindCommand packet, registered-action row, colon binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final post-edit documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 268 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Platform dispatch, native palette/search focus, regex/smartcase/wrap/error behavior, query-history lifecycle, and paired macOS evidence remain active.
+- Next safe task: Continue R07-000 with `vim::FirstNonWhitespace`; do not begin R07-001 or R09.
