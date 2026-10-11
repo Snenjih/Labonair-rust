@@ -1641,6 +1641,12 @@ impl EditorView {
                     {
                         this.request_language_service(LanguageServiceRequest::FoldingRanges, cx);
                     }
+                    if this.language_service_snapshot.source
+                        == LanguageServiceRuntimeSource::LocalProcess
+                        && this.language_service_snapshot.capabilities.document_symbols
+                    {
+                        this.request_language_service(LanguageServiceRequest::DocumentSymbols, cx);
+                    }
                     if this.prefs.lsp_document_colors() != EditorDocumentColorMode::Off
                         && this.language_service_snapshot.capabilities.document_colors
                     {
@@ -2864,6 +2870,9 @@ impl EditorView {
 
     /// Document symbols for the palette "Go to Symbol" / outline page.
     pub fn document_symbols(&self) -> Vec<labonair_editor::DocumentSymbol> {
+        if let Some(symbols) = self.language_service_state.snapshot().document_symbols {
+            return symbols;
+        }
         let snapshot = self.doc.snapshot();
         labonair_editor::document_symbols(self.syntax.language(), &snapshot)
     }

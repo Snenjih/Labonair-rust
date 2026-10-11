@@ -679,6 +679,7 @@ pub struct LanguageServiceSnapshot {
     pub semantic_tokens: Vec<SemanticToken>,
     pub inlay_hints: Vec<InlayHint>,
     pub document_colors: Vec<DocumentColor>,
+    pub document_symbols: Option<Vec<DocumentSymbol>>,
     pub completion: Option<CompletionList>,
     pub signature_help: Option<SignatureHelp>,
     pub hover: Option<HoverContent>,
@@ -691,6 +692,7 @@ pub struct LanguageServiceState {
     semantic_tokens: Vec<SemanticToken>,
     inlay_hints: Vec<InlayHint>,
     document_colors: Vec<DocumentColor>,
+    document_symbols: Option<Vec<DocumentSymbol>>,
     completion: Option<CompletionList>,
     signature_help: Option<SignatureHelp>,
     hover: Option<HoverContent>,
@@ -705,6 +707,7 @@ impl LanguageServiceState {
             semantic_tokens: Vec::new(),
             inlay_hints: Vec::new(),
             document_colors: Vec::new(),
+            document_symbols: None,
             completion: None,
             signature_help: None,
             hover: None,
@@ -728,6 +731,7 @@ impl LanguageServiceState {
         self.semantic_tokens.clear();
         self.inlay_hints.clear();
         self.document_colors.clear();
+        self.document_symbols = None;
         self.completion = None;
         self.signature_help = None;
         self.hover = None;
@@ -751,6 +755,7 @@ impl LanguageServiceState {
             LanguageServiceResponse::SemanticTokens(value) => self.semantic_tokens = value,
             LanguageServiceResponse::InlayHints(value) => self.inlay_hints = value,
             LanguageServiceResponse::DocumentColors(value) => self.document_colors = value,
+            LanguageServiceResponse::DocumentSymbols(value) => self.document_symbols = Some(value),
             LanguageServiceResponse::Completion(value) => self.completion = Some(value),
             LanguageServiceResponse::SignatureHelp(value) => self.signature_help = value,
             LanguageServiceResponse::Hover(value) => self.hover = value,
@@ -767,6 +772,7 @@ impl LanguageServiceState {
             semantic_tokens: self.semantic_tokens.clone(),
             inlay_hints: self.inlay_hints.clone(),
             document_colors: self.document_colors.clone(),
+            document_symbols: self.document_symbols.clone(),
             completion: self.completion.clone(),
             signature_help: self.signature_help.clone(),
             hover: self.hover.clone(),
@@ -1550,6 +1556,37 @@ mod tests {
             version: DocumentVersion::new(1),
             generation: 0,
             response: Ok(LanguageServiceResponse::DocumentColors(vec![color])),
+        }));
+    }
+
+    #[test]
+    fn document_symbols_are_revision_bound_and_distinguish_empty_from_unrequested() {
+        let symbol = DocumentSymbol {
+            name: "main".into(),
+            kind: crate::SymbolKind::Function,
+            line: 2,
+            range: TextRange::new(12, 42),
+            name_range: TextRange::new(15, 19),
+        };
+        let mut state = LanguageServiceState::new(DocumentVersion::new(1));
+        assert_eq!(state.snapshot().document_symbols, None);
+        assert!(state.apply(LanguageServiceResult {
+            server: LanguageServerId::new("test"),
+            version: DocumentVersion::new(1),
+            generation: 0,
+            response: Ok(LanguageServiceResponse::DocumentSymbols(vec![
+                symbol.clone()
+            ])),
+        }));
+        assert_eq!(state.snapshot().document_symbols, Some(vec![symbol]));
+
+        state.set_document_generation(DocumentVersion::new(2), 1);
+        assert_eq!(state.snapshot().document_symbols, None);
+        assert!(!state.apply(LanguageServiceResult {
+            server: LanguageServerId::new("test"),
+            version: DocumentVersion::new(1),
+            generation: 0,
+            response: Ok(LanguageServiceResponse::DocumentSymbols(Vec::new())),
         }));
     }
 
