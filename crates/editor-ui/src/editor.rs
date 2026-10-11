@@ -10,6 +10,7 @@
 //! `cx.background_executor().spawn`. It emits [`EditorEvent`] for the hosting
 //! Workspace to mirror the dirty flag and peek state onto its tab.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -53,8 +54,8 @@ use labonair_editor::{
     LanguageServiceSnapshot, LanguageServiceState, LocalLanguageServiceRequest, LspPosition,
     LspRange, Match, Position, ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest,
     ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot, Revision, SavePolicy,
-    SearchError, SearchQuery, Selection, SelectionSet, SyntaxHighlighter, TextRange, Viewport, Vim,
-    VimKey, VimMode, VimOptions, WhitespaceMode,
+    SearchError, SearchOptions, SearchQuery, Selection, SelectionSet, SyntaxHighlighter, TextRange,
+    Viewport, Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
 };
 use labonair_editor::{build_breadcrumb_state, BreadcrumbState};
 
@@ -239,6 +240,94 @@ fn minimap_scroll_from_pointer(
         .min(total_rows.saturating_sub(viewport_rows))
 }
 
+fn scrollbar_marker_offset(visual_row: usize, total_rows: usize, track_length: f32) -> Option<f32> {
+    if total_rows == 0 || track_length <= 0.0 {
+        return None;
+    }
+    let marker_height = 2.0_f32.min(track_length);
+    let row = visual_row.min(total_rows - 1);
+    Some(
+        (row as f32 / total_rows as f32 * track_length)
+            .min((track_length - marker_height).max(0.0)),
+    )
+}
+
+fn symbol_at_position(
+    snapshot: &labonair_editor::BufferSnapshot,
+    position: Position,
+) -> Option<String> {
+    let line = snapshot.line(position.line);
+    let chars = line.chars().collect::<Vec<_>>();
+    let is_symbol = |ch: char| ch.is_alphanumeric() || ch == '_';
+    let column = if chars.get(position.column).is_some_and(|ch| is_symbol(*ch)) {
+        position.column
+    } else if position.column > 0
+        && chars
+            .get(position.column - 1)
+            .is_some_and(|ch| is_symbol(*ch))
+    {
+        position.column - 1
+    } else {
+        return None;
+    };
+    let mut start = column;
+    let mut end = column + 1;
+    while start > 0 && is_symbol(chars[start - 1]) {
+        start -= 1;
+    }
+    while end < chars.len() && is_symbol(chars[end]) {
+        end += 1;
+    }
+    let line_start = snapshot.line_start_byte(position.line);
+    let text_start = line_start
+        + line
+            .char_indices()
+            .nth(start)
+            .map_or(line.len(), |(byte, _)| byte);
+    let text_end = line_start
+        + line
+            .char_indices()
+            .nth(end)
+            .map_or(line.len(), |(byte, _)| byte);
+    Some(snapshot.text_range(TextRange::new(text_start, text_end)))
+}
+
+fn find_scrollbar_marker_offsets(
+    snapshot: &labonair_editor::BufferSnapshot,
+    display: &labonair_editor::DisplaySnapshot,
+    track_length: f32,
+    text: &str,
+    whole_word: bool,
+) -> Vec<f32> {
+    if text.is_empty() || text.len() > 256 {
+        return Vec::new();
+    }
+    let query = SearchQuery::new(
+        text,
+        SearchOptions {
+            case_sensitive: true,
+            smart_case: false,
+            whole_word,
+            ..Default::default()
+        },
+    );
+    let Ok(found) = find(snapshot, &query) else {
+        return Vec::new();
+    };
+    let mut seen_pixels = HashSet::new();
+    found
+        .matches
+        .into_iter()
+        .filter_map(|matched| {
+            let visual_row = display.logical_line_to_visual_row(matched.start.line);
+            let offset = scrollbar_marker_offset(visual_row, display.total_rows, track_length)?;
+            seen_pixels
+                .insert(offset.round() as usize)
+                .then_some(offset)
+        })
+        .collect()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct FoldMarker {
     range: FoldRange,
@@ -311,6 +400,17 @@ struct SymbolCache {
     revision: Revision,
     language: Language,
     symbols: Arc<[labonair_editor::DocumentSymbol]>,
+}
+
+#[derive(Clone)]
+struct ScrollbarOccurrenceCache {
+    revision: Revision,
+    total_rows: usize,
+    track_height: usize,
+    selected_text: Option<String>,
+    symbol: Option<String>,
+    selected_text_offsets: Vec<f32>,
+    symbol_offsets: Vec<f32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -416,6 +516,7 @@ pub struct EditorView {
     /// language. The render path uses this for outline, folds, breadcrumbs,
     /// and sticky context instead of parsing the document repeatedly.
     symbol_cache: Option<SymbolCache>,
+    scrollbar_occurrence_cache: Option<ScrollbarOccurrenceCache>,
     search: Option<EditorSearch>,
     project_search: ProjectSearchSession,
     pending_navigation: Option<Position>,
@@ -582,6 +683,7 @@ impl EditorView {
             gutter_width: 48.0,
             display_layout_cache: None,
             symbol_cache: None,
+            scrollbar_occurrence_cache: None,
             search: None,
             project_search: ProjectSearchSession::default(),
             pending_navigation: None,
@@ -3560,8 +3662,177 @@ impl EditorView {
         }
     }
 
+    fn scrollbar_occurrence_offsets(
+        &mut self,
+        snapshot: &labonair_editor::BufferSnapshot,
+        display: &labonair_editor::DisplaySnapshot,
+        track_length: f32,
+        selected_text: Option<String>,
+        symbol: Option<String>,
+    ) -> (Vec<f32>, Vec<f32>) {
+        let track_height = track_length.round() as usize;
+        let cached = self
+            .scrollbar_occurrence_cache
+            .as_ref()
+            .is_some_and(|cache| {
+                cache.revision == snapshot.revision()
+                    && cache.total_rows == display.total_rows
+                    && cache.track_height == track_height
+                    && cache.selected_text == selected_text
+                    && cache.symbol == symbol
+            });
+        if !cached {
+            let selected_text_offsets = selected_text.as_deref().map_or_else(Vec::new, |text| {
+                find_scrollbar_marker_offsets(snapshot, display, track_length, text, false)
+            });
+            let symbol_offsets = symbol.as_deref().map_or_else(Vec::new, |text| {
+                find_scrollbar_marker_offsets(snapshot, display, track_length, text, true)
+            });
+            self.scrollbar_occurrence_cache = Some(ScrollbarOccurrenceCache {
+                revision: snapshot.revision(),
+                total_rows: display.total_rows,
+                track_height,
+                selected_text,
+                symbol,
+                selected_text_offsets,
+                symbol_offsets,
+            });
+        }
+        self.scrollbar_occurrence_cache
+            .as_ref()
+            .map(|cache| {
+                (
+                    cache.selected_text_offsets.clone(),
+                    cache.symbol_offsets.clone(),
+                )
+            })
+            .unwrap_or_default()
+    }
+
+    fn render_scrollbar_markers(
+        &mut self,
+        snapshot: &labonair_editor::BufferSnapshot,
+        display: &labonair_editor::DisplaySnapshot,
+        track_length: f32,
+        palette: Palette,
+    ) -> Vec<AnyElement> {
+        let selection_ranges = self.doc.selection_set().ranges(snapshot);
+        let selected_text = selection_ranges
+            .iter()
+            .find(|range| !range.is_empty())
+            .map(|range| snapshot.text_range(*range))
+            .filter(|text| !text.is_empty() && text.len() <= 256);
+        let symbol = symbol_at_position(snapshot, self.doc.cursor);
+        let (selected_text_offsets, symbol_offsets) = self.scrollbar_occurrence_offsets(
+            snapshot,
+            display,
+            track_length,
+            selected_text,
+            symbol,
+        );
+        let mut elements = Vec::new();
+        let mut seen = HashSet::new();
+        for (offsets, color, kind) in [
+            (&selected_text_offsets, palette.selected_accent, 2_u8),
+            (&symbol_offsets, palette.accent, 3_u8),
+        ] {
+            for offset in offsets {
+                if seen.insert((offset.round() as usize, kind)) {
+                    elements.push(
+                        div()
+                            .absolute()
+                            .top(px(*offset))
+                            .left_0()
+                            .right_0()
+                            .h(px(2.0_f32.min(track_length)))
+                            .bg(color)
+                            .into_any_element(),
+                    );
+                }
+            }
+        }
+        let mut add_line = |line: usize, color, kind: u8| {
+            if line >= snapshot.line_count() {
+                return;
+            }
+            let visual_row = display.logical_line_to_visual_row(line);
+            let Some(offset) =
+                scrollbar_marker_offset(visual_row, display.total_rows, track_length)
+            else {
+                return;
+            };
+            if seen.insert((offset.round() as usize, kind)) {
+                elements.push(
+                    div()
+                        .absolute()
+                        .top(px(offset))
+                        .left_0()
+                        .right_0()
+                        .h(px(2.0_f32.min(track_length)))
+                        .bg(color)
+                        .into_any_element(),
+                );
+            }
+        };
+
+        for selection in self.doc.selection_set().selections() {
+            add_line(selection.head.resolve(snapshot).line, palette.primary, 0);
+        }
+        for range in &selection_ranges {
+            if range.is_empty() {
+                continue;
+            }
+            let start = snapshot.byte_to_position(range.start).line;
+            let end = snapshot.byte_to_position(range.end).line;
+            add_line(start, palette.selected_accent, 1);
+            if end != start {
+                add_line(end, palette.selected_accent, 1);
+            }
+        }
+        if let Some(search) = &self.search {
+            for matched in &search.matches {
+                add_line(matched.start.line, palette.info, 4);
+            }
+        }
+
+        let language_state = self.language_service_state.snapshot();
+        if self.prefs.diagnostics()
+            && language_state.version == DocumentVersion::from_revision(self.editor_revision())
+        {
+            for diagnostic in language_state.diagnostics {
+                let color = match diagnostic.severity {
+                    labonair_editor::language_services::DiagnosticSeverity::Error => palette.error,
+                    labonair_editor::language_services::DiagnosticSeverity::Warning => {
+                        palette.warning
+                    }
+                    labonair_editor::language_services::DiagnosticSeverity::Information
+                    | labonair_editor::language_services::DiagnosticSeverity::Hint => palette.info,
+                };
+                add_line(diagnostic.range.start.line, color, 5);
+            }
+        }
+
+        if self.prefs.git_gutter() && self.git_snapshot_is_current(&self.git_gutter) {
+            for hunk in &self.git_gutter.hunks {
+                let color = match hunk.status {
+                    GitHunkStatus::Added | GitHunkStatus::Untracked => palette.success,
+                    GitHunkStatus::Modified => palette.warning,
+                    GitHunkStatus::Deleted => palette.error,
+                };
+                if hunk.changed_lines.is_empty() {
+                    add_line(hunk.new_start.saturating_sub(1) as usize, color, 6);
+                } else {
+                    for line in &hunk.changed_lines {
+                        add_line(*line, color, 6);
+                    }
+                }
+            }
+        }
+        elements
+    }
+
     fn render_scrollbars(
-        &self,
+        &mut self,
         display: &labonair_editor::DisplaySnapshot,
         palette: Palette,
         sticky_height: f32,
@@ -3598,6 +3869,13 @@ impl EditorView {
         } else {
             None
         };
+        let marker_snapshot = self.doc.snapshot();
+        let scrollbar_markers = self.render_scrollbar_markers(
+            &marker_snapshot,
+            display,
+            vertical_track_length,
+            palette,
+        );
         let mut vertical_track = div()
             .id("editor-scrollbar-vertical")
             .absolute()
@@ -3605,7 +3883,8 @@ impl EditorView {
             .right_0()
             .bottom(px(EDITOR_SCROLLBAR_SIZE))
             .w(px(EDITOR_SCROLLBAR_SIZE))
-            .bg(palette.muted_bg.opacity(0.25));
+            .bg(palette.muted_bg.opacity(0.25))
+            .children(scrollbar_markers);
         if let Some(geometry) = vertical {
             let drag = EditorScrollbarDrag {
                 axis: ScrollbarAxis::Vertical,
@@ -7319,6 +7598,54 @@ mod tests {
         assert_eq!(minimap_scroll_from_pointer(110.0, 0.0, 100.0, 100, 10), 90);
         assert_eq!(minimap_scroll_from_pointer(50.0, 0.0, 100.0, 100, 100), 0);
         assert_eq!(minimap_scroll_from_pointer(50.0, 0.0, 0.0, 100, 10), 0);
+    }
+
+    #[test]
+    fn scrollbar_marker_offsets_follow_visual_rows_and_stay_on_track() {
+        assert_eq!(scrollbar_marker_offset(0, 100, 200.0), Some(0.0));
+        assert_eq!(scrollbar_marker_offset(99, 100, 200.0), Some(198.0));
+        assert_eq!(scrollbar_marker_offset(100, 100, 200.0), Some(198.0));
+        assert_eq!(scrollbar_marker_offset(0, 0, 200.0), None);
+        assert_eq!(scrollbar_marker_offset(0, 1, 0.0), None);
+        assert_eq!(scrollbar_marker_offset(8, 10, 1.0), Some(0.0));
+    }
+
+    #[test]
+    fn scrollbar_occurrence_markers_use_word_boundaries_and_pixel_density() {
+        let buffer =
+            labonair_editor::EditorBuffer::from_text("hit\nhitless\nx\nx\nx\nx\nx\nx\nx\nhit");
+        let snapshot = buffer.snapshot();
+        let display = DisplayMap::build(
+            &snapshot,
+            Viewport {
+                height_rows: 10,
+                ..Default::default()
+            },
+            DisplayConfig::default(),
+            &[],
+        );
+        assert_eq!(
+            find_scrollbar_marker_offsets(&snapshot, &display, 5.0, "hit", false),
+            vec![0.0, 0.5, 3.0]
+        );
+        assert_eq!(
+            find_scrollbar_marker_offsets(&snapshot, &display, 5.0, "hit", true),
+            vec![0.0, 3.0]
+        );
+    }
+
+    #[test]
+    fn selected_symbol_lookup_handles_unicode_columns_and_word_edges() {
+        let snapshot = labonair_editor::EditorBuffer::from_text("λfoo bar\n ").snapshot();
+        assert_eq!(
+            symbol_at_position(&snapshot, Position::new(0, 1)).as_deref(),
+            Some("λfoo")
+        );
+        assert_eq!(
+            symbol_at_position(&snapshot, Position::new(0, 4)).as_deref(),
+            Some("λfoo")
+        );
+        assert_eq!(symbol_at_position(&snapshot, Position::new(1, 0)), None);
     }
 
     #[test]
