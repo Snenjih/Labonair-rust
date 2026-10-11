@@ -8788,3 +8788,34 @@ Remaining migration edges: Labonair's local Vim `A` moves its single cursor to l
 Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Empty/EOF, forward/reversed/multiple ranges, selection ending at next-row column 0, wraps/folds/inlays, Insert Escape/count/repeat, palette, platform dispatch, and paired native evidence remain active goal acceptance gates.
 Next safe task: Continue R07-000 with `vim::HelixInsertEndOfLine` (now in progress); do not begin R07-001 or R09.
 ~~~
+
+## Pre-change contract — Vim HelixJumpToWord
+
+~~~text
+Request type: Pinned `g w` visible-word label navigation, mode-dependent move/selection behavior, transient operator and overlay lifecycle, and Labonair's missing Helix route; documentation-only classification.
+Owner module: Editor/Vim owns visible word-target discovery, mode-specific cursor/selection effects, and temporary operator state; Editor owns rendered navigation overlays and selections; Keymap owns the Helix mode-scoped `g w` route. Labonair's current Editor and Vim state belong to `labonair-editor`; a Helix profile route belongs to `labonair-keymap` and its mode value to Settings.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: `g w` in `(vim_mode == helix_normal || vim_mode == helix_select) && !menu`, via `vim::HelixJumpToWord`. Vim's existing `g w` routes in other contexts remain separate actions.
+Public typed contract: Unit action `vim::HelixJumpToWord`, no JSON arguments or aliases. It gathers word targets from the visible Editor range, shows two-letter lowercase labels, and pushes temporary HelixJump operator state while waiting for two single-character label keys without Control, Alt, platform, or function modifiers (Shift is accepted). Labels are case-insensitive. The selected label applies mode-dependent movement: Helix Normal selects the target word; Helix Select extends the existing selection to the target word; Vim Normal moves to the target word start; Vim Visual modes extend to the target word start; other modes select the target word. Empty target sets clear any prior jump overlay and do not start an operator. Escape/cancellation and unmatched label input clear the temporary UI/operator state.
+State owner: Editor owns visible ranges, selections, and navigation overlay rendering; Vim owns the mode-dependent jump behavior and temporary operator; Keymap/Settings gate Helix Normal/Select dispatch.
+Persistence owner: No document edit or action-specific persistence. Overlay, pending label prefix, and selection/motion results are transient Editor/Vim state. Count interaction, focus changes, and persistence of resulting navigation history need runtime acceptance.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-HelixJumpToWord`; `KEYBIND-VIM-HELIX-dcba2097e0d3` (`g w`, `(vim_mode == helix_normal || vim_mode == helix_select) && !menu`). Vim's separate default `g w` entries include Rewrap/PushRewrap and CurrentLine under their own contexts.
+Events and registry contributions: Existing Vim action and shared Keymap row; the Editor navigation-overlay and selection APIs are consumed. No new event or registry contribution is proposed.
+Settings: `SET-keymap-helix-mode` enables Helix Normal/Select contexts; `SET-keymap-vim-mode` enables the Vim/Helix layer. No action-specific setting.
+Notifications: None.
+UI-kit components: Existing Editor text and navigation-target overlay presentation only; no new reusable control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action schema/handler, visible-range target discovery, label assignment and text fitting, selection skip rules, operator/input/cancel lifecycle, Helix/Vim mode outcomes, direct jump fixtures, shared Helix `g w` route, platform profile inheritance, and Labonair's local Editor/Vim/keymap coverage; do not run tests.
+Visual evidence: Paired native macOS Editor/Keymap evidence should record visible viewport and scroll position, target words/labels and ordering, cursor and selection ranges/direction, Helix/Vim mode/profile, label font/color/overlap, first and second key input, cancellation/invalid input, focus, platform, window bounds, theme, and scale.
+Security impact: None; the action reads and navigates within the active Editor's visible text.
+Performance impact: Target collection and ordering scale with visible text and target count, capped at 676 labels; label measurement and overlay construction scale with emitted targets. Large visible ranges, proportional fonts, multi-selection skip ranges, and viewport updates need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema/handler, default Helix route, candidate word boundaries, visible-range fallback, candidate truncation/order, two-key state machine, cancellation, mode-dependent outcomes, direct behavior fixtures, and local missing route can be classified statically. Target viewport boundaries with wrapping/folds/excerpts, candidate/label visuals, non-ASCII keyboard layouts, count, concurrent selection changes, focus loss, palette, platform dispatch, and native behavior remain open.
+Documentation updates: New HelixJumpToWord packet; registered-action row; `g w` binding annotation; Linux/Windows profile note; Helix Mode setting row; parity README; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action declaration/handler, visible-range and candidate construction, skip rules, two-character input/cancel behavior, Helix/Vim movement modes, direct start/cancel/invalid-input/selection/IME/truncation/order fixtures, Helix binding, separate Vim `g w` routes, and local missing route inspected. Documentation-only changes are planned; no tests run.
+Target status: Classify `g w` as transient visible-word label navigation with mode-correct selection/movement results, without claiming runtime acceptance.
+Known limitations: Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no Helix mode, two-character word-jump operator, visible target-label overlay, or mode-dependent selection behavior. Existing Vim `g w` mappings have different meanings.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Wrapped/folded/excerpt viewports, empty and boundary ranges, single-character and Unicode word rules, selection skip behavior, multiple selections, target ordering/truncation, label fitting/overlap, two-key input, cancellation/focus loss, count, palette, platform dispatch, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::HelixJumpToWord` (now in progress); do not begin R07-001 or R09.
+~~~
