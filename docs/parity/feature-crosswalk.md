@@ -63,6 +63,7 @@ assignments, Labonair routes, runtime observations, and acceptance evidence
 are still pending; the IDs do not change the crosswalk's partial status.
 
 The [Vim ConvertToUpperCase packet](action-classification-vim-convert-to-upper-case.md) classifies Visual `shift-u`, Helix Normal/Select Alt-backtick, and the separate Normal `g shift-u` operator, including Unicode expansion and the missing local action route. Linux/Windows dispatch, palette behavior, and paired macOS acceptance remain open.
+The [Vim CountCommand packet](action-classification-vim-count-command.md) classifies colon after a pending count as a Command Palette range-prefill action, records the Vim range interceptor and modal/focus conditions, and identifies Labonair's missing Ex workflow. Linux/Windows dispatch and end-to-end command acceptance remain open.
 
 ## Current Labonair capability reconciliation
 

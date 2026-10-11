@@ -7330,3 +7330,45 @@ Next safe task: Continue R07-000 with vim::CountCommand; do not begin R07-001 or
 - First gate pass, second pass after task progress, and final pass after clarifying the Helix fixture coverage all passed git diff --check, scripts/check_documentation.py (43 normative docs; 250 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
 - No Rust build, tests, palette/profile dispatch, Unicode expansion runtime checks, native behavior, or paired visual evidence were run. These remain active goal acceptance gates. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 with vim::CountCommand; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim CountCommand action
+
+~~~text
+Request type: Pinned registered Vim command action, count-state transition, shared keybinding, and command-palette range seeding; documentation-only.
+Owner module: Editor owns Vim mode and count/operator state; Keymap owns the shared Vim profile; Command Palette owns the query and modal; Settings owns Vim mode values.
+Canonical capability crates: labonair-editor, labonair-keymap, and labonair-command-palette.
+Canonical user entry point: In Vim control mode, after a count is pending before an operator or after an operator, colon dispatches vim::CountCommand. The action combines pending pre/post counts, consumes count and forced-motion state, and opens the Command Palette with `.` for counts 0/1 or `.,.+N` where N is count minus one. The Vim command interceptor then parses ranged command input. The action requires a Workspace; an already-open Command Palette is toggled closed, while an undismissible other modal or missing focus prevents opening.
+Public typed contract: Registered unit action vim::CountCommand with no arguments, settings, or persistence-specific values; it consumes transient Vim count and forced-motion state and seeds the existing Command Palette query.
+State owner: Vim owns pre_count, post_count, forced-motion state, and the active operator context. Command Palette owns transient query, modal state, and focus. `take_count` multiplies pre/post counts when present; `CountCommand` defaults to one and formats a line address from the active Editor cursor.
+Persistence owner: None for the transient count, query, or range seed. The eventual command owns any document, workspace, or settings effects.
+Commands and keymap entries: ACT-REGISTRY-LINUX-vim-CountCommand; KEYBIND-VIM-HELIX-734cca507839 (`:`, `VimControl && VimCount`). No platform-default keymap binds this Vim action.
+Events and registry contributions: Existing Vim CountCommand action, shared profile row, global Vim command-palette interceptor, and Command Palette modal; no new event, registry, or shell-wide conditional.
+Settings: Existing Vim Mode gates the shared layer and Vim command namespace/interceptor; no CountCommand-specific setting.
+Notifications: None expected.
+UI-kit components: Existing Editor state and Command Palette query input/modal only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect command_interceptor, test_command_ranges, test_command_goto, CommandPalette::toggle/new, and Vim pre/post count handling without running them. Explicit range parsing is tested, but no focused fixture for the `n:` CountCommand prefill/dispatch route was found.
+Visual evidence: The seeded query and subsequent command affect the Command Palette and Editor; paired native macOS Keymap, palette, and Editor evidence is required. Linux/Windows shared-profile dispatch remains open.
+Security impact: No new permission boundary; commands selected from the palette retain their own effects and validations.
+Performance impact: Count formatting and command-query recomputation; large counts and command-result latency need runtime acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static key context, count multiplication/consumption, address formatting, interceptor path, modal toggle behavior, command-range fixtures, and local owner gap can be classified; key dispatch, palette acceptance, and end-to-end command effects remain pending.
+Documentation updates: New CountCommand packet; registered-action row; shared keybinding annotation; Linux/Windows layer note; packet index; feature crosswalk; task record.
+Current status: Pre-change contract and docs-only CountCommand classification recorded; count context/product, range query, forced-motion consumption, Vim interceptor, modal/focus conditions, explicit-range fixtures, and local owner gap classified; keyboard and end-to-end acceptance remain open.
+Target status: Classify colon after a pending count as a Command Palette range-seeding action, distinguish it from direct command parsing, document modal/focus conditions and missing local Ex workflow, and leave runtime acceptance open.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair supports counted Vim motions and a generic command palette, but has no CountCommand action, Vim Ex range parser/interceptor, or API to open the palette with a seeded line-range query.
+Failed/unavailable gates: No failures in either docs-only gate pass. Both passed git diff --check, scripts/check_documentation.py (43 normative docs; 251 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue. Rust build/tests, count-colon keyboard dispatch, palette/query interception, command effects, native behavior, and paired visual evidence were not run here and remain goal acceptance gates.
+Next safe task: Continue R07-000 with vim::CurlyBrackets; do not begin R07-001 or R09.
+~~~
+
+
+## Vim CountCommand action classification progress
+
+- Classified the count-context `:` binding as a Command Palette range-prefill action, not direct command execution. It consumes the pre/post count product and forced-motion state, seeds `.` for counts zero/one or `.,.+(count - 1)` for larger counts, and relies on the Vim global command interceptor to parse and dispatch the eventual ranged command.
+- Recorded that CommandPalette::toggle may close an already-open palette or decline to open behind an undismissible modal/without focus; the generic Vim action-list candidate also closes the palette rather than seeding a range. Labonair has counted motions and a generic palette, but no CountCommand, Vim Ex parser/interceptor, or externally seeded query route. Existing pinned range fixtures do not directly cover the count-colon prefill.
+- Updated the new CountCommand packet, registered-action row, shared keybinding annotation, Linux/Windows note, packet index, feature crosswalk, and this task record.
+- First and final gate passes both passed git diff --check, scripts/check_documentation.py (43 normative docs; 251 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
+- No Rust build, tests, count-colon dispatch, palette interception, command effects, native behavior, or paired visual evidence were run. These remain active goal acceptance gates. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 with vim::CurlyBrackets; do not begin R07-001 or R09.
