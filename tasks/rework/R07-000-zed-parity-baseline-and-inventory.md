@@ -8671,3 +8671,42 @@ Next safe task: Continue R07-000 with `vim::HelixGotoLastModification` (now in p
 - Updated the HelixGotoLastModification packet, registered-action row, `g .` binding annotation, Linux/Windows profile note, Helix Mode setting row, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 283 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Mode after insertion, Helix Select behavior, multi-cursor edits, navigation history, persisted mark lifetime, undo/redo, palette, platform dispatch, and paired native acceptance remain active.
 - Next safe task: Continue R07-000 with `vim::HelixGotoLine`; do not begin R07-001 or R09.
+
+## Pre-change contract — Vim HelixGotoLine
+
+~~~text
+Request type: Pinned Helix `shift-g` counted line jump, mode/selection behavior, profile precedence over Vim EndOfDocument, and Labonair's related line navigation; documentation-only classification.
+Owner module: Editor/Vim owns counted target calculation and selection movement; Keymap owns the shared `shift-g` binding and Helix-over-Vim precedence. Labonair's current caret and line-jump operations belong to `labonair-editor`; a Helix profile route belongs to `labonair-keymap` and its mode value to Settings.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: `shift-g` in `(vim_mode == helix_normal || vim_mode == helix_select) && !menu`, using the preceding count as a one-based buffer line. Without a count the action is a no-op. The destination is column 0 and clamps to the last buffer line.
+Public typed contract: Unit action `vim::HelixGotoLine`, no JSON arguments or aliases. It consumes the optional Vim count and, only when present, collapses each selection to the start of the requested buffer line with no selection goal.
+State owner: Editor owns selections and display/buffer mapping; Vim owns transient count and Helix Normal/Select state; Keymap/Settings gate mode/profile contexts.
+Persistence owner: No document persistence; the action changes caret/selection state only and does not edit text.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-HelixGotoLine`; `KEYBIND-VIM-HELIX-5d6dfd3d88fc` (`shift-g`, `(vim_mode == helix_normal || vim_mode == helix_select) && !menu`). The lower VimControl row routes `shift-g` to `vim::EndOfDocument`; Helix's row overrides it. Labonair local Vim `G` has its own counted linewise behavior, while the Go to Line prompt requirement is a separate command/prompt workflow.
+Events and registry contributions: Existing Vim action and shared Keymap row; Editor selection update only. No text transaction or new event/registry contribution is proposed.
+Settings: `SET-keymap-helix-mode` enables Helix Normal/Select contexts; `SET-keymap-vim-mode` enables the Vim/Helix layer. No action-specific setting.
+Notifications: None.
+UI-kit components: Existing Editor selection/caret only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action schema/handler, count consumption and arithmetic, shared Helix/Vim `shift-g` precedence, selection update, direct `test_helix_goto_line`, local Vim `G`, and current Go to Line prompt/typed routes; do not run tests.
+Visual evidence: Paired native macOS Editor/Keymap evidence should record mode, count or absent count, initial selection/cursor, target line/column, resulting selection, focus/profile, platform, viewport, theme, and scale.
+Security impact: None; the action moves selections in the active Editor.
+Performance impact: O(number of selections) plus existing snapshot line mapping; boundary and multi-selection behavior need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Registry, shared and override bindings, target calculation, selection collapse, direct fixture expectations, and distinct local routes can be classified statically. Count parsing edges, multicursor/selection retention, folded/wrapped/excerpt mapping, palette, platform dispatch, and paired native behavior remain open.
+Documentation updates: New HelixGotoLine packet; registered-action row; `shift-g` binding annotation; Linux/Windows profile note; Helix Mode setting row; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action schema, handler, count parser, one-based clamping helper, Helix/Vim profile rows, direct `test_helix_goto_line`, local counted `G`, local Go to Line crosswalk, and absence of a local Helix mode inspected. Documentation-only changes are planned; no tests run.
+Target status: Classify counted Helix `shift-g` as a conditional jump to a clamped 1-based target line at column 0, with no-count no-op and selection collapse, distinct from Vim EndOfDocument and the Go to Line prompt.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has partial local Vim `G` linewise navigation and an Editor Go to Line operation/palette line jump, but no Helix mode or Helix `shift-g` action/profile route. The direct prompt accepts richer line/column/relative input and remains separately incomplete.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Count 0/extremes, empty/final lines, display-map/excerpt mapping, multiple selections, no-count count clearing, Select mode retention, palette, platform dispatch, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::HelixGotoLine` (now in progress); do not begin R07-001 or R09.
+~~~
+
+## Vim HelixGotoLine action classification progress
+
+- Classified Helix `shift-g` as a count-dependent jump to the one-based buffer line at column 0, clamped to the final line. Bare `shift-g` is a no-op. The Helix Select fixture expects a counted jump to collapse rather than extend the selection and retain Helix Select mode; a count targeting the current line resets the caret to column 0.
+- Inspected the action schema/handler, count parser, target conversion helper, Helix and Vim keymap rows, and `test_helix_goto_line`; fixtures were inspected, not run. Labonair's local Vim `G` is a counted linewise motion defaulting to the final line and retaining a clipped column. Its Outline line jump and absent direct Go to Line prompt are separately classified.
+- Updated the HelixGotoLine packet, registered-action row, `shift-g` binding annotation, Linux/Windows profile note, Helix Mode setting row, parity README, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 284 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests and native visual acceptance remain outstanding for the overall goal.
+- Next safe task: Continue R07-000 with `vim::HelixInsert`; do not begin R07-001 or R09.
