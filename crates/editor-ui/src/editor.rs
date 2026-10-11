@@ -36,7 +36,7 @@ use labonair_editor::{
         route_for_command, EditorCommandRoute, EditorLanguageCommand, EditorUiCommand,
     },
     document::Motion,
-    editing::{EditorCommand, EditorCommandResult, SplitIntent},
+    editing::{EditIntent, EditorCommand, EditorCommandResult, SplitIntent},
     find,
     lifecycle::{FileCapabilities, FileLifecycleEvent, FileState, ReloadDecision, SaveIntent},
     next_match_with_wrap, Anchor, AnchorAffinity, CancellationToken, DisplayConfig, DisplayMap,
@@ -652,6 +652,15 @@ impl EditorView {
         };
         match route {
             EditorCommandRoute::Edit(intent) => {
+                let intent = match (id, intent) {
+                    (CommandId::EditorIndent, EditIntent::Indent { .. }) => EditIntent::Indent {
+                        unit: self.indent_unit(),
+                    },
+                    (CommandId::EditorOutdent, EditIntent::Outdent { .. }) => EditIntent::Outdent {
+                        unit: self.indent_unit(),
+                    },
+                    (_, intent) => intent,
+                };
                 let _ = self.execute_command(EditorCommand::Edit(intent), cx);
             }
             EditorCommandRoute::Split(intent) => {
@@ -6500,6 +6509,44 @@ mod tests {
                 v.apply_prefs(cx);
                 assert!(v.vim.is_none(), "vim disabled via prefs");
                 assert_eq!(v.indent_unit(), "\t");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn registered_indent_commands_use_live_tab_settings(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            install_editor_prefs(cx, |editor| {
+                editor.editor_indent_with_tabs = Some(false);
+                editor.editor_tab_size = Some(3);
+            });
+        });
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.apply_prefs(cx);
+                this.doc = Document::from_file("test.rs".into(), "line", 1);
+                this.doc.cursor = Position::default();
+
+                assert!(this.dispatch_registered_command(CommandId::EditorIndent, cx));
+                assert_eq!(this.doc.text(), "   line");
+                assert!(this.dispatch_registered_command(CommandId::EditorOutdent, cx));
+                assert_eq!(this.doc.text(), "line");
+            });
+        });
+
+        cx.update(|cx| {
+            install_editor_prefs(cx, |editor| {
+                editor.editor_indent_with_tabs = Some(true);
+            });
+        });
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.apply_prefs(cx);
+                assert!(this.dispatch_registered_command(CommandId::EditorIndent, cx));
+                assert_eq!(this.doc.text(), "\tline");
+                assert!(this.dispatch_registered_command(CommandId::EditorOutdent, cx));
+                assert_eq!(this.doc.text(), "line");
             });
         });
     }
