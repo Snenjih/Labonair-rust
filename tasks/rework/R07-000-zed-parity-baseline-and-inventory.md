@@ -8104,7 +8104,7 @@ Target status: Classify logical-line and display-line motion, Helix alias, count
 Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 Remaining migration edges: Labonair has a partial logical-line `^` route, but no typed motion action, `g ^` display-row route, Helix `g s`, or soft-wrapped Vim motion. Its all-whitespace helper jumps to column zero instead of preserving a nonzero cursor as the pinned newline-terminated behavior does.
 Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Platform dispatch, selection/operator behavior, direct palette invocation, wrapped-row behavior, blank-line edge cases, and paired native evidence remain active goal acceptance gates.
-Next safe task: Continue R07-000 with `vim::GoToColumn` after this packet; do not begin R07-001 or R09.
+Next safe task: Continue R07-000 with `vim::GoToNextReference` after this packet; do not begin R07-001 or R09.
 ~~~
 
 
@@ -8114,4 +8114,45 @@ Next safe task: Continue R07-000 with `vim::GoToColumn` after this packet; do no
 - Inspected the logical/display-row line start, language-scope whitespace classification, newline and final-row branches, registration schema, local `resolve_motion('^')`/`first_non_blank` fallback, `test_jump_to_first_non_whitespace`, macOS-only `test_wrapped_lines`, Visual Block `^`, and `d ^` register fixtures. Fixtures were inspected, not run; no Helix `g s`, count/forced-motion, or unusual blank-final-row fixture was found.
 - Updated the FirstNonWhitespace packet, registered-action row, all three shared profile annotations, Linux/Windows note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final post-edit documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 269 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Wrapped-row, Helix, operator, palette, blank-line, platform, and paired native acceptance remain active.
-- Next safe task: Continue R07-000 with `vim::GoToColumn`; do not begin R07-001 or R09.
+- Next safe task: Continue R07-000 with `vim::GoToNextReference`; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim GoToColumn
+
+~~~text
+Request type: Pinned counted absolute-column Vim motion, operator/selection consumers, DisplaySnapshot clipping, and local owner gap; documentation-only classification.
+Owner module: Editor owns cursor/selection coordinates and display mapping; Vim owns count, mode, motion, and operator dispatch; Keymap owns the shared Vim profile route; Settings owns Vim mode/profile values.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: Shared `|` binding in `VimControl && !menu`. No count targets the first position in the current logical row; count n applies n−1 rightward DisplayPoint steps. There is no Helix-specific profile row.
+Public typed contract: Unit action `vim::GoToColumn`, no arguments or aliases. It dispatches `Motion::GoToColumn`, whose default kind is Exclusive, selection goal is None, and jump-list policy is false. DisplaySnapshot clipping determines valid targets.
+State owner: Vim owns transient count and forced-motion state; Editor owns each active caret/selection and the DisplaySnapshot; Keymap owns the profile binding.
+Persistence owner: None; the action only moves the caret/selection and may supply an existing operator range.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-GoToColumn`; `KEYBIND-VIM-HELIX-6e9c8371004a` (`|`). No platform-default map binds the action.
+Events and registry contributions: Existing Vim motion action and one shared profile row only; no new event or registry contribution proposed.
+Settings: Existing Vim mode/profile value gates the shared binding and Vim palette namespace; wrapping, tabs, folds, inlays, and display-map clipping affect coordinate mapping. No GoToColumn-specific setting.
+Notifications: None.
+UI-kit components: Existing Editor caret/selection and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action schema, handler/motion, count path, DisplayPoint right/clipping pipeline, local resolver, and `object.rs::test_vertical_bars` without running. This integration fixture uses `18|` to position the caret before testing vertical-bar text objects; no dedicated GoToColumn test matrix was found.
+Visual evidence: No permanent layout change proposed. Paired native macOS Editor/Keymap evidence must record counted target position on short/long rows, tabs, wide characters, wraps, mode/selection, and operator effects with platform, profile, viewport, theme, and scale.
+Security impact: None; the motion is confined to the active Editor selections.
+Performance impact: Rightward stepping stops when display clipping stops the point, so cost is bounded by reachable positions on each active cursor; large counts and multi-cursor movement require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema, shared binding, one-based count algorithm, exclusive kind, clipping pipeline, `18|` integration example, and local absence can be classified statically; exact tab/wrap/grapheme behavior, palette, operators, modes, platform layout, and native acceptance remain open.
+Documentation updates: New GoToColumn packet; registered-action row; shared `|` annotation; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; registry unit schema, shared `|` route, count conversion, exclusive motion/jump policy, DisplayPoint clipping, local absence, and `test_vertical_bars` inspected. First and final post-edit documentation-only gate sets passed: diff check, documentation checker (43 normative docs, 270 Markdown files), queue checker (46 tasks; R07-000 active), and `docs`, `agents`, `knowledge`, `settings`, and `queue` scopes.
+Target status: Classify how `|` maps count to current-row position, how selection/operators consume it, how the DisplaySnapshot constrains the target, and Labonair's missing route without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no GoToColumn action, `|` resolver case, counted current-row destination, or shared Vim profile route.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Exact display-map boundaries, palette and focus, Visual/multiple-cursor/operator behavior, platform key dispatch, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::GoToNextReference` after this packet; do not begin R07-001 or R09.
+~~~
+
+
+## Vim GoToColumn action classification progress
+
+- Classified the shared `|` binding, unit action contract, one-based count conversion, logical-row start, repeated DisplayPoint right steps, clipping, exclusive operator kind, and jump-list policy. No Helix profile row or platform-default key binding exists.
+- Inspected local Vim's absent `|` resolver route and the pinned `object.rs::test_vertical_bars` integration fixture, which uses `18|` and asserts the resulting position before exercising vertical-bar text objects. Source and fixture were inspected, not run; no dedicated count, clipping, selection, or operator matrix was found.
+- Updated the GoToColumn packet, registered-action row, shared binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final post-edit documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 270 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Palette, tabs/wrapping/graphemes, operator/mode behavior, platform layout, and paired native acceptance remain active.
+- Next safe task: Continue R07-000 with `vim::GoToNextReference`; do not begin R07-001 or R09.
