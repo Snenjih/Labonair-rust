@@ -28,6 +28,7 @@ The [Vim ChangeToEndOfLine packet](action-classification-vim-change-to-end-of-li
 The [Vim Class packet](action-classification-vim-class.md) records the shared Vim c and Helix t routes, grammar-backed inside/around ranges, Helix next/previous type selection, and missing local text-object action. Linux/Windows dispatch, language coverage, and paired macOS acceptance remain open.
 The [Vim ClearExchange packet](action-classification-vim-clear-exchange.md) classifies the shared cx c cancellation route, transient VimExchange highlight removal, common operator/count/register clearing, and missing local action. Linux/Windows dispatch and paired macOS acceptance remain open.
 The [Vim ClearOperators packet](action-classification-vim-clear-operators.md) classifies Escape, Ctrl-C, and Ctrl-[ in waiting/operator contexts, transient modal-state cleanup, Helix jump-overlay dismissal, and preservation of a stored VimExchange highlight. Linux/Windows dispatch and paired macOS acceptance remain open.
+The [Vim ColumnLeft packet](action-classification-vim-column-left.md) classifies shared z h, counted display-column scrolling, cursor clipping, and Labonair’s unused scroll_left session field. Linux/Windows dispatch and paired macOS acceptance remain open.
 
 ### Layers
 

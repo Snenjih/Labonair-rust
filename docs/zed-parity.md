@@ -360,6 +360,11 @@ records the six Escape/Ctrl-C/Ctrl-[ bindings across waiting/operator
 contexts, transient operator/count/register cleanup, Helix jump-overlay
 removal, and preservation of the VimExchange highlight. Runtime profile,
 palette, and paired macOS acceptance remain open. The independent
+[`Vim ColumnLeft action crosswalk`](parity/action-classification-vim-column-left.md)
+records shared z h, counted display-column scrolling, cursor clipping
+to the visible range, and the missing local interactive route. Native
+viewport, palette, profile, and paired macOS acceptance remain open.
+The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and
