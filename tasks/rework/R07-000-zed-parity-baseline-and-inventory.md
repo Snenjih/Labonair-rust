@@ -6733,3 +6733,48 @@ Next safe task: Continue R07-000 with `vim::ChangeCase`; do not begin R07-001 or
 - Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, platform or palette dispatch, BackQuotes object/surround/Helix interaction, duplicate-listener observation, or paired visual evidence were run; these remain goal acceptance gates.
 - Next safe task: Continue R07-000 with `vim::ChangeCase`; do not begin R07-001 or R09.
 ~~~
+
+## Pre-change contract — Vim ChangeCase action
+
+~~~text
+Request type: Pinned registered-action, case-transformation, and shared-profile inventory; documentation-only.
+Owner module: Editor owns text changes, selection, and modal state; Keymap owns shared mode/user bindings; Settings owns Vim/Helix mode values; Command Palette owns existing Vim action discovery.
+Canonical capability crate: `labonair-editor`; profile composition in `labonair-keymap`.
+Canonical user entry point: Shared `~` in Vim Normal/Visual and Helix Normal/Select; focused-Editor Command Palette when Vim/Helix is enabled. The separate `g~{motion}` opposite-case operator is not this direct action.
+Public typed contract: Existing registered unit action `vim::ChangeCase`; Labonair has a normal-mode `~` key branch but no equivalent registered action or full selection-aware behavior.
+State owner: Editor owns text, selections, cursors, and transient Vim/Helix mode and count state.
+Persistence owner: Settings persists Vim/Helix mode values; Keymap persists profile and user bindings. Case edits use ordinary Editor document transactions and persistence.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-ChangeCase`; Visual `KEYBIND-VIM-HELIX-6a17dd765f07`; Helix Select `KEYBIND-VIM-HELIX-e8d6dbaa65eb`; Normal/Helix Normal `KEYBIND-VIM-HELIX-0dd439257b0f`; no platform-default binding.
+Events and registry contributions: Existing Vim action registration, shared mode layer, and generic palette route; no new event, registry, or shell-wide condition.
+Settings: Existing Vim/Helix mode values control the layer and palette namespace; no case-specific setting.
+Notifications: None. Non-cased characters may remain unchanged, and read-only buffers do not edit; no message surface is implied.
+UI-kit components: Existing Editor, Command Palette, and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect pinned `test_change_case`, `test_change_case_motion`, `test_change_case_motion_object`, and `test_change_case_helix_mode` source fixtures without running tests. Future owner work needs direct Normal/count behavior, character/line/block Visual, multi-cursor, Unicode expansion, Helix Normal/Select mode, read-only and palette dispatch coverage.
+Visual evidence: No local layout change; native macOS key/palette and mode-transition evidence remain required, with Linux and Windows profile dispatch verified separately.
+Security impact: None beyond ordinary local text edits.
+Performance impact: No local runtime work; transforms operate on selected/current characters and should remain responsive for long selections.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static action registration, three active shared binding rows, source transforms, selection/mode behavior, tests, and local partial route can be classified; native dispatch and acceptance remain pending.
+Documentation updates: New ChangeCase packet; registered-action row; three shared binding annotations; non-macOS layer note; packet index; `commands.keymap` and `editor.text` crosswalks; normative parity summary; task record; memory note for local Unicode case-expansion truncation.
+Current status: Static action/profile/test-source analysis, Labonair Editor/Vim route audit, packet and crosswalk updates complete; all required documentation-only gates passed.
+Target status: Separate direct `~` action behavior from `g~{motion}`, classify per-mode selection and cursor effects, and record local gaps without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair's `~` path operates from the cursor/count and ignores selected ranges, has no Helix mode or registered/palette action, and takes only the first scalar from Unicode case mappings. The pinned action switches Vim Visual, Visual Line, Visual Block, and Helix Select to `Mode::Normal`; the Helix Select transition lacks a focused fixture.
+Failed/unavailable gates: No documentation or queue gate failed. Tests, Rust build, profile/palette dispatch, Unicode/native behavior, and paired visual acceptance were not run for this documentation-only classification and remain R07-000 acceptance work.
+Next safe task: Continue R07-000 with `vim::ChangeListNewer`; do not begin R07-001 or R09.
+~~~
+
+
+## Progress — classify Vim ChangeCase action
+
+~~~text
+- Added [action-classification-vim-change-case.md](../../docs/parity/action-classification-vim-change-case.md) for ACT-REGISTRY-LINUX-vim-ChangeCase.
+- Recorded three shared `~` bindings: Vim Visual (KEYBIND-VIM-HELIX-6a17dd765f07), Helix Select (KEYBIND-VIM-HELIX-e8d6dbaa65eb), and Vim/Helix Normal (KEYBIND-VIM-HELIX-0dd439257b0f). There is no platform-default binding. Kept direct `~` separate from `g~{motion}` → `vim::PushOppositeCase`.
+- Classified count-based Normal edits, Visual/Visual Line/Visual Block range and cursor handling, Helix Normal/Select transforms, read-only/no-op behavior, mode transitions, and full Unicode case mappings. Inspected focused source fixtures for count, visual selections, multi-cursor, `ß` expansion, and Helix Normal; no tests were run.
+- Audited the local Editor-owned Vim route: `~` uses cursor/count rather than the active selection, lacks Helix and an action/palette descriptor, and drops Unicode case-expansion scalars. Recorded the `ß` data-loss gap in `memory/bugs_and_fixes.md`; runtime code was not changed in this inventory slice.
+- Updated the registered-action row, all three shared binding row annotations, Linux/Windows shared layer note, packet index, `commands.keymap` and `editor.text` crosswalks, normative parity summary, memory note, and this task record.
+- Passed `git diff --check`, `python3 scripts/check_documentation.py` (43 normative docs; 237 Markdown files), `python3 scripts/check_rework_queue.py` (46 tasks; R07-000 remains earliest active), and `python3 scripts/verify.py --scope docs`, `agents`, `knowledge`, `settings`, and `queue`.
+- Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, profile/palette dispatch, selection interaction, Unicode runtime comparison, or paired visual evidence were run; these remain goal acceptance gates.
+- Next safe task: Continue R07-000 with `vim::ChangeListNewer`; do not begin R07-001 or R09.
+~~~

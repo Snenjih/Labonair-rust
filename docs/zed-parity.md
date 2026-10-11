@@ -327,6 +327,11 @@ records the active shared backtick binding, line-local marker matching,
 `cs` old-pair and Helix directional routes, and duplicate pinned action
 subscriptions. Duplicate-listener effects and paired macOS acceptance remain
 open. The independent
+[`Vim ChangeCase action crosswalk`](parity/action-classification-vim-change-case.md)
+records the three shared `~` contexts, mode-specific selection/cursor effects,
+full Unicode case mappings, separate `g~{motion}` operator, and the local
+cursor-only mapping gap. Palette, platform dispatch, Helix Select transition,
+and paired macOS acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and

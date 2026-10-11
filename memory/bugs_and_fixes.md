@@ -1058,3 +1058,17 @@ has not been observed.
 effects before claiming exact behavior. Do not edit the frozen reference or
 replicate duplicate local handlers. Track it in the
 [Vim BackQuotes classification](../docs/parity/action-classification-vim-back-quotes.md).
+
+## 2026-10-11 — Local Vim case toggle truncates Unicode mappings
+
+**Bug found:** `crates/editor/src/vim.rs::toggle_case` takes only the first
+character returned by `char::to_uppercase()` or `char::to_lowercase()`. Case
+mappings that expand are truncated: toggling `ß` yields `S`, while the pinned
+`vim::ChangeCase` path preserves the full `SS` mapping. The local parser also
+applies its `~` implementation from the cursor/count and does not transform a
+Visual selection.
+
+**Disposition:** Record the data-loss and selection gaps in the
+[Vim ChangeCase classification](../docs/parity/action-classification-vim-change-case.md).
+Keep this parity-inventory slice documentation-only; fix and verify the local
+Editor path when its owner contract is implemented.

@@ -21,6 +21,7 @@ The [Vim AnyQuotes packet](action-classification-vim-any-quotes.md) records the 
 The [Vim Argument packet](action-classification-vim-argument.md) classifies the shared `a` binding, parser-backed comma-item range, asymmetric comma-inclusive around range, and unsupported `cs` and Helix next/previous consumers. The profile data is shared; Linux/Windows dispatch and language-dependent selection need runtime verification.
 The [Vim AutoIndent packet](action-classification-vim-auto-indent.md) classifies shared `=` bindings in Vim Visual and Helix Normal/Select, and distinguishes them from Vim Normal `=` → `PushAutoIndent`. The profile data is shared; Linux/Windows key dispatch, syntax results, and mode transitions need runtime verification.
 The [Vim BackQuotes packet](action-classification-vim-back-quotes.md) classifies the shared backtick binding for Vim inside/around and `cs` old-pair selection plus Helix next/previous, and records the duplicate pinned handler registration. The profile data is shared; Linux/Windows key dispatch, quote ranges, and the duplicate-listener effect need runtime verification.
+The [Vim ChangeCase packet](action-classification-vim-change-case.md) classifies the three shared `~` rows in Vim Normal/Visual and Helix Normal/Select, and distinguishes direct toggling from `g~{motion}`. The profile data is shared; Linux/Windows dispatch, Unicode expansion, selection handling, and mode transitions need runtime verification.
 
 ### Layers
 
