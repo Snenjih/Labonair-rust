@@ -8632,3 +8632,42 @@ Next safe task: Continue R07-000 with `vim::HelixDuplicateBelow` (now in progres
 - Updated the HelixDuplicateBelow packet, registered-action row, `shift-c` binding annotation, Linux/Windows profile note, Helix Mode setting row, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 282 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Count edges, selection ordering/collisions, short-row and display-map cases, palette, platform dispatch, and paired native acceptance remain active.
 - Next safe task: Continue R07-000 with `vim::HelixGotoLastModification`; do not begin R07-001 or R09.
+
+## Pre-change contract — Vim HelixGotoLastModification
+
+~~~text
+Request type: Pinned Helix `g .` last-modification jump, current `.` mark/change-list lifecycle, navigation and mode effects, and Labonair's missing last-edit position route; documentation-only classification.
+Owner module: Editor/Vim owns edit-position anchors, Vim marks, and jump behavior; Keymap owns the shared Helix `g .` route. Labonair's current document transactions and Vim state belong to `labonair-editor`; a Helix profile route belongs to `labonair-keymap` and its mode value to Settings.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: `g .` in `(vim_mode == helix_normal || vim_mode == helix_select) && !menu`; it jumps to the current Editor buffer's local Vim `.` mark.
+Public typed contract: Unit action `vim::HelixGotoLastModification`, no JSON arguments or aliases. It calls the mark-jump path for `.` with `line=false` and `should_pop_operator=false`; with a mark, the jump creates navigation history and, without an active operator, replaces selections with collapsed anchors at the stored modification positions. With an active operator it uses the jump-motion path. It reads no count directly.
+State owner: Editor owns the in-memory change-position list and current selections/navigation history; Vim owns workspace marks and the Helix/Vim mode state; Keymap/Settings gate the Helix route.
+Persistence owner: No action-specific persistence; Vim's local `.` mark storage is reused. The Editor's change-position list is in memory; singleton-buffer marks are serialized through MarksState, while multi-buffer marks are held on the multibuffer entity. Anchor lifetime and reopening behavior require runtime verification.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-HelixGotoLastModification`; `KEYBIND-VIM-HELIX-a2b47adfeb31` (`g .`, `(vim_mode == helix_normal || vim_mode == helix_select) && !menu`). Distinct `g ;`/`g ,` actions traverse older/newer change-list positions; plain `.` is the Vim repeat action.
+Events and registry contributions: Existing Vim action and shared Keymap row; `EditorEvent::Edited` pushes position anchors and refreshes the `.` mark. A successful jump records navigation history and updates Editor selections; no new event or registry contribution is proposed.
+Settings: `SET-keymap-helix-mode` enables Helix Normal/Select contexts; `SET-keymap-vim-mode` enables the Vim/Helix layer. No action-specific setting.
+Notifications: None.
+UI-kit components: Existing Editor cursor/selections, navigation history, and mode status only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action/route, mark lookup/jump behavior, `EditorEvent::Edited` change-list updates and Insert anchor offset, `test_goto_last_modification` including its TODO, local Vim modes and last-edit/change-list absence; do not run tests.
+Visual evidence: Paired native macOS Editor/Keymap evidence should record edit location, post-edit mode/cursor, cursor moved away, `g .` result, multiple cursors, navigation history, current selection mode, profile/focus, platform, viewport, theme, and scale.
+Security impact: None; the action navigates within the active workspace Editor.
+Performance impact: O(number of stored edit anchors) to construct collapsed selections; history size, deduplication, and large multi-cursor jumps need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema/handler, shared route, `.` mark update path, jump/history behavior, direct expected-location fixture and its TODO, and local missing route can be classified statically. Missing-mark no-op, mode after Insert and from Helix Select, multi-cursor anchors, edit coalescing, undo/redo, persisted mark lifetime, palette, platform dispatch, and native behavior remain open.
+Documentation updates: New HelixGotoLastModification packet; registered-action row; `g .` binding annotation; Linux/Windows profile note; Helix Mode setting note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action handler, mark jump, mark update/change-list lifecycle, direct fixture/TODO, keymap route, and local transaction state inspected. Documentation-only changes are planned; no tests run.
+Target status: Classify the jump to the latest edit anchor without conflating it with change-list traversal or dot-repeat, and without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has Edit transactions and undo/redo but no current last-edit anchors, Vim `.` mark, `g .` route, or Helix mode; Git changed-line navigation is unrelated.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Mode after Escape, Helix Select behavior, multi-cursor edits, missing mark, navigation history, anchor lifetimes, undo/redo, mark persistence, palette, platform dispatch, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::HelixGotoLastModification` (now in progress); do not begin R07-001 or R09.
+~~~
+
+## Vim HelixGotoLastModification action classification progress
+
+- Classified Helix `g .` as a jump to the active Editor buffer's local Vim `.` mark. `EditorEvent::Edited` refreshes this mark from current selection anchors, shifting Insert-mode anchors one display point left; the action adds navigation history and selects collapsed anchor ranges when the mark exists. This differs from `g ;`/`g ,` traversal and plain dot-repeat.
+- Inspected `test_goto_last_modification`, which expects `g .` to return before inserted trailing space but includes a TODO warning that the mode may no longer be Helix after Escape. Inspected generic mark jump, navigation history, change-list updates, local mark serialization for singleton buffers, and in-memory multibuffer mark storage. Tests were inspected, not run. Labonair has transaction undo/redo but no last-edit anchor or Helix route.
+- Updated the HelixGotoLastModification packet, registered-action row, `g .` binding annotation, Linux/Windows profile note, Helix Mode setting row, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Documentation-only gates passed: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 283 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Mode after insertion, Helix Select behavior, multi-cursor edits, navigation history, persisted mark lifetime, undo/redo, palette, platform dispatch, and paired native acceptance remain active.
+- Next safe task: Continue R07-000 with `vim::HelixGotoLine`; do not begin R07-001 or R09.
