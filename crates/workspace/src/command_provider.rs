@@ -292,9 +292,9 @@ pub fn register_editor_handlers(
         ($id:expr) => {
             let workspace = workspace.clone();
             registry
-                .register($id, move |window, cx| {
+                .register($id, move |_window, cx| {
                     workspace.update(cx, |workspace, cx| {
-                        workspace.dispatch_active_editor_command($id, window, cx);
+                        workspace.dispatch_active_editor_command($id, cx);
                     });
                 })
                 .expect("editor command handler must have a unique id");

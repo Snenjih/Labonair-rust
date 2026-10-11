@@ -412,6 +412,12 @@ mod tests {
     #[test]
     fn route_contract_rejects_non_editor_commands_and_preserves_typed_actions() {
         assert!(route_for_command(CommandId::NewEditorTab, Position::new(0, 0)).is_none());
+        for id in EXECUTABLE_EDITOR_COMMAND_IDS {
+            assert!(
+                route_for_command(*id, Position::new(0, 0)).is_some(),
+                "executable editor command {id:?} must have an owner route"
+            );
+        }
         assert_eq!(
             route_for_command(CommandId::EditorSelectNextOccurrence, Position::new(2, 4)),
             Some(EditorCommandRoute::Edit(EditIntent::SelectNextOccurrence))

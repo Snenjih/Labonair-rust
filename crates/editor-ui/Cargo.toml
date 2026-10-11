@@ -9,6 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 gpui = { workspace = true }
+labonair-command-palette-core = { path = "../command-palette-core" }
 labonair-editor = { path = "../editor" }
 labonair-filesystem = { path = "../filesystem" }
 labonair-notifications = { path = "../notifications" }

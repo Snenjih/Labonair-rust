@@ -21,6 +21,7 @@ use gpui::{
     Point, Render, ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, StyledText,
     Task, Window,
 };
+use labonair_command_palette_core::CommandId;
 use labonair_filesystem::file::{
     load_editor_file_lifecycle_sync, save_editor_file_lifecycle_sync, stat_editor_file_sync,
     EditorFileError, EditorFileStat, EditorLifecycleLoad, StorageBom, StorageFileCapabilities,
@@ -31,7 +32,7 @@ use labonair_settings::{EditorSettings, Settings as _, SettingsStore};
 use labonair_editor::document_symbols;
 use labonair_editor::{
     apply_text_policies,
-    command_provider::EditorLanguageCommand,
+    command_provider::{route_for_command, EditorCommandRoute, EditorLanguageCommand},
     document::Motion,
     editing::{EditorCommand, EditorCommandResult, SplitIntent},
     find,
@@ -616,6 +617,30 @@ impl EditorView {
                 }
             }
         }
+    }
+
+    /// Dispatch a command registered by the Editor capability.
+    ///
+    /// Workspace resolves the active view and forwards the stable command ID;
+    /// route selection and the associated edit, split, language, or Git
+    /// behavior stay inside the Editor owner.
+    pub fn dispatch_registered_command(&mut self, id: CommandId, cx: &mut Context<Self>) -> bool {
+        let Some(route) = route_for_command(id, self.cursor_position()) else {
+            return false;
+        };
+        match route {
+            EditorCommandRoute::Edit(intent) => {
+                let _ = self.execute_command(EditorCommand::Edit(intent), cx);
+            }
+            EditorCommandRoute::Split(intent) => {
+                let _ = self.execute_command(EditorCommand::Split(intent), cx);
+            }
+            EditorCommandRoute::Language(command) => {
+                self.execute_language_command(command, cx);
+            }
+            EditorCommandRoute::Git(command) => self.execute_git_command(command, cx),
+        }
+        true
     }
 
     /// Execute a language-service command using the current immutable

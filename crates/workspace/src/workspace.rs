@@ -127,8 +127,6 @@ use crate::views::sftp::{SftpEvent, SftpView};
 use crate::views::terminal::TerminalView;
 use labonair_background_host::BackgroundHost;
 use labonair_editor::{
-    command_provider::{route_for_command, EditorLanguageCommand, GitEditorCommand},
-    editing::{EditIntent, EditorCommand, SplitIntent},
     FileFinderCandidate, FileFinderQuery, FileFinderResult, LanguageServiceRuntime, Position,
     ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, SearchError, SearchQuery,
 };
@@ -170,19 +168,6 @@ pub(crate) enum EditorCommandDispatchResult {
     Forwarded,
     NoActiveEditor,
     Unsupported(CommandId),
-}
-
-fn editor_command_dispatch_target(
-    has_active_editor: bool,
-    id: CommandId,
-) -> EditorCommandDispatchResult {
-    if !has_active_editor {
-        EditorCommandDispatchResult::NoActiveEditor
-    } else if labonair_editor::command_provider::EXECUTABLE_EDITOR_COMMAND_IDS.contains(&id) {
-        EditorCommandDispatchResult::Forwarded
-    } else {
-        EditorCommandDispatchResult::Unsupported(id)
-    }
 }
 
 fn editor_git_files(
@@ -2358,149 +2343,17 @@ impl Workspace {
     pub(crate) fn dispatch_active_editor_command(
         &mut self,
         id: CommandId,
-        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> EditorCommandDispatchResult {
         let tab_id = self.tabs.read(cx).active_id();
-        let target = editor_command_dispatch_target(self.editors.contains_key(&tab_id), id);
-        if !matches!(target, EditorCommandDispatchResult::Forwarded) {
-            return target;
-        }
         let Some(editor) = self.editors.get(&tab_id).cloned() else {
             return EditorCommandDispatchResult::NoActiveEditor;
         };
-        if route_for_command(id, editor.read(cx).cursor_position()).is_none() {
-            return EditorCommandDispatchResult::Unsupported(id);
-        };
-        editor.update(cx, |editor, cx| match id {
-            CommandId::EditorAddCursor => {
-                let _ = editor.execute_command(
-                    EditorCommand::Edit(EditIntent::AddCursor(editor.cursor_position())),
-                    cx,
-                );
-            }
-            CommandId::EditorSelectNextOccurrence => {
-                let _ = editor
-                    .execute_command(EditorCommand::Edit(EditIntent::SelectNextOccurrence), cx);
-            }
-            CommandId::EditorSelectAllOccurrences => {
-                let _ = editor
-                    .execute_command(EditorCommand::Edit(EditIntent::SelectAllOccurrences), cx);
-            }
-            CommandId::EditorExpandSelection => {
-                let _ =
-                    editor.execute_command(EditorCommand::Edit(EditIntent::ExpandSelection), cx);
-            }
-            CommandId::EditorShrinkSelection => {
-                let _ =
-                    editor.execute_command(EditorCommand::Edit(EditIntent::ShrinkSelection), cx);
-            }
-            CommandId::EditorDuplicateLines => {
-                let _ = editor.execute_command(EditorCommand::Edit(EditIntent::DuplicateLines), cx);
-            }
-            CommandId::EditorMoveLines => {
-                let _ = editor.execute_command(
-                    EditorCommand::Edit(EditIntent::MoveLines { down: true }),
-                    cx,
-                );
-            }
-            CommandId::EditorIndent => {
-                let _ = editor.execute_command(
-                    EditorCommand::Edit(EditIntent::Indent { unit: "  ".into() }),
-                    cx,
-                );
-            }
-            CommandId::EditorOutdent => {
-                let _ = editor.execute_command(
-                    EditorCommand::Edit(EditIntent::Outdent { unit: "  ".into() }),
-                    cx,
-                );
-            }
-            CommandId::EditorToggleComment => {
-                let _ = editor.execute_command(EditorCommand::Edit(EditIntent::ToggleComment), cx);
-            }
-            CommandId::EditorTranspose => {
-                let _ = editor.execute_command(EditorCommand::Edit(EditIntent::Transpose), cx);
-            }
-            CommandId::EditorSplitRight => {
-                let _ = editor.execute_command(EditorCommand::Split(SplitIntent::Right), cx);
-            }
-            CommandId::EditorSplitDown => {
-                let _ = editor.execute_command(EditorCommand::Split(SplitIntent::Down), cx);
-            }
-            CommandId::EditorFocusNextGroup => {
-                let _ = editor.execute_command(EditorCommand::Split(SplitIntent::FocusNext), cx);
-            }
-            CommandId::EditorFocusPreviousGroup => {
-                let _ =
-                    editor.execute_command(EditorCommand::Split(SplitIntent::FocusPrevious), cx);
-            }
-            CommandId::EditorCloseGroup => {
-                let _ = editor.execute_command(EditorCommand::Split(SplitIntent::Close), cx);
-            }
-            CommandId::EditorCloseOtherGroups => {
-                let _ = editor.execute_command(EditorCommand::Split(SplitIntent::CloseOthers), cx);
-            }
-            CommandId::EditorTriggerCompletion => {
-                editor.execute_language_command(EditorLanguageCommand::TriggerCompletion, cx)
-            }
-            CommandId::EditorGoToDefinition => {
-                editor.execute_language_command(EditorLanguageCommand::GoToDefinition, cx)
-            }
-            CommandId::EditorGoToDeclaration => {
-                editor.execute_language_command(EditorLanguageCommand::GoToDeclaration, cx)
-            }
-            CommandId::EditorGoToReferences => {
-                editor.execute_language_command(EditorLanguageCommand::GoToReferences, cx)
-            }
-            CommandId::EditorGoToImplementation => {
-                editor.execute_language_command(EditorLanguageCommand::GoToImplementation, cx)
-            }
-            CommandId::EditorPeekDefinition => {
-                editor.execute_language_command(EditorLanguageCommand::PeekDefinition, cx)
-            }
-            CommandId::EditorRenameSymbol => {
-                editor.execute_language_command(EditorLanguageCommand::Rename, cx)
-            }
-            CommandId::EditorCodeAction => {
-                editor.execute_language_command(EditorLanguageCommand::CodeAction, cx)
-            }
-            CommandId::EditorFormatDocument => {
-                editor.execute_language_command(EditorLanguageCommand::FormatDocument, cx)
-            }
-            CommandId::EditorFormatSelection => {
-                editor.execute_language_command(EditorLanguageCommand::FormatSelection, cx)
-            }
-            CommandId::EditorOrganizeImports => {
-                editor.execute_language_command(EditorLanguageCommand::OrganizeImports, cx)
-            }
-            CommandId::EditorRestartLanguageServer => {
-                editor.execute_language_command(EditorLanguageCommand::RestartLanguageServer, cx)
-            }
-            CommandId::EditorStopLanguageServer => {
-                editor.execute_language_command(EditorLanguageCommand::StopLanguageServer, cx)
-            }
-            CommandId::EditorShowDiagnostics => {
-                editor.execute_language_command(EditorLanguageCommand::ShowDiagnostics, cx)
-            }
-            CommandId::EditorNextDiagnostic => {
-                editor.execute_language_command(EditorLanguageCommand::NextDiagnostic, cx)
-            }
-            CommandId::EditorPreviousDiagnostic => {
-                editor.execute_language_command(EditorLanguageCommand::PreviousDiagnostic, cx)
-            }
-            CommandId::EditorNextGitChange => {
-                editor.execute_git_command(GitEditorCommand::NextChange, cx)
-            }
-            CommandId::EditorPreviousGitChange => {
-                editor.execute_git_command(GitEditorCommand::PreviousChange, cx)
-            }
-            CommandId::EditorOpenProjectDiff => {
-                editor.execute_git_command(GitEditorCommand::OpenProjectDiff, cx)
-            }
-            _ => {}
-        });
-        EditorCommandDispatchResult::Forwarded
+        if editor.update(cx, |editor, cx| editor.dispatch_registered_command(id, cx)) {
+            EditorCommandDispatchResult::Forwarded
+        } else {
+            EditorCommandDispatchResult::Unsupported(id)
+        }
     }
 
     fn new_editor_view(&self, cx: &mut Context<Self>) -> Entity<EditorView> {
@@ -7557,10 +7410,7 @@ impl labonair_command_palette::PaletteWorkspace for Workspace {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        editor_command_dispatch_target, shell_quote, ssh_tab_title, EditorCommandDispatchResult,
-    };
-    use labonair_command_palette_core::CommandId;
+    use super::{shell_quote, ssh_tab_title};
 
     #[test]
     fn shell_quote_wraps_and_escapes() {
@@ -7574,22 +7424,6 @@ mod tests {
         assert_eq!(
             ssh_tab_title("prod-web", Some("bastion")),
             "SSH \u{00b7} prod-web  \u{2192} bastion"
-        );
-    }
-
-    #[test]
-    fn editor_dispatch_target_is_clean_for_non_editor_and_unknown_commands() {
-        assert_eq!(
-            editor_command_dispatch_target(false, CommandId::EditorFormatDocument),
-            EditorCommandDispatchResult::NoActiveEditor
-        );
-        assert_eq!(
-            editor_command_dispatch_target(true, CommandId::NewEditorTab),
-            EditorCommandDispatchResult::Unsupported(CommandId::NewEditorTab)
-        );
-        assert_eq!(
-            editor_command_dispatch_target(true, CommandId::EditorFormatDocument),
-            EditorCommandDispatchResult::Forwarded
         );
     }
 }
