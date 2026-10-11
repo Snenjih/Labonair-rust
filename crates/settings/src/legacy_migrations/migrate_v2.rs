@@ -53,7 +53,11 @@ use std::path::Path;
 
 use labonair_settings_content::{
     appearance::AppearanceContent,
-    editor::{EditorContent, EditorDiagnosticMaxSeverity, EditorScrollbarVisibility},
+    editor::{
+        EditorContent, EditorDiagnosticMaxSeverity, EditorMinimapCurrentLineHighlight,
+        EditorMinimapDisplayIn, EditorMinimapSetting, EditorMinimapThumb, EditorMinimapThumbBorder,
+        EditorMinimapVisibility, EditorScrollbarVisibility,
+    },
     file_manager::{FileManagerContent, SftpColumn},
     general::{self, GeneralContent},
     terminal::{self, TerminalContent},
@@ -464,7 +468,14 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_indent_with_tabs: Some(p.editor_indent_with_tabs),
         editor_indentation_guides: Some(p.editor_indentation_guides),
         editor_whitespace: Some("none".to_string()),
-        editor_minimap: Some(false),
+        editor_minimap: Some(EditorMinimapSetting::Visibility(
+            EditorMinimapVisibility::Never,
+        )),
+        editor_minimap_display_in: Some(EditorMinimapDisplayIn::ActiveEditor),
+        editor_minimap_thumb: Some(EditorMinimapThumb::Always),
+        editor_minimap_thumb_border: Some(EditorMinimapThumbBorder::LeftOpen),
+        editor_minimap_current_line_highlight: Some(EditorMinimapCurrentLineHighlight::Inherit),
+        editor_minimap_max_width_columns: Some(80),
         editor_scrollbar_show: Some(EditorScrollbarVisibility::Auto),
         editor_scrollbar_cursors: Some(true),
         editor_scrollbar_git_diff: Some(true),

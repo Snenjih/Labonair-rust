@@ -568,9 +568,58 @@ pub fn all_fields() -> Vec<AnyField> {
         field!(
             editor.editor_minimap,
             "editorMinimap",
-            Switch,
-            "Minimap",
-            "Show a compact code overview at the editor edge."
+            Select(&[
+                ("never", "Never"),
+                ("auto", "When the document overflows"),
+                ("always", "Always")
+            ]),
+            "Minimap visibility",
+            "Choose when a compact code overview appears at the editor edge."
+        ),
+        field!(
+            editor.editor_minimap_display_in,
+            "editorMinimapDisplayIn",
+            Select(&[("active_editor", "Active editor"), ("all", "All editors")]),
+            "Minimap in",
+            "Choose whether the minimap appears only in the active editor or in every editor."
+        ),
+        field!(
+            editor.editor_minimap_thumb,
+            "editorMinimapThumb",
+            Select(&[("always", "Always"), ("hover", "On hover")]),
+            "Minimap viewport thumb",
+            "Choose when the minimap viewport indicator is visible."
+        ),
+        field!(
+            editor.editor_minimap_thumb_border,
+            "editorMinimapThumbBorder",
+            Select(&[
+                ("left_open", "Left open"),
+                ("all", "All sides"),
+                ("none", "No border")
+            ]),
+            "Minimap thumb border",
+            "Choose which border sides are drawn around the minimap viewport."
+        ),
+        field!(
+            editor.editor_minimap_current_line_highlight,
+            "editorMinimapCurrentLineHighlight",
+            Select(&[
+                ("inherit", "Use editor setting"),
+                ("always", "Always"),
+                ("never", "Never")
+            ]),
+            "Minimap current line",
+            "Control the current-line background in the minimap."
+        ),
+        field_with_details!(
+            editor.editor_minimap_max_width_columns,
+            "editorMinimapMaxWidthColumns",
+            Int { min: 20, max: 160, step: 1 },
+            "Minimap maximum width",
+            "Limit the minimap width in compact text columns.",
+            "columns",
+            "The minimap uses the smaller of this limit and the available editor width."
         ),
         field!(
             editor.editor_scrollbar_show,

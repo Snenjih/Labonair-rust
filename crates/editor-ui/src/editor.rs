@@ -29,7 +29,11 @@ use labonair_filesystem::file::{
     StorageEncoding, StorageFileCapabilities, StorageFileIdentity, StorageFileSnapshot,
     StorageLineEnding, StorageSaveIntent,
 };
-use labonair_settings::content::editor::{EditorDiagnosticMaxSeverity, EditorScrollbarVisibility};
+use labonair_settings::content::editor::{
+    EditorDiagnosticMaxSeverity, EditorMinimapCurrentLineHighlight, EditorMinimapDisplayIn,
+    EditorMinimapThumb, EditorMinimapThumbBorder, EditorMinimapVisibility,
+    EditorScrollbarVisibility,
+};
 use labonair_settings::{EditorSettings, Settings as _, SettingsStore};
 
 use labonair_editor::document_symbols;
@@ -151,8 +155,21 @@ struct MinimapLineMarkers {
     cursor: bool,
     selection: bool,
     search: bool,
+    selected_text_occurrence: bool,
+    selected_symbol_occurrence: bool,
     diagnostic: Option<labonair_editor::language_services::DiagnosticSeverity>,
     git: Option<GitHunkStatus>,
+}
+
+#[derive(Clone, Debug)]
+struct MinimapOccurrenceCache {
+    revision: Revision,
+    line_count: usize,
+    slot_count: usize,
+    selected_text: Option<String>,
+    symbol: Option<String>,
+    selected_text_slots: Vec<usize>,
+    symbol_slots: Vec<usize>,
 }
 
 /// Calculate a compact scrollbar thumb without allowing a zero-sized or
@@ -329,6 +346,37 @@ fn find_scrollbar_marker_offsets(
         .collect()
 }
 
+fn find_minimap_occurrence_slots(
+    snapshot: &labonair_editor::BufferSnapshot,
+    line_count: usize,
+    slot_count: usize,
+    text: &str,
+    whole_word: bool,
+) -> Vec<usize> {
+    if text.is_empty() || text.len() > 256 {
+        return Vec::new();
+    }
+    let query = SearchQuery::new(
+        text,
+        SearchOptions {
+            case_sensitive: true,
+            smart_case: false,
+            whole_word,
+            ..Default::default()
+        },
+    );
+    let Ok(found) = find(snapshot, &query) else {
+        return Vec::new();
+    };
+    let mut seen = HashSet::new();
+    found
+        .matches
+        .into_iter()
+        .filter_map(|matched| minimap_slot(matched.start.line, line_count, slot_count))
+        .filter(|slot| seen.insert(*slot))
+        .collect()
+}
+
 fn scrollbar_shows_diagnostic(
     severity: labonair_editor::language_services::DiagnosticSeverity,
     max_severity: EditorDiagnosticMaxSeverity,
@@ -353,6 +401,24 @@ fn scrollbar_policy_visible(visibility: EditorScrollbarVisibility, overflowing: 
         // currently follows the app's auto-hide behavior.
         EditorScrollbarVisibility::Auto | EditorScrollbarVisibility::System => overflowing,
     }
+}
+
+fn minimap_policy_visible(
+    visibility: EditorMinimapVisibility,
+    display_in: EditorMinimapDisplayIn,
+    editor_focused: bool,
+    overflowing: bool,
+) -> bool {
+    let visibility_allows = match visibility {
+        EditorMinimapVisibility::Never => false,
+        EditorMinimapVisibility::Auto => overflowing,
+        EditorMinimapVisibility::Always => true,
+    };
+    visibility_allows && (display_in == EditorMinimapDisplayIn::All || editor_focused)
+}
+
+fn minimap_width_pixels(max_width_columns: u32) -> f32 {
+    (max_width_columns.clamp(20, 160) as f32 * 3.0).clamp(76.0, 320.0)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -544,6 +610,7 @@ pub struct EditorView {
     /// and sticky context instead of parsing the document repeatedly.
     symbol_cache: Option<SymbolCache>,
     scrollbar_occurrence_cache: Option<ScrollbarOccurrenceCache>,
+    minimap_occurrence_cache: Option<MinimapOccurrenceCache>,
     search: Option<EditorSearch>,
     project_search: ProjectSearchSession,
     pending_navigation: Option<Position>,
@@ -600,6 +667,7 @@ pub struct EditorView {
     format_on_save_in_flight: bool,
     cursor_blink_on: bool,
     editor_focused: bool,
+    minimap_hovered: bool,
     /// Restored after the asynchronous file load has established a valid
     /// document length. Dropping it on a path mismatch is corruption-safe.
     pending_session: Option<EditorSessionSnapshot>,
@@ -711,6 +779,7 @@ impl EditorView {
             display_layout_cache: None,
             symbol_cache: None,
             scrollbar_occurrence_cache: None,
+            minimap_occurrence_cache: None,
             search: None,
             project_search: ProjectSearchSession::default(),
             pending_navigation: None,
@@ -752,6 +821,7 @@ impl EditorView {
             format_on_save_in_flight: false,
             cursor_blink_on: true,
             editor_focused: false,
+            minimap_hovered: false,
             pending_session: None,
             recovery_prompt: None,
             autosave: None,
@@ -5582,8 +5652,51 @@ impl EditorView {
             .into_any_element()
     }
 
+    fn minimap_occurrence_slots(
+        &mut self,
+        snapshot: &labonair_editor::BufferSnapshot,
+        line_count: usize,
+        slot_count: usize,
+        selected_text: Option<String>,
+        symbol: Option<String>,
+    ) -> (Vec<usize>, Vec<usize>) {
+        let cached = self.minimap_occurrence_cache.as_ref().is_some_and(|cache| {
+            cache.revision == snapshot.revision()
+                && cache.line_count == line_count
+                && cache.slot_count == slot_count
+                && cache.selected_text == selected_text
+                && cache.symbol == symbol
+        });
+        if !cached {
+            let selected_text_slots = selected_text.as_deref().map_or_else(Vec::new, |text| {
+                find_minimap_occurrence_slots(snapshot, line_count, slot_count, text, false)
+            });
+            let symbol_slots = symbol.as_deref().map_or_else(Vec::new, |text| {
+                find_minimap_occurrence_slots(snapshot, line_count, slot_count, text, true)
+            });
+            self.minimap_occurrence_cache = Some(MinimapOccurrenceCache {
+                revision: snapshot.revision(),
+                line_count,
+                slot_count,
+                selected_text,
+                symbol,
+                selected_text_slots,
+                symbol_slots,
+            });
+        }
+        self.minimap_occurrence_cache
+            .as_ref()
+            .map(|cache| {
+                (
+                    cache.selected_text_slots.clone(),
+                    cache.symbol_slots.clone(),
+                )
+            })
+            .unwrap_or_default()
+    }
+
     fn render_minimap(
-        &self,
+        &mut self,
         snapshot: &labonair_editor::BufferSnapshot,
         display: &labonair_editor::DisplaySnapshot,
         palette: Palette,
@@ -5600,6 +5713,15 @@ impl EditorView {
             .min(track_length.floor().max(1.0) as usize)
             .max(1);
         let slot_height = track_length / slot_count as f32;
+        let selection_ranges = self.doc.selection_set().ranges(snapshot);
+        let selected_text = selection_ranges
+            .iter()
+            .find(|range| !range.is_empty())
+            .map(|range| snapshot.text_range(*range))
+            .filter(|text| !text.is_empty() && text.len() <= 256);
+        let symbol = symbol_at_position(snapshot, self.doc.cursor);
+        let (selected_text_slots, symbol_slots) =
+            self.minimap_occurrence_slots(snapshot, line_count, slot_count, selected_text, symbol);
         let mut markers = vec![MinimapLineMarkers::default(); slot_count];
         mark_minimap_line_range(
             &mut markers,
@@ -5608,7 +5730,7 @@ impl EditorView {
             self.doc.cursor.line,
             |marker| marker.cursor = true,
         );
-        for range in self.doc.selection_set().ranges(snapshot) {
+        for range in selection_ranges {
             if range.is_empty() {
                 continue;
             }
@@ -5619,6 +5741,12 @@ impl EditorView {
                 snapshot.byte_to_position(range.end).line,
                 |marker| marker.selection = true,
             );
+        }
+        for slot in selected_text_slots {
+            markers[slot].selected_text_occurrence = true;
+        }
+        for slot in symbol_slots {
+            markers[slot].selected_symbol_occurrence = true;
         }
         if let Some(search) = &self.search {
             for matched in &search.matches {
@@ -5666,10 +5794,16 @@ impl EditorView {
                 }
             }
         }
-        let show_current_line = self.prefs.highlight_current_line();
+        let show_current_line = match self.prefs.minimap_current_line_highlight() {
+            EditorMinimapCurrentLineHighlight::Inherit => self.prefs.highlight_current_line(),
+            EditorMinimapCurrentLineHighlight::Always => true,
+            EditorMinimapCurrentLineHighlight::Never => false,
+        };
+        let minimap_width = minimap_width_pixels(self.prefs.minimap_max_width_columns());
+        let content_width = (minimap_width - 20.0).max(12.0);
         let rows = (0..slot_count).map(|slot| {
             let line = (slot.saturating_mul(line_count) / slot_count).min(line_count - 1);
-            let width = (snapshot.line_len(line).min(60) as f32 / 60.0 * 56.0).max(4.0);
+            let width = (snapshot.line_len(line).min(60) as f32 / 60.0 * content_width).max(4.0);
             let marker = markers[slot];
             let mut row = div()
                 .relative()
@@ -5709,6 +5843,28 @@ impl EditorView {
                         .h_full()
                         .w(px((width * 0.45).max(3.0)))
                         .bg(palette.info.opacity(0.9)),
+                );
+            }
+            if marker.selected_text_occurrence {
+                row = row.child(
+                    div()
+                        .absolute()
+                        .left(px(10.0))
+                        .top_0()
+                        .h_full()
+                        .w(px((width * 0.55).max(3.0)))
+                        .bg(palette.selected_accent.opacity(0.75)),
+                );
+            }
+            if marker.selected_symbol_occurrence {
+                row = row.child(
+                    div()
+                        .absolute()
+                        .left(px(8.0))
+                        .top_0()
+                        .h_full()
+                        .w(px(2.0))
+                        .bg(palette.accent),
                 );
             }
             if marker.cursor {
@@ -5759,24 +5915,35 @@ impl EditorView {
             }
             row
         });
-        let thumb = scrollbar_geometry(
-            display.total_rows,
-            display.viewport.height_rows,
-            display.viewport.top_row,
-            track_length,
-        )
-        .map(|geometry| {
-            div()
-                .absolute()
-                .top(px(8.0 + geometry.thumb_offset))
-                .right_0()
-                .w(px(3.0))
-                .h(px(geometry.thumb_length))
-                .rounded(px(2.0))
-                .bg(palette.muted.opacity(0.78))
-                .border_l_1()
-                .border_color(palette.border)
-        });
+        let show_thumb =
+            self.prefs.minimap_thumb() == EditorMinimapThumb::Always || self.minimap_hovered;
+        let thumb = show_thumb
+            .then(|| {
+                scrollbar_geometry(
+                    display.total_rows,
+                    display.viewport.height_rows,
+                    display.viewport.top_row,
+                    track_length,
+                )
+            })
+            .flatten()
+            .map(|geometry| {
+                let thumb = div()
+                    .absolute()
+                    .top(px(8.0 + geometry.thumb_offset))
+                    .right_0()
+                    .w(px(3.0))
+                    .h(px(geometry.thumb_length))
+                    .rounded(px(2.0))
+                    .bg(palette.muted.opacity(0.78));
+                match self.prefs.minimap_thumb_border() {
+                    EditorMinimapThumbBorder::All => thumb.border_1().border_color(palette.border),
+                    EditorMinimapThumbBorder::LeftOpen => {
+                        thumb.border_l_1().border_color(palette.border)
+                    }
+                    EditorMinimapThumbBorder::None => thumb,
+                }
+            });
         let drag = EditorMinimapDrag {
             total_rows: display.total_rows,
             viewport_rows: display.viewport.height_rows,
@@ -5789,7 +5956,7 @@ impl EditorView {
             .top_0()
             .bottom_0()
             .right_0()
-            .w(px(76.0))
+            .w(px(minimap_width))
             .flex()
             .flex_col()
             .gap(px(2.0))
@@ -5838,7 +6005,18 @@ impl EditorView {
                     );
                     this.scroll_to_visual_row(row, cx);
                 },
-            ));
+            ))
+            .on_hover({
+                let view = cx.entity();
+                move |hovered, _window, cx| {
+                    view.update(cx, |this, cx| {
+                        if this.minimap_hovered != *hovered {
+                            this.minimap_hovered = *hovered;
+                            cx.notify();
+                        }
+                    });
+                }
+            });
         minimap.into_any_element()
     }
 
@@ -6896,7 +7074,13 @@ impl Render for EditorView {
 
         let file_status = self.render_file_status(cx);
         let show_text_area = self.should_render_text_area();
-        let minimap = self.prefs.minimap();
+        let minimap = minimap_policy_visible(
+            self.prefs.minimap_visibility(),
+            self.prefs.minimap_display_in(),
+            self.editor_focused,
+            display.total_rows > display.viewport.height_rows,
+        );
+        let minimap_width = minimap_width_pixels(self.prefs.minimap_max_width_columns());
         let mut buffer_surface = div()
             .relative()
             .flex()
@@ -6910,7 +7094,7 @@ impl Render for EditorView {
         if show_text_area {
             let mut editor_surface_container = div().relative().flex_1().min_w_0().min_h_0();
             if minimap {
-                editor_surface_container = editor_surface_container.pr(px(76.0));
+                editor_surface_container = editor_surface_container.pr(px(minimap_width));
             }
             editor_surface_container = editor_surface_container.child(editor_surface);
             if minimap {
@@ -7733,6 +7917,43 @@ mod tests {
     }
 
     #[test]
+    fn minimap_visibility_and_width_follow_display_settings() {
+        assert!(!minimap_policy_visible(
+            EditorMinimapVisibility::Never,
+            EditorMinimapDisplayIn::All,
+            true,
+            true
+        ));
+        assert!(!minimap_policy_visible(
+            EditorMinimapVisibility::Auto,
+            EditorMinimapDisplayIn::All,
+            false,
+            false
+        ));
+        assert!(minimap_policy_visible(
+            EditorMinimapVisibility::Auto,
+            EditorMinimapDisplayIn::All,
+            false,
+            true
+        ));
+        assert!(!minimap_policy_visible(
+            EditorMinimapVisibility::Always,
+            EditorMinimapDisplayIn::ActiveEditor,
+            false,
+            false
+        ));
+        assert!(minimap_policy_visible(
+            EditorMinimapVisibility::Always,
+            EditorMinimapDisplayIn::ActiveEditor,
+            true,
+            false
+        ));
+        assert_eq!(minimap_width_pixels(80), 240.0);
+        assert_eq!(minimap_width_pixels(0), 76.0);
+        assert_eq!(minimap_width_pixels(u32::MAX), 320.0);
+    }
+
+    #[test]
     fn scrollbar_marker_offsets_follow_visual_rows_and_stay_on_track() {
         assert_eq!(scrollbar_marker_offset(0, 100, 200.0), Some(0.0));
         assert_eq!(scrollbar_marker_offset(99, 100, 200.0), Some(198.0));
@@ -7763,6 +7984,21 @@ mod tests {
         assert_eq!(
             find_scrollbar_marker_offsets(&snapshot, &display, 5.0, "hit", true),
             vec![0.0, 3.0]
+        );
+    }
+
+    #[test]
+    fn minimap_occurrence_slots_collapse_matches_to_visible_marker_rows() {
+        let buffer =
+            labonair_editor::EditorBuffer::from_text("hit\nhitless\nx\nx\nx\nx\nx\nx\nx\nhit");
+        let snapshot = buffer.snapshot();
+        assert_eq!(
+            find_minimap_occurrence_slots(&snapshot, 10, 10, "hit", false),
+            vec![0, 1, 9]
+        );
+        assert_eq!(
+            find_minimap_occurrence_slots(&snapshot, 10, 10, "hit", true),
+            vec![0, 9]
         );
     }
 

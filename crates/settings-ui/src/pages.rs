@@ -382,11 +382,21 @@ const EDITOR_GROUPS: &[Group] = &[
             "editorLineNumbers",
             "editorWordWrap",
             "editorWhitespace",
-            "editorMinimap",
             "editorRulers",
             "editorScrollBeyondLastLine",
             "editorStickyContext",
             "editorHighlightCurrentLine"
+        ),
+    ),
+    (
+        "Minimap",
+        paths!("editor":
+            "editorMinimap",
+            "editorMinimapDisplayIn",
+            "editorMinimapThumb",
+            "editorMinimapThumbBorder",
+            "editorMinimapCurrentLineHighlight",
+            "editorMinimapMaxWidthColumns"
         ),
     ),
     (

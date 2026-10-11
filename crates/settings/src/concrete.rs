@@ -12,7 +12,9 @@ use labonair_settings_content::{
     appearance::AppearanceContent,
     connections::ConnectionsContent,
     editor::{
-        EditorContent, EditorCursorStyle, EditorDiagnosticMaxSeverity, EditorScrollbarVisibility,
+        EditorContent, EditorCursorStyle, EditorDiagnosticMaxSeverity,
+        EditorMinimapCurrentLineHighlight, EditorMinimapDisplayIn, EditorMinimapThumb,
+        EditorMinimapThumbBorder, EditorMinimapVisibility, EditorScrollbarVisibility,
     },
     file_manager::{default_sftp_columns, FileManagerContent, SftpColumn},
     general::{GeneralContent, StartupTab, ThemePref},
@@ -399,7 +401,42 @@ impl EditorSettings {
     }
 
     pub fn minimap(&self) -> bool {
-        self.0.editor_minimap.unwrap_or(false)
+        self.minimap_visibility() != EditorMinimapVisibility::Never
+    }
+
+    pub fn minimap_visibility(&self) -> EditorMinimapVisibility {
+        self.0.editor_minimap.unwrap_or_default().visibility()
+    }
+
+    pub fn minimap_display_in(&self) -> EditorMinimapDisplayIn {
+        self.0
+            .editor_minimap_display_in
+            .unwrap_or(EditorMinimapDisplayIn::ActiveEditor)
+    }
+
+    pub fn minimap_thumb(&self) -> EditorMinimapThumb {
+        self.0
+            .editor_minimap_thumb
+            .unwrap_or(EditorMinimapThumb::Always)
+    }
+
+    pub fn minimap_thumb_border(&self) -> EditorMinimapThumbBorder {
+        self.0
+            .editor_minimap_thumb_border
+            .unwrap_or(EditorMinimapThumbBorder::LeftOpen)
+    }
+
+    pub fn minimap_current_line_highlight(&self) -> EditorMinimapCurrentLineHighlight {
+        self.0
+            .editor_minimap_current_line_highlight
+            .unwrap_or(EditorMinimapCurrentLineHighlight::Inherit)
+    }
+
+    pub fn minimap_max_width_columns(&self) -> u32 {
+        self.0
+            .editor_minimap_max_width_columns
+            .unwrap_or(80)
+            .clamp(20, 160)
     }
 
     pub fn scrollbar_visibility(&self) -> EditorScrollbarVisibility {
@@ -831,6 +868,37 @@ mod tests {
         content.editor.editor_git_word_diff = Some(false);
         let settings = EditorSettings::from_settings(&content);
         assert!(!settings.git_word_diff());
+    }
+
+    #[test]
+    fn editor_minimap_settings_default_and_legacy_boolean_mapping() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(
+            defaults.minimap_visibility(),
+            EditorMinimapVisibility::Never
+        );
+        assert!(!defaults.minimap());
+        assert_eq!(
+            defaults.minimap_display_in(),
+            EditorMinimapDisplayIn::ActiveEditor
+        );
+        assert_eq!(defaults.minimap_thumb(), EditorMinimapThumb::Always);
+        assert_eq!(
+            defaults.minimap_thumb_border(),
+            EditorMinimapThumbBorder::LeftOpen
+        );
+        assert_eq!(
+            defaults.minimap_current_line_highlight(),
+            EditorMinimapCurrentLineHighlight::Inherit
+        );
+        assert_eq!(defaults.minimap_max_width_columns(), 80);
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_minimap =
+            Some(labonair_settings_content::editor::EditorMinimapSetting::Legacy(true));
+        let legacy = EditorSettings::from_settings(&content);
+        assert_eq!(legacy.minimap_visibility(), EditorMinimapVisibility::Always);
+        assert!(legacy.minimap());
     }
 
     #[test]

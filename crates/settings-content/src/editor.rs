@@ -73,6 +73,127 @@ impl crate::MergeFrom for EditorDiagnosticMaxSeverity {
     }
 }
 
+/// How the editor minimap is shown. `Auto` is shown only when the document
+/// extends beyond the visible viewport.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum EditorMinimapVisibility {
+    Auto,
+    Always,
+    #[default]
+    Never,
+}
+
+impl crate::MergeFrom for EditorMinimapVisibility {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
+/// The minimap setting also accepts the old boolean wire value: `true` maps
+/// to `always`, and `false` maps to `never`. The Settings UI writes the enum
+/// form, so the legacy input disappears naturally as users change the value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum EditorMinimapSetting {
+    Visibility(EditorMinimapVisibility),
+    Legacy(bool),
+}
+
+impl Default for EditorMinimapSetting {
+    fn default() -> Self {
+        Self::Visibility(EditorMinimapVisibility::Never)
+    }
+}
+
+impl crate::MergeFrom for EditorMinimapSetting {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
+impl EditorMinimapSetting {
+    pub fn visibility(self) -> EditorMinimapVisibility {
+        match self {
+            Self::Visibility(visibility) => visibility,
+            Self::Legacy(true) => EditorMinimapVisibility::Always,
+            Self::Legacy(false) => EditorMinimapVisibility::Never,
+        }
+    }
+}
+
+/// Editors in which the minimap appears.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum EditorMinimapDisplayIn {
+    #[default]
+    ActiveEditor,
+    All,
+}
+
+impl crate::MergeFrom for EditorMinimapDisplayIn {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
+/// When the minimap viewport thumb is drawn.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum EditorMinimapThumb {
+    #[default]
+    Always,
+    Hover,
+}
+
+impl crate::MergeFrom for EditorMinimapThumb {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
+/// Border treatment for the minimap viewport thumb.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum EditorMinimapThumbBorder {
+    All,
+    None,
+    #[default]
+    LeftOpen,
+}
+
+impl crate::MergeFrom for EditorMinimapThumbBorder {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
+/// Current-line highlight policy for the minimap.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum EditorMinimapCurrentLineHighlight {
+    #[default]
+    Inherit,
+    Always,
+    Never,
+}
+
+impl crate::MergeFrom for EditorMinimapCurrentLineHighlight {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
 #[derive(
     Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema, crate::MergeFrom,
 )]
@@ -88,7 +209,12 @@ pub struct EditorContent {
     pub editor_indent_with_tabs: Option<bool>,
     pub editor_indentation_guides: Option<bool>,
     pub editor_whitespace: Option<String>,
-    pub editor_minimap: Option<bool>,
+    pub editor_minimap: Option<EditorMinimapSetting>,
+    pub editor_minimap_display_in: Option<EditorMinimapDisplayIn>,
+    pub editor_minimap_thumb: Option<EditorMinimapThumb>,
+    pub editor_minimap_thumb_border: Option<EditorMinimapThumbBorder>,
+    pub editor_minimap_current_line_highlight: Option<EditorMinimapCurrentLineHighlight>,
+    pub editor_minimap_max_width_columns: Option<u32>,
     pub editor_scrollbar_show: Option<EditorScrollbarVisibility>,
     pub editor_scrollbar_cursors: Option<bool>,
     pub editor_scrollbar_git_diff: Option<bool>,
@@ -153,7 +279,12 @@ impl EditorContent {
             editor_indent_with_tabs: Some(false),
             editor_indentation_guides: Some(true),
             editor_whitespace: Some("none".to_string()),
-            editor_minimap: Some(false),
+            editor_minimap: Some(EditorMinimapSetting::default()),
+            editor_minimap_display_in: Some(EditorMinimapDisplayIn::ActiveEditor),
+            editor_minimap_thumb: Some(EditorMinimapThumb::Always),
+            editor_minimap_thumb_border: Some(EditorMinimapThumbBorder::LeftOpen),
+            editor_minimap_current_line_highlight: Some(EditorMinimapCurrentLineHighlight::Inherit),
+            editor_minimap_max_width_columns: Some(80),
             editor_scrollbar_show: Some(EditorScrollbarVisibility::Auto),
             editor_scrollbar_cursors: Some(true),
             editor_scrollbar_git_diff: Some(true),
@@ -235,5 +366,35 @@ mod tests {
         let value = serde_json::to_value(parsed).expect("serialize scrollbar preferences");
         assert_eq!(value["editorScrollbarShow"], "never");
         assert_eq!(value["editorScrollbarDiagnostics"], "warning");
+    }
+
+    #[test]
+    fn minimap_mode_accepts_old_booleans_and_serializes_the_new_mode() {
+        let legacy_enabled: EditorContent = serde_json::from_value(serde_json::json!({
+            "editorMinimap": true
+        }))
+        .expect("legacy minimap setting");
+        assert_eq!(
+            legacy_enabled
+                .editor_minimap
+                .map(EditorMinimapSetting::visibility),
+            Some(EditorMinimapVisibility::Always)
+        );
+
+        let disabled: EditorContent = serde_json::from_value(serde_json::json!({
+            "editorMinimap": false
+        }))
+        .expect("legacy disabled minimap setting");
+        assert_eq!(
+            disabled
+                .editor_minimap
+                .map(EditorMinimapSetting::visibility),
+            Some(EditorMinimapVisibility::Never)
+        );
+
+        let defaults = serde_json::to_value(EditorContent::defaults()).expect("editor defaults");
+        assert_eq!(defaults["editorMinimap"], "never");
+        assert_eq!(defaults["editorMinimapDisplayIn"], "active_editor");
+        assert_eq!(defaults["editorMinimapMaxWidthColumns"], 80);
     }
 }
