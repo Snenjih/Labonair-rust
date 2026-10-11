@@ -390,6 +390,20 @@ const EDITOR_GROUPS: &[Group] = &[
         ),
     ),
     (
+        "Scrollbar",
+        paths!("editor":
+            "editorScrollbarShow",
+            "editorScrollbarCursors",
+            "editorScrollbarGitDiff",
+            "editorScrollbarSearchResults",
+            "editorScrollbarSelectedText",
+            "editorScrollbarSelectedSymbol",
+            "editorScrollbarDiagnostics",
+            "editorScrollbarHorizontal",
+            "editorScrollbarVertical"
+        ),
+    ),
+    (
         "Caret",
         paths!("editor":
             "editorCursorStyle",

@@ -29,6 +29,7 @@ use labonair_filesystem::file::{
     StorageEncoding, StorageFileCapabilities, StorageFileIdentity, StorageFileSnapshot,
     StorageLineEnding, StorageSaveIntent,
 };
+use labonair_settings::content::editor::{EditorDiagnosticMaxSeverity, EditorScrollbarVisibility};
 use labonair_settings::{EditorSettings, Settings as _, SettingsStore};
 
 use labonair_editor::document_symbols;
@@ -326,6 +327,32 @@ fn find_scrollbar_marker_offsets(
                 .then_some(offset)
         })
         .collect()
+}
+
+fn scrollbar_shows_diagnostic(
+    severity: labonair_editor::language_services::DiagnosticSeverity,
+    max_severity: EditorDiagnosticMaxSeverity,
+) -> bool {
+    use labonair_editor::language_services::DiagnosticSeverity as Severity;
+
+    match max_severity {
+        EditorDiagnosticMaxSeverity::All => true,
+        EditorDiagnosticMaxSeverity::Information => severity != Severity::Hint,
+        EditorDiagnosticMaxSeverity::Warning => {
+            matches!(severity, Severity::Error | Severity::Warning)
+        }
+        EditorDiagnosticMaxSeverity::Error => severity == Severity::Error,
+    }
+}
+
+fn scrollbar_policy_visible(visibility: EditorScrollbarVisibility, overflowing: bool) -> bool {
+    match visibility {
+        EditorScrollbarVisibility::Always => true,
+        EditorScrollbarVisibility::Never => false,
+        // GPUI does not expose the native scrollbar preference, so `system`
+        // currently follows the app's auto-hide behavior.
+        EditorScrollbarVisibility::Auto | EditorScrollbarVisibility::System => overflowing,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3717,12 +3744,22 @@ impl EditorView {
         palette: Palette,
     ) -> Vec<AnyElement> {
         let selection_ranges = self.doc.selection_set().ranges(snapshot);
-        let selected_text = selection_ranges
-            .iter()
-            .find(|range| !range.is_empty())
-            .map(|range| snapshot.text_range(*range))
+        let selected_text = self
+            .prefs
+            .scrollbar_selected_text()
+            .then(|| {
+                selection_ranges
+                    .iter()
+                    .find(|range| !range.is_empty())
+                    .map(|range| snapshot.text_range(*range))
+            })
+            .flatten()
             .filter(|text| !text.is_empty() && text.len() <= 256);
-        let symbol = symbol_at_position(snapshot, self.doc.cursor);
+        let symbol = self
+            .prefs
+            .scrollbar_selected_symbol()
+            .then(|| symbol_at_position(snapshot, self.doc.cursor))
+            .flatten();
         let (selected_text_offsets, symbol_offsets) = self.scrollbar_occurrence_offsets(
             snapshot,
             display,
@@ -3775,23 +3812,29 @@ impl EditorView {
             }
         };
 
-        for selection in self.doc.selection_set().selections() {
-            add_line(selection.head.resolve(snapshot).line, palette.primary, 0);
-        }
-        for range in &selection_ranges {
-            if range.is_empty() {
-                continue;
-            }
-            let start = snapshot.byte_to_position(range.start).line;
-            let end = snapshot.byte_to_position(range.end).line;
-            add_line(start, palette.selected_accent, 1);
-            if end != start {
-                add_line(end, palette.selected_accent, 1);
+        if self.prefs.scrollbar_cursors() {
+            for selection in self.doc.selection_set().selections() {
+                add_line(selection.head.resolve(snapshot).line, palette.primary, 0);
             }
         }
-        if let Some(search) = &self.search {
-            for matched in &search.matches {
-                add_line(matched.start.line, palette.info, 4);
+        if self.prefs.scrollbar_selected_text() {
+            for range in &selection_ranges {
+                if range.is_empty() {
+                    continue;
+                }
+                let start = snapshot.byte_to_position(range.start).line;
+                let end = snapshot.byte_to_position(range.end).line;
+                add_line(start, palette.selected_accent, 1);
+                if end != start {
+                    add_line(end, palette.selected_accent, 1);
+                }
+            }
+        }
+        if self.prefs.scrollbar_search_results() {
+            if let Some(search) = &self.search {
+                for matched in &search.matches {
+                    add_line(matched.start.line, palette.info, 4);
+                }
             }
         }
 
@@ -3800,6 +3843,12 @@ impl EditorView {
             && language_state.version == DocumentVersion::from_revision(self.editor_revision())
         {
             for diagnostic in language_state.diagnostics {
+                if !scrollbar_shows_diagnostic(
+                    diagnostic.severity,
+                    self.prefs.scrollbar_diagnostics(),
+                ) {
+                    continue;
+                }
                 let color = match diagnostic.severity {
                     labonair_editor::language_services::DiagnosticSeverity::Error => palette.error,
                     labonair_editor::language_services::DiagnosticSeverity::Warning => {
@@ -3812,7 +3861,10 @@ impl EditorView {
             }
         }
 
-        if self.prefs.git_gutter() && self.git_snapshot_is_current(&self.git_gutter) {
+        if self.prefs.scrollbar_git_diff()
+            && self.prefs.git_gutter()
+            && self.git_snapshot_is_current(&self.git_gutter)
+        {
             for hunk in &self.git_gutter.hunks {
                 let color = match hunk.status {
                     GitHunkStatus::Added | GitHunkStatus::Untracked => palette.success,
@@ -3842,13 +3894,37 @@ impl EditorView {
             .bounds
             .map(|bounds| (f32::from(bounds.size.width), f32::from(bounds.size.height)))
             .unwrap_or((640.0, 480.0));
-        let vertical_track_length = (height - sticky_height - EDITOR_SCROLLBAR_SIZE).max(1.0);
-        let horizontal_track_length = (width - self.gutter_width - EDITOR_SCROLLBAR_SIZE).max(1.0);
         let vertical_viewport = if self.prefs.scroll_beyond_last_line() {
             1
         } else {
             display.viewport.height_rows.max(1)
         };
+        let visibility = self.prefs.scrollbar_visibility();
+        let wrap_enabled = self.wrap_cols() != 0;
+        let vertical_overflow = display.total_rows > vertical_viewport;
+        let horizontal_overflow =
+            !wrap_enabled && display.max_line_width > display.viewport.width_columns.max(1);
+        let show_vertical = self.prefs.vertical_scrollbar()
+            && scrollbar_policy_visible(visibility, vertical_overflow);
+        let show_horizontal = self.prefs.horizontal_scrollbar()
+            && !wrap_enabled
+            && scrollbar_policy_visible(visibility, horizontal_overflow);
+        let vertical_track_length = (height
+            - sticky_height
+            - if show_horizontal {
+                EDITOR_SCROLLBAR_SIZE
+            } else {
+                0.0
+            })
+        .max(1.0);
+        let horizontal_track_length = (width
+            - self.gutter_width
+            - if show_vertical {
+                EDITOR_SCROLLBAR_SIZE
+            } else {
+                0.0
+            })
+        .max(1.0);
         let vertical_scroll = display
             .viewport
             .top_row
@@ -3859,7 +3935,7 @@ impl EditorView {
             vertical_scroll,
             vertical_track_length,
         );
-        let horizontal = if self.wrap_cols() == 0 {
+        let horizontal = if !wrap_enabled {
             scrollbar_geometry(
                 display.max_line_width,
                 display.viewport.width_columns.max(1),
@@ -3869,19 +3945,22 @@ impl EditorView {
         } else {
             None
         };
-        let marker_snapshot = self.doc.snapshot();
-        let scrollbar_markers = self.render_scrollbar_markers(
-            &marker_snapshot,
-            display,
-            vertical_track_length,
-            palette,
-        );
+        let scrollbar_markers = if show_vertical {
+            let marker_snapshot = self.doc.snapshot();
+            self.render_scrollbar_markers(&marker_snapshot, display, vertical_track_length, palette)
+        } else {
+            Vec::new()
+        };
         let mut vertical_track = div()
             .id("editor-scrollbar-vertical")
             .absolute()
             .top(px(sticky_height))
             .right_0()
-            .bottom(px(EDITOR_SCROLLBAR_SIZE))
+            .bottom(px(if show_horizontal {
+                EDITOR_SCROLLBAR_SIZE
+            } else {
+                0.0
+            }))
             .w(px(EDITOR_SCROLLBAR_SIZE))
             .bg(palette.muted_bg.opacity(0.25))
             .children(scrollbar_markers);
@@ -3952,7 +4031,11 @@ impl EditorView {
             .id("editor-scrollbar-horizontal")
             .absolute()
             .left(px(self.gutter_width))
-            .right(px(EDITOR_SCROLLBAR_SIZE))
+            .right(px(if show_vertical {
+                EDITOR_SCROLLBAR_SIZE
+            } else {
+                0.0
+            }))
             .bottom_0()
             .h(px(EDITOR_SCROLLBAR_SIZE))
             .bg(palette.muted_bg.opacity(0.25));
@@ -4018,12 +4101,14 @@ impl EditorView {
                     );
                 },
             ));
-        div()
-            .absolute()
-            .inset_0()
-            .child(vertical_track)
-            .child(horizontal_track)
-            .into_any_element()
+        let mut overlay = div().absolute().inset_0();
+        if show_vertical {
+            overlay = overlay.child(vertical_track);
+        }
+        if show_horizontal {
+            overlay = overlay.child(horizontal_track);
+        }
+        overlay.into_any_element()
     }
 
     fn render_git_context_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -7570,6 +7655,53 @@ mod tests {
         assert_eq!(scrollbar_scroll_from_pointer(100.0, 0.0, geometry), 90);
         assert_eq!(scrollbar_scroll_from_pointer(50.0, 0.0, geometry), 45);
         assert!(scrollbar_geometry(10, 10, 0, 100.0).is_none());
+    }
+
+    #[test]
+    fn scrollbar_visibility_and_diagnostic_severity_follow_settings() {
+        use labonair_editor::language_services::DiagnosticSeverity as Severity;
+
+        assert!(scrollbar_policy_visible(
+            EditorScrollbarVisibility::Always,
+            false
+        ));
+        assert!(!scrollbar_policy_visible(
+            EditorScrollbarVisibility::Never,
+            true
+        ));
+        assert!(!scrollbar_policy_visible(
+            EditorScrollbarVisibility::Auto,
+            false
+        ));
+        assert!(scrollbar_policy_visible(
+            EditorScrollbarVisibility::System,
+            true
+        ));
+
+        assert!(scrollbar_shows_diagnostic(
+            Severity::Hint,
+            EditorDiagnosticMaxSeverity::All
+        ));
+        assert!(!scrollbar_shows_diagnostic(
+            Severity::Hint,
+            EditorDiagnosticMaxSeverity::Information
+        ));
+        assert!(scrollbar_shows_diagnostic(
+            Severity::Warning,
+            EditorDiagnosticMaxSeverity::Warning
+        ));
+        assert!(!scrollbar_shows_diagnostic(
+            Severity::Information,
+            EditorDiagnosticMaxSeverity::Warning
+        ));
+        assert!(scrollbar_shows_diagnostic(
+            Severity::Error,
+            EditorDiagnosticMaxSeverity::Error
+        ));
+        assert!(!scrollbar_shows_diagnostic(
+            Severity::Warning,
+            EditorDiagnosticMaxSeverity::Error
+        ));
     }
 
     #[test]

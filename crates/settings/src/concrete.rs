@@ -11,7 +11,9 @@
 use labonair_settings_content::{
     appearance::AppearanceContent,
     connections::ConnectionsContent,
-    editor::{EditorContent, EditorCursorStyle},
+    editor::{
+        EditorContent, EditorCursorStyle, EditorDiagnosticMaxSeverity, EditorScrollbarVisibility,
+    },
     file_manager::{default_sftp_columns, FileManagerContent, SftpColumn},
     general::{GeneralContent, StartupTab, ThemePref},
     terminal::{
@@ -398,6 +400,46 @@ impl EditorSettings {
 
     pub fn minimap(&self) -> bool {
         self.0.editor_minimap.unwrap_or(false)
+    }
+
+    pub fn scrollbar_visibility(&self) -> EditorScrollbarVisibility {
+        self.0
+            .editor_scrollbar_show
+            .unwrap_or(EditorScrollbarVisibility::Auto)
+    }
+
+    pub fn scrollbar_cursors(&self) -> bool {
+        self.0.editor_scrollbar_cursors.unwrap_or(true)
+    }
+
+    pub fn scrollbar_git_diff(&self) -> bool {
+        self.0.editor_scrollbar_git_diff.unwrap_or(true)
+    }
+
+    pub fn scrollbar_search_results(&self) -> bool {
+        self.0.editor_scrollbar_search_results.unwrap_or(true)
+    }
+
+    pub fn scrollbar_selected_text(&self) -> bool {
+        self.0.editor_scrollbar_selected_text.unwrap_or(true)
+    }
+
+    pub fn scrollbar_selected_symbol(&self) -> bool {
+        self.0.editor_scrollbar_selected_symbol.unwrap_or(true)
+    }
+
+    pub fn scrollbar_diagnostics(&self) -> EditorDiagnosticMaxSeverity {
+        self.0
+            .editor_scrollbar_diagnostics
+            .unwrap_or(EditorDiagnosticMaxSeverity::All)
+    }
+
+    pub fn horizontal_scrollbar(&self) -> bool {
+        self.0.editor_scrollbar_horizontal.unwrap_or(true)
+    }
+
+    pub fn vertical_scrollbar(&self) -> bool {
+        self.0.editor_scrollbar_vertical.unwrap_or(true)
     }
 
     pub fn bracket_matching(&self) -> bool {
@@ -789,6 +831,43 @@ mod tests {
         content.editor.editor_git_word_diff = Some(false);
         let settings = EditorSettings::from_settings(&content);
         assert!(!settings.git_word_diff());
+    }
+
+    #[test]
+    fn editor_scrollbar_settings_default_and_override() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(
+            defaults.scrollbar_visibility(),
+            EditorScrollbarVisibility::Auto
+        );
+        assert!(defaults.scrollbar_cursors());
+        assert!(defaults.scrollbar_git_diff());
+        assert!(defaults.scrollbar_search_results());
+        assert!(defaults.scrollbar_selected_text());
+        assert!(defaults.scrollbar_selected_symbol());
+        assert_eq!(
+            defaults.scrollbar_diagnostics(),
+            EditorDiagnosticMaxSeverity::All
+        );
+        assert!(defaults.horizontal_scrollbar());
+        assert!(defaults.vertical_scrollbar());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_scrollbar_show = Some(EditorScrollbarVisibility::Never);
+        content.editor.editor_scrollbar_selected_symbol = Some(false);
+        content.editor.editor_scrollbar_diagnostics = Some(EditorDiagnosticMaxSeverity::Warning);
+        content.editor.editor_scrollbar_horizontal = Some(false);
+        let settings = EditorSettings::from_settings(&content);
+        assert_eq!(
+            settings.scrollbar_visibility(),
+            EditorScrollbarVisibility::Never
+        );
+        assert!(!settings.scrollbar_selected_symbol());
+        assert_eq!(
+            settings.scrollbar_diagnostics(),
+            EditorDiagnosticMaxSeverity::Warning
+        );
+        assert!(!settings.horizontal_scrollbar());
     }
 
     #[test]

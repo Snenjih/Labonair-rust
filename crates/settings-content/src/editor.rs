@@ -25,6 +25,54 @@ impl crate::MergeFrom for EditorCursorStyle {
     }
 }
 
+/// Visibility policy for editor-owned scrollbars.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum EditorScrollbarVisibility {
+    #[default]
+    Auto,
+    System,
+    Always,
+    Never,
+}
+
+impl crate::MergeFrom for EditorScrollbarVisibility {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
+/// Maximum diagnostic severity shown in editor scrollbars.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Eq,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum EditorDiagnosticMaxSeverity {
+    Error,
+    Warning,
+    Information,
+    #[default]
+    All,
+}
+
+impl crate::MergeFrom for EditorDiagnosticMaxSeverity {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
 #[derive(
     Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema, crate::MergeFrom,
 )]
@@ -41,6 +89,15 @@ pub struct EditorContent {
     pub editor_indentation_guides: Option<bool>,
     pub editor_whitespace: Option<String>,
     pub editor_minimap: Option<bool>,
+    pub editor_scrollbar_show: Option<EditorScrollbarVisibility>,
+    pub editor_scrollbar_cursors: Option<bool>,
+    pub editor_scrollbar_git_diff: Option<bool>,
+    pub editor_scrollbar_search_results: Option<bool>,
+    pub editor_scrollbar_selected_text: Option<bool>,
+    pub editor_scrollbar_selected_symbol: Option<bool>,
+    pub editor_scrollbar_diagnostics: Option<EditorDiagnosticMaxSeverity>,
+    pub editor_scrollbar_horizontal: Option<bool>,
+    pub editor_scrollbar_vertical: Option<bool>,
     pub editor_bracket_matching: Option<bool>,
     pub editor_rulers: Option<String>,
     pub editor_scroll_beyond_last_line: Option<bool>,
@@ -97,6 +154,15 @@ impl EditorContent {
             editor_indentation_guides: Some(true),
             editor_whitespace: Some("none".to_string()),
             editor_minimap: Some(false),
+            editor_scrollbar_show: Some(EditorScrollbarVisibility::Auto),
+            editor_scrollbar_cursors: Some(true),
+            editor_scrollbar_git_diff: Some(true),
+            editor_scrollbar_search_results: Some(true),
+            editor_scrollbar_selected_text: Some(true),
+            editor_scrollbar_selected_symbol: Some(true),
+            editor_scrollbar_diagnostics: Some(EditorDiagnosticMaxSeverity::All),
+            editor_scrollbar_horizontal: Some(true),
+            editor_scrollbar_vertical: Some(true),
             editor_bracket_matching: Some(true),
             editor_rulers: Some(String::new()),
             editor_scroll_beyond_last_line: Some(true),
@@ -144,5 +210,30 @@ mod tests {
     fn git_word_diff_uses_the_canonical_camel_case_key() {
         let value = serde_json::to_value(EditorContent::defaults()).expect("editor defaults");
         assert_eq!(value["editorGitWordDiff"], true);
+    }
+
+    #[test]
+    fn scrollbar_preferences_parse_and_serialize_with_canonical_names() {
+        let parsed: EditorContent = serde_json::from_value(serde_json::json!({
+            "editorScrollbarShow": "never",
+            "editorScrollbarCursors": false,
+            "editorScrollbarDiagnostics": "warning",
+            "editorScrollbarHorizontal": false,
+        }))
+        .expect("scrollbar preferences");
+        assert_eq!(
+            parsed.editor_scrollbar_show,
+            Some(EditorScrollbarVisibility::Never)
+        );
+        assert_eq!(parsed.editor_scrollbar_cursors, Some(false));
+        assert_eq!(
+            parsed.editor_scrollbar_diagnostics,
+            Some(EditorDiagnosticMaxSeverity::Warning)
+        );
+        assert_eq!(parsed.editor_scrollbar_horizontal, Some(false));
+
+        let value = serde_json::to_value(parsed).expect("serialize scrollbar preferences");
+        assert_eq!(value["editorScrollbarShow"], "never");
+        assert_eq!(value["editorScrollbarDiagnostics"], "warning");
     }
 }

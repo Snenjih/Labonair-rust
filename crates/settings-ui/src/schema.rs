@@ -573,6 +573,79 @@ pub fn all_fields() -> Vec<AnyField> {
             "Show a compact code overview at the editor edge."
         ),
         field!(
+            editor.editor_scrollbar_show,
+            "editorScrollbarShow",
+            Select(&[
+                ("auto", "When needed"),
+                ("system", "System default"),
+                ("always", "Always"),
+                ("never", "Never")
+            ]),
+            "Scrollbar visibility",
+            "Choose when editor scrollbars are visible."
+        ),
+        field!(
+            editor.editor_scrollbar_cursors,
+            "editorScrollbarCursors",
+            Switch,
+            "Cursor markers",
+            "Show each editor cursor in the vertical scrollbar."
+        ),
+        field!(
+            editor.editor_scrollbar_git_diff,
+            "editorScrollbarGitDiff",
+            Switch,
+            "Git change markers",
+            "Show added, modified, and deleted lines in the vertical scrollbar."
+        ),
+        field!(
+            editor.editor_scrollbar_search_results,
+            "editorScrollbarSearchResults",
+            Switch,
+            "Search result markers",
+            "Show in-buffer search matches in the vertical scrollbar."
+        ),
+        field!(
+            editor.editor_scrollbar_selected_text,
+            "editorScrollbarSelectedText",
+            Switch,
+            "Selected text markers",
+            "Show occurrences of selected text in the vertical scrollbar."
+        ),
+        field!(
+            editor.editor_scrollbar_selected_symbol,
+            "editorScrollbarSelectedSymbol",
+            Switch,
+            "Selected symbol markers",
+            "Show occurrences of the symbol at the cursor in the vertical scrollbar."
+        ),
+        field!(
+            editor.editor_scrollbar_diagnostics,
+            "editorScrollbarDiagnostics",
+            Select(&[
+                ("all", "All severities"),
+                ("information", "Information and above"),
+                ("warning", "Warnings and errors"),
+                ("error", "Errors only")
+            ]),
+            "Diagnostic markers",
+            "Set the highest diagnostic severity shown in the vertical scrollbar."
+        ),
+        field!(
+            editor.editor_scrollbar_horizontal,
+            "editorScrollbarHorizontal",
+            Switch,
+            "Horizontal scrollbar",
+            "Show a horizontal scrollbar when unwrapped lines overflow."
+        ),
+        field!(
+            editor.editor_scrollbar_vertical,
+            "editorScrollbarVertical",
+            Switch,
+            "Vertical scrollbar",
+            "Show a vertical scrollbar when the document overflows."
+        ),
+        field!(
             editor.editor_bracket_matching,
             "editorBracketMatching",
             Switch,
