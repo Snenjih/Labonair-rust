@@ -16,6 +16,7 @@ pub enum EditorLanguageCommand {
     GoToDeclaration,
     GoToReferences,
     GoToImplementation,
+    GoToTypeDefinition,
     PeekDefinition,
     Rename,
     CodeAction,
@@ -176,6 +177,9 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         CommandId::EditorGoToImplementation => {
             EditorCommandRoute::Language(EditorLanguageCommand::GoToImplementation)
         }
+        CommandId::EditorGoToTypeDefinition => {
+            EditorCommandRoute::Language(EditorLanguageCommand::GoToTypeDefinition)
+        }
         CommandId::EditorPeekDefinition => {
             EditorCommandRoute::Language(EditorLanguageCommand::PeekDefinition)
         }
@@ -287,6 +291,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorGoToDeclaration,
     CommandId::EditorGoToReferences,
     CommandId::EditorGoToImplementation,
+    CommandId::EditorGoToTypeDefinition,
     CommandId::EditorPeekDefinition,
     CommandId::EditorRenameSymbol,
     CommandId::EditorCodeAction,
@@ -558,6 +563,12 @@ impl CommandProvider for EditorCommandProvider {
                 "Editor",
             )
             .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(
+                CommandId::EditorGoToTypeDefinition,
+                "Go to Type Definition",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(CommandId::EditorPeekDefinition, "Peek Definition", "Editor")
                 .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(CommandId::EditorRenameSymbol, "Rename Symbol", "Editor")
@@ -724,6 +735,17 @@ mod tests {
             route_for_command(CommandId::EditorNextGitChange),
             Some(EditorCommandRoute::Git(GitEditorCommand::NextChange))
         );
+        assert_eq!(
+            route_for_command(CommandId::EditorGoToTypeDefinition),
+            Some(EditorCommandRoute::Language(
+                EditorLanguageCommand::GoToTypeDefinition
+            ))
+        );
+        assert!(EditorCommandProvider
+            .commands()
+            .iter()
+            .any(|command| command.id == CommandId::EditorGoToTypeDefinition
+                && command.title == "Go to Type Definition"));
     }
 
     #[test]

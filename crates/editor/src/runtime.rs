@@ -384,6 +384,7 @@ impl LanguageServiceRuntime {
                 signature_help: false,
                 hover: false,
                 definition: false,
+                type_definition: false,
                 references: false,
                 rename: false,
                 code_actions: false,

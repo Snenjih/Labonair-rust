@@ -396,6 +396,7 @@ impl LocalLanguageServiceProcess {
                         signature_help: false,
                         hover: false,
                         definition: false,
+                        type_definition: false,
                         references: false,
                         rename: false,
                         code_actions: false,
@@ -758,6 +759,7 @@ impl LocalLanguageServiceProcess {
                 signature_help: false,
                 hover: false,
                 definition: false,
+                type_definition: false,
                 references: false,
                 rename: false,
                 code_actions: false,
@@ -1042,6 +1044,9 @@ impl LocalLanguageServiceProcess {
             }
             LanguageServiceRequest::Definition { .. } => {
                 LanguageServiceResponse::Definition(parse_locations(&value))
+            }
+            LanguageServiceRequest::TypeDefinition { .. } => {
+                LanguageServiceResponse::TypeDefinition(parse_locations(&value))
             }
             LanguageServiceRequest::References { .. } => {
                 LanguageServiceResponse::References(parse_locations(&value))
@@ -1331,6 +1336,7 @@ fn parse_server_capabilities(value: &Value) -> (LanguageServiceCapabilities, Vec
             signature_help: advertised(capabilities.get("signatureHelpProvider")),
             hover: advertised(capabilities.get("hoverProvider")),
             definition: advertised(capabilities.get("definitionProvider")),
+            type_definition: advertised(capabilities.get("typeDefinitionProvider")),
             references: advertised(capabilities.get("referencesProvider")),
             rename: advertised(capabilities.get("renameProvider")),
             code_actions: advertised(capabilities.get("codeActionProvider")),
@@ -1387,6 +1393,10 @@ fn request_parts(uri: &str, request: &LanguageServiceRequest) -> (&'static str, 
         ),
         LanguageServiceRequest::Definition { position } => (
             "textDocument/definition",
+            json!({ "textDocument": text_document, "position": position_value(*position) }),
+        ),
+        LanguageServiceRequest::TypeDefinition { position } => (
+            "textDocument/typeDefinition",
             json!({ "textDocument": text_document, "position": position_value(*position) }),
         ),
         LanguageServiceRequest::References { position } => (
@@ -1908,11 +1918,27 @@ mod tests {
     }
 
     #[test]
+    fn type_definition_uses_its_lsp_method_and_position() {
+        let position = LspPosition {
+            line: 2,
+            character: 4,
+        };
+        let (method, params) = request_parts(
+            "file:///fixture.rs",
+            &LanguageServiceRequest::TypeDefinition { position },
+        );
+        assert_eq!(method, "textDocument/typeDefinition");
+        assert_eq!(params["textDocument"]["uri"], "file:///fixture.rs");
+        assert_eq!(params["position"], json!({ "line": 2, "character": 4 }));
+    }
+
+    #[test]
     fn advertised_capabilities_are_explicit() {
         let (capabilities, types) = parse_server_capabilities(
-            &json!({ "capabilities": { "hoverProvider": true, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
+            &json!({ "capabilities": { "hoverProvider": true, "typeDefinitionProvider": true, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
         );
         assert!(capabilities.hover);
+        assert!(capabilities.type_definition);
         assert!(!capabilities.completion);
         assert_eq!(types, vec!["type"]);
     }

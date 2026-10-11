@@ -210,6 +210,7 @@ pub enum LanguageServiceCapability {
     SignatureHelp,
     Hover,
     Definition,
+    TypeDefinition,
     References,
     Rename,
     CodeActions,
@@ -262,6 +263,7 @@ pub struct LanguageServiceCapabilities {
     pub signature_help: bool,
     pub hover: bool,
     pub definition: bool,
+    pub type_definition: bool,
     pub references: bool,
     pub rename: bool,
     pub code_actions: bool,
@@ -278,6 +280,7 @@ impl LanguageServiceCapabilities {
         signature_help: false,
         hover: true,
         definition: true,
+        type_definition: false,
         references: true,
         rename: true,
         code_actions: true,
@@ -294,6 +297,7 @@ impl LanguageServiceCapabilities {
             LanguageServiceCapability::SignatureHelp => self.signature_help,
             LanguageServiceCapability::Hover => self.hover,
             LanguageServiceCapability::Definition => self.definition,
+            LanguageServiceCapability::TypeDefinition => self.type_definition,
             LanguageServiceCapability::References => self.references,
             LanguageServiceCapability::Rename => self.rename,
             LanguageServiceCapability::CodeActions => self.code_actions,
@@ -320,6 +324,9 @@ pub enum LanguageServiceRequest {
         position: LspPosition,
     },
     Definition {
+        position: LspPosition,
+    },
+    TypeDefinition {
         position: LspPosition,
     },
     References {
@@ -364,6 +371,7 @@ impl LanguageServiceRequest {
             Self::SignatureHelp { .. } => LanguageServiceCapability::SignatureHelp,
             Self::Hover { .. } => LanguageServiceCapability::Hover,
             Self::Definition { .. } => LanguageServiceCapability::Definition,
+            Self::TypeDefinition { .. } => LanguageServiceCapability::TypeDefinition,
             Self::References { .. } => LanguageServiceCapability::References,
             Self::Rename { .. } => LanguageServiceCapability::Rename,
             Self::CodeActions { .. } => LanguageServiceCapability::CodeActions,
@@ -382,6 +390,7 @@ pub enum LanguageServiceResponse {
     SignatureHelp(Option<SignatureHelp>),
     Hover(Option<HoverContent>),
     Definition(Vec<NavigationTarget>),
+    TypeDefinition(Vec<NavigationTarget>),
     References(Vec<NavigationTarget>),
     Rename(Vec<Edit>),
     CodeActions(Vec<CodeAction>),
@@ -1269,6 +1278,9 @@ impl LocalLanguageService for SyntaxLanguageService {
             LanguageServiceRequest::Definition { position } => {
                 LanguageServiceResponse::Definition(self.navigation(snapshot, position, false))
             }
+            LanguageServiceRequest::TypeDefinition { position } => {
+                LanguageServiceResponse::TypeDefinition(self.navigation(snapshot, position, false))
+            }
             LanguageServiceRequest::References { position } => {
                 LanguageServiceResponse::References(self.navigation(snapshot, position, true))
             }
@@ -1438,6 +1450,12 @@ mod tests {
             )
             .unwrap();
         assert!(matches!(hover, LanguageServiceResponse::Hover(Some(_))));
+        assert_eq!(
+            LanguageServiceRequest::TypeDefinition { position: pos }.capability(),
+            LanguageServiceCapability::TypeDefinition
+        );
+        assert!(!LanguageServiceCapabilities::SYNTAX_DERIVED
+            .supports(LanguageServiceCapability::TypeDefinition));
         let definition = service(Language::Rust)
             .request(
                 &snap,

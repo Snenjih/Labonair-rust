@@ -626,6 +626,8 @@ enum LanguageServiceRequestSlot {
     Other,
     Completion,
     SignatureHelp,
+    Navigation,
+    TypeDefinition,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -780,6 +782,8 @@ pub struct EditorView {
     signature_help_state: SignatureHelpUiState,
     signature_help_request_serial: Option<u64>,
     signature_help_position: Option<LspPosition>,
+    navigation_request_serial: Option<u64>,
+    navigation_position: Option<LspPosition>,
     language_service_request_serial: u64,
     code_actions: Option<Vec<labonair_editor::CodeAction>>,
     rename_requested: bool,
@@ -974,6 +978,8 @@ impl EditorView {
             signature_help_state: SignatureHelpUiState::Hidden,
             signature_help_request_serial: None,
             signature_help_position: None,
+            navigation_request_serial: None,
+            navigation_position: None,
             language_service_request_serial: 0,
             code_actions: None,
             rename_requested: false,
@@ -1149,6 +1155,14 @@ impl EditorView {
             | EditorLanguageCommand::PeekDefinition => {
                 self.request_language_service(
                     LanguageServiceRequest::Definition {
+                        position: self.current_lsp_position(),
+                    },
+                    cx,
+                );
+            }
+            EditorLanguageCommand::GoToTypeDefinition => {
+                self.request_language_service(
+                    LanguageServiceRequest::TypeDefinition {
                         position: self.current_lsp_position(),
                     },
                     cx,
@@ -1451,6 +1465,13 @@ impl EditorView {
             LanguageServiceRequest::SignatureHelp { position, .. } => {
                 (LanguageServiceRequestSlot::SignatureHelp, Some(*position))
             }
+            LanguageServiceRequest::Definition { position }
+            | LanguageServiceRequest::References { position } => {
+                (LanguageServiceRequestSlot::Navigation, Some(*position))
+            }
+            LanguageServiceRequest::TypeDefinition { position } => {
+                (LanguageServiceRequestSlot::TypeDefinition, Some(*position))
+            }
             _ => (LanguageServiceRequestSlot::Other, None),
         };
         self.language_service_request_serial =
@@ -1464,6 +1485,10 @@ impl EditorView {
             LanguageServiceRequestSlot::SignatureHelp => {
                 self.signature_help_request_serial = Some(request_serial);
                 self.signature_help_position = request_position;
+            }
+            LanguageServiceRequestSlot::Navigation | LanguageServiceRequestSlot::TypeDefinition => {
+                self.navigation_request_serial = Some(request_serial);
+                self.navigation_position = request_position;
             }
             LanguageServiceRequestSlot::Other => {}
         }
@@ -1505,9 +1530,12 @@ impl EditorView {
                 let accepted = this.language_service_state.apply(result);
                 if accepted
                     || (response.is_err()
-                        && (matches!(slot, LanguageServiceRequestSlot::Completion)
-                            || matches!(slot, LanguageServiceRequestSlot::SignatureHelp)
-                            || this.format_on_save_in_flight))
+                        && (matches!(
+                            slot,
+                            LanguageServiceRequestSlot::Completion
+                                | LanguageServiceRequestSlot::SignatureHelp
+                                | LanguageServiceRequestSlot::TypeDefinition
+                        ) || this.format_on_save_in_flight))
                 {
                     this.apply_language_service_response(response, slot, cx);
                     this.language_service_snapshot =
@@ -1536,6 +1564,12 @@ impl EditorView {
             LanguageServiceRequestSlot::SignatureHelp => {
                 self.signature_help_request_serial == Some(request_serial)
                     && self.signature_help_position == request_position
+                    && request_position
+                        .is_some_and(|position| self.current_lsp_position() == position)
+            }
+            LanguageServiceRequestSlot::Navigation | LanguageServiceRequestSlot::TypeDefinition => {
+                self.navigation_request_serial == Some(request_serial)
+                    && self.navigation_position == request_position
                     && request_position
                         .is_some_and(|position| self.current_lsp_position() == position)
             }
@@ -1621,11 +1655,18 @@ impl EditorView {
                     "The language service could not format this document; saving the current text.",
                 );
                 self.save(cx);
+            } else if slot == LanguageServiceRequestSlot::TypeDefinition {
+                notify(
+                    cx,
+                    "Type Definition unavailable",
+                    &response_error_text(&response),
+                );
             }
             return;
         };
         match response {
             LanguageServiceResponse::Definition(targets)
+            | LanguageServiceResponse::TypeDefinition(targets)
             | LanguageServiceResponse::References(targets) => {
                 if let Some(target) = targets.first() {
                     let position = target
@@ -8576,6 +8617,68 @@ mod tests {
                 assert!(this.handle_helix(HelixKey::Escape, cx));
                 assert_eq!(this.helix.as_ref().map(Helix::status), Some("HELIX SELECT"));
                 assert_eq!(this.doc.selected_text().as_deref(), Some("x"));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn type_definition_response_moves_to_the_server_target(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("test.rs".into(), "struct Widget;\n", 1);
+                let position = LspPosition {
+                    line: 0,
+                    character: 7,
+                };
+                let target = labonair_editor::NavigationTarget {
+                    name: "Widget".into(),
+                    range: LspRange {
+                        start: position,
+                        end: LspPosition {
+                            line: 0,
+                            character: 13,
+                        },
+                    },
+                    selection_range: LspRange {
+                        start: position,
+                        end: LspPosition {
+                            line: 0,
+                            character: 13,
+                        },
+                    },
+                };
+                this.apply_language_service_response(
+                    Ok(LanguageServiceResponse::TypeDefinition(vec![target])),
+                    LanguageServiceRequestSlot::TypeDefinition,
+                    cx,
+                );
+                assert_eq!(this.doc.cursor, Position::new(0, 7));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn navigation_response_is_discarded_after_the_caret_moves(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, _cx| {
+                this.doc = Document::from_file("test.rs".into(), "struct Widget;", 1);
+                let position = this.current_lsp_position();
+                this.navigation_request_serial = Some(4);
+                this.navigation_position = Some(position);
+                assert!(this.is_current_language_service_request(
+                    LanguageServiceRequestSlot::Navigation,
+                    4,
+                    Some(position),
+                ));
+
+                this.doc.set_caret(Position::new(0, 1), false);
+                assert!(!this.is_current_language_service_request(
+                    LanguageServiceRequestSlot::Navigation,
+                    4,
+                    Some(position),
+                ));
             });
         });
     }
