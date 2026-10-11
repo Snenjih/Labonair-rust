@@ -1,0 +1,22 @@
+[package]
+name = "labonair-editor-ui"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_editor_ui"
+path = "src/lib.rs"
+
+[dependencies]
+gpui = { workspace = true }
+labonair-editor = { path = "../editor" }
+labonair-filesystem = { path = "../filesystem" }
+labonair-notifications = { path = "../notifications" }
+labonair-settings = { path = "../settings" }
+labonair-settings-json = { path = "../settings-json" }
+labonair-theme = { path = "../theme" }
+labonair-ui-kit = { path = "../ui-kit" }
+tokio = { workspace = true }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

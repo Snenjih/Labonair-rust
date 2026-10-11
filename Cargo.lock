@@ -4263,6 +4263,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-editor-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "labonair-editor",
+ "labonair-filesystem",
+ "labonair-notifications",
+ "labonair-settings",
+ "labonair-settings-json",
+ "labonair-theme",
+ "labonair-ui-kit",
+ "tokio",
+]
+
+[[package]]
 name = "labonair-errors"
 version = "0.1.0"
 dependencies = [
@@ -4939,6 +4954,7 @@ dependencies = [
  "labonair-command-palette-core",
  "labonair-command-palette-runtime",
  "labonair-editor",
+ "labonair-editor-ui",
  "labonair-explorer-host",
  "labonair-filesystem",
  "labonair-git",

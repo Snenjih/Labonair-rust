@@ -36,6 +36,7 @@ labonair-hosts-host = { path = "../hosts-host" }
 labonair-hosts-ui = { path = "../hosts-ui" }
 labonair-terminal = { path = "../terminal" }
 labonair-editor = { path = "../editor" }
+labonair-editor-ui = { path = "../editor-ui" }
 labonair-git = { path = "../git" }
 labonair-filesystem = { path = "../filesystem" }
 labonair-ssh = { path = "../ssh" }

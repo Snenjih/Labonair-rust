@@ -50,7 +50,6 @@ pub mod ssh_event_bridge;
 pub mod status_bar;
 pub mod status_items;
 pub mod status_placements;
-pub mod syntax_theme;
 pub mod tabs;
 pub mod tabs_panel;
 pub mod views;
@@ -123,7 +122,6 @@ use crate::ssh_connection::{
 };
 use crate::tabs::{Tab, TabData, TabKind, TabStore};
 use crate::theme::ThemeStore;
-use crate::views::editor::{EditorEvent, EditorView};
 use crate::views::preview::PreviewView;
 use crate::views::sftp::{SftpEvent, SftpView};
 use crate::views::terminal::TerminalView;
@@ -134,6 +132,7 @@ use labonair_editor::{
     FileFinderCandidate, FileFinderQuery, FileFinderResult, LanguageServiceRuntime, Position,
     ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, SearchError, SearchQuery,
 };
+use labonair_editor_ui::{EditorEvent, EditorView};
 use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
 use labonair_hosts_host::{ActiveTunnelRow, HostStatus, HostView};
 use labonair_hosts_ui::HostManagerView;

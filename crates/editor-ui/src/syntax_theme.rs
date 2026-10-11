@@ -14,7 +14,7 @@
 use gpui::{rgb, Hsla};
 use labonair_editor::HighlightKind;
 
-use crate::theme::{EditorThemeId, ThemeStore};
+use labonair_theme::{EditorThemeId, ThemeStore};
 
 /// A resolved colour for each token class.
 #[derive(Debug, Clone, Copy)]

@@ -31,6 +31,7 @@ members = [
     "crates/terminal",
     "crates/terminal-integration",
     "crates/editor",
+    "crates/editor-ui",
     "crates/filesystem",
     "crates/secrets",
     "crates/errors",
