@@ -7949,4 +7949,46 @@ Next safe task: Continue R07-000 with `vim::Enter` classification complete; then
 - Inspected the counted `r enter`, Replace-mode multi-selection newline, and separate Normal Enter fixtures without running. Other waiting operators, platform dispatch, palette exposure, and language-specific indentation remain runtime acceptance.
 - Updated the Enter packet, registered-action row, both `enter` binding annotations, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final documentation-only gates passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 265 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, action palette, platform dispatch, other pending operators, language indentation, and paired native evidence remain active.
-- Next safe task: Continue R07-000 with `vim::EntireFile`; do not begin R07-001 or R09.
+- Next safe task: Continue R07-000 with `vim::EntireFile` classification complete and proceed to `vim::Exchange`; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim EntireFile
+
+~~~text
+Request type: Pinned whole-file Vim text-object, operator/context routes, and local owner gap; documentation-only classification.
+Owner module: Editor owns document ranges, selections, and operator effects; Vim owns text-object dispatch, pending operators, and mode transitions; Keymap owns the context binding.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: Shared Vim/Helix profile binding `e` under `vim_operator == a || vim_operator == i || vim_operator == cs || vim_operator == helix_next || vim_operator == helix_previous`; Vim `a e` and `i e` select the entire file. No platform default map binds this action.
+Public typed contract: Unit action `vim::EntireFile`, no arguments or aliases. Its object range is `DisplayPoint::zero()..map.max_point()`, independent of around/inside and the range count; it is multiline, always expands both ways, and targets Visual Line. Helix directional conversion and the ChangeSurrounds bracket-pair mapping do not support this object.
+State owner: Editor owns buffer/display map, selections, and operator effects. Vim owns mode, text-object prefix, pending operator/count, and selection routing. Keymap owns context dispatch.
+Persistence owner: None for action or selection state; operator-driven edits use the active document lifecycle.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-EntireFile`; `KEYBIND-VIM-HELIX-6d0473ebc0fd`. Command Palette discovery and direct invocation are unverified.
+Events and registry contributions: Existing registered Vim action and one shared profile row only; no new event or registry contribution proposed.
+Settings: No action-specific setting; Vim/Helix mode values select the applicable mode path.
+Notifications: None expected.
+UI-kit components: Existing Editor and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action schema, keymap context, range/mode logic, Normal/Visual operator dispatch, Helix conversion, and change-surround lookup without running. Empty/final-newline endpoints and each operator effect remain runtime acceptance.
+Visual evidence: No layout change proposed. Paired native macOS Editor and Keymap evidence is required for `a e`/`i e`, empty and newline-terminated buffers, selection endpoints, mode, and operator results; Linux/Windows dispatch needs separate runtime checks.
+Security impact: None beyond text/register effects from an explicitly invoked operator on the active buffer.
+Performance impact: The range is constant-time from the display snapshot; large-buffer selection, multi-cursor operations, and each consuming operator require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema, shared route, full-file range, mode transition, operator consumers, unsupported Helix/cs routes, and local gap can be classified statically; palette, direct invocation, platform dispatch, endpoints, and operator acceptance remain open.
+Documentation updates: New EntireFile packet; registered-action row; `e` binding annotation; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action schema, shared key route, range/Visual Line semantics, Normal/Visual dispatch, operator consumers, unsupported Helix/cs paths, and local Vim gap inspected. First documentation-only gate pass completed.
+Target status: Classify `a e`/`i e` whole-file selection and linewise mode, distinguish the exposed but unsupported `cs e` and Helix directional contexts, and record Labonair's unconnected select-all primitive without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no typed EntireFile action, Vim text-object operator path, or shared profile binding; `Document::select_all()` is not called by the workspace.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Palette/direct invocation, platform dispatch, empty/final-newline endpoints, all operator effects, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::Exchange`; do not begin R07-001 or R09.
+~~~
+
+
+## Vim EntireFile action classification progress
+
+- Classified `a e`/`i e` as a whole-file text-object range from display point zero to `map.max_point()`, with identical around/inside ranges and a Visual Line target. Recorded applicable normal/visual object dispatch and the operator consumers.
+- Identified that the shared keymap also exposes `cs e` and Helix next/previous `e`, but change-surround has no EntireFile bracket-pair mapping and Helix conversion rejects the object. Direct invocation without a text-object operator also does not select the file.
+- Inspected action registration, keymap context, range and mode implementation, Normal/Visual dispatch, Helix converter/selection helpers, surround pair lookup, and local `Document::select_all()` without running fixtures. No focused pinned EntireFile fixture was found. Endpoint cases, operator workflows, palette, direct invocation, platform dispatch, and paired native acceptance remain open.
+- Updated the EntireFile packet, registered-action row, shared `e` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 266 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. The pre-change baseline also passed with 265 Markdown files. Rust build/tests, action palette, direct invocation, platform dispatch, endpoint/operator behavior, and paired native evidence remain active.
+- Next safe task: Continue R07-000 with `vim::Exchange`; do not begin R07-001 or R09.
