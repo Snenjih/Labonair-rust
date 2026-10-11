@@ -7288,3 +7288,45 @@ Next safe task: Continue R07-000 with vim::ConvertToUpperCase; do not begin R07-
 - First gate pass: passed git diff --check, scripts/check_documentation.py (43 normative docs; 249 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue. Second pass after recording task progress also passed the same checks.
 - No Rust build, tests, palette/operator dispatch, native behavior, or paired visual evidence were run. These remain active goal acceptance gates. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - Next safe task: Continue R07-000 with vim::ConvertToUpperCase; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim ConvertToUpperCase transformation
+
+~~~text
+Request type: Pinned registered-action, Unicode case transform, shared Vim/Helix profile, and uppercase operator distinction; documentation-only.
+Owner module: Editor owns text transforms, selection state, and document edits; Keymap owns shared profile and user bindings; Settings owns Vim/Helix mode values; Command Palette owns existing Vim action discovery.
+Canonical capability crate: labonair-editor; profile composition in labonair-keymap.
+Canonical user entry points: Vim Visual Shift-U invokes vim::ConvertToUpperCase; Helix Normal/Select Alt-backtick invokes the direct action. Focused Vim/Helix Command Palette exposes the registered action when the mode is enabled. Vim Normal g Shift-U starts the separate PushUppercase operator followed by a motion/object.
+Public typed contract: Registered unit action vim::ConvertToUpperCase; maps each character in mode-derived Editor ranges through Rust full Unicode uppercase conversion and applies the result in an Editor transaction. A scalar may expand to multiple scalars (for example, ß to SS). No arguments, settings, or persistence-specific values.
+State owner: Editor owns selections, cursor positions, modal state, and edited text. The direct action consumes count and forced-motion state; range and resulting mode follow the shared manipulate_text rules, including Helix-setting and temporary-mode remapping. PushUppercase owns separate operator state and motion/object range.
+Persistence owner: No action-specific persistence; converted content follows ordinary document save/undo. Vim/Helix settings and profile bindings use their existing owners.
+Commands and keymap entries: ACT-REGISTRY-LINUX-vim-ConvertToUpperCase; related ACT-REGISTRY-LINUX-vim-PushUppercase. KEYBIND-VIM-HELIX-faaae7fbadea (Shift-U, Vim Visual direct action); KEYBIND-VIM-HELIX-221f4f535f5d (Alt-backtick, Helix Normal/Select direct action); KEYBIND-VIM-HELIX-b799ed330773 (g Shift-U, Vim Normal PushUppercase operator). No platform-default map binds the vim:: actions; similarly named editor::ConvertToUpperCase mappings are separate actions.
+Events and registry contributions: Existing Vim action registrations, shared mode profile, generic palette route, and Editor text-edit transaction; no new contribution.
+Settings: Vim Mode and Helix Mode gate profiles/palette discovery; no uppercase-specific setting.
+Notifications: None expected.
+UI-kit components: Existing Editor selection and Command Palette only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect pinned test_convert_to_upper_case, test_change_case_motion, test_change_case_motion_object, and test_change_case_helix_mode without running them. Existing fixtures cover Vim characterwise/linewise/blockwise Visual transforms, motion/object operators, and Helix cursor-only direct uppercase plus selection/cursor case toggling; direct uppercase on an explicit Helix selection and expansion of a Unicode uppercase mapping need acceptance.
+Visual evidence: Text-edit behavior requires paired native macOS Editor evidence for selection, cursor, and mode; no layout change is planned. Palette discovery and cross-platform profile dispatch remain open.
+Security impact: None beyond editing the focused local buffer.
+Performance impact: One range transform per active selection; large ranges, multi-cursor edits, and expanding Unicode mappings need acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static registration, direct Vim/Helix bindings, separate uppercase operator, full Unicode mapping, test coverage, and local owner gap can be classified; palette/profile dispatch, expansion boundaries, and native behavior remain pending.
+Documentation updates: New ConvertToUpperCase packet; ConvertToUpperCase and PushUppercase registered-action rows; three shared keybinding annotations; Linux/Windows layer note; packet index; feature crosswalk; task record. No memory note; the local first-scalar case-mapping limitation was already recorded.
+Current status: Pre-change contract and docs-only ConvertToUpperCase classification recorded; Visual and Helix direct routes, Normal operator, Unicode expansion semantics, and local owner gap classified; runtime/native acceptance remains open.
+Target status: Classify Vim Visual and Helix direct transforms, distinguish the Normal g Shift-U operator from the direct action, record Unicode expansion and missing Labonair route, and leave runtime acceptance open.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no direct uppercase selection/cursor action, Vim PushUppercase motion/object operator, shared profile route, or Vim palette integration; its local ~ action toggles case at the cursor and takes only the first scalar from each Unicode case mapping.
+Failed/unavailable gates: No failures across three docs-only gate passes. All passed git diff --check, scripts/check_documentation.py (43 normative docs; 250 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue. Rust build/tests, palette/profile dispatch, Unicode expansion boundaries, native behavior, and paired visual evidence were not run here and remain goal acceptance gates.
+Next safe task: Continue R07-000 with vim::CountCommand; do not begin R07-001 or R09.
+~~~
+
+
+## Vim ConvertToUpperCase transformation classification progress
+
+- Classified Vim Visual `shift-u` and Helix Normal/Select Alt-backtick as direct mode-derived uppercase actions, distinct from Vim Normal `g shift-u` and its motion/object operator. `g u` and `g ~` remain lower-case and toggle operators.
+- Recorded Rust's full Unicode uppercase mapping and possible multi-scalar expansion, the shared Visual/Helix mode transitions, the generic palette route, separate `editor::ConvertToUpperCase` platform bindings, and the absence of a direct Labonair transform. Local `~` remains cursor/count based and truncates expanding mappings to the first scalar.
+- Updated the new ConvertToUpperCase packet, both registered-action rows, three shared binding annotations, Linux/Windows layer note, packet index, feature crosswalk, and this task record.
+- First gate pass, second pass after task progress, and final pass after clarifying the Helix fixture coverage all passed git diff --check, scripts/check_documentation.py (43 normative docs; 250 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
+- No Rust build, tests, palette/profile dispatch, Unicode expansion runtime checks, native behavior, or paired visual evidence were run. These remain active goal acceptance gates. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- Next safe task: Continue R07-000 with vim::CountCommand; do not begin R07-001 or R09.

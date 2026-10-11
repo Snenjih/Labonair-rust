@@ -62,6 +62,8 @@ context, and argument. Its semantic classifications, canonical owner
 assignments, Labonair routes, runtime observations, and acceptance evidence
 are still pending; the IDs do not change the crosswalk's partial status.
 
+The [Vim ConvertToUpperCase packet](action-classification-vim-convert-to-upper-case.md) classifies Visual `shift-u`, Helix Normal/Select Alt-backtick, and the separate Normal `g shift-u` operator, including Unicode expansion and the missing local action route. Linux/Windows dispatch, palette behavior, and paired macOS acceptance remain open.
+
 ## Current Labonair capability reconciliation
 
 The following current capability rows are also represented above. Foundation

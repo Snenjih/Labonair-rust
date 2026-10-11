@@ -346,6 +346,7 @@ source-side research. It records current evidence without claiming parity.
   metadata and schemas are in [`evidence/zed-actions-3569541-linux-x86_64.json`](evidence/zed-actions-3569541-linux-x86_64.json).
   The JSON under `evidence/` is machine-generated reference metadata, not an
   implementation brief or proof of user-visible behavior.
+- [`action-classification-vim-convert-to-upper-case.md`](action-classification-vim-convert-to-upper-case.md) — Vim Visual and Helix direct uppercase transforms, the separate Normal uppercase operator, Unicode expansion, and the missing Labonair route; runtime and native acceptance remain open.
 - [`titlebar-tab-strip.md`](titlebar-tab-strip.md) — independent titlebar tab
   appearance, input/state matrix, ownership, and evidence packet.
 - [`settings-requirements.md`](settings-requirements.md) — 488 stable IDs for
