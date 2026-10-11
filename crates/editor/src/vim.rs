@@ -130,6 +130,7 @@ pub struct Vim {
     pub options: VimOptions,
     count: usize,
     pending_op: Option<char>,
+    pending_text_object: Option<char>,
     pending_g: bool,
     pending_replace: bool,
     pending_find: Option<char>,
@@ -172,6 +173,7 @@ impl Vim {
             options,
             count: 0,
             pending_op: None,
+            pending_text_object: None,
             pending_g: false,
             pending_replace: false,
             pending_find: None,
@@ -445,6 +447,30 @@ impl Vim {
             return self.handle_g(doc, c);
         }
 
+        if let Some(object_kind) = self.pending_text_object.take() {
+            if !matches!((object_kind, c), ('i' | 'a', 'w' | 'W')) {
+                self.reset_pending();
+                return VimResponse::default();
+            }
+            let Some((start, end)) = word_object_range(
+                doc,
+                doc.cursor,
+                c == 'W',
+                object_kind == 'a',
+                self.take_count().max(1),
+            ) else {
+                self.reset_pending();
+                return VimResponse::default();
+            };
+            let Some(op) = self.pending_op.take() else {
+                self.reset_pending();
+                return VimResponse::default();
+            };
+            doc.set_caret(start, false);
+            self.apply_operator(doc, op, MotionKind::Exclusive(end));
+            return VimResponse::ok();
+        }
+
         // Count accumulation (leading 0 is the "line start" motion).
         if c.is_ascii_digit() && !(c == '0' && self.count == 0) {
             self.count = self.count.saturating_mul(10) + (c as usize - '0' as usize);
@@ -454,6 +480,10 @@ impl Vim {
         match c {
             'i' | 'a' | 'I' | 'A' | 'o' | 'O' | 's' | 'S' | 'C' if self.pending_op.is_none() => {
                 self.enter_insert(doc, c);
+                VimResponse::ok()
+            }
+            'i' | 'a' if self.pending_op.is_some() => {
+                self.pending_text_object = Some(c);
                 VimResponse::ok()
             }
             'v' => {
@@ -1125,6 +1155,7 @@ impl Vim {
     fn reset_pending(&mut self) {
         self.count = 0;
         self.pending_op = None;
+        self.pending_text_object = None;
         self.pending_g = false;
         self.pending_replace = false;
         self.pending_find = None;
@@ -1196,6 +1227,73 @@ fn class(c: char, big: bool) -> Class {
     } else {
         Class::Punct
     }
+}
+
+/// Resolve Vim's inner/around word object at the caret. Small words separate
+/// punctuation from identifiers; big words group all non-whitespace text.
+fn word_object_range(
+    doc: &Document,
+    cursor: Position,
+    big: bool,
+    around: bool,
+    count: usize,
+) -> Option<(Position, Position)> {
+    let line = snapshot(doc).line(cursor.line);
+    let chars = line.chars().collect::<Vec<_>>();
+    let current = *chars.get(cursor.column)?;
+    if current.is_whitespace() {
+        return None;
+    }
+
+    let word_class = class(current, big);
+    let mut start = cursor.column;
+    while start > 0 {
+        let previous = chars[start - 1];
+        if previous.is_whitespace() || class(previous, big) != word_class {
+            break;
+        }
+        start -= 1;
+    }
+
+    let mut end = cursor.column + 1;
+    while end < chars.len() && !chars[end].is_whitespace() && class(chars[end], big) == word_class {
+        end += 1;
+    }
+
+    for _ in 1..count.max(1) {
+        let mut next = end;
+        while next < chars.len() && chars[next].is_whitespace() {
+            next += 1;
+        }
+        if next == chars.len() {
+            break;
+        }
+        let next_class = class(chars[next], big);
+        end = next + 1;
+        while end < chars.len()
+            && !chars[end].is_whitespace()
+            && class(chars[end], big) == next_class
+        {
+            end += 1;
+        }
+    }
+
+    if around {
+        let after_word = end;
+        while end < chars.len() && chars[end].is_whitespace() {
+            end += 1;
+        }
+        if end == after_word {
+            while start > 0 && chars[start - 1].is_whitespace() {
+                start -= 1;
+            }
+        }
+    }
+
+    Some((
+        Position::new(cursor.line, start),
+        Position::new(cursor.line, end),
+    ))
 }
 
 /// Char offset stream that treats `\n` as a single blank character.
@@ -1481,6 +1579,49 @@ mod tests {
         assert_eq!(v.mode(), VimMode::Insert);
         keys(&mut v, &mut d, "baz\u{1b}");
         assert_eq!(d.text(), "baz bar");
+    }
+
+    #[test]
+    fn inner_word_objects_delete_change_and_yank_at_the_caret() {
+        let mut v = Vim::default();
+        let mut d = doc("say hello world");
+        d.set_caret(Position::new(0, 6), false);
+        keys(&mut v, &mut d, "diw");
+        assert_eq!(d.text(), "say  world");
+
+        d = doc("say hello world");
+        d.set_caret(Position::new(0, 6), false);
+        keys(&mut v, &mut d, "ciw");
+        assert_eq!(v.mode(), VimMode::Insert);
+        keys(&mut v, &mut d, "goodbye\u{1b}");
+        assert_eq!(d.text(), "say goodbye world");
+
+        d = doc("say hello world");
+        d.set_caret(Position::new(0, 6), false);
+        keys(&mut v, &mut d, "yiw$p");
+        assert_eq!(d.text(), "say hello worldhello");
+    }
+
+    #[test]
+    fn around_word_includes_trailing_space_or_leading_space_at_line_end() {
+        let mut v = Vim::default();
+        let mut d = doc("one two");
+        d.set_caret(Position::new(0, 1), false);
+        keys(&mut v, &mut d, "daw");
+        assert_eq!(d.text(), "two");
+
+        d = doc("one two");
+        d.set_caret(Position::new(0, 5), false);
+        keys(&mut v, &mut d, "daw");
+        assert_eq!(d.text(), "one");
+    }
+
+    #[test]
+    fn counted_inner_word_object_extends_across_following_words() {
+        let mut v = Vim::default();
+        let mut d = doc("one two three");
+        keys(&mut v, &mut d, "2diw");
+        assert_eq!(d.text(), " three");
     }
 
     #[test]
