@@ -765,6 +765,20 @@ fn diagnostic_hover_text(diagnostic: &labonair_editor::Diagnostic) -> String {
     )
 }
 
+fn diagnostic_error_warning_counts(diagnostics: &[labonair_editor::Diagnostic]) -> (usize, usize) {
+    use labonair_editor::language_services::DiagnosticSeverity;
+
+    diagnostics
+        .iter()
+        .fold((0, 0), |(errors, warnings), diagnostic| {
+            match diagnostic.severity {
+                DiagnosticSeverity::Error => (errors + 1, warnings),
+                DiagnosticSeverity::Warning => (errors, warnings + 1),
+                DiagnosticSeverity::Information | DiagnosticSeverity::Hint => (errors, warnings),
+            }
+        })
+}
+
 fn completion_kind_label(kind: labonair_editor::CompletionKind) -> &'static str {
     match kind {
         labonair_editor::CompletionKind::Keyword => "keyword",
@@ -871,6 +885,7 @@ pub struct EditorView {
     language_service_generation: u64,
     language_service_open: bool,
     diagnostic_index: usize,
+    diagnostics_revision: Option<Revision>,
     completion_visible: bool,
     completion_request: Option<Task<()>>,
     completion_selected: usize,
@@ -1075,6 +1090,7 @@ impl EditorView {
             language_service_generation: 0,
             language_service_open: false,
             diagnostic_index: 0,
+            diagnostics_revision: None,
             completion_visible: false,
             completion_request: None,
             completion_selected: 0,
@@ -1426,12 +1442,16 @@ impl EditorView {
 
     fn show_diagnostics(&self, cx: &mut Context<Self>) {
         let diagnostics = self.language_service_state.snapshot().diagnostics;
+        let (errors, warnings) = diagnostic_error_warning_counts(&diagnostics);
         let body = if diagnostics.is_empty() {
             "No diagnostics for the current document.".to_string()
         } else {
             format!(
-                "{} diagnostic(s). Use Next/Previous Diagnostic to navigate.",
-                diagnostics.len()
+                "{} diagnostic(s): {} error(s), {} warning(s), and {} information/hint(s). Use Next/Previous Diagnostic to navigate.",
+                diagnostics.len(),
+                errors,
+                warnings,
+                diagnostics.len().saturating_sub(errors + warnings)
             )
         };
         notify_info(cx, "Editor diagnostics", &body);
@@ -1522,6 +1542,7 @@ impl EditorView {
         self.language_service_open = true;
         self.language_service_state
             .set_document_generation(version, generation);
+        self.diagnostics_revision = None;
         self.completion_visible = false;
         self.completion_request = None;
         self.completion_selected = 0;
@@ -1834,7 +1855,10 @@ impl EditorView {
             return;
         };
         match response {
-            LanguageServiceResponse::Diagnostics(_) => self.schedule_error_lens(cx),
+            LanguageServiceResponse::Diagnostics(_) => {
+                self.diagnostics_revision = Some(self.editor_revision());
+                self.schedule_error_lens(cx);
+            }
             LanguageServiceResponse::Definition(targets)
             | LanguageServiceResponse::TypeDefinition(targets)
             | LanguageServiceResponse::References(targets) => {
@@ -6142,6 +6166,33 @@ impl EditorView {
             .items_center()
             .gap_2()
             .child(SharedString::from(right_label));
+        if self.prefs.diagnostics() && self.diagnostics_revision == Some(snapshot.revision()) {
+            let diagnostics = self.language_service_state.snapshot().diagnostics;
+            let (errors, warnings) = diagnostic_error_warning_counts(&diagnostics);
+            let label = if errors == 0 && warnings == 0 {
+                "✓".to_string()
+            } else {
+                format!("{errors} errors · {warnings} warnings")
+            };
+            let tooltip = if errors == 0 && warnings == 0 {
+                "No errors or warnings · Open diagnostics"
+            } else {
+                "Open diagnostics"
+            };
+            right = right.child(
+                button(
+                    "editor-diagnostics-status",
+                    palette,
+                    ButtonVariant::Transparent,
+                    ButtonSize::Xs,
+                )
+                .child(SharedString::from(label))
+                .tooltip(move |window, cx| Tooltip::new(tooltip).build(window, cx))
+                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                    this.show_diagnostics(cx);
+                })),
+            );
+        }
         let file_format = match self.doc.file_state() {
             FileState::Clean
             | FileState::Dirty
@@ -9518,6 +9569,38 @@ mod tests {
             EditorDiagnosticMaxSeverity::All,
         )
         .is_none());
+    }
+
+    #[test]
+    fn diagnostic_status_counts_only_errors_and_warnings() {
+        use labonair_editor::language_services::DiagnosticSeverity as Severity;
+
+        let diagnostics = [
+            Severity::Error,
+            Severity::Warning,
+            Severity::Information,
+            Severity::Hint,
+        ]
+        .into_iter()
+        .map(|severity| labonair_editor::Diagnostic {
+            range: LspRange {
+                start: LspPosition {
+                    line: 0,
+                    character: 0,
+                },
+                end: LspPosition {
+                    line: 0,
+                    character: 1,
+                },
+            },
+            severity,
+            message: "message".into(),
+            source: labonair_editor::LanguageServerId::new("test-lsp"),
+            code: None,
+        })
+        .collect::<Vec<_>>();
+
+        assert_eq!(diagnostic_error_warning_counts(&diagnostics), (1, 1));
     }
 
     #[test]
