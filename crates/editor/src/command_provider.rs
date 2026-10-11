@@ -47,6 +47,13 @@ pub enum EditorUiCommand {
     Rewrap,
     KillRingCut,
     KillRingYank,
+    Fold,
+    FoldAll,
+    FoldAtLevel(u8),
+    FoldRecursive,
+    UnfoldAll,
+    UnfoldLines,
+    UnfoldRecursive,
 }
 
 /// Typed route selected by the Editor owner for an executable command ID.
@@ -108,6 +115,23 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         }
         CommandId::EditorKillRingCut => EditorCommandRoute::Ui(EditorUiCommand::KillRingCut),
         CommandId::EditorKillRingYank => EditorCommandRoute::Ui(EditorUiCommand::KillRingYank),
+        CommandId::EditorFold => EditorCommandRoute::Ui(EditorUiCommand::Fold),
+        CommandId::EditorFoldAll => EditorCommandRoute::Ui(EditorUiCommand::FoldAll),
+        CommandId::EditorFoldAtLevel1 => EditorCommandRoute::Ui(EditorUiCommand::FoldAtLevel(1)),
+        CommandId::EditorFoldAtLevel2 => EditorCommandRoute::Ui(EditorUiCommand::FoldAtLevel(2)),
+        CommandId::EditorFoldAtLevel3 => EditorCommandRoute::Ui(EditorUiCommand::FoldAtLevel(3)),
+        CommandId::EditorFoldAtLevel4 => EditorCommandRoute::Ui(EditorUiCommand::FoldAtLevel(4)),
+        CommandId::EditorFoldAtLevel5 => EditorCommandRoute::Ui(EditorUiCommand::FoldAtLevel(5)),
+        CommandId::EditorFoldAtLevel6 => EditorCommandRoute::Ui(EditorUiCommand::FoldAtLevel(6)),
+        CommandId::EditorFoldAtLevel7 => EditorCommandRoute::Ui(EditorUiCommand::FoldAtLevel(7)),
+        CommandId::EditorFoldAtLevel8 => EditorCommandRoute::Ui(EditorUiCommand::FoldAtLevel(8)),
+        CommandId::EditorFoldAtLevel9 => EditorCommandRoute::Ui(EditorUiCommand::FoldAtLevel(9)),
+        CommandId::EditorFoldRecursive => EditorCommandRoute::Ui(EditorUiCommand::FoldRecursive),
+        CommandId::EditorUnfoldAll => EditorCommandRoute::Ui(EditorUiCommand::UnfoldAll),
+        CommandId::EditorUnfoldLines => EditorCommandRoute::Ui(EditorUiCommand::UnfoldLines),
+        CommandId::EditorUnfoldRecursive => {
+            EditorCommandRoute::Ui(EditorUiCommand::UnfoldRecursive)
+        }
         CommandId::EditorExpandSelection => EditorCommandRoute::Edit(EditIntent::ExpandSelection),
         CommandId::EditorShrinkSelection => EditorCommandRoute::Edit(EditIntent::ShrinkSelection),
         CommandId::EditorDuplicateLines => EditorCommandRoute::Edit(EditIntent::DuplicateLines),
@@ -222,6 +246,21 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorDeleteToPreviousSubwordStart,
     CommandId::EditorKillRingCut,
     CommandId::EditorKillRingYank,
+    CommandId::EditorFold,
+    CommandId::EditorFoldAll,
+    CommandId::EditorFoldAtLevel1,
+    CommandId::EditorFoldAtLevel2,
+    CommandId::EditorFoldAtLevel3,
+    CommandId::EditorFoldAtLevel4,
+    CommandId::EditorFoldAtLevel5,
+    CommandId::EditorFoldAtLevel6,
+    CommandId::EditorFoldAtLevel7,
+    CommandId::EditorFoldAtLevel8,
+    CommandId::EditorFoldAtLevel9,
+    CommandId::EditorFoldRecursive,
+    CommandId::EditorUnfoldAll,
+    CommandId::EditorUnfoldLines,
+    CommandId::EditorUnfoldRecursive,
     CommandId::EditorExpandSelection,
     CommandId::EditorShrinkSelection,
     CommandId::EditorDuplicateLines,
@@ -570,6 +609,55 @@ impl CommandProvider for EditorCommandProvider {
                 "Editor",
             )
             .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(CommandId::EditorFold, "Fold Region", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-alt-[", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorFoldAll, "Fold All", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-k cmd-0", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorFoldAtLevel1, "Fold at Level 1", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-k cmd-1", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorFoldAtLevel2, "Fold at Level 2", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-k cmd-2", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorFoldAtLevel3, "Fold at Level 3", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-k cmd-3", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorFoldAtLevel4, "Fold at Level 4", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-k cmd-4", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorFoldAtLevel5, "Fold at Level 5", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-k cmd-5", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorFoldAtLevel6, "Fold at Level 6", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-k cmd-6", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorFoldAtLevel7, "Fold at Level 7", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-k cmd-7", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorFoldAtLevel8, "Fold at Level 8", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-k cmd-8", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorFoldAtLevel9, "Fold at Level 9", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-k cmd-9", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorFoldRecursive, "Fold Recursively", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-k cmd-[", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorUnfoldAll, "Unfold All", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-k cmd-j", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorUnfoldLines, "Unfold Lines", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-alt-]", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
+                CommandId::EditorUnfoldRecursive,
+                "Unfold Recursively",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("cmd-k cmd-]", Some(CommandContext::Editor)),
         ]
     }
 }
@@ -796,6 +884,39 @@ mod tests {
                 .expect("Kill Ring descriptor");
             assert_eq!(command.default_bindings[0].keystrokes, binding);
             assert_eq!(route_for_command(id), Some(EditorCommandRoute::Ui(route)));
+        }
+    }
+
+    #[test]
+    fn fold_and_unfold_commands_are_editor_owned_with_spec_bindings() {
+        let commands = EditorCommandProvider.commands();
+        let cases = [
+            (CommandId::EditorFold, "cmd-alt-["),
+            (CommandId::EditorFoldAll, "cmd-k cmd-0"),
+            (CommandId::EditorFoldAtLevel1, "cmd-k cmd-1"),
+            (CommandId::EditorFoldAtLevel2, "cmd-k cmd-2"),
+            (CommandId::EditorFoldAtLevel3, "cmd-k cmd-3"),
+            (CommandId::EditorFoldAtLevel4, "cmd-k cmd-4"),
+            (CommandId::EditorFoldAtLevel5, "cmd-k cmd-5"),
+            (CommandId::EditorFoldAtLevel6, "cmd-k cmd-6"),
+            (CommandId::EditorFoldAtLevel7, "cmd-k cmd-7"),
+            (CommandId::EditorFoldAtLevel8, "cmd-k cmd-8"),
+            (CommandId::EditorFoldAtLevel9, "cmd-k cmd-9"),
+            (CommandId::EditorFoldRecursive, "cmd-k cmd-["),
+            (CommandId::EditorUnfoldAll, "cmd-k cmd-j"),
+            (CommandId::EditorUnfoldLines, "cmd-alt-]"),
+            (CommandId::EditorUnfoldRecursive, "cmd-k cmd-]"),
+        ];
+        for (id, binding) in cases {
+            let command = commands
+                .iter()
+                .find(|command| command.id == id)
+                .expect("fold command descriptor");
+            assert_eq!(command.default_bindings[0].keystrokes, binding);
+            assert!(matches!(
+                route_for_command(id),
+                Some(EditorCommandRoute::Ui(_))
+            ));
         }
     }
 

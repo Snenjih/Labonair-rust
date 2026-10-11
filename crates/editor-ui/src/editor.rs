@@ -470,6 +470,41 @@ fn fold_marker_for_line(
         })
 }
 
+fn fold_range_for_cursor(candidates: &[FoldRange], line: usize) -> Option<FoldRange> {
+    candidates
+        .iter()
+        .copied()
+        .filter(|range| range.start_line <= line && line <= range.end_line)
+        .min_by_key(|range| range.end_line.saturating_sub(range.start_line))
+}
+
+fn fold_contains(outer: FoldRange, inner: FoldRange) -> bool {
+    outer != inner && outer.start_line <= inner.start_line && outer.end_line >= inner.end_line
+}
+
+fn fold_ranges_within(candidates: &[FoldRange], outer: FoldRange) -> Vec<FoldRange> {
+    candidates
+        .iter()
+        .copied()
+        .filter(|range| *range == outer || fold_contains(outer, *range))
+        .collect()
+}
+
+fn fold_ranges_at_level(candidates: &[FoldRange], level: u8) -> Vec<FoldRange> {
+    candidates
+        .iter()
+        .copied()
+        .filter(|range| {
+            let depth = candidates
+                .iter()
+                .copied()
+                .filter(|outer| fold_contains(*outer, *range))
+                .count();
+            depth + 1 == usize::from(level)
+        })
+        .collect()
+}
+
 fn toggle_fold(folds: &mut Vec<FoldRange>, target: FoldRange) -> bool {
     if let Some(index) = folds.iter().position(|range| *range == target) {
         folds.remove(index);
@@ -967,6 +1002,15 @@ impl EditorView {
             }
             EditorCommandRoute::Ui(EditorUiCommand::KillRingCut) => self.kill_ring_cut(cx),
             EditorCommandRoute::Ui(EditorUiCommand::KillRingYank) => self.kill_ring_yank(cx),
+            EditorCommandRoute::Ui(
+                command @ (EditorUiCommand::Fold
+                | EditorUiCommand::FoldAll
+                | EditorUiCommand::FoldAtLevel(_)
+                | EditorUiCommand::FoldRecursive
+                | EditorUiCommand::UnfoldAll
+                | EditorUiCommand::UnfoldLines
+                | EditorUiCommand::UnfoldRecursive),
+            ) => self.execute_fold_command(command, cx),
         }
         true
     }
@@ -3255,6 +3299,73 @@ impl EditorView {
         let _expanded = !toggle_fold(&mut self.folds, range);
         self.clamp_scroll();
         cx.notify();
+    }
+
+    fn execute_fold_command(&mut self, command: EditorUiCommand, cx: &mut Context<Self>) {
+        let snapshot = self.doc.snapshot();
+        let symbols = self.symbols_for_snapshot(&snapshot);
+        let candidates = fold_ranges_from_symbols(&symbols, &snapshot);
+        let before = self.folds.clone();
+        match command {
+            EditorUiCommand::Fold => {
+                let Some(range) = fold_range_for_cursor(&candidates, self.doc.cursor.line) else {
+                    return;
+                };
+                self.toggle_fold_range(range, cx);
+                return;
+            }
+            EditorUiCommand::FoldAll => self.folds = candidates,
+            EditorUiCommand::FoldAtLevel(level) => {
+                self.folds = fold_ranges_at_level(&candidates, level)
+            }
+            EditorUiCommand::FoldRecursive => {
+                let Some(outer) = fold_range_for_cursor(&candidates, self.doc.cursor.line) else {
+                    return;
+                };
+                self.folds.extend(fold_ranges_within(&candidates, outer));
+                self.folds
+                    .sort_by_key(|range| (range.start_line, range.end_line));
+                self.folds.dedup();
+            }
+            EditorUiCommand::UnfoldAll => self.folds.clear(),
+            EditorUiCommand::UnfoldLines => {
+                let line_ranges = self
+                    .doc
+                    .selection_set()
+                    .ranges(&snapshot)
+                    .into_iter()
+                    .map(|range| {
+                        let start = snapshot.byte_to_position(range.start).line;
+                        let mut end = snapshot.byte_to_position(range.end).line;
+                        let end_position = snapshot.byte_to_position(range.end);
+                        if !range.is_empty() && end > start && end_position.column == 0 {
+                            end -= 1;
+                        }
+                        (start, end)
+                    })
+                    .collect::<Vec<_>>();
+                self.folds.retain(|fold| {
+                    !line_ranges
+                        .iter()
+                        .any(|(start, end)| fold.start_line <= *end && fold.end_line >= *start)
+                });
+            }
+            EditorUiCommand::UnfoldRecursive => {
+                let line = self.doc.cursor.line;
+                if let Some(outer) = fold_range_for_cursor(&candidates, line) {
+                    self.folds
+                        .retain(|fold| !(*fold == outer || fold_contains(outer, *fold)));
+                } else {
+                    self.folds
+                        .retain(|fold| !(fold.start_line <= line && line <= fold.end_line));
+                }
+            }
+            _ => return,
+        }
+        if self.folds != before {
+            self.clamp_scroll();
+            cx.notify();
+        }
     }
 
     // ── Find (driven by the workspace search overlay, T18-002) ──────────────
@@ -8357,6 +8468,36 @@ mod tests {
         assert_eq!(folds, vec![second]);
         assert!(toggle_fold(&mut folds, first));
         assert_eq!(folds, vec![second, first]);
+    }
+
+    #[test]
+    fn fold_levels_follow_symbol_nesting_and_cursor_lookup_prefers_inner_ranges() {
+        let outer = FoldRange::new(0, 10).expect("outer fold");
+        let middle = FoldRange::new(2, 8).expect("middle fold");
+        let inner = FoldRange::new(4, 5).expect("inner fold");
+        let sibling = FoldRange::new(12, 14).expect("sibling fold");
+        let candidates = vec![outer, middle, inner, sibling];
+
+        assert_eq!(fold_ranges_at_level(&candidates, 1), vec![outer, sibling]);
+        assert_eq!(fold_ranges_at_level(&candidates, 2), vec![middle]);
+        assert_eq!(fold_ranges_at_level(&candidates, 3), vec![inner]);
+        assert_eq!(fold_range_for_cursor(&candidates, 4), Some(inner));
+        assert_eq!(
+            fold_ranges_within(&candidates, outer),
+            vec![outer, middle, inner]
+        );
+    }
+
+    #[gpui::test]
+    fn unfold_all_command_clears_editor_owned_fold_state(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.folds = vec![FoldRange::new(1, 3).expect("fold")];
+                assert!(this.dispatch_registered_command(CommandId::EditorUnfoldAll, cx));
+                assert!(this.folds.is_empty());
+            });
+        });
     }
 
     #[test]
