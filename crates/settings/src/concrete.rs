@@ -526,6 +526,31 @@ impl EditorSettings {
         self.0.editor_diagnostics.unwrap_or(true)
     }
 
+    pub fn diagnostics_max_severity(&self) -> EditorDiagnosticMaxSeverity {
+        self.0
+            .editor_diagnostics_max_severity
+            .unwrap_or(EditorDiagnosticMaxSeverity::All)
+    }
+
+    pub fn error_lens(&self) -> bool {
+        self.0.editor_error_lens.unwrap_or(false)
+    }
+
+    pub fn error_lens_delay_ms(&self) -> u64 {
+        u64::from(self.0.editor_error_lens_delay_ms.unwrap_or(150).min(5_000))
+    }
+
+    pub fn error_lens_spacing(&self) -> u32 {
+        self.0.editor_error_lens_spacing.unwrap_or(4).min(32)
+    }
+
+    pub fn error_lens_minimum_column(&self) -> u32 {
+        self.0
+            .editor_error_lens_minimum_column
+            .unwrap_or(0)
+            .min(2_000)
+    }
+
     pub fn semantic_tokens(&self) -> bool {
         self.0.editor_semantic_tokens.unwrap_or(true)
     }
@@ -953,6 +978,35 @@ mod tests {
         assert!(settings.inlay_show_background());
         assert_eq!(settings.inlay_edit_debounce_ms(), 10_000);
         assert_eq!(settings.inlay_scroll_debounce_ms(), 25);
+    }
+
+    #[test]
+    fn error_lens_settings_have_safe_defaults_and_clamped_values() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(
+            defaults.diagnostics_max_severity(),
+            EditorDiagnosticMaxSeverity::All
+        );
+        assert!(!defaults.error_lens());
+        assert_eq!(defaults.error_lens_delay_ms(), 150);
+        assert_eq!(defaults.error_lens_spacing(), 4);
+        assert_eq!(defaults.error_lens_minimum_column(), 0);
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_diagnostics_max_severity = Some(EditorDiagnosticMaxSeverity::Warning);
+        content.editor.editor_error_lens = Some(true);
+        content.editor.editor_error_lens_delay_ms = Some(9_000);
+        content.editor.editor_error_lens_spacing = Some(40);
+        content.editor.editor_error_lens_minimum_column = Some(9_000);
+        let settings = EditorSettings::from_settings(&content);
+        assert_eq!(
+            settings.diagnostics_max_severity(),
+            EditorDiagnosticMaxSeverity::Warning
+        );
+        assert!(settings.error_lens());
+        assert_eq!(settings.error_lens_delay_ms(), 5_000);
+        assert_eq!(settings.error_lens_spacing(), 32);
+        assert_eq!(settings.error_lens_minimum_column(), 2_000);
     }
 
     #[test]

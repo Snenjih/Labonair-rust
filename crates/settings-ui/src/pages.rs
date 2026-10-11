@@ -436,6 +436,11 @@ const LANGUAGE_GROUPS: &[Group] = &[(
     "Language Services",
     paths!("editor":
         "editorDiagnostics",
+        "editorDiagnosticsMaxSeverity",
+        "editorErrorLens",
+        "editorErrorLensDelayMs",
+        "editorErrorLensSpacing",
+        "editorErrorLensMinimumColumn",
         "editorSemanticTokens",
         "editorInlayHints",
         "editorInlayTypeHints",

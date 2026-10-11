@@ -707,10 +707,12 @@ fn diagnostic_at_position<'a>(
     diagnostics: &'a [labonair_editor::Diagnostic],
     snapshot: &labonair_editor::BufferSnapshot,
     position: Position,
+    maximum: EditorDiagnosticMaxSeverity,
 ) -> Option<&'a labonair_editor::Diagnostic> {
     let offset = snapshot.position_to_byte(position);
     diagnostics
         .iter()
+        .filter(|diagnostic| scrollbar_shows_diagnostic(diagnostic.severity, maximum))
         .filter(|diagnostic| {
             let range = diagnostic.range.to_text_range(snapshot);
             range.start <= offset && offset <= range.end
@@ -719,6 +721,29 @@ fn diagnostic_at_position<'a>(
             let range = diagnostic.range.to_text_range(snapshot);
             (diagnostic.severity, range.end.saturating_sub(range.start))
         })
+}
+
+fn error_lens_for_line(
+    diagnostics: &[labonair_editor::Diagnostic],
+    line: usize,
+    maximum: EditorDiagnosticMaxSeverity,
+) -> Option<(
+    labonair_editor::language_services::DiagnosticSeverity,
+    String,
+)> {
+    let diagnostic = diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            diagnostic.range.start.line == line
+                && scrollbar_shows_diagnostic(diagnostic.severity, maximum)
+        })
+        .min_by_key(|diagnostic| diagnostic.severity)?;
+    let message = diagnostic
+        .message
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    (!message.is_empty()).then_some((diagnostic.severity, message))
 }
 
 fn diagnostic_hover_text(diagnostic: &labonair_editor::Diagnostic) -> String {
@@ -823,6 +848,8 @@ pub struct EditorView {
     /// every mouse-move so a plain source file never pays the tree-sitter
     /// lookup cost).
     hover: Option<(Point<Pixels>, SharedString)>,
+    error_lens_task: Option<Task<()>>,
+    error_lens_revision: Option<Revision>,
     /// Revision-bound Git projection. Repository state and actions remain in
     /// the Git/Project-Diff capability; this view only renders it.
     git_gutter: GitGutterSnapshot,
@@ -1029,6 +1056,8 @@ impl EditorView {
             prefs,
             inlay_hints_enabled_override: None,
             hover: None,
+            error_lens_task: None,
+            error_lens_revision: None,
             git_gutter: GitGutterSnapshot::unavailable("", Revision::default()),
             git_provider: None,
             git_action_sink: None,
@@ -1409,7 +1438,18 @@ impl EditorView {
     }
 
     fn navigate_diagnostic(&mut self, forward: bool, cx: &mut Context<Self>) {
-        let diagnostics = self.language_service_state.snapshot().diagnostics;
+        let diagnostics = self
+            .language_service_state
+            .snapshot()
+            .diagnostics
+            .into_iter()
+            .filter(|diagnostic| {
+                scrollbar_shows_diagnostic(
+                    diagnostic.severity,
+                    self.prefs.diagnostics_max_severity(),
+                )
+            })
+            .collect::<Vec<_>>();
         if diagnostics.is_empty() {
             notify_info(
                 cx,
@@ -1473,6 +1513,8 @@ impl EditorView {
         self.hover = None;
         self.hover_request = None;
         self.hover_position = None;
+        self.error_lens_task = None;
+        self.error_lens_revision = None;
         self.inlay_hints_request = None;
         self.inlay_hints_request_serial = None;
         self.inlay_hints_request_range = None;
@@ -1792,6 +1834,7 @@ impl EditorView {
             return;
         };
         match response {
+            LanguageServiceResponse::Diagnostics(_) => self.schedule_error_lens(cx),
             LanguageServiceResponse::Definition(targets)
             | LanguageServiceResponse::TypeDefinition(targets)
             | LanguageServiceResponse::References(targets) => {
@@ -2072,6 +2115,41 @@ impl EditorView {
         }));
     }
 
+    fn schedule_error_lens(&mut self, cx: &mut Context<Self>) {
+        self.error_lens_task = None;
+        self.error_lens_revision = None;
+        if !self.prefs.error_lens() || !self.prefs.diagnostics() {
+            cx.notify();
+            return;
+        }
+        if self
+            .language_service_state
+            .snapshot()
+            .diagnostics
+            .is_empty()
+        {
+            cx.notify();
+            return;
+        }
+
+        let revision = self.editor_revision();
+        let delay = std::time::Duration::from_millis(self.prefs.error_lens_delay_ms());
+        self.error_lens_task = Some(cx.spawn(async move |view, cx| {
+            cx.background_executor().timer(delay).await;
+            let _ = view.update(cx, |this, cx| {
+                if this.editor_revision() != revision
+                    || !this.prefs.error_lens()
+                    || !this.prefs.diagnostics()
+                {
+                    return;
+                }
+                this.error_lens_revision = Some(revision);
+                this.error_lens_task = None;
+                cx.notify();
+            });
+        }));
+    }
+
     fn submit_rename(&mut self, new_name: String, cx: &mut Context<Self>) {
         let new_name = new_name.trim().to_string();
         self.rename_requested = false;
@@ -2223,6 +2301,7 @@ impl EditorView {
                 &self.language_service_state.snapshot().diagnostics,
                 &snapshot,
                 doc_pos,
+                self.prefs.diagnostics_max_severity(),
             )
             .map(diagnostic_hover_text)
         } else {
@@ -2259,6 +2338,8 @@ impl EditorView {
         }
         let inlay_hints_were_enabled = self.inlay_hints_enabled();
         let inlay_hints_setting_changed = p.inlay_hints() != self.prefs.inlay_hints();
+        let error_lens_was_enabled = self.prefs.error_lens() && self.prefs.diagnostics();
+        let error_lens_delay_changed = p.error_lens_delay_ms() != self.prefs.error_lens_delay_ms();
         self.prefs = p;
         if inlay_hints_setting_changed {
             self.inlay_hints_enabled_override = None;
@@ -2269,6 +2350,12 @@ impl EditorView {
         }
         if !self.prefs.selections_menu() {
             self.selection_menu_anchor = None;
+        }
+        if !self.prefs.error_lens() || !self.prefs.diagnostics() {
+            self.error_lens_task = None;
+            self.error_lens_revision = None;
+        } else if !error_lens_was_enabled || error_lens_delay_changed {
+            self.schedule_error_lens(cx);
         }
         self.cursor_blink_on = true;
         self.language_services.set_presentation_policy(
@@ -7629,8 +7716,19 @@ impl Render for EditorView {
         let git_inline_decorations =
             git_inline_decorations_for_view(&self.prefs, &self.git_gutter, &snapshot, &display);
         let service_state = self.language_service_state.snapshot();
+        let visible_diagnostics = service_state
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                scrollbar_shows_diagnostic(
+                    diagnostic.severity,
+                    self.prefs.diagnostics_max_severity(),
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>();
         let diagnostic_decorations = if self.prefs.diagnostics() {
-            display.diagnostic_decorations(&snapshot, &service_state.diagnostics)
+            display.diagnostic_decorations(&snapshot, &visible_diagnostics)
         } else {
             Vec::new()
         };
@@ -8066,7 +8164,85 @@ impl Render for EditorView {
                         .bg(color),
                 );
             }
-            row.child(text)
+            row = row.child(text);
+            let is_final_text_segment = match display_row.kind {
+                DisplayRowKind::Text { end_column, .. } => end_column >= snapshot.line_len(line),
+                DisplayRowKind::FoldPlaceholder { .. } => false,
+            };
+            if self.prefs.error_lens()
+                && self.prefs.diagnostics()
+                && self.error_lens_revision == Some(snapshot.revision())
+                && is_final_text_segment
+            {
+                if let Some((severity, message)) = error_lens_for_line(
+                    &visible_diagnostics,
+                    line,
+                    self.prefs.diagnostics_max_severity(),
+                ) {
+                    let line_length = snapshot.line_len(line);
+                    let (row_start, _) = match display_row.kind {
+                        DisplayRowKind::Text {
+                            start_column,
+                            end_column,
+                            ..
+                        } => (start_column, end_column),
+                        DisplayRowKind::FoldPlaceholder { .. } => (0, 0),
+                    };
+                    let source_end = display_row
+                        .display_column_for_source_position(Position::new(line, line_length))
+                        .unwrap_or_else(|| line_length.saturating_sub(row_start));
+                    let trailing_hint_width = display_row
+                        .inline_hints
+                        .iter()
+                        .filter(|hint| hint.source_column == line_length)
+                        .map(|hint| {
+                            hint.label.chars().count()
+                                + usize::from(hint.padding_left)
+                                + usize::from(hint.padding_right)
+                        })
+                        .sum::<usize>();
+                    let minimum_column = (self.prefs.error_lens_minimum_column() as usize)
+                        .saturating_sub(row_start);
+                    let lens_column = source_end
+                        .saturating_add(trailing_hint_width)
+                        .max(minimum_column);
+                    let left = (lens_column as f32 * char_w
+                        - display.viewport.left_column as f32 * char_w
+                        + self.prefs.error_lens_spacing() as f32 * font_px)
+                        .max(0.0);
+                    let available = (content_w - left).max(0.0);
+                    if available > 0.0 {
+                        let lens_color = match severity {
+                            labonair_editor::language_services::DiagnosticSeverity::Error => {
+                                ui_palette.error
+                            }
+                            labonair_editor::language_services::DiagnosticSeverity::Warning => {
+                                ui_palette.warning
+                            }
+                            labonair_editor::language_services::DiagnosticSeverity::Information
+                            | labonair_editor::language_services::DiagnosticSeverity::Hint => {
+                                ui_palette.info
+                            }
+                        };
+                        row = row.child(
+                            div()
+                                .absolute()
+                                .left(px(left))
+                                .top_0()
+                                .h(px(line_h))
+                                .max_w(px(available))
+                                .flex()
+                                .items_center()
+                                .whitespace_nowrap()
+                                .overflow_hidden()
+                                .text_size(px((font_px * 0.85).max(8.0)))
+                                .text_color(lens_color.opacity(0.9))
+                                .child(SharedString::from(message)),
+                        );
+                    }
+                }
+            }
+            row
         });
 
         // Caret + current-line band use the same display map as mouse mapping.
@@ -9323,14 +9499,63 @@ mod tests {
             },
         ];
 
-        let found = diagnostic_at_position(&diagnostics, &snapshot, Position::new(0, 1))
-            .expect("diagnostic at the cursor");
+        let found = diagnostic_at_position(
+            &diagnostics,
+            &snapshot,
+            Position::new(0, 1),
+            EditorDiagnosticMaxSeverity::All,
+        )
+        .expect("diagnostic at the cursor");
         assert_eq!(found.severity, Severity::Error);
         assert_eq!(
             diagnostic_hover_text(found),
             "Error (E101): invalid token\ntest-lsp"
         );
-        assert!(diagnostic_at_position(&diagnostics, &snapshot, Position::new(0, 4)).is_none());
+        assert!(diagnostic_at_position(
+            &diagnostics,
+            &snapshot,
+            Position::new(0, 4),
+            EditorDiagnosticMaxSeverity::All,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn error_lens_selects_the_highest_visible_diagnostic_for_a_line() {
+        use labonair_editor::language_services::DiagnosticSeverity as Severity;
+
+        let make = |line, severity, message: &str| labonair_editor::Diagnostic {
+            range: LspRange {
+                start: LspPosition { line, character: 0 },
+                end: LspPosition { line, character: 1 },
+            },
+            severity,
+            message: message.into(),
+            source: labonair_editor::LanguageServerId::new("test-lsp"),
+            code: None,
+        };
+        let diagnostics = vec![
+            make(0, Severity::Warning, "  review   this value "),
+            make(0, Severity::Error, "invalid value"),
+            make(1, Severity::Hint, "a hint on another line"),
+        ];
+
+        assert_eq!(
+            error_lens_for_line(&diagnostics, 0, EditorDiagnosticMaxSeverity::All),
+            Some((Severity::Error, "invalid value".into()))
+        );
+        assert_eq!(
+            error_lens_for_line(&diagnostics, 0, EditorDiagnosticMaxSeverity::Warning),
+            Some((Severity::Error, "invalid value".into()))
+        );
+        assert_eq!(
+            error_lens_for_line(&diagnostics, 1, EditorDiagnosticMaxSeverity::Warning),
+            None
+        );
+        assert_eq!(
+            error_lens_for_line(&diagnostics, 0, EditorDiagnosticMaxSeverity::Error),
+            Some((Severity::Error, "invalid value".into()))
+        );
     }
 
     #[gpui::test]

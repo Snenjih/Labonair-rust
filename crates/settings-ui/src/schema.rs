@@ -730,6 +730,25 @@ pub fn all_fields() -> Vec<AnyField> {
             "Show syntax and language-service diagnostics."
         ),
         field!(
+            editor.editor_diagnostics_max_severity,
+            "editorDiagnosticsMaxSeverity",
+            Select(&[
+                ("all", "All severities"),
+                ("information", "Information and above"),
+                ("warning", "Warnings and errors"),
+                ("error", "Errors only")
+            ]),
+            "Diagnostic severity",
+            "Set the highest severity shown in the editor and Error Lens."
+        ),
+        field!(
+            editor.editor_error_lens,
+            "editorErrorLens",
+            Switch,
+            "Error Lens",
+            "Show the highest-severity diagnostic message after its source line."
+        ),
+        field!(
             editor.editor_semantic_tokens,
             "editorSemanticTokens",
             Switch,
@@ -910,6 +929,33 @@ pub fn all_fields() -> Vec<AnyField> {
             "Inlay scroll delay",
             "Wait after scrolling before requesting inlay hints for the viewport.",
             "ms",
+            "Applies to the active editor buffer."
+        ),
+        field_with_details!(
+            editor.editor_error_lens_delay_ms,
+            "editorErrorLensDelayMs",
+            Int { min: 0, max: 5000, step: 50 },
+            "Error Lens delay",
+            "Wait before updating inline diagnostic messages.",
+            "ms",
+            "Applies after diagnostics change."
+        ),
+        field_with_details!(
+            editor.editor_error_lens_spacing,
+            "editorErrorLensSpacing",
+            Int { min: 0, max: 32, step: 1 },
+            "Error Lens spacing",
+            "Set the gap between source text and inline diagnostic messages.",
+            "em",
+            "Applies to the active editor buffer."
+        ),
+        field_with_details!(
+            editor.editor_error_lens_minimum_column,
+            "editorErrorLensMinimumColumn",
+            Int { min: 0, max: 2000, step: 10 },
+            "Error Lens minimum column",
+            "Set the earliest display column for inline diagnostic messages.",
+            "columns",
             "Applies to the active editor buffer."
         ),
         field_with_details!(
@@ -1255,6 +1301,47 @@ mod tests {
             assert!(matches!(field.control, FieldControl::Int { .. }));
             assert!((field.set)(&mut content, Value::from(450)));
             assert_eq!((field.get)(&content), Some(Value::from(450)));
+        }
+    }
+
+    #[test]
+    fn editor_error_lens_controls_are_registered_and_editable() {
+        let mut content = SettingsContent::default();
+        let fields = all_fields();
+        let severity = fields
+            .iter()
+            .find(|field| field.json_path == "editor.editorDiagnosticsMaxSeverity")
+            .expect("diagnostic severity setting");
+        assert!(matches!(severity.control, FieldControl::Select(_)));
+        assert!((severity.set)(
+            &mut content,
+            Value::String("warning".into())
+        ));
+        assert_eq!(
+            (severity.get)(&content),
+            Some(Value::String("warning".into()))
+        );
+
+        let enabled = fields
+            .iter()
+            .find(|field| field.json_path == "editor.editorErrorLens")
+            .expect("Error Lens setting");
+        assert!(matches!(enabled.control, FieldControl::Switch));
+        assert!((enabled.set)(&mut content, Value::Bool(true)));
+        assert_eq!((enabled.get)(&content), Some(Value::Bool(true)));
+
+        for path in [
+            "editor.editorErrorLensDelayMs",
+            "editor.editorErrorLensSpacing",
+            "editor.editorErrorLensMinimumColumn",
+        ] {
+            let field = fields
+                .iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing Error Lens setting {path}"));
+            assert!(matches!(field.control, FieldControl::Int { .. }));
+            assert!((field.set)(&mut content, Value::from(250)));
+            assert_eq!((field.get)(&content), Some(Value::from(250)));
         }
     }
 
