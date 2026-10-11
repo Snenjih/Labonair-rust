@@ -70,6 +70,7 @@ The [Vim Decrement packet](action-classification-vim-decrement.md) classifies su
 The [Vim DeleteLeft packet](action-classification-vim-delete-left.md) classifies Normal `shift-x` as a counted, line-bounded Left delete with Vim register effects, distinguishes Visual and Helix `shift-x` actions, and records Labonair uppercase `X`'s missing register update. Platform dispatch and native acceptance remain open.
 The [Vim DeleteRight packet](action-classification-vim-delete-right.md) classifies Normal `x` and `delete` as counted, line-bounded Right deletes with Vim register effects, distinguishes Visual and Helix actions, and records Labonair's partial lowercase-x route. Platform dispatch and native acceptance remain open.
 The [Vim DeleteToEndOfLine packet](action-classification-vim-delete-to-end-of-line.md) classifies Normal and Helix Normal `shift-d` as counted EndOfLine deletion, records the distinct Visual route, and identifies Labonair D's count and blank-row gaps. Platform dispatch and native acceptance remain open.
+The [Vim DoubleQuotes packet](action-classification-vim-double-quotes.md) classifies same-row Vim inside/around and `cs` quote behavior, Helix directional boundaries, the AnyPair current-selection distinction, and Labonair's missing object workflow. Platform dispatch and native acceptance remain open.
 
 ## Current Labonair capability reconciliation
 

@@ -7622,3 +7622,44 @@ Next safe task: Continue R07-000 with `vim::DoubleQuotes` after completing this 
 - First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 257 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`.
 - Rust build/tests, blank-row and count behavior, forced-motion, platform dispatch, and paired native evidence remain active goal acceptance gates.
 - Next safe task: Continue R07-000 with `vim::DoubleQuotes`; do not begin R07-001 or R09.
+
+
+## Pre-change contract — Vim DoubleQuotes
+
+~~~text
+Request type: Pinned double-quote text object, Vim inside/around and `cs` routes, Helix directional-object adapter, and local owner gap; documentation-only classification.
+Owner module: Editor owns quote ranges, selections, and operator effects; Keymap owns the shared Vim/Helix profile and user overrides; Settings owns mode values.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry points: Vim `i "` and `a "` complete the corresponding pending text-object operator, such as `di"`, `ci"`, and `yi"`; `cs " <new-pair>` uses the action to identify the old quote pair. The shared `"` row also completes Helix Next and Previous object operators. Helix current `m i/m a` uses `vim::AnyPair`, not `vim::DoubleQuotes`.
+Public typed contract: Unit action `vim::DoubleQuotes`, no arguments or action-specific setting. It dispatches `Object::DoubleQuotes`; the Vim range is a same-buffer-row pair of unescaped literal `"` characters. Inside excludes delimiters; around includes them and adjacent horizontal whitespace. The object range implementation does not apply its count argument.
+State owner: Editor owns selections and buffer ranges. Vim owns mode, pending object/delete/change/yank/surround operator, count, surround anchors, and operator completion. Vim Normal dispatch consumes the object through the pending operator; `cs` stores old-pair anchors and waits for the new delimiter. Helix Next/Previous uses a separate immediate-boundary adapter and updates selections without running a Vim edit operator.
+Persistence owner: No action-specific persistence. Text changes and register effects come from the consuming operator; pending operator/count and selection state are transient.
+Commands and keymap entries: ACT-REGISTRY-LINUX-vim-DoubleQuotes and KEYBIND-VIM-HELIX-9661856a930c with context `vim_operator == a || vim_operator == i || vim_operator == cs || vim_operator == helix_next || vim_operator == helix_previous`. Helix current-pair selection is a separate AnyPair route. No platform-default map binds this action.
+Events and registry contributions: Existing Vim text-object action, operator state, and shared profile row only; no new event or registry contribution proposed.
+Settings: Vim and Helix mode values gate the owning modes; no quote-specific setting.
+Notifications: None expected.
+UI-kit components: Existing Editor selection and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect without running `test_change_surrounding_character_objects`, `test_singleline_surrounding_character_objects`, `test_singleline_surrounding_character_objects_with_escape`, `test_delete_surrounding_character_objects`, `test_change_surrounds_vim`, and `test_select_any_pair_object`. Verify exactly which cover Vim `i"`/`a"`, `cs"`, escaping, and Helix current pair; no focused Helix DoubleQuotes Next/Previous fixture was found.
+Visual evidence: No layout change proposed. Paired native macOS Editor and Keymap evidence is required for selection, operator, and surround effects; cross-platform profile and Helix object dispatch require separate runtime checks.
+Security impact: None beyond text edits performed by the consuming operator in the active buffer.
+Performance impact: Vim quote matching scans the current buffer row; Helix directional boundary search can scan beyond the current row. Long lines/buffers, escaped quotes, unmatched delimiters, and many selections require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action registration, combined operator context, same-row Vim range, escaping fixture, `cs` route, separate Helix boundary adapter, and local object gap can be classified statically; palette listing, Helix directional results, platform dispatch, and paired native acceptance remain open.
+Documentation updates: New DoubleQuotes packet; registered-action row; shared binding annotation; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; pinned Vim/Helix object implementations, all shared binding contexts, representative fixtures, and absence of a local text-object route inspected. Static classification packet and parity index updates are complete; Helix directional selection, palette behavior, platform dispatch, and native acceptance remain open.
+Target status: Classify Vim `i"`/`a"`, `cs"` old-pair selection, and Helix Next/Previous separately; record raw same-row quote matching, whitespace expansion, ignored counts, escapes, the distinct AnyPair current selection, and the local gap.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no Vim/Helix quote text object, quote range scanner, operator-object route, `cs` old-pair path, or directional Helix selection route.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Palette availability, Helix Next/Previous, platform dispatch, native quote/operator behavior, and paired visual evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::DoubleQuotes` classification complete; then advance to the next earliest registered action without beginning R07-001 or R09.
+~~~
+
+
+## Vim DoubleQuotes action classification progress
+
+- Classified Vim `i"`/`a"`, `cs"` old-pair selection, and Helix `] "`/`[ "` directional routes. Recorded Vim's same-row literal scanner, one-backslash escape check, whitespace behavior, ignored object count, and Helix's separate raw boundary adapter and multiline risk. Helix current `m i`/`m a` remains the distinct AnyPair path.
+- Inspected pinned quote, escape, delete, surround-change, and AnyPair fixtures without running; no focused Helix DoubleQuotes Next/Previous fixture was found. Labonair has no corresponding quote object or mode routes.
+- Updated the DoubleQuotes packet, registered-action row, shared binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final documentation-only gate passes passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 258 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests, Helix directional selection, palette behavior, platform dispatch, paired native evidence remain active.
+- Next safe task: Continue R07-000 with the next earliest registered action; do not begin R07-001 or R09.
