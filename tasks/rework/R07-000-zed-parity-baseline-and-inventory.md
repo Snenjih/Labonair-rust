@@ -7077,3 +7077,45 @@ Next safe task: Continue R07-000 with vim::ColumnRight; do not begin R07-001 or 
 - Passed git diff --check, scripts/check_documentation.py (43 normative docs; 244 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
 - Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, profile/palette dispatch, native behavior, or paired visual evidence were run; these remain R07-000 acceptance gates.
 - Next safe task: Continue R07-000 with vim::ColumnRight; do not begin R07-001 or R09.
+
+## Pre-change contract — Vim ColumnRight action
+
+~~~text
+Request type: Pinned registered-action, horizontal viewport navigation, and shared Vim/Helix profile inventory; documentation-only.
+Owner module: Editor owns viewport scrolling and cursor/selection updates; Keymap owns shared mode and user bindings; Settings owns Vim/Helix mode values; Command Palette owns existing Vim action discovery.
+Canonical capability crate: labonair-editor; profile composition in labonair-keymap.
+Canonical user entry point: Shared z l in VimControl && !menu; this context is present in Vim Normal, Visual, Operator, Helix Normal, and Helix Select. Focused-Editor Command Palette discovery is conditional on Vim/Helix.
+Public typed contract: Existing registered unit action vim::ColumnRight. It consumes the count (default one), consumes forced-motion state, exits temporary Normal mode, and requests ScrollAmount::Column(count). The viewport scrolls right; if the cursor was on screen before scrolling, its head may be clipped to remain within the visible columns. Labonair has an EditorViewSession scroll_left field but no connected interactive route or Vim action.
+State owner: Editor owns horizontal scroll offset, visible columns, and selections/cursor. Vim owns the pending count, forced-motion, and temporary-mode state used by the action.
+Persistence owner: EditorViewSession declares scroll_left with a default of zero, but no runtime read/write path for it was found. Keymap profile and Vim/Helix mode values use existing Keymap and Settings persistence.
+Commands and keymap entries: ACT-REGISTRY-LINUX-vim-ColumnRight; shared KEYBIND-VIM-HELIX-eb9e1a5e985f (z l, VimControl && !menu); no platform-default binding.
+Events and registry contributions: Existing Vim action registration, Editor viewport and selection behavior, shared mode profile, and generic palette route; no new event, registry, or shell-wide conditional.
+Settings: Existing Vim/Helix mode values gate the shared layer and Vim palette namespace; there is no ColumnRight-specific setting. Soft-wrap and preferred-line-length settings can affect how horizontal columns are represented.
+Notifications: None expected.
+UI-kit components: Existing Editor viewport, Command Palette, and Keymap only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect the pinned test_horizontal_scroll source fixture without running it. It covers z l from the left edge under a constrained viewport and cursor clipping; it does not test direct palette invocation, counts, platform dispatch, Visual/Helix modes, or right-edge clamping. Future owner work needs those cases, wrapping behavior, cursor on/off screen, selection types, multiple cursors, and horizontal-scroll persistence.
+Visual evidence: Viewport and sometimes cursor/selection move; paired native macOS Editor evidence is required. Linux/Windows shared-profile dispatch remains unverified.
+Security impact: None beyond local viewport state.
+Performance impact: No local runtime work; scrolling and optional selection adjustment follow the current viewport size.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Static action, shared z l binding, count/cursor/viewport algorithm, horizontal-scroll fixture, and local owner gap can be classified; native behavior and platform dispatch remain pending.
+Documentation updates: New ColumnRight packet; registered-action row; shared keybinding annotation; Linux/Windows layer note; packet index; commands.keymap and editor.text crosswalks; normative parity summary; task record. No memory note unless audit discovers a non-obvious bug or API issue.
+Current status: Pre-change contract recorded; source and local-owner audit complete; parity packet and register updates not yet made.
+Target status: Record counted rightward horizontal scrolling, viewport/cursor clipping, context availability, fixture evidence boundary, and missing local action without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has no Vim/Helix profile route or ColumnRight action. Its scroll_left session field is currently only a declared/defaulted data field in the inspected tree.
+Failed/unavailable gates: No gates run yet. This is a docs-only classification; tests, Rust build, profile/palette dispatch, native behavior, and paired visual evidence are not requested or run in this slice.
+Next safe task: Continue R07-000 with vim::Comment; do not begin R07-001 or R09.
+~~~
+
+
+## Progress — Vim ColumnRight action
+
+- Added [action-classification-vim-column-right.md](../../docs/parity/action-classification-vim-column-right.md) for ACT-REGISTRY-LINUX-vim-ColumnRight.
+- Classified the shared z l route under VimControl && !menu, its count-to-display-column scroll amount, left-edge gutter adjustment, temporary-mode/forced-motion consumption, and cursor clipping when scrolling right pushes an on-screen cursor outside the viewport. Recorded that Labonair's scroll_left session field has no interactive read/write route in the inspected tree.
+- Inspected the pinned test_horizontal_scroll fixture source without running it. It demonstrates z l moving the cursor into view from the left edge; right-edge clamping, direct palette, and cross-platform dispatch remain pending.
+- Updated the registered-action row, shared keybinding annotation, Linux/Windows layer note, packet index, commands.keymap and editor.text crosswalks, normative parity summary, and this task record. No memory note was needed because the audit found no new bug or API discovery.
+- Passed git diff --check, scripts/check_documentation.py (43 normative docs; 245 Markdown files), scripts/check_rework_queue.py (46 tasks; R07-000 remains earliest active), and verify.py scopes docs, agents, knowledge, settings, and queue.
+- Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation. No tests, Rust build, profile/palette dispatch, native behavior, or paired visual evidence were run; these remain R07-000 acceptance gates.
+- Next safe task: Continue R07-000 with vim::Comment; do not begin R07-001 or R09.

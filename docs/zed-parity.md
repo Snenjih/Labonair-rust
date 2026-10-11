@@ -365,6 +365,11 @@ records shared z h, counted display-column scrolling, cursor clipping
 to the visible range, and the missing local interactive route. Native
 viewport, palette, profile, and paired macOS acceptance remain open.
 The independent
+[`Vim ColumnRight action crosswalk`](parity/action-classification-vim-column-right.md)
+records shared z l, counted display-column scrolling, the left-edge
+gutter adjustment, cursor clipping into view, and the missing local
+interactive route. Native viewport, palette, profile, and paired macOS
+acceptance remain open. The independent
 [`Pane action crosswalk`](parity/action-classification-pane.md) maps static
 owner boundaries and current routes for 22 default-macOS Pane actions while
 preserving the universal-tab and Editor-group contracts; its runtime and
