@@ -8186,7 +8186,7 @@ Target status: Classify counted forward reference cycling, wrapping, result mapp
 Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
 Remaining migration edges: Labonair has a Go to References command and LSP service response, but no current-relative cycle, count/wrap behavior, `] r` route, or typed GoToNextReference action; the local response selects only the first returned target.
 Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Cross-file and multibuffer mapping, no-result/error presentation, palette, selection/mode transitions, platform key dispatch, and paired native evidence remain active goal acceptance gates.
-Next safe task: Continue R07-000 with `vim::GoToPreviousReference` after this packet; do not begin R07-001 or R09.
+Next safe task: Continue R07-000 with `vim::GoToPercentage` after this packet; do not begin R07-001 or R09.
 ~~~
 
 
@@ -8196,8 +8196,7 @@ Next safe task: Continue R07-000 with `vim::GoToPreviousReference` after this pa
 - Inspected the four-location `test_next_prev_reference` helper fixture, which covers next/previous, wrapping, and counts but not the Vim key action or cross-file, selection, and mode cases. Tests were inspected, not run. Labonair's `EditorGoToReferences` command uses its LSP contract but selects only the first result.
 - Updated the GoToNextReference packet, registered-action row, `] r` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final post-edit documentation-only gate sets passed: `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 271 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Palette, cross-file mapping, errors/no-result, mode/selection, platform, and paired native acceptance remain active.
-- Next safe task: Continue R07-000 with `vim::GoToPreviousReference`; do not begin R07-001 or R09.
-
+- Next safe task: Continue R07-000 with `vim::GoToPercentage`; do not begin R07-001 or R09.
 
 ## Pre-change contract — Vim GoToPercentage
 
@@ -8238,3 +8237,43 @@ Next safe task: Continue R07-000 with `vim::GoToPreviousReference` after this pa
 - Updated the GoToPercentage packet, registered-action row, counted `%` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
 - First and final post-edit documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 272 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Boundary/overflow, soft-wrap/multibuffer, operator/Visual, palette, platform dispatch, and paired native acceptance remain active.
 - Next safe task: Continue R07-000 with `vim::GoToPreviousReference`; do not begin R07-001 or R09.
+
+## Pre-change contract — Vim GoToPreviousReference
+
+~~~text
+Request type: Pinned counted backward LSP reference-cycle action, shared mode routes, result mapping/wrap/selection effects, and local first-result gap; documentation-only classification.
+Owner module: Editor owns reference navigation and cursor/selection state; Vim owns pending count and mode behavior; Keymap owns the shared Vim/Helix route; Settings owns Vim mode/profile values. The language service supplies LSP locations through the Editor contract.
+Canonical capability crates: labonair-editor and labonair-keymap.
+Canonical user entry point: Shared `[ r` route in Vim Normal, Visual, and Operator contexts. It asks for references at the newest selection head, moves backward by count (default one), wraps in the ordered mappable result list, unfolds and scrolls to the destination, then selects one caret at its start.
+Public typed contract: Unit action `vim::GoToPreviousReference`, no JSON arguments or aliases. The handler consumes count and delegates to the Editor's asynchronous reference navigation helper with `Direction::Prev`; it is direct navigation, not a Vim range motion.
+State owner: Vim owns transient count/mode/operator state; Editor owns selections and active MultiBuffer; the language service/project route resolves reference locations; Keymap owns the binding.
+Persistence owner: None; navigation changes only the active selection/caret and view position.
+Commands and keymap entries: `ACT-REGISTRY-LINUX-vim-GoToPreviousReference`; `KEYBIND-VIM-HELIX-040b589c9bc9` (`[ r`). Neighbor `] r` is the separate GoToNextReference action.
+Events and registry contributions: Existing action, language service and one shared keymap row only; no new event or registry contribution proposed.
+Settings: Existing Vim mode/profile gates the route and Vim namespace; reference provider availability comes from the active language service. No action-specific setting.
+Notifications: No explicit notification on the pinned no-result path; async request errors are detached and logged. Runtime presentation remains to verify.
+UI-kit components: Existing Editor selection/scroll and Keymap surfaces only; no new control.
+Allowed dependency changes: None.
+Tests: Documentation-only. Inspect action schema/handler, shared keymap contexts, reference helper's previous-index calculation, LSP include-declaration request, local GoToReferences response route, and the previous/count paths in `editor_tests.rs::test_next_prev_reference` without running tests.
+Visual evidence: No permanent layout change proposed. Paired native macOS Editor/Keymap evidence must record provider capability, result locations, counts/wrap, Visual/Operator effects, scroll/fold behavior, profile, platform, viewport, theme, and scale.
+Security impact: None identified; the action navigates to provider-returned locations in the active project.
+Performance impact: LSP request is asynchronous; reference locations are mapped and sorted before navigation. Large result sets, repeated counted requests, and cancellation require acceptance.
+Removal condition for compatibility code: None; no compatibility code introduced.
+Evidence decision: Action schema, profile contexts, asynchronous LSP route, previous count/modulo logic, wrap, declaration inclusion, direct selection effect, four-location helper fixture, and local first-result route can be classified statically; palette, provider/error behavior, cross-file mapping, mode/selection, platform, and native acceptance remain open.
+Documentation updates: New GoToPreviousReference packet; registered-action row; `[ r` annotation; Linux/Windows profile note; parity index; feature crosswalk; task record.
+Current status: Pre-change contract recorded; action and binding, LSP request/response path, helper sorting/previous count/wrap/selection logic, `test_next_prev_reference`, and local first-result behavior inspected. First and final post-edit documentation-only gate sets passed: diff check, documentation checker (43 normative docs, 273 Markdown files), queue checker (46 tasks; R07-000 active), and `docs`, `agents`, `knowledge`, `settings`, and `queue` scopes. Rust build/tests are outside this slice.
+Target status: Classify counted backward reference cycling, wrapping, result mapping, mode/selection effects, and Labonair's partial route without claiming runtime acceptance.
+Known limitations: Same-session pinned-source research and independently written requirements are redevelopment, not separated-room clean-room implementation.
+Remaining migration edges: Labonair has a Go to References command and LSP service response, but no current-relative cycle, count/wrap behavior, `[ r` route, or typed GoToPreviousReference action; the local response selects only the first returned target.
+Failed/unavailable gates: None at pre-change recording. Rust build/tests are outside this documentation-only slice. Cross-file and multibuffer mapping, no-result/error presentation, palette, selection/mode transitions, platform key dispatch, and paired native evidence remain active goal acceptance gates.
+Next safe task: Continue R07-000 with `vim::GoToPreviousTab` after this packet; do not begin R07-001 or R09.
+~~~
+
+
+## Vim GoToPreviousReference action classification progress
+
+- Classified shared `[ r` as count-based asynchronous backward LSP reference cycling. The helper maps and sorts locations within the active MultiBuffer, applies a backward modulo count with wrap, includes declarations in the request, unfolds and scrolls to the destination, and collapses selections to one caret. The adjacent `] r` action is a separate forward route.
+- Inspected the four-location `test_next_prev_reference` fixture, which covers both directions, wrap, and counts but not the Vim key action or cross-file, selection, and mode cases. Tests were inspected, not run. Labonair's `EditorGoToReferences` command uses its LSP contract but selects only the first result.
+- Updated the GoToPreviousReference packet, registered-action row, `[ r` binding annotation, Linux/Windows profile note, parity index, feature crosswalk, and task record. Same-session pinned-source analysis and independently written requirements are redevelopment, not separated-room clean-room implementation.
+- First and final post-edit documentation-only gate sets passed `git diff --check`, `scripts/check_documentation.py` (43 normative docs, 273 Markdown files), `scripts/check_rework_queue.py` (46 tasks; R07-000 remains active), and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Rust build/tests are outside this documentation-only slice. Palette, cross-file mapping, no-result/error behavior, mode/selection, platform, and paired native acceptance remain active.
+- Next safe task: Continue R07-000 with `vim::GoToPreviousTab`; do not begin R07-001 or R09.
