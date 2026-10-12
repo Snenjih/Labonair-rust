@@ -28,7 +28,9 @@ use gpui::{
     ScrollHandle, ScrollWheelEvent, SharedString, StatefulInteractiveElement, Window,
 };
 
-use labonair_editor::{BufferSnapshot, Language};
+use labonair_editor::{
+    BufferSnapshot, EditorBuffer, HighlightKind, Language, StyledRun, SyntaxHighlighter,
+};
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{button, divider, Axis, ButtonSize, ButtonVariant, Palette};
 
@@ -112,6 +114,41 @@ fn resolve_markdown_image_path(base: &str, src: &str) -> Option<PathBuf> {
         MarkdownLinkTarget::Local { path, .. } => Some(path),
         MarkdownLinkTarget::External(_) | MarkdownLinkTarget::Anchor(_) => None,
     }
+}
+
+fn markdown_fence_language(value: &str) -> Option<Language> {
+    let value = value
+        .trim()
+        .trim_start_matches('{')
+        .trim_start_matches('.')
+        .split_whitespace()
+        .next()?
+        .trim_end_matches('}')
+        .to_ascii_lowercase();
+    Some(match value.as_str() {
+        "rs" | "rust" => Language::Rust,
+        "toml" => Language::Toml,
+        "json" | "jsonc" => Language::Json,
+        "yaml" | "yml" => Language::Yaml,
+        "md" | "markdown" => Language::Markdown,
+        "html" | "htm" => Language::Html,
+        "xml" | "svg" => Language::Xml,
+        "css" | "scss" | "less" => Language::Css,
+        "js" | "javascript" | "jsx" | "mjs" | "cjs" => Language::JavaScript,
+        "ts" | "typescript" | "tsx" => Language::TypeScript,
+        "py" | "python" | "pyi" => Language::Python,
+        "go" => Language::Go,
+        "c" | "h" => Language::C,
+        "cc" | "cpp" | "cxx" | "hpp" | "c++" => Language::Cpp,
+        "sh" | "bash" | "shell" => Language::Shell,
+        "sql" => Language::Sql,
+        "java" => Language::Java,
+        "php" => Language::Php,
+        "rb" | "ruby" => Language::Ruby,
+        "swift" => Language::Swift,
+        "kt" | "kotlin" => Language::Kotlin,
+        _ => return None,
+    })
 }
 
 fn markdown_image_sources(blocks: &[MdBlock]) -> Vec<String> {
@@ -229,6 +266,7 @@ struct TabularPreview {
 }
 
 const MAX_TABLE_PREVIEW_ROWS: usize = 1_000;
+const MAX_MARKDOWN_CODE_BLOCK_BYTES: usize = 512 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum ImageZoom {
@@ -320,6 +358,7 @@ pub struct PreviewView {
     markdown_scroll: ScrollHandle,
     markdown_images: HashMap<String, PreviewImage>,
     markdown_source_path: Option<PathBuf>,
+    markdown_syntax_runs: HashMap<usize, Vec<Vec<StyledRun>>>,
     image_scroll: ScrollHandle,
     image_zoom: ImageZoom,
     image_pan: Option<ImagePan>,
@@ -339,6 +378,7 @@ impl PreviewView {
             markdown_scroll: ScrollHandle::new(),
             markdown_images: HashMap::new(),
             markdown_source_path: None,
+            markdown_syntax_runs: HashMap::new(),
             image_scroll: ScrollHandle::new(),
             image_zoom: ImageZoom::Fit,
             image_pan: None,
@@ -356,6 +396,7 @@ impl PreviewView {
         self.pending_fragment = None;
         self.markdown_source_path = None;
         self.markdown_images.clear();
+        self.markdown_syntax_runs.clear();
         self.image_zoom = ImageZoom::Fit;
         self.image_pan = None;
         self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
@@ -374,6 +415,7 @@ impl PreviewView {
         self.pending_fragment = fragment;
         self.markdown_source_path = None;
         self.markdown_images.clear();
+        self.markdown_syntax_runs.clear();
         self.image_zoom = ImageZoom::Fit;
         self.image_pan = None;
         self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
@@ -396,6 +438,7 @@ impl PreviewView {
         if self.markdown_source_path != path || language != Language::Markdown {
             self.markdown_images.clear();
         }
+        self.markdown_syntax_runs.clear();
         self.markdown_source_path = path.clone();
         self.image_zoom = ImageZoom::Fit;
         self.image_pan = None;
@@ -411,6 +454,7 @@ impl PreviewView {
             Content::Unsupported("The followed editor buffer is not Markdown.".into())
         };
         self.load_markdown_images(cx);
+        self.load_markdown_code_highlights(cx);
         cx.notify();
     }
 
@@ -427,6 +471,7 @@ impl PreviewView {
         self.load_generation = self.load_generation.wrapping_add(1);
         let generation = self.load_generation;
         self.markdown_images.clear();
+        self.markdown_syntax_runs.clear();
         self.markdown_source_path = None;
         let url = self.url.clone();
         if url.is_empty() || is_remote_url(&url) {
@@ -461,6 +506,7 @@ impl PreviewView {
                 }
                 this.content = content;
                 this.load_markdown_images(cx);
+                this.load_markdown_code_highlights(cx);
                 if let Some(fragment) = this.pending_fragment.take() {
                     this.scroll_to_heading(&fragment, cx);
                 }
@@ -516,6 +562,61 @@ impl PreviewView {
                     return;
                 }
                 this.markdown_images.extend(images);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn load_markdown_code_highlights(&mut self, cx: &mut Context<Self>) {
+        let Content::Markdown(blocks) = &self.content else {
+            return;
+        };
+        let sources = blocks
+            .iter()
+            .enumerate()
+            .filter_map(|(index, block)| {
+                let MdBlock::Code { lang, text, .. } = block else {
+                    return None;
+                };
+                if text.len() > MAX_MARKDOWN_CODE_BLOCK_BYTES {
+                    return None;
+                }
+                Some((
+                    index,
+                    markdown_fence_language(lang.as_deref()?)?,
+                    text.clone(),
+                ))
+            })
+            .collect::<Vec<_>>();
+        if sources.is_empty() {
+            return;
+        }
+        let generation = self.load_generation;
+        cx.spawn(async move |this, cx| {
+            let highlights = cx
+                .background_executor()
+                .spawn(async move {
+                    sources
+                        .into_iter()
+                        .map(|(index, language, text)| {
+                            let buffer = EditorBuffer::from_text(&text);
+                            let snapshot = buffer.snapshot();
+                            let mut highlighter = SyntaxHighlighter::new(language);
+                            highlighter.update(&snapshot, 0..snapshot.byte_len());
+                            let lines = (0..snapshot.line_count())
+                                .map(|line| highlighter.line_runs(&snapshot, line))
+                                .collect();
+                            (index, lines)
+                        })
+                        .collect::<HashMap<_, _>>()
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.load_generation != generation {
+                    return;
+                }
+                this.markdown_syntax_runs = highlights;
                 cx.notify();
             });
         })
@@ -990,8 +1091,13 @@ impl Render for PreviewView {
                     muted,
                     border,
                     accent,
+                    primary: c.primary,
+                    success: c.success,
+                    warning: c.warning,
+                    info: c.info,
                     base: &self.url,
                     images: &self.markdown_images,
+                    syntax_runs: &self.markdown_syntax_runs,
                 };
                 div()
                     .id("preview-md")
@@ -1004,7 +1110,12 @@ impl Render for PreviewView {
                     .gap_2()
                     .text_color(fg)
                     .text_size(px(13.0))
-                    .children(blocks.iter().map(|block| render_block(block, &render, cx)))
+                    .children(
+                        blocks
+                            .iter()
+                            .enumerate()
+                            .map(|(index, block)| render_block(index, block, &render, cx)),
+                    )
                     .into_any_element()
             }
             Content::Table(table) => {
@@ -1254,8 +1365,13 @@ struct MarkdownRenderContext<'a> {
     muted: gpui::Hsla,
     border: gpui::Hsla,
     accent: gpui::Hsla,
+    primary: gpui::Hsla,
+    success: gpui::Hsla,
+    warning: gpui::Hsla,
+    info: gpui::Hsla,
     base: &'a str,
     images: &'a HashMap<String, PreviewImage>,
+    syntax_runs: &'a HashMap<usize, Vec<Vec<StyledRun>>>,
 }
 
 fn render_inlines(
@@ -1330,6 +1446,7 @@ fn render_inlines(
 }
 
 fn render_block(
+    block_index: usize,
     block: &MdBlock,
     render: &MarkdownRenderContext<'_>,
     cx: &mut Context<PreviewView>,
@@ -1411,16 +1528,64 @@ fn render_block(
             .child(table_row(headers, render, true, cx))
             .children(rows.iter().map(|row| table_row(row, render, false, cx)))
             .into_any_element(),
-        MdBlock::Code { text, .. } => div()
-            .font_family("mono")
-            .text_size(px(12.0))
-            .p_3()
-            .rounded_sm()
-            .border_1()
-            .border_color(border)
-            .whitespace_normal()
-            .child(SharedString::from(text.clone()))
-            .into_any_element(),
+        MdBlock::Code { lang, text, .. } => {
+            let code = if let Some(lines) = render.syntax_runs.get(&block_index) {
+                div()
+                    .flex()
+                    .flex_col()
+                    .children(lines.iter().map(|line| {
+                        div()
+                            .flex()
+                            .h(px(16.0))
+                            .whitespace_nowrap()
+                            .children(line.iter().map(|run| {
+                                let color = run
+                                    .kind
+                                    .map(|kind| markdown_syntax_color(kind, render))
+                                    .unwrap_or(fg);
+                                div()
+                                    .text_color(color)
+                                    .child(SharedString::from(run.text.clone()))
+                            }))
+                    }))
+                    .into_any_element()
+            } else {
+                div()
+                    .whitespace_normal()
+                    .child(SharedString::from(text.clone()))
+                    .into_any_element()
+            };
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .p_3()
+                .rounded_sm()
+                .border_1()
+                .border_color(border)
+                .child(
+                    div()
+                        .text_size(px(10.0))
+                        .text_color(muted)
+                        .child(lang.as_deref().unwrap_or("text").to_string()),
+                )
+                .child(div().font_family("mono").text_size(px(12.0)).child(code))
+                .into_any_element()
+        }
+    }
+}
+
+fn markdown_syntax_color(kind: HighlightKind, render: &MarkdownRenderContext<'_>) -> gpui::Hsla {
+    match kind {
+        HighlightKind::Keyword | HighlightKind::Tag => render.primary,
+        HighlightKind::Function
+        | HighlightKind::Type
+        | HighlightKind::Constructor
+        | HighlightKind::Namespace => render.info,
+        HighlightKind::String | HighlightKind::Escape => render.success,
+        HighlightKind::Number | HighlightKind::Boolean | HighlightKind::Constant => render.warning,
+        HighlightKind::Comment => render.muted,
+        _ => render.foreground,
     }
 }
 
@@ -1637,6 +1802,17 @@ mod tests {
     }
 
     #[test]
+    fn markdown_fence_languages_map_to_editor_languages() {
+        assert_eq!(markdown_fence_language("rust"), Some(Language::Rust));
+        assert_eq!(markdown_fence_language("{.rs}").unwrap(), Language::Rust);
+        assert_eq!(
+            markdown_fence_language("typescript title=sample.ts"),
+            Some(Language::TypeScript)
+        );
+        assert_eq!(markdown_fence_language("unknown"), None);
+    }
+
+    #[test]
     fn heading_fragments_normalize_text_and_distinguish_duplicates() {
         let blocks = parse_markdown("# Hello, World!\n\n## Hello World\n\n### Other");
         assert_eq!(heading_index_for_fragment(&blocks, "hello-world"), Some(0));
@@ -1764,6 +1940,41 @@ mod tests {
         });
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[gpui::test]
+    fn markdown_code_blocks_use_editor_syntax_highlighting(cx: &mut gpui::TestAppContext) {
+        let view = cx.update(|cx| {
+            let theme = cx.new(|_| ThemeStore::new(gpui::WindowAppearance::Light));
+            cx.new(|cx| PreviewView::new(theme, cx))
+        });
+        let source = labonair_editor::EditorBuffer::from_text(
+            "```rust\nfn main() { let answer = 42; }\n```",
+        )
+        .snapshot();
+        cx.update(|cx| {
+            view.update(cx, |preview, cx| {
+                preview.set_editor_source(
+                    Some(PathBuf::from("/docs/readme.md")),
+                    Language::Markdown,
+                    source,
+                    cx,
+                );
+            });
+        });
+
+        cx.background_executor.run_until_parked();
+        cx.update(|cx| {
+            let preview = view.read(cx);
+            let lines = preview
+                .markdown_syntax_runs
+                .get(&0)
+                .expect("the Rust fence should have highlighted runs");
+            assert!(lines
+                .iter()
+                .flatten()
+                .any(|run| { run.kind == Some(HighlightKind::Keyword) && run.text == "fn" }));
+        });
     }
 
     #[gpui::test]
