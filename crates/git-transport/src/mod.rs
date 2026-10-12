@@ -764,6 +764,22 @@ pub async fn git_unstage_hunk(
     apply_hunk_patch(&executor, &file, hunk_patch_text, true).await
 }
 
+/// Discards one reviewed editor hunk from the worktree. A staged hunk uses
+/// `git apply --index --reverse` so the index and worktree move back together;
+/// an unstaged or untracked hunk only changes the worktree.
+pub async fn git_discard_hunk(
+    path: String,
+    file: String,
+    hunk_patch_text: String,
+    staged: bool,
+    session_id: Option<String>,
+    sftp_state: &SshState,
+    events: EventBus,
+) -> Result<(), String> {
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
+    apply_discard_hunk_patch(&executor, &file, hunk_patch_text, staged).await
+}
+
 /// Shared `git apply --cached[--reverse]` dispatch for hunk stage/unstage.
 async fn apply_hunk_patch(
     executor: &GitExecutor,
@@ -779,6 +795,23 @@ async fn apply_hunk_patch(
         .run_with_stdin(&args, hunk_patch_text.into_bytes())
         .await
         .map_err(|e| classify_apply_error(&e, file))
+}
+
+async fn apply_discard_hunk_patch(
+    executor: &GitExecutor,
+    file: &str,
+    hunk_patch_text: String,
+    staged: bool,
+) -> Result<(), String> {
+    let mut args: Vec<&str> = vec!["apply"];
+    if staged {
+        args.push("--index");
+    }
+    args.push("--reverse");
+    executor
+        .run_with_stdin(&args, hunk_patch_text.into_bytes())
+        .await
+        .map_err(|error| classify_apply_error(&error, file))
 }
 
 /// `git apply --cached` fails with a "the patch doesn't match the index"
@@ -2157,6 +2190,84 @@ rename_src.txt\0\
             "expected nothing staged after unstaging hunk 1:\n{staged_after_unstage}"
         );
 
+        let raw_after_unstage = git_output(&dir, &["diff", "--", "tracked.txt"]);
+        let (header, first_hunk) = split_first_hunk(&raw_after_unstage);
+        let discard_patch = format!("{header}\n{first_hunk}\n");
+        apply_discard_hunk_patch(&executor, "tracked.txt", discard_patch.clone(), false)
+            .await
+            .expect("discard unstaged hunk");
+        let after_discard = git_output(&dir, &["diff", "--", "tracked.txt"]);
+        assert!(!after_discard.contains("a2_CHANGED"));
+        assert!(after_discard.contains("a14_CHANGED"));
+        let stale_discard =
+            apply_discard_hunk_patch(&executor, "tracked.txt", discard_patch, false).await;
+        assert!(stale_discard
+            .expect_err("discarding the same stale hunk must fail")
+            .starts_with("Diff is stale"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn discard_staged_hunk_updates_index_and_worktree_together() {
+        let dir = make_temp_repo("discard_staged");
+        let initial = "one\ntwo\nthree\n";
+        write_file(&dir, "tracked.txt", initial);
+        std::process::Command::new("git")
+            .args(["add", "tracked.txt"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-q", "-m", "init"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        write_file(&dir, "tracked.txt", "one\nchanged\nthree\n");
+        std::process::Command::new("git")
+            .args(["add", "tracked.txt"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let staged_diff = git_output(&dir, &["diff", "--cached", "--", "tracked.txt"]);
+        let (header, hunk) = split_first_hunk(&staged_diff);
+        let patch = format!("{header}\n{hunk}\n");
+        let executor = GitExecutor::Local {
+            cwd: dir.to_string_lossy().into_owned(),
+        };
+
+        apply_discard_hunk_patch(&executor, "tracked.txt", patch, true)
+            .await
+            .expect("discard staged hunk");
+
+        assert!(git_output(&dir, &["diff", "--cached", "--", "tracked.txt"]).is_empty());
+        assert!(git_output(&dir, &["diff", "--", "tracked.txt"]).is_empty());
+        assert_eq!(
+            std::fs::read_to_string(dir.join("tracked.txt")).unwrap(),
+            initial
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn discard_untracked_hunk_removes_the_untracked_file() {
+        let dir = make_temp_repo("discard_untracked");
+        write_file(&dir, "fresh.txt", "untracked content\n");
+        let diff = git_output(
+            &dir,
+            &["diff", "--no-index", "--", "/dev/null", "fresh.txt"],
+        );
+        let (header, hunk) = split_first_hunk(&diff);
+        let patch = format!("{header}\n{hunk}\n");
+        let executor = GitExecutor::Local {
+            cwd: dir.to_string_lossy().into_owned(),
+        };
+
+        apply_discard_hunk_patch(&executor, "fresh.txt", patch, false)
+            .await
+            .expect("discard untracked hunk");
+
+        assert!(!dir.join("fresh.txt").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -197,6 +197,17 @@ pub trait GitService: Send + Sync {
         patch: String,
         session_id: Option<String>,
     ) -> GitFuture<()>;
+    /// Revert one reviewed diff hunk from the worktree. When `staged` is true,
+    /// the patch compares the index to HEAD and must update both index and
+    /// worktree together.
+    fn discard_hunk(
+        &self,
+        path: String,
+        file: String,
+        patch: String,
+        staged: bool,
+        session_id: Option<String>,
+    ) -> GitFuture<()>;
     fn discard_file(&self, path: String, file: String, session_id: Option<String>)
         -> GitFuture<()>;
     fn stage_all(&self, path: String, session_id: Option<String>) -> GitFuture<()>;

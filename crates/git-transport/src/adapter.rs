@@ -306,6 +306,30 @@ impl GitService for GitTransportService {
         })
     }
 
+    fn discard_hunk(
+        &self,
+        path: String,
+        file: String,
+        patch: String,
+        staged: bool,
+        session_id: Option<String>,
+    ) -> GitFuture<()> {
+        let ssh_state = self.ssh_state.clone();
+        let events = self.events.clone();
+        Box::pin(async move {
+            super::git_discard_hunk(
+                path,
+                file,
+                patch,
+                staged,
+                session_id,
+                &ssh_state,
+                events.clone(),
+            )
+            .await
+        })
+    }
+
     fn discard_file(
         &self,
         path: String,

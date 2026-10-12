@@ -27,7 +27,7 @@ pub struct EditorGitContext {
 }
 
 /// A review intent waiting for Workspace to invoke the canonical Project Diff
-/// request. Stage and unstage are executed directly by this adapter.
+/// request. Git mutations are executed directly by this adapter.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QueuedEditorGitAction {
     pub action: GitHunkAction,
@@ -306,11 +306,7 @@ impl HunkActionSink for WorkspaceGitBridge {
                 let result = self.queue_review(action, context);
                 Box::pin(async move { result })
             }
-            GitHunkAction::Discard { .. } => Box::pin(async {
-                Err(GitGutterError::Provider(
-                    "Discarding an individual hunk is not supported by the Git capability; review the whole-file operation in Project Diff.".into(),
-                ))
-            }),
+            GitHunkAction::Discard { preview } => self.discard_hunk(context, preview),
             GitHunkAction::Stage { target, patch } => {
                 self.mutate_hunk(context, target.path, patch, true)
             }
@@ -322,6 +318,36 @@ impl HunkActionSink for WorkspaceGitBridge {
 }
 
 impl WorkspaceGitBridge {
+    fn discard_hunk(
+        &self,
+        context: EditorGitContext,
+        preview: labonair_editor::GitDiscardPreview,
+    ) -> GitProviderFuture<()> {
+        let git = self.git.clone();
+        let tokio = self.tokio.clone();
+        Box::pin(run_on_tokio(tokio, async move {
+            let Some(root) = context.root else {
+                return Err(GitGutterError::Provider(
+                    "Git actions require an explicit repository workspace".into(),
+                ));
+            };
+            let repo_root = git
+                .repo_root(root, context.session_id.clone())
+                .await
+                .map_err(GitGutterError::Provider)?;
+            let file = relative_path(&repo_root, &preview.target.path);
+            git.discard_hunk(
+                repo_root,
+                file,
+                preview.patch,
+                preview.staged,
+                context.session_id,
+            )
+            .await
+            .map_err(GitGutterError::Provider)
+        }))
+    }
+
     fn mutate_hunk(
         &self,
         context: EditorGitContext,

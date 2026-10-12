@@ -4540,9 +4540,12 @@ impl EditorView {
         let revision = self.editor_revision();
         let session_id = self.git_session_id.clone();
         let generation = self.git_refresh_generation;
+        let discard = matches!(&action, GitHunkAction::Discard { .. });
         let refresh_after = matches!(
             &action,
-            GitHunkAction::Stage { .. } | GitHunkAction::Unstage { .. }
+            GitHunkAction::Stage { .. }
+                | GitHunkAction::Unstage { .. }
+                | GitHunkAction::Discard { .. }
         );
         let result = sink.submit(action);
         // Workspace drains review intents from the bridge during its render
@@ -4556,6 +4559,10 @@ impl EditorView {
                     return;
                 }
                 match result {
+                    Ok(()) if discard => {
+                        this.refresh_git(cx);
+                        this.check_external(cx);
+                    }
                     Ok(()) if refresh_after => this.refresh_git(cx),
                     Ok(()) => cx.notify(),
                     Err(error) => notify(cx, "Git action failed", &error.to_string()),
@@ -7160,10 +7167,6 @@ impl EditorView {
         ))
     }
 
-    /// Hunk discard is intentionally not a direct editor mutation. The Git
-    /// capability currently exposes whole-file discard only, so the decision
-    /// surface explains the limitation and offers the canonical Project Diff
-    /// route instead.
     fn render_git_discard_confirmation(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let preview = self.git_discard_confirmation.clone()?;
         if !self.git_snapshot_is_current(&self.git_gutter)
@@ -7174,16 +7177,33 @@ impl EditorView {
         }
 
         let theme = self.theme.read(cx);
-        let (card, fg, border, accent, muted) = (
+        let (card, fg, border, muted) = (
             theme.card(),
             theme.foreground(),
             theme.border(),
-            theme.accent(),
             theme.muted_foreground(),
         );
         let palette = Palette::from_theme(theme);
         let view = cx.entity();
-        let target = preview.target.clone();
+        let discard_preview = preview.clone();
+        let patch_preview = preview
+            .patch
+            .lines()
+            .filter(|line| {
+                line.starts_with("@@")
+                    || (line.starts_with('+') && !line.starts_with("+++"))
+                    || (line.starts_with('-') && !line.starts_with("---"))
+            })
+            .take(10)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let impact = if preview.staged {
+            "This discards the hunk from both the index and working tree. This cannot be undone."
+        } else if preview.untracked {
+            "This removes the untracked file from disk. This cannot be undone."
+        } else {
+            "This discards the hunk from the working tree. This cannot be undone."
+        };
         Some(
             div()
                 .absolute()
@@ -7211,12 +7231,15 @@ impl EditorView {
                         )))
                         .child(
                             div()
-                                .text_size(px(12.0))
-                                .text_color(muted)
-                                .child(
-                                    "Individual hunk discard is not supported. Open Project Diff to review the whole-file operation.",
-                                ),
+                                .max_w(px(440.0))
+                                .p_2()
+                                .rounded_md()
+                                .bg(palette.input)
+                                .text_size(px(11.0))
+                                .font_family("monospace")
+                                .child(SharedString::from(patch_preview)),
                         )
+                        .child(div().text_size(px(12.0)).text_color(muted).child(impact))
                         .child(
                             div()
                                 .flex()
@@ -7232,32 +7255,33 @@ impl EditorView {
                                     .text_color(muted)
                                     .hover(|s| s.bg(border).text_color(fg))
                                     .child("Cancel")
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                        this.git_discard_confirmation = None;
-                                        cx.notify();
-                                    })),
+                                    .on_click(cx.listener(
+                                        |this, _: &ClickEvent, _w, cx| {
+                                            this.git_discard_confirmation = None;
+                                            cx.notify();
+                                        },
+                                    )),
                                 )
                                 .child(
                                     button(
-                                        "editor-git-discard-project-diff",
+                                        "editor-git-discard-confirm",
                                         palette,
-                                        ButtonVariant::Subtle,
+                                        ButtonVariant::TintedError,
                                         ButtonSize::Sm,
                                     )
-                                    .bg(accent)
-                                    .text_color(fg)
-                                    .hover(|s| s.opacity(0.85))
-                                    .child("Open Project Diff")
-                                    .on_click(move |_, _, cx| {
-                                        let target = target.clone();
-                                        view.update(cx, |this, cx| {
-                                            this.git_discard_confirmation = None;
-                                            this.submit_git_action(
-                                                GitHunkAction::OpenProjectDiff { target },
-                                                cx,
-                                            );
-                                        });
-                                    }),
+                                    .child("Discard Hunk")
+                                    .on_click(
+                                        move |_, _, cx| {
+                                            let preview = discard_preview.clone();
+                                            view.update(cx, |this, cx| {
+                                                this.git_discard_confirmation = None;
+                                                this.submit_git_action(
+                                                    GitHunkAction::Discard { preview },
+                                                    cx,
+                                                );
+                                            });
+                                        },
+                                    ),
                                 ),
                         ),
                 )

@@ -49,6 +49,12 @@ pub struct GitDiscardPreview {
     pub target: GitHunkTarget,
     pub summary: String,
     pub patch: String,
+    /// Whether this patch is based on the staged diff and must be removed
+    /// from both the index and the worktree.
+    pub staged: bool,
+    /// Untracked-file diffs are whole-file additions; reversing them removes
+    /// the untracked file from the worktree.
+    pub untracked: bool,
 }
 
 /// Typed editor intents. Git or Project Diff adapters execute these; the
@@ -109,6 +115,8 @@ impl GitHunk {
             target: self.target(path, revision),
             summary: format!("{} lines changed", self.new_lines.max(self.old_lines)),
             patch: self.patch.clone(),
+            staged: false,
+            untracked: self.status == GitHunkStatus::Untracked,
         }
     }
 
@@ -234,6 +242,18 @@ impl GitGutterSnapshot {
     /// projection. This keeps staging knowledge outside the editor parser.
     pub fn with_staged(mut self, staged: bool) -> Self {
         self.staged = staged;
+        if staged {
+            for hunk in &mut self.hunks {
+                if hunk.status == GitHunkStatus::Untracked {
+                    hunk.status = GitHunkStatus::Added;
+                }
+            }
+            for decoration in &mut self.decorations {
+                if decoration.status == GitHunkStatus::Untracked {
+                    decoration.status = GitHunkStatus::Added;
+                }
+            }
+        }
         self
     }
 
@@ -400,9 +420,11 @@ impl GitGutterSnapshot {
                 target,
                 patch: hunk.patch.clone(),
             },
-            GitHunkActionKind::Discard => GitHunkAction::Discard {
-                preview: hunk.discard_preview(&self.path, revision),
-            },
+            GitHunkActionKind::Discard => {
+                let mut preview = hunk.discard_preview(&self.path, revision);
+                preview.staged = self.staged;
+                GitHunkAction::Discard { preview }
+            }
             GitHunkActionKind::OpenProjectDiff => GitHunkAction::OpenProjectDiff { target },
             GitHunkActionKind::ShowChange => GitHunkAction::ShowChange { target },
         })
@@ -907,6 +929,15 @@ mod tests {
         assert!(
             matches!(discard, GitHunkAction::Discard { ref preview } if preview.summary.contains("lines") && preview.patch.contains("@@"))
         );
+
+        let staged_snapshot = snapshot.clone().with_staged(true);
+        let staged_discard = staged_snapshot
+            .action(id, Revision::default(), GitHunkActionKind::Discard)
+            .expect("staged discard action");
+        assert!(matches!(
+            staged_discard,
+            GitHunkAction::Discard { ref preview } if preview.staged && !preview.untracked
+        ));
     }
 
     #[test]
@@ -936,6 +967,24 @@ mod tests {
             .decorations
             .iter()
             .all(|d| d.status == GitHunkStatus::Untracked));
+
+        let staged = snapshot.with_staged(true);
+        assert_eq!(staged.hunks[0].status, GitHunkStatus::Added);
+        assert!(staged
+            .decorations
+            .iter()
+            .all(|decoration| decoration.status == GitHunkStatus::Added));
+        let action = staged
+            .action(
+                &staged.hunks[0].id,
+                Revision::default(),
+                GitHunkActionKind::Discard,
+            )
+            .expect("staged addition discard");
+        assert!(matches!(
+            action,
+            GitHunkAction::Discard { ref preview } if preview.staged && !preview.untracked
+        ));
     }
 
     #[test]
