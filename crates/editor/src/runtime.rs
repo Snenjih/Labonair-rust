@@ -327,7 +327,10 @@ impl LanguageServiceRuntime {
         if let (Some(_process), Some(state)) = (process, state) {
             if matches!(
                 state.status,
-                LanguageServiceRuntimeStatus::Starting | LanguageServiceRuntimeStatus::Running
+                LanguageServiceRuntimeStatus::Starting
+                    | LanguageServiceRuntimeStatus::Running
+                    | LanguageServiceRuntimeStatus::Fallback
+                    | LanguageServiceRuntimeStatus::Crashed
             ) {
                 return LanguageServiceRuntimeSnapshot {
                     language: language_id,
@@ -339,16 +342,6 @@ impl LanguageServiceRuntime {
                     generation,
                     detail: state.detail,
                 };
-            }
-            if matches!(state.status, LanguageServiceRuntimeStatus::Crashed) {
-                return self.fallback_snapshot(
-                    language_id,
-                    syntax,
-                    state.status,
-                    version,
-                    generation,
-                    state.detail,
-                );
             }
         }
         self.fallback_snapshot(
@@ -525,7 +518,17 @@ impl LanguageServiceRuntime {
         let Some(process) = self.process_for(language) else {
             return Ok(());
         };
-        process.stop().await
+        process.stop().await?;
+        self.set_state(
+            language,
+            RuntimeState {
+                status: LanguageServiceRuntimeStatus::Fallback,
+                detail: Some("language server is stopped".into()),
+                capabilities: process.capabilities().await,
+                server: process.server_id(),
+            },
+        );
+        Ok(())
     }
 
     pub async fn restart_process(&self, language: LanguageId) -> Result<(), LanguageServiceError> {

@@ -807,6 +807,25 @@ fn response_error_text(
         .unwrap_or_else(|| "language service returned an invalid response".to_string())
 }
 
+fn language_service_controls_available(snapshot: &LanguageServiceRuntimeSnapshot) -> bool {
+    snapshot.source == LanguageServiceRuntimeSource::LocalProcess
+        && !matches!(
+            snapshot.status,
+            LanguageServiceRuntimeStatus::Disabled | LanguageServiceRuntimeStatus::Unsupported
+        )
+}
+
+fn language_service_status_label(status: LanguageServiceRuntimeStatus) -> &'static str {
+    match status {
+        LanguageServiceRuntimeStatus::Disabled => "Disabled",
+        LanguageServiceRuntimeStatus::Starting => "Starting",
+        LanguageServiceRuntimeStatus::Running => "Running",
+        LanguageServiceRuntimeStatus::Crashed => "Crashed",
+        LanguageServiceRuntimeStatus::Fallback => "Stopped",
+        LanguageServiceRuntimeStatus::Unsupported => "Unsupported",
+    }
+}
+
 fn diagnostic_at_position<'a>(
     diagnostics: &'a [labonair_editor::Diagnostic],
     snapshot: &labonair_editor::BufferSnapshot,
@@ -947,6 +966,7 @@ pub struct EditorView {
     selection_menu_anchor: Option<Point<Pixels>>,
     editor_controls_anchor: Option<Point<Pixels>>,
     language_menu_anchor: Option<Point<Pixels>>,
+    language_service_menu_anchor: Option<Point<Pixels>>,
     language_list_state: ListState,
     line_ending_menu_anchor: Option<Point<Pixels>>,
     encoding_menu_anchor: Option<Point<Pixels>>,
@@ -1208,6 +1228,7 @@ impl EditorView {
             selection_menu_anchor: None,
             editor_controls_anchor: None,
             language_menu_anchor: None,
+            language_service_menu_anchor: None,
             language_list_state: ListState::new(Language::ALL.len(), ListAlignment::Top, px(32.0)),
             line_ending_menu_anchor: None,
             encoding_menu_anchor: None,
@@ -4007,6 +4028,7 @@ impl EditorView {
         self.line_ending_menu_anchor = None;
         self.encoding_menu_anchor = None;
         self.editor_controls_anchor = None;
+        self.language_service_menu_anchor = None;
         self.format_on_save_in_flight = false;
         self.save_intent_after_format = None;
         self.pending_navigation = None;
@@ -4121,6 +4143,7 @@ impl EditorView {
         self.line_ending_menu_anchor = None;
         self.encoding_menu_anchor = None;
         self.editor_controls_anchor = None;
+        self.language_service_menu_anchor = None;
         self.format_on_save_in_flight = false;
         self.save_intent_after_format = None;
         self.invalidate_git_requests();
@@ -6558,6 +6581,73 @@ impl EditorView {
         )
     }
 
+    fn render_language_service_menu(
+        &self,
+        palette: Palette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let anchor = self.language_service_menu_anchor?;
+        let status = self.language_service_snapshot.clone();
+        if !language_service_controls_available(&status) {
+            return None;
+        }
+        let editor = cx.entity();
+        let mut items = vec![MenuItem::label(format!(
+            "{} · {}",
+            status.server.as_str(),
+            language_service_status_label(status.status)
+        ))];
+        if let Some(detail) = status.detail {
+            items.push(MenuItem::label(detail));
+        }
+        if matches!(
+            status.status,
+            LanguageServiceRuntimeStatus::Starting | LanguageServiceRuntimeStatus::Running
+        ) {
+            let stop_editor = editor.clone();
+            items.push(
+                MenuItem::new("editor-language-service-stop", "Stop Language Server").on_click(
+                    move |_, _window, app| {
+                        stop_editor.update(app, |this, cx| {
+                            this.language_service_menu_anchor = None;
+                            let _ = this.dispatch_registered_command(
+                                CommandId::EditorStopLanguageServer,
+                                cx,
+                            );
+                        });
+                    },
+                ),
+            );
+        }
+        let restart_label = if status.status == LanguageServiceRuntimeStatus::Fallback {
+            "Start Language Server"
+        } else {
+            "Restart Language Server"
+        };
+        let restart_editor = editor.clone();
+        items.push(
+            MenuItem::new("editor-language-service-restart", restart_label).on_click(
+                move |_, _window, app| {
+                    restart_editor.update(app, |this, cx| {
+                        this.language_service_menu_anchor = None;
+                        let _ = this.dispatch_registered_command(
+                            CommandId::EditorRestartLanguageServer,
+                            cx,
+                        );
+                    });
+                },
+            ),
+        );
+        let dismiss_editor = editor;
+        let dismiss = move |_window: &mut Window, app: &mut App| {
+            dismiss_editor.update(app, |this, cx| {
+                this.language_service_menu_anchor = None;
+                cx.notify();
+            });
+        };
+        Some(popover_menu(anchor, palette, dismiss, items))
+    }
+
     /// Render the file-lifecycle state without putting non-text content into
     /// the editable buffer. Binary, oversized, missing and failed loads use a
     /// dedicated status surface; read-only text remains visible with editing
@@ -7199,6 +7289,32 @@ impl EditorView {
                 "{} lines",
                 snapshot.line_count()
             )));
+        if language_service_controls_available(&self.language_service_snapshot) {
+            let service_label =
+                language_service_status_label(self.language_service_snapshot.status);
+            let trigger = button(
+                "editor-language-service-status",
+                palette,
+                ButtonVariant::Transparent,
+                ButtonSize::Xs,
+            )
+            .child(SharedString::from(format!("LSP · {service_label}")))
+            .tooltip(|window, cx| {
+                Tooltip::new("Language service status and controls").build(window, cx)
+            })
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, event: &MouseDownEvent, _window, cx| {
+                    this.language_service_menu_anchor = Some(Point {
+                        x: event.position.x,
+                        y: event.position.y + px(4.0),
+                    });
+                    cx.stop_propagation();
+                    cx.notify();
+                }),
+            );
+            right = right.child(trigger);
+        }
         if self.diagnostics_enabled() && self.diagnostics_revision == Some(snapshot.revision()) {
             let diagnostics = self.language_service_state.snapshot().diagnostics;
             let (errors, warnings) = diagnostic_error_warning_counts(&diagnostics);
@@ -9755,6 +9871,7 @@ impl Render for EditorView {
             .children(self.render_recovery_banner(cx))
             .children(file_status)
             .children(self.render_language_service_status(cx))
+            .children(self.render_language_service_menu(ui_palette, cx))
             .child(buffer_surface)
             .children(self.render_selection_menu(ui_palette, cx))
             .children(self.render_editor_controls_menu(ui_palette, cx))
@@ -10074,6 +10191,32 @@ mod tests {
         let controls = available_editor_controls(capabilities);
         assert!(controls.contains(&EditorControl::InlayHints));
         assert!(controls.contains(&EditorControl::SemanticHighlights));
+    }
+
+    #[test]
+    fn language_service_controls_require_an_injected_process() {
+        let local = LanguageServiceRuntimeSnapshot {
+            language: LanguageId::new(Language::Rust),
+            server: labonair_editor::LanguageServerId::new("rust-analyzer"),
+            source: LanguageServiceRuntimeSource::LocalProcess,
+            status: LanguageServiceRuntimeStatus::Running,
+            capabilities: LanguageServiceCapabilities::SYNTAX_DERIVED,
+            version: DocumentVersion::new(1),
+            generation: 2,
+            detail: None,
+        };
+        assert!(language_service_controls_available(&local));
+        assert_eq!(language_service_status_label(local.status), "Running");
+
+        let mut stopped = local.clone();
+        stopped.status = LanguageServiceRuntimeStatus::Fallback;
+        assert!(language_service_controls_available(&stopped));
+        assert_eq!(language_service_status_label(stopped.status), "Stopped");
+
+        let mut fallback = local;
+        fallback.source = LanguageServiceRuntimeSource::SyntaxFallback;
+        fallback.status = LanguageServiceRuntimeStatus::Fallback;
+        assert!(!language_service_controls_available(&fallback));
     }
 
     #[test]
