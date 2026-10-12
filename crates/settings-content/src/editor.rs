@@ -326,6 +326,7 @@ pub struct EditorContent {
     pub editor_inlay_scroll_debounce_ms: Option<u32>,
     pub editor_git_gutter: Option<bool>,
     pub editor_git_word_diff: Option<bool>,
+    pub editor_git_blame_status: Option<bool>,
     pub editor_completion: Option<bool>,
     pub editor_hover: Option<bool>,
     pub editor_format_on_save: Option<bool>,
@@ -429,6 +430,7 @@ impl EditorContent {
             editor_inlay_scroll_debounce_ms: Some(50),
             editor_git_gutter: Some(true),
             editor_git_word_diff: Some(true),
+            editor_git_blame_status: Some(false),
             editor_completion: Some(true),
             editor_hover: Some(true),
             editor_format_on_save: Some(false),
@@ -481,6 +483,19 @@ mod tests {
     fn git_word_diff_uses_the_canonical_camel_case_key() {
         let value = serde_json::to_value(EditorContent::defaults()).expect("editor defaults");
         assert_eq!(value["editorGitWordDiff"], true);
+    }
+
+    #[test]
+    fn git_blame_status_defaults_off_and_uses_the_canonical_key() {
+        let defaults = EditorContent::defaults();
+        assert_eq!(defaults.editor_git_blame_status, Some(false));
+        let value = serde_json::to_value(defaults).expect("editor defaults");
+        assert_eq!(value["editorGitBlameStatus"], false);
+        let parsed: EditorContent = serde_json::from_value(serde_json::json!({
+            "editorGitBlameStatus": true
+        }))
+        .expect("blame status setting");
+        assert_eq!(parsed.editor_git_blame_status, Some(true));
     }
 
     #[test]

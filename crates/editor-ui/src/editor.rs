@@ -1237,7 +1237,7 @@ pub struct EditorView {
     git_blame_request: Option<(String, usize, Revision)>,
     git_blame_generation: u64,
     git_blame_task: Option<Task<()>>,
-    git_blame_enabled: bool,
+    git_blame_enabled_override: Option<bool>,
     git_context_menu: Option<(Point<Pixels>, String, Revision)>,
     text_context_menu: Option<Point<Pixels>>,
     character_palette_open: bool,
@@ -1540,7 +1540,7 @@ impl EditorView {
             git_blame_request: None,
             git_blame_generation: 0,
             git_blame_task: None,
-            git_blame_enabled: false,
+            git_blame_enabled_override: None,
             git_context_menu: None,
             text_context_menu: None,
             character_palette_open: false,
@@ -3953,6 +3953,11 @@ impl EditorView {
         let error_lens_was_enabled =
             self.inline_diagnostics_enabled() && self.diagnostics_enabled();
         let error_lens_delay_changed = p.error_lens_delay_ms() != self.prefs.error_lens_delay_ms();
+        let git_blame_was_enabled = self.git_blame_enabled();
+        let git_blame_setting_changed = p.git_blame_status() != self.prefs.git_blame_status();
+        if git_blame_setting_changed {
+            self.git_blame_enabled_override = None;
+        }
         if p.diagnostics() != self.prefs.diagnostics() {
             self.diagnostics_enabled_override = None;
         }
@@ -3978,6 +3983,17 @@ impl EditorView {
             self.modal_mode_override = None;
         }
         self.prefs = p;
+        let git_blame_is_enabled = self.git_blame_enabled();
+        if git_blame_was_enabled != git_blame_is_enabled {
+            if git_blame_is_enabled {
+                self.schedule_git_blame(cx);
+            } else {
+                self.git_blame_generation = self.git_blame_generation.wrapping_add(1);
+                self.git_blame_task = None;
+                self.git_blame_request = None;
+                self.git_blame = None;
+            }
+        }
         if inlay_hints_setting_changed {
             self.inlay_hints_enabled_override = None;
         }
@@ -4110,11 +4126,16 @@ impl EditorView {
             .unwrap_or_else(|| self.prefs.selections_menu())
     }
 
+    fn git_blame_enabled(&self) -> bool {
+        self.git_blame_enabled_override
+            .unwrap_or_else(|| self.prefs.git_blame_status())
+    }
+
     fn editor_control_enabled(&self, control: EditorControl) -> bool {
         match control {
             EditorControl::Diagnostics => self.diagnostics_enabled(),
             EditorControl::InlineDiagnostics => self.inline_diagnostics_enabled(),
-            EditorControl::GitBlame => self.git_blame_enabled,
+            EditorControl::GitBlame => self.git_blame_enabled(),
             EditorControl::LineNumbers => self.line_numbers_enabled(),
             EditorControl::Minimap => self.minimap_enabled(),
             EditorControl::SelectionMenu => self.selections_menu_enabled(),
@@ -4161,8 +4182,9 @@ impl EditorView {
                 }
             }
             EditorControl::GitBlame => {
-                self.git_blame_enabled = !self.git_blame_enabled;
-                if self.git_blame_enabled {
+                let enabled = !self.git_blame_enabled();
+                self.git_blame_enabled_override = Some(enabled);
+                if enabled {
                     self.schedule_git_blame(cx);
                 } else {
                     self.git_blame_generation = self.git_blame_generation.wrapping_add(1);
@@ -4813,7 +4835,7 @@ impl EditorView {
     }
 
     fn schedule_git_blame(&mut self, cx: &mut Context<Self>) {
-        if !self.git_blame_enabled {
+        if !self.git_blame_enabled() {
             self.git_blame = None;
             self.git_blame_request = None;
             return;
@@ -8848,7 +8870,7 @@ impl EditorView {
             );
         }
         if let Some(blame) = self.git_blame.as_ref().filter(|blame| {
-            self.git_blame_enabled
+            self.git_blame_enabled()
                 && blame.revision == snapshot.revision()
                 && blame.line == self.doc.cursor.line
                 && self.current_git_path().as_deref() == Some(blame.path.as_str())
@@ -13857,6 +13879,28 @@ mod tests {
                 assert!(this.helix.is_some());
                 this.toggle_editor_control(EditorControl::HelixMode, cx);
                 assert!(this.helix.is_none());
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn git_blame_status_setting_initializes_and_updates_the_editor_control(
+        cx: &mut TestAppContext,
+    ) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            install_editor_prefs(cx, |settings| settings.editor_git_blame_status = Some(true));
+            view.update(cx, |this, cx| {
+                this.apply_prefs(cx);
+                assert!(this.editor_control_enabled(EditorControl::GitBlame));
+            });
+
+            install_editor_prefs(cx, |settings| {
+                settings.editor_git_blame_status = Some(false)
+            });
+            view.update(cx, |this, cx| {
+                this.apply_prefs(cx);
+                assert!(!this.editor_control_enabled(EditorControl::GitBlame));
             });
         });
     }

@@ -517,6 +517,7 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_inlay_scroll_debounce_ms: Some(50),
         editor_git_gutter: Some(true),
         editor_git_word_diff: Some(true),
+        editor_git_blame_status: defaults.editor_git_blame_status,
         editor_completion: Some(true),
         editor_hover: Some(true),
         editor_format_on_save: Some(p.editor_format_on_save),

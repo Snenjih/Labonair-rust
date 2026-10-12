@@ -671,6 +671,10 @@ impl EditorSettings {
         self.0.editor_git_word_diff.unwrap_or(true)
     }
 
+    pub fn git_blame_status(&self) -> bool {
+        self.0.editor_git_blame_status.unwrap_or(false)
+    }
+
     pub fn completion(&self) -> bool {
         self.0.editor_completion.unwrap_or(true)
     }
@@ -1058,6 +1062,16 @@ mod tests {
         content.editor.editor_git_word_diff = Some(false);
         let settings = EditorSettings::from_settings(&content);
         assert!(!settings.git_word_diff());
+    }
+
+    #[test]
+    fn editor_git_blame_status_defaults_off_and_can_be_enabled() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(!defaults.git_blame_status());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_git_blame_status = Some(true);
+        assert!(EditorSettings::from_settings(&content).git_blame_status());
     }
 
     #[test]

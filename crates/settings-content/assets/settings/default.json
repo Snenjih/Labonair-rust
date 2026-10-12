@@ -133,6 +133,7 @@
     "editorInlayScrollDebounceMs": 50,
     "editorGitGutter": true,
     "editorGitWordDiff": true,
+    "editorGitBlameStatus": false,
     "editorCompletion": true,
     "editorHover": true,
     "editorFormatOnSave": false,

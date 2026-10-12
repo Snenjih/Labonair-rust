@@ -845,6 +845,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Show intra-line Git change decorations without changing gutter markers."
         ),
         field!(
+            editor.editor_git_blame_status,
+            "editorGitBlameStatus",
+            Switch,
+            "Git blame in status bar",
+            "Show author and commit information for the current line in the editor status bar."
+        ),
+        field!(
             editor.editor_completion,
             "editorCompletion",
             Switch,
@@ -1656,5 +1663,18 @@ mod tests {
         let mut content = SettingsContent::defaults();
         assert!((field.set)(&mut content, Value::Bool(false)));
         assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn editor_git_blame_status_is_a_canonical_switch_field() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorGitBlameStatus")
+            .expect("editorGitBlameStatus must be registered");
+        assert!(matches!(field.control, FieldControl::Switch));
+
+        let mut content = SettingsContent::defaults();
+        assert!((field.set)(&mut content, Value::Bool(true)));
+        assert_eq!((field.get)(&content), Some(Value::Bool(true)));
     }
 }
