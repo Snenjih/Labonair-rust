@@ -789,6 +789,7 @@ enum LanguageServiceRequestSlot {
     Completion,
     SignatureHelp,
     Navigation,
+    WorkspaceSymbols,
     TypeDefinition,
     CallHierarchy,
     CodeLens,
@@ -1202,6 +1203,7 @@ pub struct EditorView {
     navigation_results_title: String,
     navigation_results_selected: usize,
     navigation_result_direct: bool,
+    workspace_symbols_request_serial: Option<u64>,
     folding_ranges_request_serial: Option<u64>,
     language_service_request_serial: u64,
     code_actions: Option<Vec<labonair_editor::CodeAction>>,
@@ -1215,6 +1217,8 @@ pub struct EditorView {
     rename_input: Option<Entity<InputState>>,
     go_to_line_requested: bool,
     go_to_line_input: Option<Entity<InputState>>,
+    workspace_symbol_requested: bool,
+    workspace_symbol_input: Option<Entity<InputState>>,
     format_on_save_in_flight: bool,
     save_intent_after_format: Option<SaveIntent>,
     cursor_blink_on: bool,
@@ -1492,6 +1496,7 @@ impl EditorView {
             navigation_results_title: String::new(),
             navigation_results_selected: 0,
             navigation_result_direct: true,
+            workspace_symbols_request_serial: None,
             folding_ranges_request_serial: None,
             language_service_request_serial: 0,
             code_actions: None,
@@ -1505,6 +1510,8 @@ impl EditorView {
             rename_input: None,
             go_to_line_requested: false,
             go_to_line_input: None,
+            workspace_symbol_requested: false,
+            workspace_symbol_input: None,
             format_on_save_in_flight: false,
             save_intent_after_format: None,
             cursor_blink_on: true,
@@ -1802,6 +1809,13 @@ impl EditorView {
                 self.go_to_line_requested = true;
                 cx.notify();
             }
+            EditorCommandRoute::Ui(EditorUiCommand::GoToWorkspaceSymbol) => {
+                self.workspace_symbol_requested = true;
+                self.workspace_symbol_input = None;
+                self.workspace_symbols_request_serial = None;
+                self.navigation_results = None;
+                cx.notify();
+            }
             EditorCommandRoute::Ui(EditorUiCommand::GoBack) => self.navigate_history_back(cx),
             EditorCommandRoute::Ui(EditorUiCommand::GoForward) => self.navigate_history_forward(cx),
             EditorCommandRoute::Ui(EditorUiCommand::ToggleSearchSelection) => {
@@ -2062,6 +2076,7 @@ impl EditorView {
         direct_single_result: bool,
         cx: &mut Context<Self>,
     ) {
+        self.workspace_symbols_request_serial = None;
         self.navigation_results = None;
         self.navigation_results_title = title.to_string();
         self.navigation_results_selected = 0;
@@ -2458,6 +2473,9 @@ impl EditorView {
             | LanguageServiceRequest::References { position } => {
                 (LanguageServiceRequestSlot::Navigation, Some(*position))
             }
+            LanguageServiceRequest::WorkspaceSymbols { .. } => {
+                (LanguageServiceRequestSlot::WorkspaceSymbols, None)
+            }
             LanguageServiceRequest::TypeDefinition { position } => {
                 (LanguageServiceRequestSlot::TypeDefinition, Some(*position))
             }
@@ -2500,6 +2518,9 @@ impl EditorView {
             LanguageServiceRequestSlot::Navigation | LanguageServiceRequestSlot::TypeDefinition => {
                 self.navigation_request_serial = Some(request_serial);
                 self.navigation_position = request_position;
+            }
+            LanguageServiceRequestSlot::WorkspaceSymbols => {
+                self.workspace_symbols_request_serial = Some(request_serial);
             }
             LanguageServiceRequestSlot::InlayHints => {
                 self.inlay_hints_request_serial = Some(request_serial);
@@ -2562,6 +2583,7 @@ impl EditorView {
                             LanguageServiceRequestSlot::Completion
                                 | LanguageServiceRequestSlot::SignatureHelp
                                 | LanguageServiceRequestSlot::TypeDefinition
+                                | LanguageServiceRequestSlot::WorkspaceSymbols
                                 | LanguageServiceRequestSlot::CallHierarchy
                                 | LanguageServiceRequestSlot::CodeLens
                                 | LanguageServiceRequestSlot::DocumentLinks
@@ -2602,6 +2624,9 @@ impl EditorView {
                     && self.navigation_position == request_position
                     && request_position
                         .is_some_and(|position| self.current_lsp_position() == position)
+            }
+            LanguageServiceRequestSlot::WorkspaceSymbols => {
+                self.workspace_symbols_request_serial == Some(request_serial)
             }
             LanguageServiceRequestSlot::CallHierarchy => {
                 self.call_hierarchy_request_serial == Some(request_serial)
@@ -2718,6 +2743,15 @@ impl EditorView {
                     &response_error_text(&response),
                 );
                 cx.notify();
+            } else if slot == LanguageServiceRequestSlot::WorkspaceSymbols {
+                self.workspace_symbols_request_serial = None;
+                self.navigation_results = None;
+                notify(
+                    cx,
+                    "Workspace Symbols unavailable",
+                    &response_error_text(&response),
+                );
+                cx.notify();
             } else if slot == LanguageServiceRequestSlot::FoldingRanges {
                 self.server_fold_ranges.clear();
                 cx.notify();
@@ -2758,6 +2792,10 @@ impl EditorView {
                 self.present_navigation_results(targets, self.navigation_result_direct, cx);
             }
             LanguageServiceResponse::References(targets) => {
+                self.present_navigation_results(targets, false, cx);
+            }
+            LanguageServiceResponse::WorkspaceSymbols(targets) => {
+                self.workspace_symbols_request_serial = None;
                 self.present_navigation_results(targets, false, cx);
             }
             LanguageServiceResponse::CallHierarchyItems(items) => {
@@ -3280,6 +3318,39 @@ impl EditorView {
         cx.notify();
     }
 
+    fn submit_workspace_symbol_query(&mut self, query: &str, cx: &mut Context<Self>) {
+        self.workspace_symbol_requested = false;
+        self.workspace_symbol_input = None;
+        let query = query.trim();
+        if query.is_empty() {
+            notify_info(
+                cx,
+                "Workspace Symbols",
+                "Enter a symbol name to search the project.",
+            );
+            cx.notify();
+            return;
+        }
+        self.navigation_results = None;
+        self.navigation_results_title = "Workspace Symbols".into();
+        self.navigation_results_selected = 0;
+        self.navigation_result_direct = false;
+        self.navigation_request_serial = None;
+        self.navigation_position = None;
+        self.request_language_service(
+            LanguageServiceRequest::WorkspaceSymbols {
+                query: query.to_string(),
+            },
+            cx,
+        );
+    }
+
+    fn cancel_workspace_symbol_query(&mut self, cx: &mut Context<Self>) {
+        self.workspace_symbol_requested = false;
+        self.workspace_symbol_input = None;
+        cx.notify();
+    }
+
     fn ensure_rename_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.rename_requested || self.rename_input.is_some() {
             return;
@@ -3324,6 +3395,30 @@ impl EditorView {
             .detach();
         window.focus(&input.read(cx).focus_handle(cx));
         self.go_to_line_input = Some(input);
+    }
+
+    fn ensure_workspace_symbol_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.workspace_symbol_requested || self.workspace_symbol_input.is_some() {
+            return;
+        }
+        let input = cx.new(|cx| {
+            text_field(window, cx)
+                .placeholder("Symbol name")
+                .default_value("")
+        });
+        let view = cx.entity();
+        window
+            .subscribe(&input, cx, move |input, event: &InputEvent, _window, cx| {
+                if let InputEvent::PressEnter { secondary: false } = event {
+                    let query = input.read(cx).value().to_string();
+                    view.update(cx, |this, cx| {
+                        this.submit_workspace_symbol_query(&query, cx)
+                    });
+                }
+            })
+            .detach();
+        window.focus(&input.read(cx).focus_handle(cx));
+        self.workspace_symbol_input = Some(input);
     }
 
     fn apply_service_edits(&mut self, edits: Vec<Edit>, cx: &mut Context<Self>) {
@@ -6018,6 +6113,30 @@ impl EditorView {
             && !m.alt
         {
             self.cancel_go_to_line_column(cx);
+            cx.stop_propagation();
+            return;
+        }
+
+        if self.workspace_symbol_requested
+            && ks.key.as_str() == "escape"
+            && !m.platform
+            && !m.control
+            && !m.alt
+        {
+            self.cancel_workspace_symbol_query(cx);
+            cx.stop_propagation();
+            return;
+        }
+
+        if self.workspace_symbols_request_serial.is_some()
+            && ks.key.as_str() == "escape"
+            && !m.platform
+            && !m.control
+            && !m.alt
+        {
+            self.workspace_symbols_request_serial = None;
+            self.navigation_results = None;
+            cx.notify();
             cx.stop_propagation();
             return;
         }
@@ -10067,6 +10186,81 @@ impl EditorView {
             .into_any_element()
     }
 
+    fn render_workspace_symbol_dialog(
+        &self,
+        input: &Entity<InputState>,
+        palette: Palette,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let input_for_submit = input.clone();
+        let field_state = if input.read(cx).focus_handle(cx).is_focused(window) {
+            TextFieldState::Focused
+        } else {
+            TextFieldState::Normal
+        };
+        div()
+            .absolute()
+            .top(px(12.0))
+            .right(px(92.0))
+            .w(px(360.0))
+            .p_2()
+            .rounded_md()
+            .border_1()
+            .border_color(palette.border)
+            .bg(palette.popover)
+            .shadow_md()
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(palette.muted)
+                    .child("Go to workspace symbol"),
+            )
+            .child(text_field_surface(
+                "editor-workspace-symbol-input",
+                palette,
+                field_state,
+                text_input(input, palette),
+            ))
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_1()
+                    .mt_1()
+                    .child(
+                        button(
+                            "editor-workspace-symbol-cancel",
+                            palette,
+                            ButtonVariant::Subtle,
+                            ButtonSize::Xs,
+                        )
+                        .child("Cancel")
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, _window, cx| {
+                                this.cancel_workspace_symbol_query(cx);
+                            },
+                        )),
+                    )
+                    .child(
+                        button(
+                            "editor-workspace-symbol-submit",
+                            palette,
+                            ButtonVariant::Filled,
+                            ButtonSize::Xs,
+                        )
+                        .child("Search")
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _window, cx| {
+                                let query = input_for_submit.read(cx).value().to_string();
+                                this.submit_workspace_symbol_query(&query, cx);
+                            },
+                        )),
+                    ),
+            )
+            .into_any_element()
+    }
+
     fn symbols_for_snapshot(
         &mut self,
         snapshot: &labonair_editor::BufferSnapshot,
@@ -10131,6 +10325,7 @@ impl Render for EditorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.ensure_rename_input(window, cx);
         self.ensure_go_to_line_input(window, cx);
+        self.ensure_workspace_symbol_input(window, cx);
         let theme = self.theme.read(cx);
         let bg = theme.background();
         let fg = theme.foreground();
@@ -10224,6 +10419,7 @@ impl Render for EditorView {
         let ui_palette = Palette::from_theme(theme);
         let rename_input = self.rename_input.clone();
         let go_to_line_input = self.go_to_line_input.clone();
+        let workspace_symbol_input = self.workspace_symbol_input.clone();
         let symbols = self.symbols_for_snapshot(&snapshot);
         let syntax_ranges = self.syntax_folding_ranges_for_snapshot(&snapshot);
         let fold_candidates = fold_candidates(
@@ -11127,6 +11323,11 @@ impl Render for EditorView {
                     .as_ref()
                     .map(|input| self.render_go_to_line_dialog(input, ui_palette, window, cx)),
             )
+            .children(
+                workspace_symbol_input.as_ref().map(|input| {
+                    self.render_workspace_symbol_dialog(input, ui_palette, window, cx)
+                }),
+            )
             .children(self.render_hover_tooltip(cx))
             .children(self.render_git_context_menu(cx))
             .children(self.render_text_context_menu(cx))
@@ -11273,6 +11474,18 @@ mod tests {
                 assert!(!this.go_to_line_requested);
                 assert!(this.dispatch_registered_command(CommandId::EditorGoToLineColumn, cx));
                 assert!(this.go_to_line_requested);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn workspace_symbol_command_opens_the_editor_input(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                assert!(!this.workspace_symbol_requested);
+                assert!(this.dispatch_registered_command(CommandId::EditorGoToWorkspaceSymbol, cx));
+                assert!(this.workspace_symbol_requested);
             });
         });
     }
@@ -12623,6 +12836,43 @@ mod tests {
     }
 
     #[gpui::test]
+    fn workspace_symbol_response_uses_the_cross_file_navigation_picker(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("test.rs".into(), "struct Widget;\n", 1);
+                this.language_service_uri = Some("file:///workspace/test.rs".into());
+                let target = |uri: &str, line| NavigationTarget {
+                    name: "Widget".into(),
+                    uri: Some(uri.into()),
+                    range: LspRange {
+                        start: LspPosition { line, character: 0 },
+                        end: LspPosition { line, character: 6 },
+                    },
+                    selection_range: LspRange {
+                        start: LspPosition { line, character: 0 },
+                        end: LspPosition { line, character: 6 },
+                    },
+                };
+                this.navigation_results_title = "Workspace Symbols".into();
+                this.apply_language_service_response(
+                    Ok(LanguageServiceResponse::WorkspaceSymbols(vec![
+                        target("file:///workspace/a.rs", 2),
+                        target("file:///workspace/b.rs", 8),
+                    ])),
+                    LanguageServiceRequestSlot::WorkspaceSymbols,
+                    cx,
+                );
+                assert_eq!(this.navigation_results_title, "Workspace Symbols");
+                assert_eq!(this.navigation_results.as_ref().map(Vec::len), Some(2));
+                assert_eq!(this.navigation_results_selected, 0);
+                this.move_navigation_result_selection(1, cx);
+                assert_eq!(this.navigation_results_selected, 1);
+            });
+        });
+    }
+
+    #[gpui::test]
     fn navigation_response_is_discarded_after_the_caret_moves(cx: &mut TestAppContext) {
         let view = setup(cx);
         cx.update(|cx| {
@@ -12642,6 +12892,27 @@ mod tests {
                     LanguageServiceRequestSlot::Navigation,
                     4,
                     Some(position),
+                ));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn workspace_symbol_results_are_discarded_after_search_cancellation(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, _cx| {
+                this.workspace_symbols_request_serial = Some(9);
+                assert!(this.is_current_language_service_request(
+                    LanguageServiceRequestSlot::WorkspaceSymbols,
+                    9,
+                    None,
+                ));
+                this.workspace_symbols_request_serial = None;
+                assert!(!this.is_current_language_service_request(
+                    LanguageServiceRequestSlot::WorkspaceSymbols,
+                    9,
+                    None,
                 ));
             });
         });

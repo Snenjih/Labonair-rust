@@ -416,6 +416,7 @@ impl LocalLanguageServiceProcess {
                         inlay_hints: false,
                         document_colors: false,
                         document_symbols: false,
+                        workspace_symbols: false,
                         folding_ranges: false,
                         formatting: false,
                     },
@@ -813,6 +814,7 @@ impl LocalLanguageServiceProcess {
                 inlay_hints: false,
                 document_colors: false,
                 document_symbols: false,
+                workspace_symbols: false,
                 folding_ranges: false,
                 formatting: false,
             };
@@ -1117,6 +1119,9 @@ impl LocalLanguageServiceProcess {
             }
             LanguageServiceRequest::References { .. } => {
                 LanguageServiceResponse::References(parse_locations(&value))
+            }
+            LanguageServiceRequest::WorkspaceSymbols { .. } => {
+                LanguageServiceResponse::WorkspaceSymbols(parse_workspace_symbols(&value))
             }
             LanguageServiceRequest::PrepareCallHierarchy { .. } => {
                 LanguageServiceResponse::CallHierarchyItems(parse_call_hierarchy_items(&value))
@@ -1560,6 +1565,7 @@ fn parse_server_capabilities(value: &Value) -> (LanguageServiceCapabilities, Vec
             inlay_hints: advertised(capabilities.get("inlayHintProvider")),
             document_colors: advertised(capabilities.get("colorProvider")),
             document_symbols: advertised(capabilities.get("documentSymbolProvider")),
+            workspace_symbols: advertised(capabilities.get("workspaceSymbolProvider")),
             folding_ranges: advertised(capabilities.get("foldingRangeProvider")),
             formatting: advertised(capabilities.get("documentFormattingProvider")),
         },
@@ -1636,6 +1642,9 @@ fn request_parts(uri: &str, request: &LanguageServiceRequest) -> (&'static str, 
             "textDocument/references",
             json!({ "textDocument": text_document, "position": position_value(*position), "context": { "includeDeclaration": true } }),
         ),
+        LanguageServiceRequest::WorkspaceSymbols { query } => {
+            ("workspace/symbol", json!({ "query": query }))
+        }
         LanguageServiceRequest::PrepareCallHierarchy { position } => (
             "textDocument/prepareCallHierarchy",
             json!({ "textDocument": text_document, "position": position_value(*position) }),
@@ -1944,6 +1953,48 @@ fn parse_locations(value: &Value) -> Vec<NavigationTarget> {
                 uri: Some(uri),
                 range,
                 selection_range,
+            })
+        })
+        .collect()
+}
+
+fn parse_workspace_symbols(value: &Value) -> Vec<NavigationTarget> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let location = item.get("location")?;
+            let uri = location
+                .as_str()
+                .or_else(|| location.get("uri").and_then(Value::as_str))?
+                .to_string();
+            let range = location
+                .get("range")
+                .and_then(parse_range)
+                .or_else(|| item.get("range").and_then(parse_range))
+                .unwrap_or(LspRange {
+                    start: LspPosition {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: LspPosition {
+                        line: 0,
+                        character: 0,
+                    },
+                });
+            let name = item.get("name").and_then(Value::as_str).unwrap_or("symbol");
+            let name = item
+                .get("containerName")
+                .and_then(Value::as_str)
+                .filter(|container| !container.is_empty())
+                .map(|container| format!("{container}::{name}"))
+                .unwrap_or_else(|| name.to_string());
+            Some(NavigationTarget {
+                name,
+                uri: Some(uri),
+                range,
+                selection_range: range,
             })
         })
         .collect()
@@ -2512,6 +2563,47 @@ mod tests {
     }
 
     #[test]
+    fn workspace_symbol_request_uses_query_without_document_params() {
+        let request = LanguageServiceRequest::WorkspaceSymbols {
+            query: "Widget".into(),
+        };
+        let (method, params) = request_parts("file:///ignored.rs", &request);
+        assert_eq!(method, "workspace/symbol");
+        assert_eq!(params, json!({ "query": "Widget" }));
+        assert_eq!(
+            request.capability(),
+            crate::LanguageServiceCapability::WorkspaceSymbols
+        );
+    }
+
+    #[test]
+    fn workspace_symbol_responses_keep_file_and_selection_ranges() {
+        let symbols = parse_workspace_symbols(&json!([
+            {
+                "name": "render",
+                "containerName": "Widget",
+                "kind": 12,
+                "location": {
+                    "uri": "file:///src/widget.rs",
+                    "range": {
+                        "start": { "line": 8, "character": 4 },
+                        "end": { "line": 8, "character": 10 }
+                    }
+                }
+            },
+            { "name": "Widget", "location": "file:///src/lib.rs" },
+            { "name": "invalid", "location": { "range": {} } }
+        ]));
+        assert_eq!(symbols.len(), 2);
+        assert_eq!(symbols[0].name, "Widget::render");
+        assert_eq!(symbols[0].uri.as_deref(), Some("file:///src/widget.rs"));
+        assert_eq!(symbols[0].selection_range.start.line, 8);
+        assert_eq!(symbols[0].selection_range.start.character, 4);
+        assert_eq!(symbols[1].uri.as_deref(), Some("file:///src/lib.rs"));
+        assert_eq!(symbols[1].selection_range.start.line, 0);
+    }
+
+    #[test]
     fn declaration_and_implementation_use_distinct_lsp_methods() {
         let position = LspPosition {
             line: 4,
@@ -2782,13 +2874,14 @@ mod tests {
     #[test]
     fn advertised_capabilities_are_explicit() {
         let (capabilities, types) = parse_server_capabilities(
-            &json!({ "capabilities": { "hoverProvider": true, "declarationProvider": true, "implementationProvider": true, "typeDefinitionProvider": true, "callHierarchyProvider": true, "codeLensProvider": { "resolveProvider": true }, "executeCommandProvider": { "commands": ["fixture.run"] }, "documentLinkProvider": { "resolveProvider": true }, "inlayHintProvider": { "resolveProvider": true }, "colorProvider": true, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
+            &json!({ "capabilities": { "hoverProvider": true, "declarationProvider": true, "implementationProvider": true, "typeDefinitionProvider": true, "workspaceSymbolProvider": true, "callHierarchyProvider": true, "codeLensProvider": { "resolveProvider": true }, "executeCommandProvider": { "commands": ["fixture.run"] }, "documentLinkProvider": { "resolveProvider": true }, "inlayHintProvider": { "resolveProvider": true }, "colorProvider": true, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
         );
         assert!(capabilities.hover);
         assert!(capabilities.document_colors);
         assert!(capabilities.declaration);
         assert!(capabilities.implementation);
         assert!(capabilities.type_definition);
+        assert!(capabilities.workspace_symbols);
         assert!(capabilities.call_hierarchy);
         assert!(capabilities.code_lens);
         assert!(capabilities.code_lens_resolve);

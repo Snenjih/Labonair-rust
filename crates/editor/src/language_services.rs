@@ -324,6 +324,7 @@ pub enum LanguageServiceCapability {
     InlayHints,
     DocumentColors,
     DocumentSymbols,
+    WorkspaceSymbols,
     FoldingRanges,
     Formatting,
 }
@@ -387,6 +388,7 @@ pub struct LanguageServiceCapabilities {
     pub inlay_hints: bool,
     pub document_colors: bool,
     pub document_symbols: bool,
+    pub workspace_symbols: bool,
     pub folding_ranges: bool,
     pub formatting: bool,
 }
@@ -414,6 +416,7 @@ impl LanguageServiceCapabilities {
         inlay_hints: false,
         document_colors: false,
         document_symbols: true,
+        workspace_symbols: false,
         folding_ranges: true,
         formatting: true,
     };
@@ -441,6 +444,7 @@ impl LanguageServiceCapabilities {
             LanguageServiceCapability::InlayHints => self.inlay_hints,
             LanguageServiceCapability::DocumentColors => self.document_colors,
             LanguageServiceCapability::DocumentSymbols => self.document_symbols,
+            LanguageServiceCapability::WorkspaceSymbols => self.workspace_symbols,
             LanguageServiceCapability::FoldingRanges => self.folding_ranges,
             LanguageServiceCapability::Formatting => self.formatting,
         }
@@ -510,6 +514,9 @@ pub enum LanguageServiceRequest {
     },
     DocumentColors,
     DocumentSymbols,
+    WorkspaceSymbols {
+        query: String,
+    },
     FoldingRanges,
     Formatting,
 }
@@ -558,6 +565,7 @@ impl LanguageServiceRequest {
             Self::InlayHints { .. } => LanguageServiceCapability::InlayHints,
             Self::DocumentColors => LanguageServiceCapability::DocumentColors,
             Self::DocumentSymbols => LanguageServiceCapability::DocumentSymbols,
+            Self::WorkspaceSymbols { .. } => LanguageServiceCapability::WorkspaceSymbols,
             Self::FoldingRanges => LanguageServiceCapability::FoldingRanges,
             Self::Formatting => LanguageServiceCapability::Formatting,
         }
@@ -586,6 +594,7 @@ pub enum LanguageServiceResponse {
     InlayHints(Vec<InlayHint>),
     DocumentColors(Vec<DocumentColor>),
     DocumentSymbols(Vec<DocumentSymbol>),
+    WorkspaceSymbols(Vec<NavigationTarget>),
     FoldingRanges(Vec<FoldingRange>),
     Formatting(Vec<Edit>),
 }
@@ -1563,6 +1572,11 @@ impl LocalLanguageService for SyntaxLanguageService {
             LanguageServiceRequest::DocumentSymbols => LanguageServiceResponse::DocumentSymbols(
                 document_symbols(self.language.language(), snapshot),
             ),
+            LanguageServiceRequest::WorkspaceSymbols { .. } => {
+                return Err(LanguageServiceError::UnsupportedCapability(
+                    LanguageServiceCapability::WorkspaceSymbols,
+                ));
+            }
             LanguageServiceRequest::FoldingRanges => {
                 LanguageServiceResponse::FoldingRanges(self.folding_ranges(snapshot, cancellation))
             }

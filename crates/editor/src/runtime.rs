@@ -393,6 +393,7 @@ impl LanguageServiceRuntime {
                 inlay_hints: false,
                 document_colors: false,
                 document_symbols: false,
+                workspace_symbols: false,
                 folding_ranges: false,
                 formatting: false,
             });

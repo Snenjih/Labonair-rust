@@ -120,6 +120,7 @@ pub enum CommandId {
     EditorNextSnippetTabstop,
     EditorPreviousSnippetTabstop,
     EditorGoToLineColumn,
+    EditorGoToWorkspaceSymbol,
     EditorGoBack,
     EditorGoForward,
     EditorToggleSearchSelection,
@@ -636,6 +637,10 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (
         CommandId::EditorGoToLineColumn,
         "editor.go-to-line-column"
+    ),
+    (
+        CommandId::EditorGoToWorkspaceSymbol,
+        "editor.go-to-workspace-symbol"
     ),
     (CommandId::EditorGoBack, "editor.go-back"),
     (CommandId::EditorGoForward, "editor.go-forward"),

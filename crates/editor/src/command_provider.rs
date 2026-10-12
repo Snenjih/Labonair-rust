@@ -48,6 +48,7 @@ pub enum GitEditorCommand {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EditorUiCommand {
     GoToLineColumn,
+    GoToWorkspaceSymbol,
     GoBack,
     GoForward,
     ToggleSearchSelection,
@@ -130,6 +131,9 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
             EditorCommandRoute::Ui(EditorUiCommand::PreviousSnippetTabstop)
         }
         CommandId::EditorGoToLineColumn => EditorCommandRoute::Ui(EditorUiCommand::GoToLineColumn),
+        CommandId::EditorGoToWorkspaceSymbol => {
+            EditorCommandRoute::Ui(EditorUiCommand::GoToWorkspaceSymbol)
+        }
         CommandId::EditorGoBack => EditorCommandRoute::Ui(EditorUiCommand::GoBack),
         CommandId::EditorGoForward => EditorCommandRoute::Ui(EditorUiCommand::GoForward),
         CommandId::EditorToggleSearchSelection => {
@@ -311,6 +315,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorNextSnippetTabstop,
     CommandId::EditorPreviousSnippetTabstop,
     CommandId::EditorGoToLineColumn,
+    CommandId::EditorGoToWorkspaceSymbol,
     CommandId::EditorGoBack,
     CommandId::EditorGoForward,
     CommandId::EditorToggleSearchSelection,
@@ -573,6 +578,12 @@ impl CommandProvider for EditorCommandProvider {
             CommandDescriptor::new(
                 CommandId::EditorGoToLineColumn,
                 "Go to Line/Column…",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(
+                CommandId::EditorGoToWorkspaceSymbol,
+                "Go to Workspace Symbol…",
                 "Editor",
             )
             .with_contexts(&[CommandContext::Editor]),
@@ -1081,6 +1092,10 @@ mod tests {
         assert_eq!(
             route_for_command(CommandId::EditorGoBack),
             Some(EditorCommandRoute::Ui(EditorUiCommand::GoBack))
+        );
+        assert_eq!(
+            route_for_command(CommandId::EditorGoToWorkspaceSymbol),
+            Some(EditorCommandRoute::Ui(EditorUiCommand::GoToWorkspaceSymbol))
         );
         assert_eq!(
             route_for_command(CommandId::EditorGoForward),
