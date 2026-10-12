@@ -22,7 +22,8 @@ use std::sync::Arc;
 use gpui::prelude::*;
 use gpui::{
     div, img, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, Image, ImageFormat,
-    InteractiveElement, ObjectFit, ScrollHandle, SharedString, StatefulInteractiveElement, Window,
+    InteractiveElement, ObjectFit, ScrollHandle, ScrollWheelEvent, SharedString,
+    StatefulInteractiveElement, Window,
 };
 
 use labonair_editor::{BufferSnapshot, Language};
@@ -151,7 +152,7 @@ fn heading_slug(text: &str) -> String {
 enum Content {
     Empty,
     Loading,
-    Image(Arc<Image>),
+    Image(PreviewImage),
     Markdown(Vec<MdBlock>),
     /// Needs a browser engine — offer "open externally" only. `why` explains it.
     External {
@@ -159,6 +160,72 @@ enum Content {
     },
     Unsupported(SharedString),
     Error(SharedString),
+}
+
+#[derive(Clone)]
+struct PreviewImage {
+    image: Arc<Image>,
+    width: u32,
+    height: u32,
+    format: String,
+    bits_per_pixel: u16,
+    byte_len: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ImageZoom {
+    Fit,
+    ActualSize,
+    Scale(f32),
+}
+
+const MIN_IMAGE_ZOOM: f32 = 0.05;
+const MAX_IMAGE_ZOOM: f32 = 8.0;
+
+fn fit_image_scale(image_width: u32, image_height: u32, width: f32, height: f32) -> f32 {
+    if image_width == 0 || image_height == 0 || width <= 0.0 || height <= 0.0 {
+        return 1.0;
+    }
+    ((width / image_width as f32).min(height / image_height as f32))
+        .min(1.0)
+        .clamp(MIN_IMAGE_ZOOM, MAX_IMAGE_ZOOM)
+}
+
+fn image_zoom_scale(zoom: ImageZoom, fit_scale: f32) -> f32 {
+    match zoom {
+        ImageZoom::Fit => fit_scale,
+        ImageZoom::ActualSize => 1.0,
+        ImageZoom::Scale(scale) => scale.clamp(MIN_IMAGE_ZOOM, MAX_IMAGE_ZOOM),
+    }
+}
+
+fn image_scroll_offset_after_zoom(anchor: f32, offset: f32, ratio: f32) -> f32 {
+    anchor - (anchor - offset) * ratio
+}
+
+fn format_image_size(byte_len: usize) -> String {
+    const KIB: f64 = 1024.0;
+    let size = byte_len as f64;
+    if size >= KIB * KIB {
+        format!("{:.1} MiB", size / KIB / KIB)
+    } else if size >= KIB {
+        format!("{:.1} KiB", size / KIB)
+    } else {
+        format!("{byte_len} B")
+    }
+}
+
+impl PreviewImage {
+    fn metadata(&self) -> String {
+        format!(
+            "{} × {} · {} · {} bpp · {}",
+            self.width,
+            self.height,
+            self.format,
+            self.bits_per_pixel,
+            format_image_size(self.byte_len)
+        )
+    }
 }
 
 /// A single preview tab. Feed it an address (local path or URL) via
@@ -172,6 +239,8 @@ pub struct PreviewView {
     load_generation: u64,
     pending_fragment: Option<String>,
     markdown_scroll: ScrollHandle,
+    image_scroll: ScrollHandle,
+    image_zoom: ImageZoom,
 }
 
 impl PreviewView {
@@ -186,6 +255,8 @@ impl PreviewView {
             load_generation: 0,
             pending_fragment: None,
             markdown_scroll: ScrollHandle::new(),
+            image_scroll: ScrollHandle::new(),
+            image_zoom: ImageZoom::Fit,
         }
     }
 
@@ -198,6 +269,8 @@ impl PreviewView {
         self.url = url.into();
         self.source_bound = false;
         self.pending_fragment = None;
+        self.image_zoom = ImageZoom::Fit;
+        self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
         self.resolve_content(cx);
         cx.notify();
     }
@@ -211,6 +284,8 @@ impl PreviewView {
         self.url = url.into();
         self.source_bound = false;
         self.pending_fragment = fragment;
+        self.image_zoom = ImageZoom::Fit;
+        self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
         self.resolve_content(cx);
         cx.notify();
     }
@@ -227,6 +302,8 @@ impl PreviewView {
     ) {
         self.load_generation = self.load_generation.wrapping_add(1);
         self.pending_fragment = None;
+        self.image_zoom = ImageZoom::Fit;
+        self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
         self.url = path
             .as_ref()
             .map(|path| path.to_string_lossy().into_owned())
@@ -321,6 +398,67 @@ impl PreviewView {
             cx.notify();
         }
     }
+
+    fn zoom_image(
+        &mut self,
+        factor: f32,
+        viewport_width: f32,
+        viewport_height: f32,
+        anchor: Option<gpui::Point<gpui::Pixels>>,
+        cx: &mut Context<Self>,
+    ) {
+        let Content::Image(image) = &self.content else {
+            return;
+        };
+        let bounds = self.image_scroll.bounds();
+        let content_width = if f32::from(bounds.size.width) > 0.0 {
+            f32::from(bounds.size.width) - 16.0
+        } else {
+            viewport_width - 32.0
+        };
+        let content_height = if f32::from(bounds.size.height) > 0.0 {
+            f32::from(bounds.size.height) - 16.0
+        } else {
+            viewport_height - 64.0
+        };
+        let fit_scale = fit_image_scale(
+            image.width,
+            image.height,
+            content_width.max(1.0),
+            content_height.max(1.0),
+        );
+        let current = image_zoom_scale(self.image_zoom, fit_scale);
+        let next = (current * factor).clamp(MIN_IMAGE_ZOOM, MAX_IMAGE_ZOOM);
+        let offset = self.image_scroll.offset();
+        let anchor = anchor
+            .map(|point| {
+                (
+                    f32::from(point.x - bounds.origin.x),
+                    f32::from(point.y - bounds.origin.y),
+                )
+            })
+            .unwrap_or_else(|| {
+                (
+                    f32::from(bounds.size.width) / 2.0,
+                    f32::from(bounds.size.height) / 2.0,
+                )
+            });
+        let ratio = next / current.max(MIN_IMAGE_ZOOM);
+        let offset_x = image_scroll_offset_after_zoom(anchor.0, f32::from(offset.x), ratio);
+        let offset_y = image_scroll_offset_after_zoom(anchor.1, f32::from(offset.y), ratio);
+        self.image_scroll
+            .set_offset(gpui::point(px(offset_x), px(offset_y)));
+        self.image_zoom = ImageZoom::Scale(next);
+        cx.notify();
+    }
+
+    fn set_image_zoom(&mut self, zoom: ImageZoom, cx: &mut Context<Self>) {
+        if matches!(self.content, Content::Image(_)) {
+            self.image_zoom = zoom;
+            self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
+            cx.notify();
+        }
+    }
 }
 
 fn resolve(url: &str) -> Content {
@@ -336,7 +474,7 @@ fn resolve(url: &str) -> Content {
     let ext = ext_of(url).unwrap_or_default();
     match ext.as_str() {
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "ico" => match load_image(url) {
-            Ok(image) => Content::Image(Arc::new(image)),
+            Ok(image) => Content::Image(image),
             Err(e) => Content::Error(format!("Could not load image: {e}").into()),
         },
         "md" | "markdown" | "txt" | "text" => match std::fs::read_to_string(url) {
@@ -358,16 +496,30 @@ fn resolve(url: &str) -> Content {
     }
 }
 
-fn load_image(path: &str) -> Result<Image, String> {
+fn load_image(path: &str) -> Result<PreviewImage, String> {
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
     // Validate + normalise via the `image` crate, re-encoding to PNG so GPUI's
     // decoder always gets a format it supports (mirrors `background.rs`).
     let decoded = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
+    let width = decoded.width();
+    let height = decoded.height();
+    let bits_per_pixel = decoded.color().bits_per_pixel();
+    let format = image::guess_format(&bytes)
+        .map(|format| format!("{format:?}").to_uppercase())
+        .unwrap_or_else(|_| "IMAGE".to_string());
+    let byte_len = bytes.len();
     let mut out = std::io::Cursor::new(Vec::new());
     decoded
         .write_to(&mut out, image::ImageFormat::Png)
         .map_err(|e| e.to_string())?;
-    Ok(Image::from_bytes(ImageFormat::Png, out.into_inner()))
+    Ok(PreviewImage {
+        image: Arc::new(Image::from_bytes(ImageFormat::Png, out.into_inner())),
+        width,
+        height,
+        format,
+        bits_per_pixel,
+        byte_len,
+    })
 }
 
 /// Hand `target` (a path or URL) to the OS "open" handler.
@@ -389,7 +541,7 @@ impl Focusable for PreviewView {
 }
 
 impl Render for PreviewView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
         let bg = theme.background();
         let fg = theme.foreground();
@@ -421,16 +573,71 @@ impl Render for PreviewView {
                 .text_color(muted)
                 .child("Loading preview…")
                 .into_any_element(),
-            Content::Image(image) => div()
-                .flex_1()
-                .overflow_hidden()
-                .p_2()
-                .child(
-                    img(image.clone())
-                        .object_fit(ObjectFit::Contain)
-                        .size_full(),
-                )
-                .into_any_element(),
+            Content::Image(image) => {
+                let viewport = window.viewport_size();
+                let fallback_width = f32::from(viewport.width);
+                let fallback_height = f32::from(viewport.height);
+                let bounds = self.image_scroll.bounds();
+                let viewport_width = if f32::from(bounds.size.width) > 0.0 {
+                    f32::from(bounds.size.width)
+                } else {
+                    fallback_width
+                };
+                let viewport_height = if f32::from(bounds.size.height) > 0.0 {
+                    f32::from(bounds.size.height)
+                } else {
+                    fallback_height
+                };
+                let mut container = div()
+                    .id("preview-image-canvas")
+                    .flex_1()
+                    .p_2()
+                    .track_scroll(&self.image_scroll)
+                    .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, window, cx| {
+                        if !(event.modifiers.platform || event.modifiers.control) {
+                            return;
+                        }
+                        let delta = event.delta.pixel_delta(px(18.0)).y;
+                        let factor = if delta < px(0.0) { 1.1 } else { 0.9 };
+                        let viewport = window.viewport_size();
+                        this.zoom_image(
+                            factor,
+                            f32::from(viewport.width),
+                            f32::from(viewport.height),
+                            Some(event.position),
+                            cx,
+                        );
+                        cx.stop_propagation();
+                    }));
+                let image_body = match self.image_zoom {
+                    ImageZoom::Fit => container.overflow_hidden().child(
+                        img(image.image.clone())
+                            .object_fit(ObjectFit::Contain)
+                            .size_full(),
+                    ),
+                    zoom => {
+                        let scale = image_zoom_scale(zoom, 1.0);
+                        let image_width = image.width as f32 * scale;
+                        let image_height = image.height as f32 * scale;
+                        let center_image = image_width <= viewport_width - 16.0
+                            && image_height <= viewport_height - 16.0;
+                        container = container
+                            .overflow_x_scroll()
+                            .overflow_y_scroll()
+                            .flex()
+                            .when(center_image, |element| {
+                                element.items_center().justify_center()
+                            });
+                        container.child(
+                            img(image.image.clone())
+                                .w(px(image_width))
+                                .h(px(image_height))
+                                .flex_none(),
+                        )
+                    }
+                };
+                image_body.into_any_element()
+            }
             Content::Markdown(blocks) => div()
                 .id("preview-md")
                 .flex_1()
@@ -488,6 +695,142 @@ impl Render for PreviewView {
                 .into_any_element(),
         };
 
+        let header = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .h(px(30.0))
+            .px_3()
+            .border_b_1()
+            .border_color(border)
+            .child(
+                div()
+                    .flex_1()
+                    .text_size(px(11.0))
+                    .text_color(muted)
+                    .overflow_hidden()
+                    .child(address),
+            )
+            .when(matches!(self.content, Content::Image(_)), |element| {
+                let zoom = match self.image_zoom {
+                    ImageZoom::Fit => "Fit".to_string(),
+                    ImageZoom::ActualSize => "100%".to_string(),
+                    ImageZoom::Scale(scale) => format!("{:.0}%", scale * 100.0),
+                };
+                let metadata = match &self.content {
+                    Content::Image(image) => image.metadata(),
+                    _ => String::new(),
+                };
+                element
+                    .child(div().text_size(px(10.0)).text_color(muted).child(metadata))
+                    .child(
+                        labonair_ui_kit::button_no_hover(
+                            "preview-image-zoom-out",
+                            c,
+                            ButtonVariant::Subtle,
+                            ButtonSize::Xs,
+                        )
+                        .text_color(muted)
+                        .hover(|style| style.text_color(fg))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                            let viewport = window.viewport_size();
+                            this.zoom_image(
+                                0.8,
+                                f32::from(viewport.width),
+                                f32::from(viewport.height),
+                                None,
+                                cx,
+                            );
+                        }))
+                        .child("−"),
+                    )
+                    .child(
+                        div()
+                            .min_w(px(38.0))
+                            .text_center()
+                            .text_size(px(10.0))
+                            .text_color(muted)
+                            .child(zoom),
+                    )
+                    .child(
+                        labonair_ui_kit::button_no_hover(
+                            "preview-image-zoom-in",
+                            c,
+                            ButtonVariant::Subtle,
+                            ButtonSize::Xs,
+                        )
+                        .text_color(muted)
+                        .hover(|style| style.text_color(fg))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                            let viewport = window.viewport_size();
+                            this.zoom_image(
+                                1.25,
+                                f32::from(viewport.width),
+                                f32::from(viewport.height),
+                                None,
+                                cx,
+                            );
+                        }))
+                        .child("+"),
+                    )
+                    .child(
+                        labonair_ui_kit::button_no_hover(
+                            "preview-image-actual-size",
+                            c,
+                            ButtonVariant::Subtle,
+                            ButtonSize::Xs,
+                        )
+                        .text_color(muted)
+                        .hover(|style| style.text_color(fg))
+                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                            this.set_image_zoom(ImageZoom::ActualSize, cx);
+                        }))
+                        .child("100%"),
+                    )
+                    .child(
+                        labonair_ui_kit::button_no_hover(
+                            "preview-image-fit",
+                            c,
+                            ButtonVariant::Subtle,
+                            ButtonSize::Xs,
+                        )
+                        .text_color(muted)
+                        .hover(|style| style.text_color(fg))
+                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                            this.set_image_zoom(ImageZoom::Fit, cx);
+                        }))
+                        .child("Fit"),
+                    )
+            })
+            .when(!self.source_bound, |d| {
+                d.child(
+                    labonair_ui_kit::button_no_hover(
+                        "preview-reload",
+                        c,
+                        ButtonVariant::Subtle,
+                        ButtonSize::Xs,
+                    )
+                    .text_color(muted)
+                    .hover(|s| s.text_color(fg))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reload(cx)))
+                    .child("Reload"),
+                )
+            })
+            .when(!self.url.is_empty(), |d| {
+                d.child(
+                    labonair_ui_kit::button_no_hover(
+                        "preview-external",
+                        c,
+                        ButtonVariant::Subtle,
+                        ButtonSize::Xs,
+                    )
+                    .text_color(muted)
+                    .hover(|s| s.text_color(fg))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, _| this.open_external()))
+                    .child("Open externally"),
+                )
+            });
+
         div()
             .track_focus(&self.focus_handle)
             .key_context("Preview")
@@ -495,54 +838,7 @@ impl Render for PreviewView {
             .flex()
             .flex_col()
             .bg(bg)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .h(px(30.0))
-                    .px_3()
-                    .border_b_1()
-                    .border_color(border)
-                    .child(
-                        div()
-                            .flex_1()
-                            .text_size(px(11.0))
-                            .text_color(muted)
-                            .overflow_hidden()
-                            .child(address),
-                    )
-                    .when(!self.source_bound, |d| {
-                        d.child(
-                            labonair_ui_kit::button_no_hover(
-                                "preview-reload",
-                                c,
-                                ButtonVariant::Subtle,
-                                ButtonSize::Xs,
-                            )
-                            .text_color(muted)
-                            .hover(|s| s.text_color(fg))
-                            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reload(cx)))
-                            .child("Reload"),
-                        )
-                    })
-                    .when(!self.url.is_empty(), |d| {
-                        d.child(
-                            labonair_ui_kit::button_no_hover(
-                                "preview-external",
-                                c,
-                                ButtonVariant::Subtle,
-                                ButtonSize::Xs,
-                            )
-                            .text_color(muted)
-                            .hover(|s| s.text_color(fg))
-                            .on_click(
-                                cx.listener(|this, _: &ClickEvent, _, _| this.open_external()),
-                            )
-                            .child("Open externally"),
-                        )
-                    }),
-            )
+            .child(header)
             .child(body)
     }
 }
@@ -744,6 +1040,64 @@ mod tests {
         ));
         assert!(matches!(resolve("/tmp/x.html"), Content::External { .. }));
         assert!(matches!(resolve(""), Content::Empty));
+    }
+
+    #[test]
+    fn image_fit_preserves_aspect_ratio_and_zoom_stays_bounded() {
+        assert_eq!(fit_image_scale(4000, 2000, 1000.0, 500.0), 0.25);
+        assert_eq!(fit_image_scale(100, 100, 1000.0, 800.0), 1.0);
+        assert_eq!(image_zoom_scale(ImageZoom::ActualSize, 0.25), 1.0);
+        assert_eq!(image_zoom_scale(ImageZoom::Fit, 0.25), 0.25);
+        assert_eq!(
+            image_zoom_scale(ImageZoom::Scale(20.0), 0.25),
+            MAX_IMAGE_ZOOM
+        );
+        assert_eq!(
+            image_zoom_scale(ImageZoom::Scale(0.0), 0.25),
+            MIN_IMAGE_ZOOM
+        );
+    }
+
+    #[test]
+    fn image_zoom_keeps_the_point_under_the_pointer_stationary() {
+        assert_eq!(image_scroll_offset_after_zoom(100.0, 0.0, 2.0), -100.0);
+        assert_eq!(image_scroll_offset_after_zoom(80.0, -20.0, 1.5), -70.0);
+    }
+
+    #[test]
+    fn image_preview_records_decoded_metadata() {
+        let mut encoded = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgb8(2, 3)
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .unwrap();
+        let path = std::env::temp_dir().join(format!(
+            "labonair-preview-image-{}-{}.png",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::write(&path, encoded.into_inner()).unwrap();
+
+        let preview = load_image(path.to_str().unwrap()).unwrap();
+        assert_eq!((preview.width, preview.height), (2, 3));
+        assert_eq!(preview.format, "PNG");
+        assert_eq!(preview.bits_per_pixel, 24);
+        assert!(preview.metadata().contains("2 × 3 · PNG · 24 bpp"));
+        assert!(preview
+            .metadata()
+            .ends_with(&format_image_size(preview.byte_len)));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn image_size_uses_binary_units() {
+        assert_eq!(format_image_size(0), "0 B");
+        assert_eq!(format_image_size(1023), "1023 B");
+        assert_eq!(format_image_size(1024), "1.0 KiB");
+        assert_eq!(format_image_size(1024 * 1024), "1.0 MiB");
     }
 
     #[test]
