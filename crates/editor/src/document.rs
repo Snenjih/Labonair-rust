@@ -378,6 +378,11 @@ impl Document {
         self.history.can_redo()
     }
 
+    /// Keep the next typing transaction in a separate undo group.
+    pub fn break_undo_coalescing(&mut self) {
+        self.history.break_coalescing();
+    }
+
     /// Current buffer contents (for saving).
     pub fn text(&self) -> String {
         self.buffer.text()
@@ -858,6 +863,33 @@ impl Document {
             self.goal_column = None;
         }
         let _ = self.lifecycle.sync_buffer(&self.buffer.text());
+    }
+
+    /// Undo only the latest transaction when it belongs to a typing group.
+    /// Earlier characters remain grouped for a regular Undo command.
+    pub fn undo_latest_typing_edit(&mut self) -> bool {
+        if !self.can_edit() {
+            return false;
+        }
+        let Some(transaction) = self.history.undo_latest_typing_step() else {
+            return false;
+        };
+        self.clear_selection_history();
+        let source = transaction.source();
+        let rebased = transaction.with_base_revision(self.buffer.revision(), EditSource::Undo);
+        if self.buffer.apply_transaction(&rebased).is_err() {
+            return false;
+        }
+        self.map_inactive_group_selections(rebased.edits());
+        if source == EditSource::Completion {
+            self.active_snippet = None;
+        } else if let Some(snippet) = self.active_snippet.as_mut() {
+            snippet.map_through_edits(rebased.edits());
+        }
+        self.restore_selection(rebased.selection_after());
+        self.goal_column = None;
+        let _ = self.lifecycle.sync_buffer(&self.buffer.text());
+        true
     }
 
     pub fn redo(&mut self) {

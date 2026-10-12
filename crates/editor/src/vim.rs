@@ -18,7 +18,7 @@
 
 use std::collections::HashMap;
 
-use crate::buffer::{BufferSnapshot, Position, TextRange};
+use crate::buffer::{BufferSnapshot, Position, Revision, SelectionSet, TextRange};
 use crate::document::Document;
 use crate::editing::EditIntent;
 use crate::language::Language;
@@ -151,6 +151,9 @@ pub struct Vim {
     last_search: Option<(String, SearchDir)>,
     /// `hlsearch` matches for the active pattern (view reads this to paint).
     pub search_matches: Vec<crate::search::Match>,
+    replace_undo_steps: usize,
+    replace_undo_revision: Option<Revision>,
+    replace_undo_selection: Option<SelectionSet>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,6 +198,9 @@ impl Vim {
             cmd_kind: None,
             last_search: None,
             search_matches: Vec::new(),
+            replace_undo_steps: 0,
+            replace_undo_revision: None,
+            replace_undo_selection: None,
         }
     }
 
@@ -291,20 +297,67 @@ impl Vim {
     fn replace_key(&mut self, doc: &mut Document, key: VimKey) -> VimResponse {
         match key {
             VimKey::Esc => {
+                self.clear_replace_undo();
                 self.leave_insert(doc);
                 VimResponse::ok()
             }
             VimKey::Char(character) => {
+                self.discard_stale_replace_undo(doc);
+                let before = doc.snapshot().revision();
                 doc.execute_edit(EditIntent::InsertOvertype(character.to_string()));
+                self.record_replace_undo(doc, before);
                 VimResponse::ok()
             }
-            VimKey::Enter | VimKey::Tab => self.insert_key(doc, key),
+            VimKey::Enter | VimKey::Tab => {
+                self.discard_stale_replace_undo(doc);
+                let before = doc.snapshot().revision();
+                let response = self.insert_key(doc, key);
+                self.record_replace_undo(doc, before);
+                response
+            }
             VimKey::Backspace => {
-                doc.backspace();
+                if self.replace_undo_is_current(doc) && doc.undo_latest_typing_edit() {
+                    self.replace_undo_steps = self.replace_undo_steps.saturating_sub(1);
+                    if self.replace_undo_steps == 0 {
+                        self.clear_replace_undo();
+                    } else {
+                        self.replace_undo_revision = Some(doc.snapshot().revision());
+                        self.replace_undo_selection = Some(doc.selection_set());
+                    }
+                } else {
+                    self.clear_replace_undo();
+                }
                 VimResponse::ok()
             }
             VimKey::Redo => VimResponse::ok(),
         }
+    }
+
+    fn replace_undo_is_current(&self, doc: &Document) -> bool {
+        self.replace_undo_steps > 0
+            && self.replace_undo_revision == Some(doc.snapshot().revision())
+            && self.replace_undo_selection.as_ref() == Some(&doc.selection_set())
+    }
+
+    fn discard_stale_replace_undo(&mut self, doc: &Document) {
+        if self.replace_undo_steps > 0 && !self.replace_undo_is_current(doc) {
+            self.clear_replace_undo();
+        }
+    }
+
+    fn record_replace_undo(&mut self, doc: &Document, before: Revision) {
+        let snapshot = doc.snapshot();
+        if snapshot.revision() != before {
+            self.replace_undo_steps = self.replace_undo_steps.saturating_add(1);
+            self.replace_undo_revision = Some(snapshot.revision());
+            self.replace_undo_selection = Some(doc.selection_set());
+        }
+    }
+
+    fn clear_replace_undo(&mut self) {
+        self.replace_undo_steps = 0;
+        self.replace_undo_revision = None;
+        self.replace_undo_selection = None;
     }
 
     fn leave_insert(&mut self, doc: &mut Document) {
@@ -540,6 +593,8 @@ impl Vim {
         match c {
             'R' if self.pending_op.is_none() && !self.mode.is_visual() => {
                 self.count = 0;
+                self.clear_replace_undo();
+                doc.break_undo_coalescing();
                 self.mode = VimMode::Replace;
                 VimResponse::ok()
             }
@@ -1694,6 +1749,7 @@ mod tests {
         for ch in s.chars() {
             let k = match ch {
                 '\u{1b}' => VimKey::Esc,
+                '\u{8}' => VimKey::Backspace,
                 '\n' => VimKey::Enter,
                 _ => VimKey::Char(ch),
             };
@@ -1725,6 +1781,47 @@ mod tests {
         assert_eq!(vim.mode(), VimMode::Normal);
         document.undo();
         assert_eq!(document.text(), "cat");
+    }
+
+    #[test]
+    fn replace_mode_backspace_restores_one_overwritten_character() {
+        let mut vim = Vim::default();
+        let mut document = doc("cat");
+
+        keys(&mut vim, &mut document, "Rdog");
+        assert_eq!(document.text(), "dog");
+        keys(&mut vim, &mut document, "\u{8}");
+        assert_eq!(document.text(), "dot");
+        assert_eq!(document.cursor, Position::new(0, 2));
+
+        keys(&mut vim, &mut document, "\u{8}");
+        assert_eq!(document.text(), "dat");
+        assert_eq!(document.cursor, Position::new(0, 1));
+    }
+
+    #[test]
+    fn replace_mode_backspace_preserves_grouped_undo_for_remaining_input() {
+        let mut vim = Vim::default();
+        let mut document = doc("cat");
+
+        keys(&mut vim, &mut document, "Rdog\u{8}\u{1b}");
+        assert_eq!(document.text(), "dot");
+        document.undo();
+        assert_eq!(document.text(), "cat");
+        document.redo();
+        assert_eq!(document.text(), "dot");
+        document.redo();
+        assert_eq!(document.text(), "dog");
+    }
+
+    #[test]
+    fn replace_mode_backspace_at_session_start_does_not_delete_prior_text() {
+        let mut vim = Vim::default();
+        let mut document = doc("cat");
+
+        keys(&mut vim, &mut document, "R\u{8}");
+        assert_eq!(document.text(), "cat");
+        assert!(!document.can_undo());
     }
 
     #[test]
