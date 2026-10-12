@@ -315,6 +315,16 @@ fn image_zoom_scale(zoom: ImageZoom, fit_scale: f32) -> f32 {
     }
 }
 
+fn image_zoom_preset(action: PreviewImageAction) -> Option<ImageZoom> {
+    match action {
+        PreviewImageAction::ResetZoom | PreviewImageAction::ZoomToActualSize => {
+            Some(ImageZoom::ActualSize)
+        }
+        PreviewImageAction::ZoomToFit => Some(ImageZoom::Fit),
+        PreviewImageAction::ZoomIn | PreviewImageAction::ZoomOut => None,
+    }
+}
+
 fn image_scroll_offset_after_zoom(anchor: f32, offset: f32, ratio: f32) -> f32 {
     anchor - (anchor - offset) * ratio
 }
@@ -730,10 +740,13 @@ impl PreviewView {
             PreviewImageAction::ZoomOut => {
                 self.zoom_image(0.8, viewport_width, viewport_height, None, cx)
             }
-            PreviewImageAction::ResetZoom | PreviewImageAction::ZoomToFit => {
-                self.set_image_zoom(ImageZoom::Fit, cx)
+            PreviewImageAction::ResetZoom
+            | PreviewImageAction::ZoomToActualSize
+            | PreviewImageAction::ZoomToFit => {
+                if let Some(zoom) = image_zoom_preset(action) {
+                    self.set_image_zoom(zoom, cx);
+                }
             }
-            PreviewImageAction::ZoomToActualSize => self.set_image_zoom(ImageZoom::ActualSize, cx),
         }
     }
 
@@ -1319,10 +1332,18 @@ impl Render for PreviewView {
                     )
                     .child(
                         div()
+                            .id("preview-image-zoom-level")
                             .min_w(px(38.0))
                             .text_center()
                             .text_size(px(10.0))
                             .text_color(muted)
+                            .on_mouse_down(
+                                MouseButton::Right,
+                                cx.listener(|this, _event: &MouseDownEvent, _, cx| {
+                                    this.set_image_zoom(ImageZoom::ActualSize, cx);
+                                    cx.stop_propagation();
+                                }),
+                            )
                             .child(zoom),
                     )
                     .child(
@@ -1796,6 +1817,18 @@ mod tests {
         assert_eq!(fit_image_scale(100, 100, 1000.0, 800.0), 1.0);
         assert_eq!(image_zoom_scale(ImageZoom::ActualSize, 0.25), 1.0);
         assert_eq!(image_zoom_scale(ImageZoom::Fit, 0.25), 0.25);
+        assert_eq!(
+            image_zoom_preset(PreviewImageAction::ResetZoom),
+            Some(ImageZoom::ActualSize)
+        );
+        assert_eq!(
+            image_zoom_preset(PreviewImageAction::ZoomToActualSize),
+            Some(ImageZoom::ActualSize)
+        );
+        assert_eq!(
+            image_zoom_preset(PreviewImageAction::ZoomToFit),
+            Some(ImageZoom::Fit)
+        );
         assert_eq!(
             image_zoom_scale(ImageZoom::Scale(20.0), 0.25),
             MAX_IMAGE_ZOOM
