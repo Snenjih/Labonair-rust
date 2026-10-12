@@ -53,19 +53,20 @@ use labonair_editor::{
     map_range_through_edits, next_match_with_wrap, replace_all_checked, replace_one,
     word_at_cursor, Anchor, AnchorAffinity, BufferSnapshot, CancellationToken, DisplayConfig,
     DisplayMap, DisplayRowKind, DisplaySnapshot, Document, DocumentColor, DocumentColorValue,
-    DocumentVersion, Edit, EditorSessionId, EditorSessionSnapshot, EditorViewSession, FoldRange,
-    FoldingRange, GitDecorationProvider, GitDecorationRequest, GitDiscardPreview, GitEditorCommand,
-    GitGutterError, GitGutterSnapshot, GitHunkAction, GitHunkActionKind, GitHunkStatus, Helix,
-    HelixKey, HelixMode, HunkActionSink, InlayHint, InlayHintKind, KillRing, Language, LanguageId,
-    LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceRequest,
-    LanguageServiceResponse, LanguageServiceResult, LanguageServiceRuntime,
-    LanguageServiceRuntimeSnapshot, LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus,
-    LanguageServiceSnapshot, LanguageServiceState, LocalLanguageServiceRequest, LspPosition,
-    LspRange, Match, Position, ProjectBufferCandidate, ProjectReplacePlan, ProjectReplaceRequest,
-    ProjectReplaceResult, ProjectReplaceTarget, ProjectSearchHit, ProjectSearchQuery,
-    ProjectSearchRequest, ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot,
-    Revision, SavePolicy, SearchError, SearchOptions, SearchQuery, Selection, SelectionSet,
-    SyntaxHighlighter, TextRange, Viewport, Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
+    DocumentVersion, Edit, EditorEditability, EditorSessionId, EditorSessionSnapshot,
+    EditorViewSession, FoldRange, FoldingRange, GitDecorationProvider, GitDecorationRequest,
+    GitDiscardPreview, GitEditorCommand, GitGutterError, GitGutterSnapshot, GitHunkAction,
+    GitHunkActionKind, GitHunkStatus, Helix, HelixKey, HelixMode, HunkActionSink, InlayHint,
+    InlayHintKind, KillRing, Language, LanguageId, LanguageServiceEditRequest,
+    LanguageServiceEditResponse, LanguageServiceRequest, LanguageServiceResponse,
+    LanguageServiceResult, LanguageServiceRuntime, LanguageServiceRuntimeSnapshot,
+    LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus, LanguageServiceSnapshot,
+    LanguageServiceState, LocalLanguageServiceRequest, LspPosition, LspRange, Match, Position,
+    ProjectBufferCandidate, ProjectReplacePlan, ProjectReplaceRequest, ProjectReplaceResult,
+    ProjectReplaceTarget, ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest,
+    ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot, Revision, SavePolicy,
+    SearchError, SearchOptions, SearchQuery, Selection, SelectionSet, SyntaxHighlighter, TextRange,
+    Viewport, Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
 };
 use labonair_editor::{build_breadcrumb_state, BreadcrumbState};
 
@@ -1188,6 +1189,11 @@ impl EditorView {
 
     pub fn language_service_snapshot(&self) -> LanguageServiceRuntimeSnapshot {
         self.language_service_snapshot.clone()
+    }
+
+    /// Editor-owned editability state consumed by the Workspace tab menu.
+    pub fn editability(&self) -> Option<EditorEditability> {
+        self.doc.editability()
     }
 
     /// Execute a typed Editor command from the canonical command registry.

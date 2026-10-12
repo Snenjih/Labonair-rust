@@ -48,7 +48,7 @@ pub use display::{
     DisplayRow, DisplayRowKind, DisplaySemanticToken, DisplaySnapshot, DisplayTextProjection,
     FoldRange, Viewport, WhitespaceMode, WhitespaceToken,
 };
-pub use document::{Document, Motion};
+pub use document::{Document, EditorEditability, Motion};
 pub use editing::{
     auto_indent, matching_bracket, EditIntent, EditorCommand, EditorCommandResult,
     EditorCommandSink, EditorSnapshotStream, EditorState, EditorViewEvent, EditorViewSnapshot,

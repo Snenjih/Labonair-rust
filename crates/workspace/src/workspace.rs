@@ -82,10 +82,10 @@ use crate::mcp_event_bridge::McpEventBridge;
 use crate::ssh_event_bridge::SshEventBridge;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, point, px, relative, Animation, AnimationExt, App, AppContext, ClickEvent, Context,
-    DragMoveEvent, Entity, EventEmitter, ExternalPaths, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Task, Window,
+    div, point, px, relative, Animation, AnimationExt, App, AppContext, ClickEvent, ClipboardItem,
+    Context, DragMoveEvent, Entity, EventEmitter, ExternalPaths, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
 use labonair_command_palette_core::CommandId;
 use labonair_git::{GitGraphService, GitService};
@@ -145,6 +145,21 @@ use labonair_ui_kit::{
     BlinkCursor, ButtonSize, ButtonVariant, IconButtonShape, IconName, IndicatorSize, MenuItem,
     Palette, SubmenuHoverSource, TabLayout,
 };
+
+fn relative_path_under_root(path: &Path, root: &Path) -> Option<String> {
+    let relative = path.strip_prefix(root).ok()?;
+    if relative.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::ParentDir
+                | std::path::Component::RootDir
+                | std::path::Component::Prefix(_)
+        )
+    }) {
+        return None;
+    }
+    Some(relative.to_string_lossy().into_owned())
+}
 
 /// Interval for draining backend SSH events into the workspace.
 const SSH_POLL_INTERVAL: Duration = Duration::from_millis(40);
@@ -7123,6 +7138,25 @@ impl Workspace {
             .as_ref()
             .map(|tab| tab.space_id)
             .unwrap_or_else(|| self.spaces.read(cx).active_id());
+        let file_path = tab
+            .as_ref()
+            .filter(|tab| tab.kind == TabKind::Editor && tab.data.host_id.is_none())
+            .and_then(|tab| tab.data.path.as_deref())
+            .filter(|path| Path::new(path).is_absolute())
+            .map(str::to_string);
+        let editor_editability = self
+            .editors
+            .get(&id)
+            .and_then(|editor| editor.read(cx).editability());
+        let project_root = self
+            .spaces
+            .read(cx)
+            .get(space_id)
+            .and_then(|space| space.identity.project_root())
+            .map(Path::to_path_buf);
+        let relative_file_path = file_path
+            .as_deref()
+            .and_then(|path| relative_path_under_root(Path::new(path), project_root.as_deref()?));
         let space_tabs: Vec<Tab> = self
             .tabs
             .read(cx)
@@ -7138,6 +7172,103 @@ impl Workspace {
         let view = cx.entity();
 
         let mut items: Vec<MenuItem> = Vec::new();
+        if let (Some(TabKind::Editor), Some(editability)) = (kind, editor_editability) {
+            let (label, checked, disabled) = match editability {
+                labonair_editor::EditorEditability::Editable => {
+                    ("Make Tab Read-Only", false, false)
+                }
+                labonair_editor::EditorEditability::TemporarilyReadOnly => {
+                    ("Make Tab Editable", true, false)
+                }
+                labonair_editor::EditorEditability::ReadOnly => ("Read-Only", true, true),
+            };
+            items.push(
+                MenuItem::new("toggle-tab-read-only", label)
+                    .icon(IconName::Lock)
+                    .checked(checked)
+                    .disabled(disabled)
+                    .on_click({
+                        let view = view.clone();
+                        move |_, _, cx| {
+                            view.update(cx, |this, cx| {
+                                this.context_menu = None;
+                                if let Some(editor) = this.editors.get(&id).cloned() {
+                                    editor.update(cx, |editor, cx| {
+                                        let _ = editor.dispatch_registered_command(
+                                            CommandId::EditorToggleReadOnly,
+                                            cx,
+                                        );
+                                    });
+                                }
+                                cx.notify();
+                            });
+                        }
+                    }),
+            );
+        }
+        if let Some(path) = file_path.as_deref() {
+            items.push(
+                MenuItem::new("copy-file-path", "Copy Path")
+                    .icon(IconName::Copy)
+                    .on_click({
+                        let view = view.clone();
+                        let path = path.to_string();
+                        move |_, _, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(path.clone()));
+                            view.update(cx, |this, cx| {
+                                this.context_menu = None;
+                                cx.notify();
+                            });
+                        }
+                    }),
+            );
+            if let Some(relative_path) = relative_file_path {
+                items.push(
+                    MenuItem::new("copy-relative-file-path", "Copy Relative Path").on_click({
+                        let view = view.clone();
+                        move |_, _, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(relative_path.clone()));
+                            view.update(cx, |this, cx| {
+                                this.context_menu = None;
+                                cx.notify();
+                            });
+                        }
+                    }),
+                );
+            }
+            items.push(
+                MenuItem::new("reveal-file", "Reveal in File Manager")
+                    .icon(IconName::FolderOpen)
+                    .on_click({
+                        let view = view.clone();
+                        let path = path.to_string();
+                        move |_, _, cx| {
+                            cx.reveal_path(Path::new(&path));
+                            view.update(cx, |this, cx| {
+                                this.context_menu = None;
+                                cx.notify();
+                            });
+                        }
+                    }),
+            );
+            if let Some(directory) = Path::new(path).parent().map(|path| path.to_path_buf()) {
+                items.push(
+                    MenuItem::new("open-file-terminal", "Open Terminal in File Directory")
+                        .icon(IconName::Terminal)
+                        .on_click({
+                            let view = view.clone();
+                            let directory = directory.to_string_lossy().into_owned();
+                            move |_, window, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.context_menu = None;
+                                    this.new_terminal_tab_in(Some(directory.clone()), window, cx);
+                                });
+                            }
+                        }),
+                );
+            }
+            items.push(MenuItem::separator());
+        }
         if kind == Some(TabKind::Editor) && is_peek {
             items.push(
                 MenuItem::new("keep", "Keep Tab Open")
@@ -7734,7 +7865,24 @@ impl labonair_command_palette::PaletteWorkspace for Workspace {
 
 #[cfg(test)]
 mod tests {
-    use super::{shell_quote, ssh_tab_title};
+    use super::{relative_path_under_root, shell_quote, ssh_tab_title};
+    use std::path::Path;
+
+    #[test]
+    fn tab_file_relative_path_requires_a_path_inside_the_project_root() {
+        assert_eq!(
+            relative_path_under_root(Path::new("/repo/src/main.rs"), Path::new("/repo")),
+            Some("src/main.rs".to_string())
+        );
+        assert_eq!(
+            relative_path_under_root(Path::new("/other/main.rs"), Path::new("/repo")),
+            None
+        );
+        assert_eq!(
+            relative_path_under_root(Path::new("/repo/../other/main.rs"), Path::new("/repo")),
+            None
+        );
+    }
 
     #[test]
     fn shell_quote_wraps_and_escapes() {

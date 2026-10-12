@@ -21,6 +21,14 @@ use crate::lifecycle::{
 };
 use crate::search::{self, ProjectSearchQuery, SearchError, SearchQuery};
 
+/// Whether a document may be toggled from its editor-tab context menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorEditability {
+    Editable,
+    TemporarilyReadOnly,
+    ReadOnly,
+}
+
 /// Caret movement primitives (keyboard navigation).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Motion {
@@ -204,6 +212,20 @@ impl Document {
 
     pub fn can_edit(&self) -> bool {
         self.lifecycle.can_edit() && !self.temporary_read_only
+    }
+
+    pub fn editability(&self) -> Option<EditorEditability> {
+        if self.lifecycle.can_edit() {
+            Some(if self.temporary_read_only {
+                EditorEditability::TemporarilyReadOnly
+            } else {
+                EditorEditability::Editable
+            })
+        } else if matches!(self.lifecycle.state(), FileState::ReadOnly) {
+            Some(EditorEditability::ReadOnly)
+        } else {
+            None
+        }
     }
 
     pub fn temporary_read_only(&self) -> bool {
@@ -877,9 +899,14 @@ mod tests {
         let mut document = Document::from_file(PathBuf::from("/tmp/read-only.txt"), "abc", 0);
         document.insert("X");
         assert_eq!(document.text(), "Xabc");
+        assert_eq!(document.editability(), Some(EditorEditability::Editable));
 
         assert!(document.toggle_temporary_read_only());
         assert!(document.temporary_read_only());
+        assert_eq!(
+            document.editability(),
+            Some(EditorEditability::TemporarilyReadOnly)
+        );
         assert!(!document.can_edit());
         document.insert("Y");
         document.undo();
@@ -905,6 +932,18 @@ mod tests {
 
         assert!(!document.toggle_temporary_read_only());
         assert!(!document.can_edit());
+        assert_eq!(document.editability(), None);
+
+        let read_only_identity = FileIdentity::from_bytes("/tmp/read-only.txt", 0, b"data");
+        let read_only = Document::from_file_snapshot(FileSnapshot::new(
+            read_only_identity,
+            "data".to_string(),
+            LineEnding::Lf,
+            crate::lifecycle::Encoding::Utf8,
+            crate::lifecycle::Bom::None,
+            FileCapabilities::read_only(),
+        ));
+        assert_eq!(read_only.editability(), Some(EditorEditability::ReadOnly));
     }
 
     #[test]
