@@ -456,17 +456,22 @@ impl Vim {
         }
 
         if let Some(object_kind) = self.pending_text_object.take() {
-            if !matches!((object_kind, c), ('i' | 'a', 'w' | 'W')) {
+            if !matches!(object_kind, 'i' | 'a') {
                 self.reset_pending();
                 return VimResponse::default();
             }
-            let Some((start, end)) = word_object_range(
-                doc,
-                doc.cursor,
-                c == 'W',
-                object_kind == 'a',
-                self.take_count().max(1),
-            ) else {
+            let count = self.take_count().max(1);
+            let around = object_kind == 'a';
+            let range = match c {
+                'w' | 'W' => word_object_range(doc, doc.cursor, c == 'W', around, count),
+                '(' | ')' | 'b' => delimited_object_range(doc, doc.cursor, '(', ')', around, count),
+                '[' | ']' => delimited_object_range(doc, doc.cursor, '[', ']', around, count),
+                '{' | '}' | 'B' => delimited_object_range(doc, doc.cursor, '{', '}', around, count),
+                '<' | '>' => delimited_object_range(doc, doc.cursor, '<', '>', around, count),
+                '"' | '\'' | '`' => quote_object_range(doc, doc.cursor, c, around),
+                _ => None,
+            };
+            let Some((start, end)) = range else {
                 self.reset_pending();
                 return VimResponse::default();
             };
@@ -1361,6 +1366,86 @@ fn word_object_range(
     ))
 }
 
+/// Resolve the nearest nested delimiter object containing the caret. A count
+/// selects successive enclosing pairs, matching Vim's counted text-object
+/// behavior for parentheses, brackets, braces, and angle brackets.
+fn delimited_object_range(
+    doc: &Document,
+    cursor: Position,
+    open: char,
+    close: char,
+    around: bool,
+    count: usize,
+) -> Option<(Position, Position)> {
+    let cursor_offset = to_offset(doc, cursor);
+    let text = doc.text();
+    let mut openings = Vec::new();
+    let mut enclosing_count = 0;
+    for (offset, character) in text.chars().enumerate() {
+        if character == open {
+            openings.push(offset);
+        } else if character == close {
+            let Some(start) = openings.pop() else {
+                continue;
+            };
+            if start <= cursor_offset && cursor_offset <= offset {
+                enclosing_count += 1;
+                if enclosing_count == count.max(1) {
+                    let (range_start, range_end) = if around {
+                        (start, offset + 1)
+                    } else {
+                        (start + 1, offset)
+                    };
+                    return Some((from_offset(doc, range_start), from_offset(doc, range_end)));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Resolve a quoted text object on the caret's line. Escaped quote marks do
+/// not close the object; surrounding text on other lines is left untouched.
+fn quote_object_range(
+    doc: &Document,
+    cursor: Position,
+    quote: char,
+    around: bool,
+) -> Option<(Position, Position)> {
+    let chars = snapshot(doc).line(cursor.line).chars().collect::<Vec<_>>();
+    let mut quotes = Vec::new();
+    for (index, character) in chars.iter().enumerate() {
+        if *character != quote {
+            continue;
+        }
+        let preceding_backslashes = chars[..index]
+            .iter()
+            .rev()
+            .take_while(|previous| **previous == '\\')
+            .count();
+        if preceding_backslashes % 2 == 0 {
+            quotes.push(index);
+        }
+    }
+
+    for pair in quotes.windows(2).step_by(2) {
+        let (open, close) = (pair[0], pair[1]);
+        if cursor.column < open || cursor.column > close {
+            continue;
+        }
+        let (start, end) = if around {
+            (open, close + 1)
+        } else {
+            (open + 1, close)
+        };
+        return Some((
+            Position::new(cursor.line, start),
+            Position::new(cursor.line, end),
+        ));
+    }
+    None
+}
+
 /// Char offset stream that treats `\n` as a single blank character.
 fn to_offset(doc: &Document, p: Position) -> usize {
     let snapshot = snapshot(doc);
@@ -1687,6 +1772,43 @@ mod tests {
         let mut d = doc("one two three");
         keys(&mut v, &mut d, "2diw");
         assert_eq!(d.text(), " three");
+    }
+
+    #[test]
+    fn parenthesis_objects_delete_inner_or_around_ranges() {
+        let mut v = Vim::default();
+        let mut d = doc("fn(alpha + beta)");
+        d.set_caret(Position::new(0, 5), false);
+        keys(&mut v, &mut d, "di(");
+        assert_eq!(d.text(), "fn()");
+
+        d = doc("fn(alpha + beta)");
+        d.set_caret(Position::new(0, 5), false);
+        keys(&mut v, &mut d, "da(");
+        assert_eq!(d.text(), "fn");
+    }
+
+    #[test]
+    fn counted_delimiter_object_selects_an_enclosing_pair() {
+        let mut v = Vim::default();
+        let mut d = doc("wrap((a + b))");
+        d.set_caret(Position::new(0, 7), false);
+        keys(&mut v, &mut d, "2di(");
+        assert_eq!(d.text(), "wrap()");
+    }
+
+    #[test]
+    fn quoted_text_objects_delete_inner_or_around_ranges() {
+        let mut v = Vim::default();
+        let mut d = doc("say \"hello world\"!");
+        d.set_caret(Position::new(0, 12), false);
+        keys(&mut v, &mut d, "di\"");
+        assert_eq!(d.text(), "say \"\"!");
+
+        d = doc("say \"hello world\"!");
+        d.set_caret(Position::new(0, 12), false);
+        keys(&mut v, &mut d, "da\"");
+        assert_eq!(d.text(), "say !");
     }
 
     #[test]
