@@ -533,8 +533,11 @@ pub struct Workspace {
     panes: HashMap<PaneId, PaneEntry>,
     /// Editor view per `Editor` tab id.
     editors: HashMap<u64, Entity<EditorView>>,
+    /// Editor tab whose Editor-owned project search session is currently shown.
+    /// This stays pinned while opening results changes the active tab.
+    project_search_owner: Option<u64>,
     /// The cancellable operation handle for the Editor-owned project search.
-    /// Query/result/status state remains inside the active Editor entity.
+    /// Query/result/status state remains inside the search owner Editor entity.
     project_search_task: Option<Task<()>>,
     /// SFTP browser view per `Sftp` tab id (T08-001).
     sftp_views: HashMap<u64, Entity<SftpView>>,
@@ -842,6 +845,7 @@ impl Workspace {
             layouts: HashMap::new(),
             panes: HashMap::new(),
             editors: HashMap::new(),
+            project_search_owner: None,
             project_search_task: None,
             sftp_views: HashMap::new(),
             previews: HashMap::new(),
@@ -1979,7 +1983,8 @@ impl Workspace {
 
     /// Start the Editor-owned project search through the explicit workspace
     /// filesystem root. Workspace owns only this async adapter and operation
-    /// handle; all query/result/status state stays in `EditorView`.
+    /// handle; query/result/status state stays in the Editor entity that
+    /// started the search, even when opening a result activates another tab.
     pub fn project_search_set(
         &mut self,
         query: ProjectSearchQuery,
@@ -1988,6 +1993,7 @@ impl Workspace {
         self.project_search_task.take();
         let tab_id = self.tabs.read(cx).active_id();
         let editor = self.editors.get(&tab_id).cloned()?;
+        self.project_search_owner = Some(tab_id);
         let request = editor.update(cx, |editor, cx| editor.begin_project_search(query, cx));
         if request.query.text.is_empty() {
             return Some(());
@@ -2018,7 +2024,9 @@ impl Workspace {
         self.project_search_task = Some(cx.spawn(async move |this, cx| {
             let result = job.await.map_err(|error| error.to_string()).and_then(|r| r);
             let _ = this.update(cx, |workspace, cx| {
-                if workspace.tabs.read(cx).active_id() != tab_id {
+                if workspace.project_search_owner != Some(tab_id)
+                    || !workspace.editors.contains_key(&tab_id)
+                {
                     return;
                 }
                 workspace.project_search_task = None;
@@ -2051,7 +2059,7 @@ impl Workspace {
     }
 
     pub fn project_search_snapshot(&self, cx: &App) -> Option<ProjectSearchSnapshot> {
-        let id = self.tabs.read(cx).active_id();
+        let id = self.project_search_owner?;
         self.editors
             .get(&id)
             .map(|editor| editor.read(cx).project_search_snapshot())
@@ -2062,7 +2070,7 @@ impl Workspace {
         delta: isize,
         cx: &mut Context<Self>,
     ) -> Option<ProjectSearchHit> {
-        let id = self.tabs.read(cx).active_id();
+        let id = self.project_search_owner?;
         self.editors.get(&id).cloned().and_then(|editor| {
             let result = editor.update(cx, |editor, _| editor.move_project_search_selection(delta));
             if result.is_some() {
@@ -2152,8 +2160,8 @@ impl Workspace {
         replacement: &str,
         cx: &mut Context<Self>,
     ) -> Option<Result<ProjectReplaceResult, SearchError>> {
-        let active_id = self.tabs.read(cx).active_id();
-        let active_editor = self.editors.get(&active_id).cloned()?;
+        let search_owner = self.project_search_owner?;
+        let active_editor = self.editors.get(&search_owner).cloned()?;
         let request = match active_editor.update(cx, |editor, cx| {
             editor.begin_project_replace(replacement.to_string(), cx)
         }) {
@@ -2221,12 +2229,18 @@ impl Workspace {
             .is_some_and(|editor| editor.read(cx).search_can_replace())
     }
 
-    /// Clear all search state / match highlights on the active surface.
+    /// Clear search state on the active surface and pinned project-search owner.
     pub fn search_end(&mut self, cx: &mut Context<Self>) {
         self.project_search_task.take();
-        let id = self.tabs.read(cx).active_id();
-        if let Some(e) = self.editors.get(&id).cloned() {
+        let active_id = self.tabs.read(cx).active_id();
+        let search_owner = self.project_search_owner.take();
+        if let Some(e) = search_owner.and_then(|id| self.editors.get(&id).cloned()) {
             e.update(cx, |e, cx| e.search_close(cx));
+        }
+        if search_owner != Some(active_id) {
+            if let Some(e) = self.editors.get(&active_id).cloned() {
+                e.update(cx, |e, cx| e.search_close(cx));
+            }
         }
         if let Some(view) = self.active_pane_view(cx) {
             view.update(cx, |v, cx| v.search_end(cx));
@@ -4173,6 +4187,10 @@ impl Workspace {
             for leaf in layout.leaves() {
                 self.retire_pane(leaf);
             }
+        }
+        if self.project_search_owner == Some(tab.id) {
+            self.project_search_owner = None;
+            self.project_search_task.take();
         }
         self.editors.remove(&tab.id);
         self.previews.remove(&tab.id);
