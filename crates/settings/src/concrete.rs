@@ -364,6 +364,10 @@ impl EditorSettings {
         self.0.editor_indent_with_tabs.unwrap_or(false)
     }
 
+    pub fn drag_and_drop_selection(&self) -> bool {
+        self.0.editor_drag_and_drop_selection.unwrap_or(true)
+    }
+
     pub fn tab_size(&self) -> u32 {
         self.0.editor_tab_size.unwrap_or(2)
     }
@@ -1072,6 +1076,16 @@ mod tests {
         let mut content = SettingsContent::default();
         content.editor.editor_git_blame_status = Some(true);
         assert!(EditorSettings::from_settings(&content).git_blame_status());
+    }
+
+    #[test]
+    fn editor_drag_and_drop_selection_defaults_on_and_can_be_disabled() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(defaults.drag_and_drop_selection());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_drag_and_drop_selection = Some(false);
+        assert!(!EditorSettings::from_settings(&content).drag_and_drop_selection());
     }
 
     #[test]

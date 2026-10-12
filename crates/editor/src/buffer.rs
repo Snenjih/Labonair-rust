@@ -333,6 +333,7 @@ pub enum EditSource {
     Completion,
     Delete,
     Paste,
+    Move,
     Replace,
     Format,
     External,

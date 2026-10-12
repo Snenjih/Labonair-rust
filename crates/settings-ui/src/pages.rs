@@ -373,7 +373,10 @@ const EDITOR_GROUPS: &[Group] = &[
             "editorLineHeight"
         ),
     ),
-    ("Behaviour", paths!("editor": "editorTabSize")),
+    (
+        "Behaviour",
+        paths!("editor": "editorTabSize", "editorDragAndDropSelection"),
+    ),
     ("Indentation", paths!("editor": "editorIndentWithTabs")),
     ("Formatting & Save", paths!("editor": "editorFormatOnSave")),
     (

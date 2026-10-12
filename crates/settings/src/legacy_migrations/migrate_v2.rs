@@ -471,6 +471,7 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_line_numbers: Some(p.editor_line_numbers),
         editor_relative_line_numbers: Some(p.editor_relative_line_numbers),
         editor_indent_with_tabs: Some(p.editor_indent_with_tabs),
+        editor_drag_and_drop_selection: Some(true),
         editor_indentation_guides: Some(p.editor_indentation_guides),
         editor_whitespace: Some("none".to_string()),
         editor_whitespace_space: Some("•".to_string()),

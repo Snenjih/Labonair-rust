@@ -552,6 +552,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Use tab characters instead of spaces."
         ),
         field!(
+            editor.editor_drag_and_drop_selection,
+            "editorDragAndDropSelection",
+            Switch,
+            "Drag selected text",
+            "Move a selected range by dragging it to another place in the editor."
+        ),
+        field!(
             editor.editor_indentation_guides,
             "editorIndentationGuides",
             Switch,
@@ -1579,6 +1586,19 @@ mod tests {
             .find(|field| field.json_path == "editor.editorIndentationGuides")
             .expect("editor indentation-guides setting");
         assert!(matches!(field.control, FieldControl::Switch));
+    }
+
+    #[test]
+    fn editor_drag_and_drop_selection_is_an_exposed_switch() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorDragAndDropSelection")
+            .expect("editor drag-and-drop setting");
+        assert!(matches!(field.control, FieldControl::Switch));
+
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::Bool(false)));
+        assert_eq!((field.get)(&content), Some(Value::Bool(false)));
     }
 
     #[test]

@@ -46,6 +46,12 @@ pub enum EditIntent {
     UndoSelection,
     RedoSelection,
     DuplicateSelection,
+    /// Move the sole non-empty selection to a byte offset in the current
+    /// buffer. The offset is measured before the move and the operation is a
+    /// single undoable transaction.
+    MoveSelectionTo {
+        offset: usize,
+    },
     ExpandSelection,
     ShrinkSelection,
     DuplicateLines,
@@ -272,6 +278,7 @@ impl Document {
             EditIntent::UndoSelection => self.selection_history_step(false),
             EditIntent::RedoSelection => self.selection_history_step(true),
             EditIntent::DuplicateSelection => self.duplicate_selection(),
+            EditIntent::MoveSelectionTo { offset } => self.move_selection_to(offset),
             EditIntent::ExpandSelection => self.expand_selection(),
             EditIntent::ShrinkSelection => self.shrink_selection(),
             EditIntent::DuplicateLines => self.duplicate_lines(),
@@ -1060,6 +1067,58 @@ impl Document {
             changed: true,
             events: vec![EditorViewEvent::EditApplied {
                 source: EditSource::Paste,
+                edit_count: edits.len(),
+            }],
+        }
+    }
+
+    fn move_selection_to(&mut self, target: usize) -> EditorCommandResult {
+        let selection = self.selection_set();
+        if selection.len() != 1 {
+            return EditorCommandResult::unchanged();
+        }
+
+        let snapshot = self.snapshot();
+        let range = selection.primary().range().resolve(&snapshot);
+        if range.is_empty()
+            || target > snapshot.byte_len()
+            || !snapshot.text().is_char_boundary(target)
+        {
+            return EditorCommandResult::unchanged();
+        }
+        if (range.start..=range.end).contains(&target) {
+            return EditorCommandResult::unchanged();
+        }
+
+        let text = snapshot.text_range(range);
+        let inserted_at = if target < range.start {
+            target
+        } else {
+            target.saturating_sub(range.end - range.start)
+        };
+        let insertion = Edit::new(TextRange::new(target, target), text.clone());
+        let removal = Edit::new(range, String::new());
+        let edits = if target < range.start {
+            vec![insertion, removal]
+        } else {
+            vec![removal, insertion]
+        };
+        let after = SelectionSet::single(Selection {
+            anchor: Anchor::new(inserted_at, AnchorAffinity::Before),
+            head: Anchor::new(inserted_at + text.len(), AnchorAffinity::After),
+        });
+        if !self.apply_edits(
+            edits.clone(),
+            after,
+            EditSource::Move,
+            Some("Move text".into()),
+        ) {
+            return EditorCommandResult::unchanged();
+        }
+        EditorCommandResult {
+            changed: true,
+            events: vec![EditorViewEvent::EditApplied {
+                source: EditSource::Move,
                 edit_count: edits.len(),
             }],
         }
@@ -2281,6 +2340,64 @@ mod tests {
 
         document.execute_edit(EditIntent::SelectAll);
         assert_eq!(document.selected_text().as_deref(), Some("abcd"));
+    }
+
+    #[test]
+    fn moving_selected_text_is_one_undoable_transaction() {
+        let mut document = doc("one two");
+        document.set_caret(Position::new(0, 0), false);
+        document.set_caret(Position::new(0, 3), true);
+
+        let result = document.execute_edit(EditIntent::MoveSelectionTo { offset: 7 });
+
+        assert!(result.changed);
+        assert_eq!(document.text(), " twoone");
+        assert_eq!(document.selected_text().as_deref(), Some("one"));
+        document.undo();
+        assert_eq!(document.text(), "one two");
+        assert_eq!(document.selected_text().as_deref(), Some("one"));
+    }
+
+    #[test]
+    fn moving_selected_text_before_itself_and_inside_it_is_safe() {
+        let mut document = doc("one two");
+        document.set_caret(Position::new(0, 4), false);
+        document.set_caret(Position::new(0, 7), true);
+
+        let result = document.execute_edit(EditIntent::MoveSelectionTo { offset: 0 });
+        assert!(result.changed);
+        assert_eq!(document.text(), "twoone ");
+        assert_eq!(document.selected_text().as_deref(), Some("two"));
+
+        let no_op = document.execute_edit(EditIntent::MoveSelectionTo { offset: 1 });
+        assert!(!no_op.changed);
+        assert_eq!(document.text(), "twoone ");
+        assert!(!document.undo_selection());
+        document.undo();
+        assert_eq!(document.text(), "one two");
+    }
+
+    #[test]
+    fn moving_text_rejects_multiple_cursors_and_non_character_offsets() {
+        let mut document = doc("aébc");
+        document.set_caret(Position::new(0, 1), false);
+        document.set_caret(Position::new(0, 3), true);
+        document.execute_edit(EditIntent::AddCursor(Position::new(0, 0)));
+        assert!(
+            !document
+                .execute_edit(EditIntent::MoveSelectionTo { offset: 4 })
+                .changed
+        );
+        assert_eq!(document.text(), "aébc");
+
+        document.set_caret(Position::new(0, 1), false);
+        document.set_caret(Position::new(0, 3), true);
+        assert!(
+            !document
+                .execute_edit(EditIntent::MoveSelectionTo { offset: 2 })
+                .changed
+        );
+        assert_eq!(document.text(), "aébc");
     }
 
     #[test]

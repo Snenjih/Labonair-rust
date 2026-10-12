@@ -173,6 +173,16 @@ struct EditorSelectionDrag {
     origin_display_column: usize,
 }
 
+/// A press that starts inside a single selection stays pending until the
+/// pointer moves. A plain click still places the caret; moving and releasing
+/// instead moves the selected text in one editor transaction.
+#[derive(Clone, Debug)]
+struct EditorTextDrag {
+    origin: Point<Pixels>,
+    click_position: Position,
+    moved: bool,
+}
+
 const EDITOR_SCROLLBAR_SIZE: f32 = 10.0;
 const EDITOR_SCROLLBAR_MIN_THUMB: f32 = 24.0;
 const EDITOR_BREADCRUMB_MAX_PATH_CHARS: usize = 96;
@@ -1171,6 +1181,7 @@ pub struct EditorView {
     line_ending_menu_anchor: Option<Point<Pixels>>,
     encoding_menu_anchor: Option<Point<Pixels>>,
     selection_drag: Option<EditorSelectionDrag>,
+    text_drag: Option<EditorTextDrag>,
     outline_open: bool,
     breadcrumb_visible_override: Option<bool>,
     diagnostics_enabled_override: Option<bool>,
@@ -1493,6 +1504,7 @@ impl EditorView {
             line_ending_menu_anchor: None,
             encoding_menu_anchor: None,
             selection_drag: None,
+            text_drag: None,
             outline_open: false,
             breadcrumb_visible_override: None,
             diagnostics_enabled_override: None,
@@ -6970,6 +6982,62 @@ impl EditorView {
         });
     }
 
+    fn begin_text_drag(&mut self, point: Point<Pixels>, shift: bool, alt: bool) -> bool {
+        self.text_drag = None;
+        if shift || alt || !self.prefs.drag_and_drop_selection() {
+            return false;
+        }
+
+        let selections = self.doc.selection_set();
+        if selections.len() != 1 {
+            return false;
+        }
+        let snapshot = self.doc.snapshot();
+        let range = selections.primary().range().resolve(&snapshot);
+        if range.is_empty() {
+            return false;
+        }
+
+        let click_position = self.position_at(point);
+        let offset = snapshot.position_to_byte(click_position);
+        if !(range.start..range.end).contains(&offset) {
+            return false;
+        }
+
+        self.text_drag = Some(EditorTextDrag {
+            origin: point,
+            click_position,
+            moved: false,
+        });
+        true
+    }
+
+    fn update_text_drag(&mut self, point: Point<Pixels>) {
+        if let Some(drag) = self.text_drag.as_mut() {
+            let delta_x = f32::from(point.x - drag.origin.x).abs();
+            let delta_y = f32::from(point.y - drag.origin.y).abs();
+            drag.moved |= delta_x >= 3.0 || delta_y >= 3.0;
+        }
+    }
+
+    fn finish_text_drag(&mut self, point: Point<Pixels>, cx: &mut Context<Self>) {
+        let Some(drag) = self.text_drag.take() else {
+            return;
+        };
+
+        if drag.moved {
+            let destination = self.position_at(point);
+            let offset = self.doc.snapshot().position_to_byte(destination);
+            let _ = self.execute_command(
+                EditorCommand::Edit(EditIntent::MoveSelectionTo { offset }),
+                cx,
+            );
+        } else {
+            self.doc.set_caret(drag.click_position, false);
+            cx.notify();
+        }
+    }
+
     fn update_selection_drag(&mut self, point: Point<Pixels>) {
         let Some(drag) = self.selection_drag.clone() else {
             return;
@@ -12006,16 +12074,27 @@ impl Render for EditorView {
                         }
                     }
                     window.focus(&this.focus_handle);
-                    this.begin_selection_drag(ev.position, ev.modifiers.shift, ev.modifiers.alt);
+                    if !this.begin_text_drag(ev.position, ev.modifiers.shift, ev.modifiers.alt) {
+                        this.begin_selection_drag(
+                            ev.position,
+                            ev.modifiers.shift,
+                            ev.modifiers.alt,
+                        );
+                    }
                     cx.stop_propagation();
                     cx.notify();
                 }),
             )
             .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _window, cx| {
-                if ev.pressed_button == Some(MouseButton::Left) && this.selection_drag.is_some() {
+                if ev.pressed_button == Some(MouseButton::Left) && this.text_drag.is_some() {
+                    this.update_text_drag(ev.position);
+                    cx.notify();
+                } else if ev.pressed_button == Some(MouseButton::Left)
+                    && this.selection_drag.is_some()
+                {
                     this.update_selection_drag(ev.position);
                     cx.notify();
-                } else if this.selection_drag.is_none() {
+                } else if this.selection_drag.is_none() && this.text_drag.is_none() {
                     this.update_hover(ev.position, cx);
                     let position = this.position_at(ev.position);
                     this.schedule_language_hover(position, cx);
@@ -12023,14 +12102,16 @@ impl Render for EditorView {
             }))
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|this, _ev: &MouseUpEvent, _window, cx| {
+                cx.listener(|this, ev: &MouseUpEvent, _window, cx| {
+                    this.finish_text_drag(ev.position, cx);
                     this.finish_selection_drag();
                     cx.notify();
                 }),
             )
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|this, _ev: &MouseUpEvent, _window, cx| {
+                cx.listener(|this, ev: &MouseUpEvent, _window, cx| {
+                    this.finish_text_drag(ev.position, cx);
                     this.finish_selection_drag();
                     cx.notify();
                 }),
@@ -12618,6 +12699,81 @@ mod tests {
                 assert_eq!(this.doc.selection_set().len(), 1);
                 assert_eq!(this.doc.cursor, Position::new(3, 1));
                 assert!(!this.doc.undo_selection());
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn dragging_selected_text_moves_it_but_clicking_inside_places_the_caret(
+        cx: &mut TestAppContext,
+    ) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.metrics = (10.0, 18.0);
+                this.gutter_width = 0.0;
+                this.bounds = Some(gpui::Bounds {
+                    origin: gpui::Point::default(),
+                    size: gpui::Size {
+                        width: px(120.0),
+                        height: px(80.0),
+                    },
+                });
+                this.doc = Document::from_file("test.txt".into(), "one two", 1);
+                this.doc.set_caret(Position::new(0, 0), false);
+                this.doc.set_caret(Position::new(0, 3), true);
+
+                assert!(this.begin_text_drag(gpui::point(px(10.0), px(0.0)), false, false));
+                this.update_text_drag(gpui::point(px(20.0), px(0.0)));
+                this.finish_text_drag(gpui::point(px(70.0), px(0.0)), cx);
+                assert_eq!(this.doc.text(), " twoone");
+                assert_eq!(this.doc.selected_text().as_deref(), Some("one"));
+                this.doc.undo();
+                assert_eq!(this.doc.text(), "one two");
+
+                assert!(this.begin_text_drag(gpui::point(px(10.0), px(0.0)), false, false));
+                this.finish_text_drag(gpui::point(px(10.0), px(0.0)), cx);
+                assert_eq!(this.doc.text(), "one two");
+                assert!(this.doc.selected_text().is_none());
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn drag_and_drop_setting_controls_selected_text_movement(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            install_editor_prefs(cx, |editor| {
+                editor.editor_drag_and_drop_selection = Some(false);
+            });
+        });
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.apply_prefs(cx);
+                this.metrics = (10.0, 18.0);
+                this.gutter_width = 0.0;
+                this.bounds = Some(gpui::Bounds {
+                    origin: gpui::Point::default(),
+                    size: gpui::Size {
+                        width: px(120.0),
+                        height: px(80.0),
+                    },
+                });
+                this.doc = Document::from_file("test.txt".into(), "one two", 1);
+                this.doc.set_caret(Position::new(0, 0), false);
+                this.doc.set_caret(Position::new(0, 3), true);
+                assert!(!this.begin_text_drag(gpui::point(px(10.0), px(0.0)), false, false));
+            });
+        });
+        cx.update(|cx| {
+            install_editor_prefs(cx, |editor| {
+                editor.editor_drag_and_drop_selection = Some(true);
+            });
+        });
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.apply_prefs(cx);
+                assert!(this.begin_text_drag(gpui::point(px(10.0), px(0.0)), false, false));
             });
         });
     }

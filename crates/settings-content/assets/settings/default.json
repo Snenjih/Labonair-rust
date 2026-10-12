@@ -90,6 +90,7 @@
     "editorLineNumbers": true,
     "editorRelativeLineNumbers": false,
     "editorIndentWithTabs": false,
+    "editorDragAndDropSelection": true,
     "editorIndentationGuides": true,
     "editorWhitespace": "none",
     "editorWhitespaceSpace": "•",

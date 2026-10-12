@@ -284,6 +284,7 @@ pub struct EditorContent {
     pub editor_line_numbers: Option<bool>,
     pub editor_relative_line_numbers: Option<bool>,
     pub editor_indent_with_tabs: Option<bool>,
+    pub editor_drag_and_drop_selection: Option<bool>,
     pub editor_indentation_guides: Option<bool>,
     pub editor_whitespace: Option<String>,
     pub editor_whitespace_space: Option<String>,
@@ -388,6 +389,7 @@ impl EditorContent {
             editor_line_numbers: Some(true),
             editor_relative_line_numbers: Some(false),
             editor_indent_with_tabs: Some(false),
+            editor_drag_and_drop_selection: Some(true),
             editor_indentation_guides: Some(true),
             editor_whitespace: Some("none".to_string()),
             editor_whitespace_space: Some("•".to_string()),
@@ -535,6 +537,18 @@ mod tests {
         assert_eq!(defaults["searchIncludeIgnored"], false);
         assert_eq!(defaults["searchOnType"], true);
         assert_eq!(defaults["searchSeedFromCursor"], "always");
+    }
+
+    #[test]
+    fn drag_and_drop_selection_setting_parses_and_serializes() {
+        let parsed: EditorContent = serde_json::from_value(serde_json::json!({
+            "editorDragAndDropSelection": false
+        }))
+        .expect("parse editor drag-and-drop preference");
+        assert_eq!(parsed.editor_drag_and_drop_selection, Some(false));
+
+        let value = serde_json::to_value(parsed).expect("serialize editor preferences");
+        assert_eq!(value["editorDragAndDropSelection"], false);
     }
 
     #[test]
