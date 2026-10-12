@@ -818,6 +818,10 @@ fn context_from_label(label: &str) -> Option<CommandContext> {
         "Editor" => Some(CommandContext::Editor),
         "EditorVim" | "Vim Editor" => Some(CommandContext::EditorVim),
         "EditorHelix" | "Helix Editor" => Some(CommandContext::EditorHelix),
+        "EditorSnippetNext" | "Snippet Next Tabstop" => Some(CommandContext::EditorSnippetNext),
+        "EditorSnippetPrevious" | "Snippet Previous Tabstop" => {
+            Some(CommandContext::EditorSnippetPrevious)
+        }
         "Preview" => Some(CommandContext::Preview),
         "Terminal" => Some(CommandContext::Terminal),
         "Sftp" | "SFTP" => Some(CommandContext::Sftp),
@@ -1647,6 +1651,8 @@ mod tests {
             CommandContext::Editor,
             CommandContext::EditorVim,
             CommandContext::EditorHelix,
+            CommandContext::EditorSnippetNext,
+            CommandContext::EditorSnippetPrevious,
             CommandContext::Preview,
             CommandContext::Terminal,
             CommandContext::Sftp,

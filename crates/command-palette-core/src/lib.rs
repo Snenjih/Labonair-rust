@@ -17,6 +17,8 @@ pub enum CommandContext {
     Editor,
     EditorVim,
     EditorHelix,
+    EditorSnippetNext,
+    EditorSnippetPrevious,
     Preview,
     Sftp,
     Home,
@@ -111,6 +113,8 @@ pub enum CommandId {
     EditorSelectAll,
     EditorUndoSelection,
     EditorRedoSelection,
+    EditorNextSnippetTabstop,
+    EditorPreviousSnippetTabstop,
     EditorGoToLineColumn,
     EditorGoBack,
     EditorGoForward,
@@ -606,6 +610,14 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::EditorSelectAll, "editor.select-all"),
     (CommandId::EditorUndoSelection, "editor.undo-selection"),
     (CommandId::EditorRedoSelection, "editor.redo-selection"),
+    (
+        CommandId::EditorNextSnippetTabstop,
+        "editor.next-snippet-tabstop"
+    ),
+    (
+        CommandId::EditorPreviousSnippetTabstop,
+        "editor.previous-snippet-tabstop"
+    ),
     (
         CommandId::EditorGoToLineColumn,
         "editor.go-to-line-column"

@@ -287,7 +287,7 @@ pub fn snapshot<'a>(
             command: descriptor.id,
             title: descriptor.title.clone(),
             section: descriptor.section.clone(),
-            contexts: management_contexts(&descriptor.contexts),
+            contexts: management_contexts(descriptor),
             default_bindings: descriptor
                 .default_bindings
                 .iter()
@@ -318,11 +318,26 @@ pub fn snapshot<'a>(
 /// Offer modal editor scopes in the keymap editor for every command that is
 /// available in the general editor surface. Runtime command availability
 /// remains tied to the descriptor's declared `Editor` context.
-fn management_contexts(contexts: &[CommandContext]) -> Vec<CommandContext> {
-    let mut expanded = contexts.to_vec();
-    if contexts.contains(&CommandContext::Editor) {
+fn management_contexts(descriptor: &CommandDescriptor) -> Vec<CommandContext> {
+    let mut expanded = descriptor.contexts.clone();
+    if descriptor.contexts.contains(&CommandContext::Editor) {
         expanded.extend([CommandContext::EditorVim, CommandContext::EditorHelix]);
     }
+    expanded.extend(
+        descriptor
+            .default_bindings
+            .iter()
+            .filter_map(|binding| binding.context),
+    );
+    let mut seen = Vec::new();
+    expanded.retain(|context| {
+        if seen.contains(context) {
+            false
+        } else {
+            seen.push(*context);
+            true
+        }
+    });
     expanded
 }
 
@@ -473,6 +488,33 @@ mod tests {
         assert_eq!(
             snapshot.conflict(CommandId::OpenSettings, Some("Editor"), "shift-cmd-f"),
             None
+        );
+    }
+
+    #[test]
+    fn snapshot_exposes_binding_contexts_for_editing() {
+        let descriptor = CommandDescriptor::new(
+            CommandId::EditorNextSnippetTabstop,
+            "Next Snippet Tabstop",
+            "Editor",
+        )
+        .with_contexts(&[CommandContext::Editor])
+        .with_default_binding("tab", Some(CommandContext::EditorSnippetNext));
+        let runtime = KeymapSnapshot {
+            effective_bindings: Vec::new(),
+            issues: Vec::new(),
+        };
+
+        let snapshot = snapshot([&descriptor], &runtime, document());
+
+        assert_eq!(
+            snapshot.rows[0].contexts,
+            vec![
+                CommandContext::Editor,
+                CommandContext::EditorVim,
+                CommandContext::EditorHelix,
+                CommandContext::EditorSnippetNext,
+            ]
         );
     }
 

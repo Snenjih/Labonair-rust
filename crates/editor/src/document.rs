@@ -12,6 +12,7 @@ use crate::buffer::{
     Anchor, AnchorAffinity, BufferSnapshot, Edit, EditSource, EditorBuffer, Position, Selection,
     SelectionSet, TextRange, Transaction,
 };
+use crate::editing::SnippetSession;
 use crate::history::History;
 use crate::language::Language;
 use crate::lifecycle::{
@@ -19,7 +20,7 @@ use crate::lifecycle::{
     FileLifecycleEvent, FileSessionMetadata, FileSnapshot, FileState, LineEnding, ReloadDecision,
     SaveIntent,
 };
-use crate::search::{self, ProjectSearchQuery, SearchError, SearchQuery};
+use crate::search::{self, map_range_through_edits, ProjectSearchQuery, SearchError, SearchQuery};
 
 /// Whether a document may be toggled from its editor-tab context menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +68,39 @@ pub struct Document {
     goal_column: Option<usize>,
     /// User-selected temporary lock for otherwise editable buffers.
     temporary_read_only: bool,
+    /// Transient completion snippet state. Placeholder ranges are mapped
+    /// through document transactions and are never persisted with the buffer.
+    active_snippet: Option<ActiveSnippet>,
+}
+
+#[derive(Clone, Debug)]
+struct ActiveSnippet {
+    session: SnippetSession,
+    base_offset: usize,
+    extent: TextRange,
+}
+
+impl ActiveSnippet {
+    fn map_through_edits(&mut self, edits: &[Edit]) {
+        if edits.is_empty() {
+            return;
+        }
+        let base = self.base_offset;
+        let next_base = map_range_through_edits(TextRange::new(base, base), edits).start;
+        for placeholder in &mut self.session.placeholders {
+            let absolute = TextRange::new(
+                base.saturating_add(placeholder.start),
+                base.saturating_add(placeholder.end),
+            );
+            let mapped = map_range_through_edits(absolute, edits);
+            *placeholder = TextRange::new(
+                mapped.start.saturating_sub(next_base),
+                mapped.end.saturating_sub(next_base),
+            );
+        }
+        self.extent = map_range_through_edits(self.extent, edits);
+        self.base_offset = next_base;
+    }
 }
 
 impl Default for Document {
@@ -90,6 +124,7 @@ impl Document {
             selection_redo: Vec::new(),
             goal_column: None,
             temporary_read_only: false,
+            active_snippet: None,
         }
     }
 
@@ -110,6 +145,7 @@ impl Document {
             selection_redo: Vec::new(),
             goal_column: None,
             temporary_read_only: false,
+            active_snippet: None,
         }
     }
 
@@ -148,6 +184,7 @@ impl Document {
             selection_redo: Vec::new(),
             goal_column: None,
             temporary_read_only: false,
+            active_snippet: None,
         }
     }
 
@@ -180,6 +217,7 @@ impl Document {
             selection_redo: Vec::new(),
             goal_column: None,
             temporary_read_only: false,
+            active_snippet: None,
         }
     }
 
@@ -298,6 +336,7 @@ impl Document {
         snapshot: FileSnapshot,
         decision: ReloadDecision,
     ) -> Result<FileLifecycleEvent, FileLifecycleError> {
+        self.active_snippet = None;
         self.buffer = EditorBuffer::from_text(&snapshot.text);
         let event = self.lifecycle.reload_decision(snapshot, decision)?;
         self.cursor = self.buffer.clamp(self.cursor);
@@ -503,6 +542,9 @@ impl Document {
             Ok(applied) => applied,
             Err(_) => return false,
         };
+        if let Some(snippet) = self.active_snippet.as_mut() {
+            snippet.map_through_edits(transaction.edits());
+        }
         self.history.record(transaction, applied.inverse);
         self.clear_selection_history();
         self.restore_selection(&selection_after);
@@ -521,6 +563,99 @@ impl Document {
         label: Option<String>,
     ) -> bool {
         self.apply_edit(edits, selection_after, source, label)
+    }
+
+    /// Replace `range` with parsed snippet text and select its first tabstop.
+    /// The session follows subsequent edits through the same transaction path
+    /// as document selections.
+    pub fn apply_snippet(&mut self, range: TextRange, session: SnippetSession) -> bool {
+        if range.end > self.snapshot().byte_len() {
+            return false;
+        }
+        let base_offset = range.start;
+        let inserted_len = session.text.len();
+        let selection_after = session
+            .active_placeholder()
+            .map(|placeholder| {
+                selection_set_from_offsets(
+                    Some(base_offset.saturating_add(placeholder.start)),
+                    base_offset.saturating_add(placeholder.end),
+                )
+            })
+            .unwrap_or_else(|| selection_set_from_offsets(None, base_offset + inserted_len));
+        let extent = TextRange::new(base_offset, base_offset.saturating_add(inserted_len));
+        if !self.apply_edit(
+            vec![Edit::new(range, session.text.clone())],
+            selection_after,
+            EditSource::Completion,
+            Some("Insert snippet".to_owned()),
+        ) {
+            return false;
+        }
+        self.active_snippet = session.has_placeholders().then_some(ActiveSnippet {
+            session,
+            base_offset,
+            extent,
+        });
+        true
+    }
+
+    pub fn has_next_snippet_tabstop(&self) -> bool {
+        self.active_snippet.as_ref().is_some_and(|snippet| {
+            snippet.session.has_next_tabstop() && self.selection_within_snippet(snippet.extent)
+        })
+    }
+
+    pub fn has_previous_snippet_tabstop(&self) -> bool {
+        self.active_snippet.as_ref().is_some_and(|snippet| {
+            snippet.session.has_previous_tabstop() && self.selection_within_snippet(snippet.extent)
+        })
+    }
+
+    pub fn next_snippet_tabstop(&mut self) -> bool {
+        if !self.has_next_snippet_tabstop() {
+            return false;
+        }
+        let Some((base, range)) = self.active_snippet.as_mut().and_then(|snippet| {
+            snippet
+                .session
+                .advance()
+                .map(|range| (snippet.base_offset, range))
+        }) else {
+            return false;
+        };
+        self.set_selection_set(selection_set_from_offsets(
+            Some(base.saturating_add(range.start)),
+            base.saturating_add(range.end),
+        ));
+        true
+    }
+
+    pub fn previous_snippet_tabstop(&mut self) -> bool {
+        if !self.has_previous_snippet_tabstop() {
+            return false;
+        }
+        let Some((base, range)) = self.active_snippet.as_mut().and_then(|snippet| {
+            snippet
+                .session
+                .retreat()
+                .map(|range| (snippet.base_offset, range))
+        }) else {
+            return false;
+        };
+        self.set_selection_set(selection_set_from_offsets(
+            Some(base.saturating_add(range.start)),
+            base.saturating_add(range.end),
+        ));
+        true
+    }
+
+    fn selection_within_snippet(&self, extent: TextRange) -> bool {
+        let snapshot = self.snapshot();
+        self.selection_set()
+            .ranges(&snapshot)
+            .iter()
+            .all(|range| range.start >= extent.start && range.end <= extent.end)
     }
 
     /// Insert text at the caret, replacing any selection.
@@ -594,9 +729,17 @@ impl Document {
         self.clear_selection_history();
         let mut final_selection = None;
         for transaction in transactions {
+            let source = transaction.source();
             let rebased = transaction.with_base_revision(self.buffer.revision(), EditSource::Undo);
             match self.buffer.apply_transaction(&rebased) {
-                Ok(_) => final_selection = Some(rebased.selection_after().clone()),
+                Ok(_) => {
+                    if source == EditSource::Completion {
+                        self.active_snippet = None;
+                    } else if let Some(snippet) = self.active_snippet.as_mut() {
+                        snippet.map_through_edits(rebased.edits());
+                    }
+                    final_selection = Some(rebased.selection_after().clone());
+                }
                 Err(_) => return,
             }
         }
@@ -619,7 +762,12 @@ impl Document {
         for transaction in transactions {
             let rebased = transaction.with_base_revision(self.buffer.revision(), EditSource::Redo);
             match self.buffer.apply_transaction(&rebased) {
-                Ok(_) => final_selection = Some(rebased.selection_after().clone()),
+                Ok(_) => {
+                    if let Some(snippet) = self.active_snippet.as_mut() {
+                        snippet.map_through_edits(rebased.edits());
+                    }
+                    final_selection = Some(rebased.selection_after().clone());
+                }
                 Err(_) => return,
             }
         }
@@ -892,6 +1040,28 @@ mod tests {
         d.accept_saved(snapshot("f.txt", &d.text(), 2)).unwrap();
         assert!(!d.is_dirty());
         assert_eq!(d.text(), "hello!");
+    }
+
+    #[test]
+    fn snippet_tabstops_follow_replacements_and_navigate_in_both_directions() {
+        let mut document = Document::from_file("snippet.rs".into(), "", 0);
+        let snippet = SnippetSession::parse("fn ${1:name}(${2:arg}) {$0}");
+        assert!(document.apply_snippet(TextRange::new(0, 0), snippet));
+        assert_eq!(document.text(), "fn name(arg) {}");
+        assert_eq!(document.selected_text().as_deref(), Some("name"));
+
+        document.insert("builder");
+        assert!(document.has_next_snippet_tabstop());
+        assert!(document.next_snippet_tabstop());
+        assert_eq!(document.selected_text().as_deref(), Some("arg"));
+
+        document.insert("value");
+        assert!(document.next_snippet_tabstop());
+        assert!(!document.has_next_snippet_tabstop());
+        assert!(document.has_previous_snippet_tabstop());
+        assert!(document.previous_snippet_tabstop());
+        assert_eq!(document.selected_text().as_deref(), Some("value"));
+        assert_eq!(document.text(), "fn builder(value) {}");
     }
 
     #[test]

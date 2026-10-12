@@ -50,6 +50,8 @@ pub enum EditorUiCommand {
     GoForward,
     ToggleSearchSelection,
     ToggleReadOnly,
+    NextSnippetTabstop,
+    PreviousSnippetTabstop,
     OpenMarkdownPreview,
     ToggleBreadcrumb,
     ToggleInlayHints,
@@ -116,6 +118,12 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         }
         CommandId::EditorUndoSelection => EditorCommandRoute::Edit(EditIntent::UndoSelection),
         CommandId::EditorRedoSelection => EditorCommandRoute::Edit(EditIntent::RedoSelection),
+        CommandId::EditorNextSnippetTabstop => {
+            EditorCommandRoute::Ui(EditorUiCommand::NextSnippetTabstop)
+        }
+        CommandId::EditorPreviousSnippetTabstop => {
+            EditorCommandRoute::Ui(EditorUiCommand::PreviousSnippetTabstop)
+        }
         CommandId::EditorGoToLineColumn => EditorCommandRoute::Ui(EditorUiCommand::GoToLineColumn),
         CommandId::EditorGoBack => EditorCommandRoute::Ui(EditorUiCommand::GoBack),
         CommandId::EditorGoForward => EditorCommandRoute::Ui(EditorUiCommand::GoForward),
@@ -279,6 +287,8 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorSelectAll,
     CommandId::EditorUndoSelection,
     CommandId::EditorRedoSelection,
+    CommandId::EditorNextSnippetTabstop,
+    CommandId::EditorPreviousSnippetTabstop,
     CommandId::EditorGoToLineColumn,
     CommandId::EditorGoBack,
     CommandId::EditorGoForward,
@@ -499,6 +509,20 @@ impl CommandProvider for EditorCommandProvider {
             CommandDescriptor::new(CommandId::EditorRedoSelection, "Redo Selection", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("cmd-shift-u", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
+                CommandId::EditorNextSnippetTabstop,
+                "Next Snippet Tabstop",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("tab", Some(CommandContext::EditorSnippetNext)),
+            CommandDescriptor::new(
+                CommandId::EditorPreviousSnippetTabstop,
+                "Previous Snippet Tabstop",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("shift-tab", Some(CommandContext::EditorSnippetPrevious)),
             CommandDescriptor::new(
                 CommandId::EditorGoToLineColumn,
                 "Go to Line/Column…",
@@ -1038,6 +1062,34 @@ mod tests {
         assert_eq!(
             bindings(CommandId::EditorRedoSelection),
             vec!["cmd-shift-u"]
+        );
+    }
+
+    #[test]
+    fn snippet_tabstop_commands_are_bound_only_in_their_live_contexts() {
+        let commands = EditorCommandProvider.commands();
+        let next = commands
+            .iter()
+            .find(|command| command.id == CommandId::EditorNextSnippetTabstop)
+            .expect("next snippet tabstop command");
+        let previous = commands
+            .iter()
+            .find(|command| command.id == CommandId::EditorPreviousSnippetTabstop)
+            .expect("previous snippet tabstop command");
+
+        assert_eq!(next.default_bindings[0].keystrokes, "tab");
+        assert_eq!(
+            next.default_bindings[0].context,
+            Some(CommandContext::EditorSnippetNext)
+        );
+        assert_eq!(previous.default_bindings[0].keystrokes, "shift-tab");
+        assert_eq!(
+            previous.default_bindings[0].context,
+            Some(CommandContext::EditorSnippetPrevious)
+        );
+        assert_eq!(
+            route_for_command(CommandId::EditorNextSnippetTabstop),
+            Some(EditorCommandRoute::Ui(EditorUiCommand::NextSnippetTabstop))
         );
     }
 

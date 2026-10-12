@@ -66,8 +66,8 @@ use labonair_editor::{
     ProjectReplaceRequest, ProjectReplaceResult, ProjectReplaceTarget, ProjectSearchHit,
     ProjectSearchQuery, ProjectSearchRequest, ProjectSearchResult, ProjectSearchSession,
     ProjectSearchSnapshot, Revision, SavePolicy, SearchError, SearchOptions, SearchQuery,
-    Selection, SelectionSet, SyntaxHighlighter, TextRange, Viewport, Vim, VimKey, VimMode,
-    VimOptions, WhitespaceMode,
+    Selection, SelectionSet, SnippetSession, SyntaxHighlighter, TextRange, Viewport, Vim, VimKey,
+    VimMode, VimOptions, WhitespaceMode,
 };
 use labonair_editor::{build_breadcrumb_state, BreadcrumbState};
 
@@ -1042,6 +1042,14 @@ impl EditorView {
         };
         context.set("editor_mode", editor_mode);
         context.set("modal_mode", modal_mode);
+        if !self.completion_visible {
+            if self.doc.has_next_snippet_tabstop() {
+                context.add("EditorSnippetNext");
+            }
+            if self.doc.has_previous_snippet_tabstop() {
+                context.add("EditorSnippetPrevious");
+            }
+        }
         context
     }
 
@@ -1307,6 +1315,20 @@ impl EditorView {
                     cx.emit(EditorEvent::Changed);
                     cx.notify();
                 }
+            }
+            EditorCommandRoute::Ui(EditorUiCommand::NextSnippetTabstop) => {
+                if !self.doc.next_snippet_tabstop() {
+                    return false;
+                }
+                self.ensure_cursor_visible(cx);
+                cx.notify();
+            }
+            EditorCommandRoute::Ui(EditorUiCommand::PreviousSnippetTabstop) => {
+                if !self.doc.previous_snippet_tabstop() {
+                    return false;
+                }
+                self.ensure_cursor_visible(cx);
+                cx.notify();
             }
             EditorCommandRoute::Ui(EditorUiCommand::OpenMarkdownPreview) => {
                 if let Some(source) = self.markdown_source_snapshot() {
@@ -2133,12 +2155,18 @@ impl EditorView {
         let before = self.editor_revision();
         let dirty_before = self.doc.is_dirty();
         let selections = self.doc.selection_set();
-        if self.doc.apply_edits(
-            vec![Edit::new(range, item.insert_text)],
-            selections,
-            labonair_editor::EditSource::Completion,
-            Some("Completion".to_string()),
-        ) {
+        let snippet = SnippetSession::parse(&item.insert_text);
+        let applied = if snippet.has_placeholders() {
+            self.doc.apply_snippet(range, snippet)
+        } else {
+            self.doc.apply_edits(
+                vec![Edit::new(range, item.insert_text)],
+                selections.clone(),
+                labonair_editor::EditSource::Completion,
+                Some("Completion".to_string()),
+            )
+        };
+        if applied {
             self.dismiss_completion();
             self.finish_command(before, dirty_before, self.doc.selection_set(), true, cx);
         }
@@ -4799,6 +4827,13 @@ impl EditorView {
             "pageup" => self.navigate(Motion::PageUp(rows), m.shift, cx),
             "pagedown" => self.navigate(Motion::PageDown(rows), m.shift, cx),
             "enter" => self.insert_newline(cx),
+            "tab" if m.shift => {
+                let indent = self.indent_unit();
+                self.execute_command(
+                    EditorCommand::Edit(EditIntent::Outdent { unit: indent }),
+                    cx,
+                );
+            }
             "tab" => {
                 let indent = self.indent_unit();
                 self.execute_command(EditorCommand::Edit(EditIntent::Insert(indent)), cx);
@@ -9348,6 +9383,71 @@ mod tests {
                 assert!(!v.completion_visible);
                 assert_eq!(v.completion_selected, 0);
                 assert!(v.completion_position.is_none());
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn completion_snippets_replace_text_and_navigate_tabstops(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |view, cx| {
+                view.doc = Document::from_file("completion.rs".into(), "pr", 1);
+                view.doc.move_caret(Motion::DocEnd, false);
+                view.language_service_generation = 1;
+                let version = DocumentVersion::from_revision(view.editor_revision());
+                view.language_service_state
+                    .set_document_generation(version, 1);
+                assert!(view.language_service_state.apply(LanguageServiceResult {
+                    server: labonair_editor::LanguageServerId::new("test"),
+                    version,
+                    generation: 1,
+                    response: Ok(LanguageServiceResponse::Completion(
+                        labonair_editor::CompletionList {
+                            items: vec![labonair_editor::CompletionItem {
+                                label: "print".into(),
+                                kind: labonair_editor::CompletionKind::Snippet,
+                                detail: None,
+                                insert_text: "print_${1:arg}(${2:value})$0".into(),
+                                filter_text: None,
+                                sort_text: None,
+                                documentation: None,
+                            }],
+                            is_incomplete: false,
+                        },
+                    )),
+                }));
+                view.completion_visible = true;
+                view.completion_position = Some(view.current_lsp_position());
+                view.apply_completion_item(0, cx);
+
+                assert_eq!(view.doc.text(), "print_arg(value)");
+                assert_eq!(view.doc.selected_text().as_deref(), Some("arg"));
+                let context = view.keymap_context();
+                assert!(key_context_matches(&context, "EditorSnippetNext"));
+                assert!(!key_context_matches(&context, "EditorSnippetPrevious"));
+
+                assert!(view.dispatch_registered_command(CommandId::EditorNextSnippetTabstop, cx,));
+                assert_eq!(view.doc.selected_text().as_deref(), Some("value"));
+                assert!(key_context_matches(
+                    &view.keymap_context(),
+                    "EditorSnippetNext"
+                ));
+                assert!(key_context_matches(
+                    &view.keymap_context(),
+                    "EditorSnippetPrevious"
+                ));
+
+                assert!(view.dispatch_registered_command(CommandId::EditorNextSnippetTabstop, cx,));
+                assert_eq!(view.doc.selected_text(), None);
+                let context = view.keymap_context();
+                assert!(!key_context_matches(&context, "EditorSnippetNext"));
+                assert!(key_context_matches(&context, "EditorSnippetPrevious"));
+
+                assert!(
+                    view.dispatch_registered_command(CommandId::EditorPreviousSnippetTabstop, cx,)
+                );
+                assert_eq!(view.doc.selected_text().as_deref(), Some("value"));
             });
         });
     }

@@ -1957,22 +1957,58 @@ pub struct SnippetSession {
 impl SnippetSession {
     pub fn parse(template: &str) -> Self {
         let mut text = String::new();
-        let mut placeholders = Vec::new();
-        let mut rest = template;
-        while let Some(start) = rest.find("${") {
-            text.push_str(&rest[..start]);
-            let Some(end) = rest[start + 2..].find('}') else {
-                text.push_str(&rest[start..]);
-                break;
-            };
-            let body = &rest[start + 2..start + 2 + end];
-            let default = body.split_once(':').map_or("", |(_, value)| value);
-            let offset = text.len();
-            text.push_str(default);
-            placeholders.push(TextRange::new(offset, text.len()));
-            rest = &rest[start + 3 + end..];
+        let mut tabstops = Vec::new();
+        let mut at = 0;
+        while at < template.len() {
+            let rest = &template[at..];
+            if let Some(escaped) = rest.strip_prefix("\\$") {
+                text.push('$');
+                at += rest.len() - escaped.len();
+                continue;
+            }
+            if let Some(after_dollar) = rest.strip_prefix('$') {
+                if let Some(opened) = after_dollar.strip_prefix('{') {
+                    if let Some(end) = opened.find('}') {
+                        let body = &opened[..end];
+                        if let Some((index, default)) = parse_numeric_tabstop(body) {
+                            let start = text.len();
+                            text.push_str(default);
+                            tabstops.push((index, TextRange::new(start, text.len())));
+                            at += 3 + end;
+                            continue;
+                        }
+                        let literal_end = at + 2 + end;
+                        text.push_str(&template[at..=literal_end]);
+                        at = literal_end + 1;
+                        continue;
+                    }
+                } else {
+                    let digit_len = after_dollar.bytes().take_while(u8::is_ascii_digit).count();
+                    if digit_len > 0 {
+                        if let Ok(index) = after_dollar[..digit_len].parse::<u32>() {
+                            let position = text.len();
+                            tabstops.push((index, TextRange::new(position, position)));
+                            at += 1 + digit_len;
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            let character = rest.chars().next().unwrap_or_default();
+            text.push(character);
+            at += character.len_utf8();
         }
-        text.push_str(rest);
+
+        tabstops.sort_by_key(|(index, _)| (*index == 0, *index));
+        let mut placeholders = Vec::with_capacity(tabstops.len());
+        let mut previous_index = None;
+        for (index, range) in tabstops {
+            if previous_index != Some(index) {
+                placeholders.push(range);
+                previous_index = Some(index);
+            }
+        }
         Self {
             text,
             placeholders,
@@ -1984,12 +2020,53 @@ impl SnippetSession {
         self.placeholders.get(self.active).copied()
     }
 
+    pub fn has_placeholders(&self) -> bool {
+        !self.placeholders.is_empty()
+    }
+
+    pub fn has_next_tabstop(&self) -> bool {
+        self.active + 1 < self.placeholders.len()
+    }
+
+    pub fn has_previous_tabstop(&self) -> bool {
+        self.active > 0 && self.active < self.placeholders.len()
+    }
+
     pub fn advance(&mut self) -> Option<TextRange> {
-        if self.active + 1 < self.placeholders.len() {
-            self.active += 1;
+        if !self.has_next_tabstop() {
+            return None;
         }
+        self.active += 1;
         self.active_placeholder()
     }
+
+    pub fn retreat(&mut self) -> Option<TextRange> {
+        if !self.has_previous_tabstop() {
+            return None;
+        }
+        self.active -= 1;
+        self.active_placeholder()
+    }
+}
+
+fn parse_numeric_tabstop(body: &str) -> Option<(u32, &str)> {
+    let digit_len = body.bytes().take_while(u8::is_ascii_digit).count();
+    if digit_len == 0 {
+        return None;
+    }
+    let index = body[..digit_len].parse::<u32>().ok()?;
+    let suffix = &body[digit_len..];
+    let default = if suffix.is_empty() {
+        ""
+    } else if let Some(default) = suffix.strip_prefix(':') {
+        default
+    } else {
+        let choices = suffix
+            .strip_prefix('|')
+            .and_then(|choices| choices.strip_suffix('|'))?;
+        choices.split(',').next().unwrap_or("")
+    };
+    Some((index, default))
 }
 
 #[cfg(test)]
@@ -2124,6 +2201,26 @@ mod tests {
         let session = SnippetSession::parse("fn ${1:name}(${2})");
         assert_eq!(session.text, "fn name()");
         assert_eq!(session.placeholders.len(), 2);
+    }
+
+    #[test]
+    fn snippets_sort_numbered_tabstops_and_unescape_dollars() {
+        let mut session = SnippetSession::parse(r"${2:second}-${1:first}-$0-\$1");
+        assert_eq!(session.text, "second-first--$1");
+        assert_eq!(session.active_placeholder(), Some(TextRange::new(7, 12)));
+        assert!(session.has_next_tabstop());
+        assert_eq!(session.advance(), Some(TextRange::new(0, 6)));
+        assert_eq!(session.advance(), Some(TextRange::new(13, 13)));
+        assert!(!session.has_next_tabstop());
+        assert_eq!(session.retreat(), Some(TextRange::new(0, 6)));
+        assert!(session.has_previous_tabstop());
+    }
+
+    #[test]
+    fn snippets_preserve_variables_and_overflowing_tabstops_literally() {
+        let session = SnippetSession::parse("${TM_FILENAME}-$4294967296-${1:ok}");
+        assert_eq!(session.text, "${TM_FILENAME}-$4294967296-ok");
+        assert_eq!(session.placeholders, vec![TextRange::new(27, 29)]);
     }
 
     #[test]
