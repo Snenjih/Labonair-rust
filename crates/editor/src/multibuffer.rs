@@ -13,7 +13,11 @@ use crate::buffer::{
     Anchor, AnchorAffinity, BufferSnapshot, Edit, EditSource, EditorBuffer, EditorError, Position,
     Revision, SelectionSet, TextRange, Transaction,
 };
-use crate::search::{map_range_through_edits, ProjectSearchHit};
+use crate::lifecycle::{FileFormat, FileIdentity, FileSnapshot};
+use crate::search::{
+    map_range_through_edits, replace_project_all_checked, ProjectSearchHit, ProjectSearchQuery,
+    SearchError,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ExcerptId(u64);
@@ -46,12 +50,32 @@ impl MultiBufferSource {
     }
 }
 
-/// Full text loaded by the Workspace adapter for a project-search preview.
+/// Lifecycle-preserving source snapshot loaded for a project-search Multi-Buffer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MultiBufferFileContent {
+    pub snapshot: FileSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MultiBufferSaveRequest {
     pub path: PathBuf,
     pub text: String,
-    pub can_edit: bool,
+    pub revision: Revision,
+    pub expected_identity: FileIdentity,
+    pub format: FileFormat,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MultiBufferSavedFile {
+    pub path: PathBuf,
+    pub revision: Revision,
+    pub snapshot: FileSnapshot,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MultiBufferSaveOutcome {
+    pub saved: Vec<MultiBufferSavedFile>,
+    pub error: Option<String>,
 }
 
 /// An edit expressed relative to one excerpt's current source text.
@@ -81,6 +105,15 @@ pub enum MultiBufferError {
         path: PathBuf,
         range: TextRange,
     },
+    MissingAcceptedSnapshot(PathBuf),
+    SnapshotPathMismatch {
+        expected: PathBuf,
+        actual: PathBuf,
+    },
+    MissingExcerptForEdit {
+        path: PathBuf,
+        range: TextRange,
+    },
     ReadOnly(PathBuf),
     StaleRevision {
         path: PathBuf,
@@ -88,6 +121,7 @@ pub enum MultiBufferError {
         actual: Revision,
     },
     Buffer(EditorError),
+    Search(SearchError),
 }
 
 impl fmt::Display for MultiBufferError {
@@ -99,6 +133,22 @@ impl fmt::Display for MultiBufferError {
             Self::InvalidExcerptRange { path, range } => write!(
                 f,
                 "invalid excerpt range {}..{} for {}",
+                range.start,
+                range.end,
+                path.display()
+            ),
+            Self::MissingAcceptedSnapshot(path) => {
+                write!(f, "{} has no accepted disk snapshot", path.display())
+            }
+            Self::SnapshotPathMismatch { expected, actual } => write!(
+                f,
+                "saved snapshot for {} belongs to {}",
+                expected.display(),
+                actual.display()
+            ),
+            Self::MissingExcerptForEdit { path, range } => write!(
+                f,
+                "edit range {}..{} in {} is outside the loaded excerpts",
                 range.start,
                 range.end,
                 path.display()
@@ -116,6 +166,9 @@ impl fmt::Display for MultiBufferError {
                 actual.value()
             ),
             Self::Buffer(error) => write!(f, "buffer transaction failed: {error:?}"),
+            Self::Search(error) => {
+                write!(f, "project search replacement failed: {}", error.message)
+            }
         }
     }
 }
@@ -128,12 +181,19 @@ impl From<EditorError> for MultiBufferError {
     }
 }
 
+impl From<SearchError> for MultiBufferError {
+    fn from(error: SearchError) -> Self {
+        Self::Search(error)
+    }
+}
+
 #[derive(Debug)]
 struct FileBuffer {
     path: PathBuf,
     buffer: EditorBuffer,
     saved_text: String,
     can_edit: bool,
+    accepted_snapshot: Option<FileSnapshot>,
 }
 
 #[derive(Clone, Debug)]
@@ -254,6 +314,7 @@ impl MultiBuffer {
                 buffer: EditorBuffer::from_text(&source.text),
                 saved_text,
                 can_edit: source.can_edit,
+                accepted_snapshot: None,
             });
             file_indices.insert(source.path.clone(), file_index);
             for range in source.excerpt_ranges {
@@ -290,12 +351,16 @@ impl MultiBuffer {
             .collect::<std::collections::BTreeSet<_>>();
         let mut sources = Vec::new();
         let mut loaded_paths = std::collections::BTreeSet::new();
+        let mut accepted_snapshots = HashMap::new();
         for file in files {
-            let path_key = file.path.to_string_lossy().into_owned();
+            let path = file.snapshot.identity.path.clone();
+            let path_key = path.to_string_lossy().into_owned();
             if !hit_paths.contains(&path_key) {
                 continue;
             }
-            let snapshot = EditorBuffer::from_text(&file.text).snapshot();
+            let text = file.snapshot.text.clone();
+            let can_edit = file.snapshot.capabilities.can_edit;
+            let snapshot = EditorBuffer::from_text(&text).snapshot();
             let mut ranges = hits
                 .iter()
                 .filter(|hit| hit.path == path_key)
@@ -330,17 +395,22 @@ impl MultiBuffer {
             if !merged_ranges.is_empty() {
                 loaded_paths.insert(path_key);
                 sources.push(MultiBufferSource {
-                    path: file.path,
-                    text: file.text,
+                    path: path.clone(),
+                    text,
                     excerpt_ranges: merged_ranges,
-                    can_edit: file.can_edit,
+                    can_edit,
                 });
+                accepted_snapshots.insert(path, file.snapshot);
             }
         }
         if let Some(missing) = hit_paths.difference(&loaded_paths).next() {
             return Err(MultiBufferError::UnknownFile(PathBuf::from(missing)));
         }
-        Self::new(sources)
+        let mut buffer = Self::new(sources)?;
+        for file in &mut buffer.files {
+            file.accepted_snapshot = accepted_snapshots.remove(&file.path);
+        }
+        Ok(buffer)
     }
 
     pub fn snapshot(&self) -> MultiBufferSnapshot {
@@ -406,6 +476,67 @@ impl MultiBuffer {
         let file_index = self.file_index(path)?;
         let file = &self.files[file_index];
         Ok(file.buffer.text() != file.saved_text)
+    }
+
+    /// Replace one excerpt's complete visible text with one undoable edit.
+    pub fn replace_excerpt_text(
+        &mut self,
+        excerpt_id: ExcerptId,
+        replacement: &str,
+    ) -> Result<usize, MultiBufferError> {
+        let excerpt = self
+            .excerpts
+            .iter()
+            .find(|excerpt| excerpt.id == excerpt_id)
+            .ok_or(MultiBufferError::UnknownExcerpt(excerpt_id))?;
+        let file_index = excerpt.file_index;
+        let path = self.files[file_index].path.clone();
+        let range = TextRange::new(excerpt.start.offset(), excerpt.end.offset());
+        let current = self.files[file_index].buffer.snapshot().text_range(range);
+        if current == replacement {
+            return Ok(0);
+        }
+        let (changed_range, changed_text) = minimal_text_diff(&current, replacement);
+        self.apply_edits(vec![MultiBufferEdit::new(
+            excerpt_id,
+            changed_range,
+            changed_text,
+        )])
+        .map_err(|error| match error {
+            MultiBufferError::ReadOnly(_) => MultiBufferError::ReadOnly(path),
+            other => other,
+        })
+    }
+
+    /// Prepare dirty files for the Workspace storage adapter. Each request
+    /// carries its accepted identity so a save can reject external changes.
+    pub fn save_requests(&self) -> Result<Vec<MultiBufferSaveRequest>, MultiBufferError> {
+        self.files
+            .iter()
+            .filter_map(|file| {
+                let snapshot = file.buffer.snapshot();
+                (snapshot.text() != file.saved_text).then_some((file, snapshot))
+            })
+            .map(|(file, snapshot)| {
+                if !file.can_edit {
+                    return Err(MultiBufferError::ReadOnly(file.path.clone()));
+                }
+                let accepted = file
+                    .accepted_snapshot
+                    .as_ref()
+                    .ok_or_else(|| MultiBufferError::MissingAcceptedSnapshot(file.path.clone()))?;
+                if !accepted.capabilities.can_save {
+                    return Err(MultiBufferError::ReadOnly(file.path.clone()));
+                }
+                Ok(MultiBufferSaveRequest {
+                    path: file.path.clone(),
+                    text: snapshot.text().to_string(),
+                    revision: snapshot.revision(),
+                    expected_identity: accepted.identity.clone(),
+                    format: FileFormat::from(accepted),
+                })
+            })
+            .collect()
     }
 
     /// Add another view onto an existing source file without duplicating its buffer.
@@ -531,6 +662,49 @@ impl MultiBuffer {
         Ok(replacements)
     }
 
+    /// Replace project-search matches across loaded source files as one undo step.
+    pub fn replace_project_search_all(
+        &mut self,
+        query: &ProjectSearchQuery,
+        replacement: &str,
+    ) -> Result<usize, MultiBufferError> {
+        let mut edits = Vec::new();
+        for (file_index, file) in self.files.iter().enumerate() {
+            let snapshot = file.buffer.snapshot();
+            for edit in replace_project_all_checked(&snapshot, query, replacement)? {
+                let excerpt = self
+                    .excerpts
+                    .iter()
+                    .find(|excerpt| {
+                        excerpt.file_index == file_index
+                            && excerpt.start.offset() <= edit.range.start
+                            && edit.range.end <= excerpt.end.offset()
+                    })
+                    .ok_or_else(|| MultiBufferError::MissingExcerptForEdit {
+                        path: file.path.clone(),
+                        range: edit.range,
+                    })?;
+                edits.push(MultiBufferEdit::new(
+                    excerpt.id,
+                    TextRange::new(
+                        edit.range.start.saturating_sub(excerpt.start.offset()),
+                        edit.range.end.saturating_sub(excerpt.start.offset()),
+                    ),
+                    edit.replacement,
+                ));
+            }
+        }
+        self.apply_edits(edits)
+    }
+
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
     pub fn undo(&mut self) -> Result<bool, MultiBufferError> {
         let Some(frame) = self.undo.pop() else {
             return Ok(false);
@@ -578,6 +752,35 @@ impl MultiBuffer {
             });
         }
         file.saved_text = file.buffer.text();
+        Ok(())
+    }
+
+    /// Accept the written baseline while preserving edits made during the save.
+    pub fn mark_saved_snapshot(
+        &mut self,
+        path: &Path,
+        revision: Revision,
+        snapshot: FileSnapshot,
+    ) -> Result<(), MultiBufferError> {
+        let file_index = self.file_index(path)?;
+        let file = &mut self.files[file_index];
+        let actual = file.buffer.revision();
+        if actual.value() < revision.value() {
+            return Err(MultiBufferError::StaleRevision {
+                path: path.to_path_buf(),
+                expected: revision,
+                actual,
+            });
+        }
+        if snapshot.identity.path != file.path {
+            return Err(MultiBufferError::SnapshotPathMismatch {
+                expected: file.path.clone(),
+                actual: snapshot.identity.path,
+            });
+        }
+        file.saved_text = snapshot.text.clone();
+        file.can_edit = snapshot.capabilities.can_edit;
+        file.accepted_snapshot = Some(snapshot);
         Ok(())
     }
 
@@ -647,6 +850,33 @@ fn valid_utf8_range(text: &str, range: TextRange) -> bool {
         && text.is_char_boundary(range.end)
 }
 
+fn minimal_text_diff(before: &str, after: &str) -> (TextRange, String) {
+    let mut prefix = 0;
+    for (left, right) in before.chars().zip(after.chars()) {
+        if left != right {
+            break;
+        }
+        prefix += left.len_utf8();
+    }
+    let mut suffix = 0;
+    for (left, right) in before[prefix..]
+        .chars()
+        .rev()
+        .zip(after[prefix..].chars().rev())
+    {
+        if left != right {
+            break;
+        }
+        suffix += left.len_utf8();
+    }
+    let before_end = before.len().saturating_sub(suffix);
+    let after_end = after.len().saturating_sub(suffix);
+    (
+        TextRange::new(prefix, before_end),
+        after[prefix..after_end].to_string(),
+    )
+}
+
 fn sanitize_header(path: &str) -> String {
     path.replace('\n', "\\n").replace('\r', "\\r")
 }
@@ -654,6 +884,21 @@ fn sanitize_header(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn accepted_snapshot(path: &Path, text: &str, can_edit: bool) -> FileSnapshot {
+        FileSnapshot::new(
+            FileIdentity::new(path, text.len() as u64, 1, 0),
+            text.to_string(),
+            crate::lifecycle::LineEnding::Lf,
+            crate::lifecycle::Encoding::Utf8,
+            crate::lifecycle::Bom::None,
+            if can_edit {
+                crate::lifecycle::FileCapabilities::editable()
+            } else {
+                crate::lifecycle::FileCapabilities::read_only()
+            },
+        )
+    }
 
     fn sources() -> Vec<MultiBufferSource> {
         vec![
@@ -843,9 +1088,7 @@ mod tests {
         let buffer = MultiBuffer::from_project_search(
             &hits,
             vec![MultiBufferFileContent {
-                path: path.to_path_buf(),
-                text: "one\nneedle\nthree\nfour\nneedle\nsix\n".to_string(),
-                can_edit: true,
+                snapshot: accepted_snapshot(path, "one\nneedle\nthree\nfour\nneedle\nsix\n", true),
             }],
             0,
         )
@@ -857,5 +1100,165 @@ mod tests {
         assert_eq!(buffer.file_snapshots().len(), 1);
         assert_eq!(snapshot.text().matches("--- /repo/a.rs:").count(), 2);
         assert!(snapshot.text().contains("needle\n"));
+    }
+
+    #[test]
+    fn replacing_excerpt_text_is_unicode_safe_and_undoable() {
+        let mut buffer = MultiBuffer::new(vec![MultiBufferSource::whole_file(
+            "/repo/utf8.rs",
+            "before λ after",
+            true,
+        )])
+        .expect("valid source");
+        let excerpt = buffer.snapshot().excerpts()[0].id;
+        assert_eq!(
+            buffer
+                .replace_excerpt_text(excerpt, "before 東京 after")
+                .expect("replace excerpt"),
+            1
+        );
+        assert_eq!(
+            buffer.file_snapshots()[0].snapshot.text(),
+            "before 東京 after"
+        );
+        assert!(buffer.undo().expect("undo replacement"));
+        assert_eq!(buffer.file_snapshots()[0].snapshot.text(), "before λ after");
+        assert!(buffer.redo().expect("redo replacement"));
+        assert_eq!(
+            buffer.file_snapshots()[0].snapshot.text(),
+            "before 東京 after"
+        );
+    }
+
+    #[test]
+    fn save_requests_keep_the_accepted_identity_and_file_format() {
+        let path = Path::new("/repo/save.rs");
+        let hit = ProjectSearchHit::with_relative_path(
+            path.to_string_lossy(),
+            "save.rs",
+            1,
+            "needle",
+            0,
+            6,
+        );
+        let mut buffer = MultiBuffer::from_project_search(
+            &[hit],
+            vec![MultiBufferFileContent {
+                snapshot: accepted_snapshot(path, "needle\n", true),
+            }],
+            0,
+        )
+        .expect("search multi-buffer");
+        let excerpt = buffer.snapshot().excerpts()[0].id;
+        buffer
+            .replace_excerpt_text(excerpt, "updated\n")
+            .expect("replace");
+        let requests = buffer.save_requests().expect("save requests");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].path, path);
+        assert_eq!(requests[0].text, "updated\n");
+        assert_eq!(requests[0].expected_identity.path, path);
+        assert_eq!(
+            requests[0].format.line_ending,
+            crate::lifecycle::LineEnding::Lf
+        );
+    }
+
+    #[test]
+    fn save_completion_accepts_written_baseline_without_discarding_new_edits() {
+        let path = Path::new("/repo/save-race.rs");
+        let hit = ProjectSearchHit::with_relative_path(
+            path.to_string_lossy(),
+            "save-race.rs",
+            1,
+            "needle",
+            0,
+            6,
+        );
+        let mut buffer = MultiBuffer::from_project_search(
+            &[hit],
+            vec![MultiBufferFileContent {
+                snapshot: accepted_snapshot(path, "needle\n", true),
+            }],
+            0,
+        )
+        .expect("search multi-buffer");
+        let excerpt = buffer.snapshot().excerpts()[0].id;
+        buffer
+            .replace_excerpt_text(excerpt, "saved text\n")
+            .expect("first edit");
+        let request = buffer.save_requests().expect("save request").remove(0);
+        buffer
+            .replace_excerpt_text(excerpt, "saved text plus newer edits\n")
+            .expect("edit while save is in flight");
+        buffer
+            .mark_saved_snapshot(
+                path,
+                request.revision,
+                accepted_snapshot(path, &request.text, true),
+            )
+            .expect("accept older written revision");
+        assert!(buffer.is_dirty(path).expect("dirty after newer edits"));
+        let next_request = buffer.save_requests().expect("next save request").remove(0);
+        assert_eq!(next_request.text, "saved text plus newer edits\n");
+    }
+
+    #[test]
+    fn project_search_replace_all_is_one_cross_file_undo_step() {
+        let first_path = Path::new("/repo/first.rs");
+        let second_path = Path::new("/repo/second.rs");
+        let hits = vec![
+            ProjectSearchHit::with_relative_path(
+                first_path.to_string_lossy(),
+                "first.rs",
+                1,
+                "needle + needle",
+                0,
+                6,
+            ),
+            ProjectSearchHit::with_relative_path(
+                second_path.to_string_lossy(),
+                "second.rs",
+                1,
+                "needle",
+                0,
+                6,
+            ),
+        ];
+        let mut buffer = MultiBuffer::from_project_search(
+            &hits,
+            vec![
+                MultiBufferFileContent {
+                    snapshot: accepted_snapshot(first_path, "needle + needle\n", true),
+                },
+                MultiBufferFileContent {
+                    snapshot: accepted_snapshot(second_path, "needle\n", true),
+                },
+            ],
+            0,
+        )
+        .expect("search multi-buffer");
+        let query = ProjectSearchQuery::new(
+            "needle",
+            crate::search::ProjectSearchOptions::default(),
+            100,
+        );
+        assert_eq!(
+            buffer
+                .replace_project_search_all(&query, "updated")
+                .expect("replace all"),
+            3
+        );
+        assert_eq!(
+            buffer.file_snapshots()[0].snapshot.text(),
+            "updated + updated\n"
+        );
+        assert_eq!(buffer.file_snapshots()[1].snapshot.text(), "updated\n");
+        assert!(buffer.undo().expect("single undo for all files"));
+        assert_eq!(
+            buffer.file_snapshots()[0].snapshot.text(),
+            "needle + needle\n"
+        );
+        assert_eq!(buffer.file_snapshots()[1].snapshot.text(), "needle\n");
     }
 }

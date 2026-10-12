@@ -40,6 +40,7 @@ pub mod mcp_event_bridge;
 pub mod modal_layer;
 pub mod pane;
 pub mod pane_group;
+pub mod project_multibuffer;
 pub mod project_search;
 pub mod recent_projects;
 pub mod search_overlay;
@@ -128,8 +129,9 @@ use crate::views::terminal::TerminalView;
 use labonair_background_host::BackgroundHost;
 use labonair_editor::{
     FileFinderCandidate, FileFinderQuery, FileFinderResult, LanguageServiceRuntime, MultiBuffer,
-    MultiBufferFileContent, Position, ProjectReplaceResult, ProjectSearchHit, ProjectSearchQuery,
-    ProjectSearchSnapshot, SearchError, SearchQuery, TextRange,
+    MultiBufferSaveOutcome, MultiBufferSaveRequest, Position, ProjectReplaceResult,
+    ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, SearchError, SearchQuery,
+    TextRange,
 };
 use labonair_editor_ui::{EditorBufferSnapshot, EditorEvent, EditorView};
 use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
@@ -2145,28 +2147,39 @@ impl Workspace {
             );
             return;
         };
-        let job = self.tokio.spawn_blocking(move || {
-            let paths = hits
-                .iter()
-                .map(|hit| std::path::PathBuf::from(&hit.path))
-                .collect::<std::collections::BTreeSet<_>>();
-            let mut files = Vec::with_capacity(paths.len());
-            for candidate in paths {
-                let path = root_safe_path(&root, &candidate)?;
-                let text = std::fs::read_to_string(&path).map_err(|error| {
-                    format!("cannot read search result {}: {error}", path.display())
-                })?;
-                let metadata = std::fs::metadata(&path).map_err(|error| {
-                    format!("cannot inspect search result {}: {error}", path.display())
-                })?;
-                files.push(MultiBufferFileContent {
-                    path,
-                    text,
-                    can_edit: !metadata.permissions().readonly(),
-                });
-            }
-            MultiBuffer::from_project_search(&hits, files, 3).map_err(|error| error.to_string())
-        });
+        let job = self
+            .tokio
+            .spawn_blocking(move || crate::project_multibuffer::load(&root, &hits, 3));
+        cx.spawn(async move |this, cx| {
+            let result = job.await.map_err(|error| error.to_string()).and_then(|r| r);
+            let _ = this.update(cx, move |_workspace, cx| callback(result, cx));
+        })
+        .detach();
+    }
+
+    /// Save dirty Multi-Buffer files through the filesystem lifecycle adapter.
+    /// All disk identities are checked before the first write; a later I/O
+    /// failure returns already saved files so Editor can accept those revisions.
+    pub fn save_project_multibuffer(
+        &self,
+        requests: Vec<MultiBufferSaveRequest>,
+        callback: impl FnOnce(Result<MultiBufferSaveOutcome, String>, &mut App) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        if requests.is_empty() {
+            callback(Ok(MultiBufferSaveOutcome::default()), cx);
+            return;
+        }
+        let Some(root) = self.filesystem_root(cx).map(std::path::PathBuf::from) else {
+            callback(
+                Err("No filesystem root is available for this workspace.".to_string()),
+                cx,
+            );
+            return;
+        };
+        let job = self
+            .tokio
+            .spawn_blocking(move || crate::project_multibuffer::save(&root, requests));
         cx.spawn(async move |this, cx| {
             let result = job.await.map_err(|error| error.to_string()).and_then(|r| r);
             let _ = this.update(cx, move |_workspace, cx| callback(result, cx));

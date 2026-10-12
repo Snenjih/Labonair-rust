@@ -5,6 +5,8 @@
 //! in this sibling UI crate.
 
 mod editor;
+mod multibuffer;
 mod syntax_theme;
 
 pub use editor::{EditorBufferSnapshot, EditorEvent, EditorView};
+pub use multibuffer::{MultiBufferEvent, MultiBufferView};

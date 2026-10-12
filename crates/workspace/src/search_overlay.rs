@@ -23,6 +23,7 @@ use labonair_editor::{
     ProjectSearchStatus, SearchCaseMode, SearchError, SearchOptions, SearchQuery, SearchScope,
     TextRange,
 };
+use labonair_editor_ui::{MultiBufferEvent, MultiBufferView};
 use labonair_settings::{EditorSettings, Settings as _};
 use labonair_ui_kit::{
     button, button_disabled, search_field, search_input, text_field, text_field_surface,
@@ -193,11 +194,13 @@ pub struct SearchOverlay {
     options: SearchOptions,
     selection_range: Option<TextRange>,
     collapsed_project_files: HashSet<String>,
-    multi_buffer_preview: Option<MultiBuffer>,
+    multi_buffer_model: Option<MultiBuffer>,
+    multi_buffer_view: Option<Entity<MultiBufferView>>,
     multi_buffer_loading: bool,
     multi_buffer_error: Option<String>,
     multi_buffer_generation: u64,
     show_multi_buffer: bool,
+    _multi_buffer_sub: Option<Subscription>,
     query_history: SearchQueryHistory,
     search_on_type: bool,
     include_ignored: bool,
@@ -329,11 +332,13 @@ impl SearchOverlay {
             options,
             selection_range,
             collapsed_project_files: HashSet::new(),
-            multi_buffer_preview: None,
+            multi_buffer_model: None,
+            multi_buffer_view: None,
             multi_buffer_loading: false,
             multi_buffer_error: None,
             multi_buffer_generation: 0,
             show_multi_buffer: false,
+            _multi_buffer_sub: None,
             query_history: SearchQueryHistory::new(query_history()),
             search_on_type,
             include_ignored,
@@ -427,7 +432,9 @@ impl SearchOverlay {
 
     fn reset_multi_buffer_preview(&mut self) {
         self.multi_buffer_generation = self.multi_buffer_generation.saturating_add(1);
-        self.multi_buffer_preview = None;
+        self.multi_buffer_model = None;
+        self.multi_buffer_view = None;
+        self._multi_buffer_sub = None;
         self.multi_buffer_loading = false;
         self.multi_buffer_error = None;
         self.show_multi_buffer = false;
@@ -442,7 +449,9 @@ impl SearchOverlay {
         }
         self.multi_buffer_generation = self.multi_buffer_generation.saturating_add(1);
         let generation = self.multi_buffer_generation;
-        self.multi_buffer_preview = None;
+        self.multi_buffer_model = None;
+        self.multi_buffer_view = None;
+        self._multi_buffer_sub = None;
         self.multi_buffer_loading = true;
         self.multi_buffer_error = None;
         self.show_multi_buffer = false;
@@ -458,12 +467,12 @@ impl SearchOverlay {
                         this.multi_buffer_loading = false;
                         match result {
                             Ok(buffer) => {
-                                this.multi_buffer_preview = Some(buffer);
+                                this.multi_buffer_model = Some(buffer);
                                 this.show_multi_buffer = true;
                                 this.multi_buffer_error = None;
                             }
                             Err(error) => {
-                                this.multi_buffer_preview = None;
+                                this.multi_buffer_model = None;
                                 this.multi_buffer_error = Some(error);
                             }
                         }
@@ -474,6 +483,38 @@ impl SearchOverlay {
             );
         });
         cx.notify();
+    }
+
+    fn ensure_multi_buffer_view(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.multi_buffer_view.is_some() {
+            return;
+        }
+        let Some(buffer) = self.multi_buffer_model.take() else {
+            return;
+        };
+        let theme = self.theme.clone();
+        let view = cx.new(|cx| MultiBufferView::new(buffer, theme, window, cx));
+        let subscription =
+            cx.subscribe(
+                &view,
+                |this, view, event: &MultiBufferEvent, cx| match event {
+                    MultiBufferEvent::SaveRequested(requests) => {
+                        let view = view.downgrade();
+                        this.workspace.update(cx, |workspace, cx| {
+                            workspace.save_project_multibuffer(
+                                requests.clone(),
+                                move |result, cx| {
+                                    let _ = view
+                                        .update(cx, |view, cx| view.accept_save_result(result, cx));
+                                },
+                                cx,
+                            );
+                        });
+                    }
+                },
+            );
+        self.multi_buffer_view = Some(view);
+        self._multi_buffer_sub = Some(subscription);
     }
 
     fn confirm_project_search(&mut self, cx: &mut Context<Self>) {
@@ -629,19 +670,26 @@ impl SearchOverlay {
         };
         let replacement = replace_input.read(cx).value().to_string();
         if self.target == SearchTarget::Editor && self.scope == SearchScope::Project {
-            match self.workspace.update(cx, |workspace, cx| {
-                workspace.project_replace_all(&replacement, cx)
+            let query = self
+                .workspace
+                .read(cx)
+                .project_search_snapshot(cx)
+                .and_then(|snapshot| snapshot.query);
+            let Some(query) = query else {
+                return;
+            };
+            let Some(buffer) = self.multi_buffer_view.clone() else {
+                return;
+            };
+            match buffer.update(cx, |buffer, cx| {
+                buffer.replace_project_search_all(&query, &replacement, cx)
             }) {
-                Some(Ok(_)) => {
-                    self.error = None;
-                    cx.notify();
+                Ok(_) => {
+                    self.multi_buffer_error = None;
                 }
-                Some(Err(_error)) => {
-                    self.error = None;
-                    cx.notify();
-                }
-                _ => cx.notify(),
+                Err(error) => self.multi_buffer_error = Some(error.to_string()),
             }
+            cx.notify();
             return;
         }
         match self
@@ -697,6 +745,9 @@ impl ModalView for SearchOverlay {
 
 impl Render for SearchOverlay {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.show_multi_buffer {
+            self.ensure_multi_buffer_view(window, cx);
+        }
         let theme = self.theme.read(cx);
         let palette = Palette::from_theme(theme);
         let unavailable = self.target == SearchTarget::Unavailable;
@@ -738,6 +789,10 @@ impl Render for SearchOverlay {
                 && !snapshot.hits.is_empty()
                 && !matches!(&snapshot.replacement_status, ProjectReplaceStatus::Applying)
                 && !has_error
+                && self
+                    .multi_buffer_view
+                    .as_ref()
+                    .is_some_and(|view| view.read(cx).can_replace_all())
         });
         let can_replace_one = can_replace_file;
         let can_replace_all = match self.scope {
@@ -861,21 +916,12 @@ impl Render for SearchOverlay {
             rows
         });
         let can_open_multi_buffer = project_snapshot.as_ref().is_some_and(|snapshot| {
-            snapshot.status == ProjectSearchStatus::Ready && !snapshot.hits.is_empty()
+            snapshot.status == ProjectSearchStatus::Ready
+                && !snapshot.hits.is_empty()
+                && self.multi_buffer_view.is_none()
+                && self.multi_buffer_model.is_none()
         });
-        let multi_buffer_lines = self.multi_buffer_preview.as_ref().map(|buffer| {
-            buffer
-                .snapshot()
-                .text()
-                .lines()
-                .map(|line| {
-                    div()
-                        .whitespace_nowrap()
-                        .child(SharedString::from(line.to_string()))
-                        .into_any_element()
-                })
-                .collect::<Vec<_>>()
-        });
+        let multi_buffer_view = self.multi_buffer_view.clone();
         let replace_input = self.replace_input.clone();
         let include_glob_input = self.include_glob_input.clone();
         let exclude_glob_input = self.exclude_glob_input.clone();
@@ -991,7 +1037,7 @@ impl Render for SearchOverlay {
                 ButtonSize::Xs,
             )
             .child(if self.scope == SearchScope::Project {
-                "Open"
+                "Replace all"
             } else {
                 "All"
             })
@@ -1009,7 +1055,7 @@ impl Render for SearchOverlay {
                 ButtonSize::Xs,
             )
             .child(if self.scope == SearchScope::Project {
-                "Open"
+                "Replace all"
             } else {
                 "All"
             })
@@ -1022,7 +1068,7 @@ impl Render for SearchOverlay {
                 ButtonSize::Xs,
             )
             .child("Loading excerpts…")
-        } else if self.multi_buffer_preview.is_some() {
+        } else if self.multi_buffer_view.is_some() || self.multi_buffer_model.is_some() {
             button(
                 "project-search-multibuffer",
                 palette,
@@ -1030,9 +1076,9 @@ impl Render for SearchOverlay {
                 ButtonSize::Xs,
             )
             .child(if self.show_multi_buffer {
-                "Hide excerpts"
+                "Hide Multi-Buffer"
             } else {
-                "Show excerpts"
+                "Show Multi-Buffer"
             })
             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                 this.show_multi_buffer = !this.show_multi_buffer;
@@ -1045,7 +1091,7 @@ impl Render for SearchOverlay {
                 ButtonVariant::Subtle,
                 ButtonSize::Xs,
             )
-            .child("Preview excerpts")
+            .child("Open Multi-Buffer")
             .on_click(
                 cx.listener(|this, _: &ClickEvent, _window, cx| this.open_project_multi_buffer(cx)),
             )
@@ -1056,7 +1102,7 @@ impl Render for SearchOverlay {
                 ButtonVariant::Subtle,
                 ButtonSize::Xs,
             )
-            .child("Preview excerpts")
+            .child("Open Multi-Buffer")
         };
         div()
             .id("search-overlay")
@@ -1474,19 +1520,9 @@ impl Render for SearchOverlay {
                     d.child(div().text_xs().text_color(palette.error).child(error))
                 })
                 .when(self.show_multi_buffer, |d| {
-                    d.child(
-                        div()
-                            .id("project-search-multibuffer-preview")
-                            .max_h(px(240.0))
-                            .overflow_y_scroll()
-                            .p_1()
-                            .rounded(px(palette.radius.sm))
-                            .bg(palette.bg)
-                            .font_family("monospace")
-                            .text_size(px(11.0))
-                            .text_color(palette.fg)
-                            .children(multi_buffer_lines.unwrap_or_default()),
-                    )
+                    d.when_some(multi_buffer_view, |d, view| {
+                        d.child(view.into_any_element())
+                    })
                 })
                 .when(project_truncated, |d| {
                     d.child(
@@ -1544,7 +1580,17 @@ impl Render for SearchOverlay {
                     .exclude_glob_input
                     .as_ref()
                     .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
-                let search_controls_focused = query_focused || include_focused || exclude_focused;
+                let replace_focused = this
+                    .replace_input
+                    .as_ref()
+                    .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
+                let multi_buffer_focused = this
+                    .multi_buffer_view
+                    .as_ref()
+                    .is_some_and(|view| view.read(cx).has_focused_input(window, cx));
+                let search_query_focused = query_focused || include_focused || exclude_focused;
+                let search_controls_focused =
+                    search_query_focused || replace_focused || multi_buffer_focused;
                 if ev.keystroke.key == "escape" {
                     cx.emit(DismissEvent);
                     cx.stop_propagation();
@@ -1572,9 +1618,9 @@ impl Render for SearchOverlay {
                     && this.target == SearchTarget::Editor
                     && ev.keystroke.key == "enter"
                 {
-                    if search_controls_focused && !this.search_on_type {
+                    if search_query_focused && !this.search_on_type {
                         this.confirm_project_search(cx);
-                    } else if !include_focused && !exclude_focused {
+                    } else if !search_controls_focused {
                         this.open_selected_project_result(window, cx);
                     }
                     cx.stop_propagation();
