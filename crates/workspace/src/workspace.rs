@@ -3216,6 +3216,7 @@ impl Workspace {
                     this.pending_preview_focus = true;
                     cx.notify();
                 }
+                EditorEvent::ProjectDiagnosticsChanged => cx.notify(),
                 EditorEvent::BufferChanged(source) => {
                     this.update_markdown_preview_for_editor(tab_id, source.clone(), cx);
                     if this.following_markdown_editor == Some(tab_id) {

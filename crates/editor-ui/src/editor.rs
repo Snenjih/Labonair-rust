@@ -90,6 +90,8 @@ type DocumentLinkNavigator = Rc<dyn Fn(String, &mut Window, &mut App)>;
 pub enum EditorEvent {
     /// Dirty flag or title-relevant state changed — re-sync the tab.
     Changed,
+    /// Accepted diagnostics changed in the shared project registry.
+    ProjectDiagnosticsChanged,
     /// The user made their first edit — a peek tab should become permanent.
     Edited,
     /// A Markdown preview should open for this exact immutable source revision.
@@ -1023,6 +1025,15 @@ fn diagnostic_error_warning_counts(diagnostics: &[labonair_editor::Diagnostic]) 
                 DiagnosticSeverity::Information | DiagnosticSeverity::Hint => (errors, warnings),
             }
         })
+}
+
+fn project_diagnostic_error_warning_counts(registry: &ProjectDiagnosticRegistry) -> (usize, usize) {
+    let diagnostics = registry
+        .snapshot()
+        .into_iter()
+        .map(|row| row.diagnostic)
+        .collect::<Vec<_>>();
+    diagnostic_error_warning_counts(&diagnostics)
 }
 
 fn diagnostic_menu_labels(
@@ -2784,6 +2795,7 @@ impl EditorView {
                         uri,
                         self.language_service_state.snapshot().diagnostics,
                     );
+                    cx.emit(EditorEvent::ProjectDiagnosticsChanged);
                 }
                 self.schedule_error_lens(cx);
             }
@@ -7580,23 +7592,37 @@ impl EditorView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let anchor = self.diagnostics_menu_anchor?;
-        if !self.diagnostics_enabled() {
-            return None;
-        }
         let snapshot = self.doc.snapshot();
         if self.diagnostics_revision != Some(snapshot.revision()) {
             return None;
         }
 
-        let mut diagnostics = self.language_service_state.snapshot().diagnostics;
+        let mut diagnostics = if self.diagnostics_enabled() {
+            self.language_service_state.snapshot().diagnostics
+        } else {
+            Vec::new()
+        };
         diagnostics.sort_by_key(|diagnostic| {
             let position = diagnostic.range.start.to_position(&snapshot);
             (position.line, position.column, diagnostic.severity)
         });
         let total = diagnostics.len();
         let editor = cx.entity();
-        let mut items = vec![MenuItem::label(format!("{total} document diagnostics"))];
-        if total == 0 {
+        let project_editor = editor.clone();
+        let mut items = vec![
+            MenuItem::new("editor-project-diagnostics", "Project Diagnostics")
+                .detail("Show diagnostics from open editor buffers")
+                .on_click(move |_, _window, app| {
+                    project_editor.update(app, |this, cx| {
+                        this.diagnostics_menu_anchor = None;
+                        this.show_diagnostics(cx);
+                    });
+                }),
+            MenuItem::label(format!("{total} document diagnostics")),
+        ];
+        if !self.diagnostics_enabled() {
+            items.push(MenuItem::label("Document diagnostics are hidden."));
+        } else if total == 0 {
             items.push(MenuItem::label("No diagnostics for the current document."));
         } else {
             for (index, diagnostic) in diagnostics.into_iter().take(100).enumerate() {
@@ -8303,18 +8329,18 @@ impl EditorView {
             );
             right = right.child(trigger);
         }
-        if self.diagnostics_enabled() && self.diagnostics_revision == Some(snapshot.revision()) {
-            let diagnostics = self.language_service_state.snapshot().diagnostics;
-            let (errors, warnings) = diagnostic_error_warning_counts(&diagnostics);
+        if self.diagnostics_revision == Some(snapshot.revision()) {
+            let (errors, warnings) =
+                project_diagnostic_error_warning_counts(&self.diagnostic_registry);
             let label = if errors == 0 && warnings == 0 {
                 "✓".to_string()
             } else {
                 format!("{errors} errors · {warnings} warnings")
             };
             let tooltip = if errors == 0 && warnings == 0 {
-                "No errors or warnings · Open diagnostics"
+                "No errors or warnings in open buffers · Open project diagnostics"
             } else {
-                "Open diagnostics"
+                "Open project diagnostics"
             };
             right = right.child(
                 button(
@@ -13340,6 +13366,41 @@ mod tests {
         .collect::<Vec<_>>();
 
         assert_eq!(diagnostic_error_warning_counts(&diagnostics), (1, 1));
+    }
+
+    #[test]
+    fn project_diagnostic_status_counts_open_documents_in_the_registry() {
+        use labonair_editor::language_services::DiagnosticSeverity as Severity;
+
+        let registry = ProjectDiagnosticRegistry::default();
+        let diagnostic = |severity| labonair_editor::Diagnostic {
+            range: LspRange {
+                start: LspPosition {
+                    line: 0,
+                    character: 0,
+                },
+                end: LspPosition {
+                    line: 0,
+                    character: 1,
+                },
+            },
+            severity,
+            message: "message".into(),
+            source: labonair_editor::LanguageServerId::new("test-lsp"),
+            code: None,
+        };
+        registry.update_document(
+            PathBuf::from("src/first.rs"),
+            "file:///workspace/src/first.rs".into(),
+            vec![diagnostic(Severity::Error), diagnostic(Severity::Hint)],
+        );
+        registry.update_document(
+            PathBuf::from("src/second.rs"),
+            "file:///workspace/src/second.rs".into(),
+            vec![diagnostic(Severity::Warning)],
+        );
+
+        assert_eq!(project_diagnostic_error_warning_counts(&registry), (1, 1));
     }
 
     #[test]
