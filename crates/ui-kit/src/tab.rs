@@ -40,6 +40,7 @@ pub struct TabItemBuilder {
     dirty: bool,
     busy: bool,
     peek: bool,
+    pinned: bool,
     activate: Option<TabAction>,
     double_click: Option<TabAction>,
     navigate: Option<TabNavigation>,
@@ -65,6 +66,7 @@ pub fn tab_item(
         dirty: false,
         busy: false,
         peek: false,
+        pinned: false,
         activate: None,
         double_click: None,
         navigate: None,
@@ -105,6 +107,12 @@ impl TabItemBuilder {
 
     pub fn peek(mut self, peek: bool) -> Self {
         self.peek = peek;
+        self
+    }
+
+    /// Show a pin in place of the close control for a pinned tab.
+    pub fn pinned(mut self, pinned: bool) -> Self {
+        self.pinned = pinned;
         self
     }
 
@@ -153,6 +161,7 @@ impl TabItemBuilder {
             dirty,
             busy,
             peek,
+            pinned,
             activate,
             double_click,
             navigate,
@@ -239,7 +248,15 @@ impl TabItemBuilder {
             row = row.child(indicator(IndicatorSize::Xs, palette.info));
         }
 
-        if let Some(close) = close.filter(|_| !disabled) {
+        if pinned {
+            row = row.child(
+                div().flex_shrink_0().child(
+                    IconName::Pin
+                        .svg(if selected { palette.fg } else { palette.muted })
+                        .size(palette.control_space(14.0)),
+                ),
+            );
+        } else if let Some(close) = close.filter(|_| !disabled) {
             let click_close = close.clone();
             let close_button = icon_button_builder(
                 SharedString::from(format!("{id}-close")),

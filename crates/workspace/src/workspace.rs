@@ -5635,7 +5635,7 @@ impl Workspace {
         if sidebar || tab.kind != TabKind::Editor {
             tab_item = tab_item.leading(tab.kind.indicator());
         }
-        let row = tab_item
+        tab_item = tab_item
             .layout(if sidebar {
                 TabLayout::Vertical
             } else {
@@ -5644,6 +5644,7 @@ impl Workspace {
             .selected(active)
             .dirty(tab.kind == TabKind::Editor && tab.dirty)
             .peek(tab.kind == TabKind::Editor && tab.peek)
+            .pinned(tab.pinned)
             .label_content(label_content)
             .on_activate({
                 let view = view.clone();
@@ -5668,10 +5669,13 @@ impl Workspace {
                         this.begin_tab_rename(id, window, cx);
                     });
                 }
-            })
-            .on_close(move |window, app| {
+            });
+        if !tab.pinned {
+            tab_item = tab_item.on_close(move |window, app| {
                 view.update(app, |this, cx| this.request_close(id, window, cx));
-            })
+            });
+        }
+        let row = tab_item
             .render()
             .on_mouse_down(
                 MouseButton::Right,
@@ -5688,7 +5692,9 @@ impl Workspace {
             .on_mouse_down(
                 MouseButton::Middle,
                 cx.listener(move |this, _: &MouseDownEvent, window, cx| {
-                    this.request_close(id, window, cx);
+                    if !this.tabs.read(cx).get(id).is_some_and(|tab| tab.pinned) {
+                        this.request_close(id, window, cx);
+                    }
                 }),
             )
             .on_drag(
@@ -5740,6 +5746,8 @@ impl Workspace {
             .into_iter()
             .cloned()
             .collect();
+        let pinned_tabs: Vec<Tab> = tabs.iter().filter(|tab| tab.pinned).cloned().collect();
+        let unpinned_tabs: Vec<Tab> = tabs.iter().filter(|tab| !tab.pinned).cloned().collect();
 
         let active_space = self.spaces.read(cx).active().cloned();
         let can_navigate = tabs.len() > 1;
@@ -5849,7 +5857,12 @@ impl Workspace {
                     .min_w_0()
                     .h_full()
                     .overflow_x_scroll()
-                    .children(tabs.iter().map(|t| self.render_tab(t, false, cx))),
+                    .children(pinned_tabs.iter().map(|t| self.render_tab(t, false, cx)))
+                    .when(
+                        !pinned_tabs.is_empty() && !unpinned_tabs.is_empty(),
+                        |strip| strip.child(div().mx_1().w(px(1.0)).h(px(16.0)).bg(border)),
+                    )
+                    .children(unpinned_tabs.iter().map(|t| self.render_tab(t, false, cx))),
             )
             .child(new_tab)
     }
@@ -7327,6 +7340,7 @@ impl Workspace {
         let tab = self.tabs.read(cx).get(id).cloned();
         let kind = tab.as_ref().map(|t| t.kind);
         let is_peek = tab.as_ref().map(|t| t.peek).unwrap_or(false);
+        let is_pinned = tab.as_ref().is_some_and(|tab| tab.pinned);
         let plural = kind.map(|k| k.plural_label().to_string());
         let grant_target = self.mcp_grant_target(id, cx);
         let is_granted = self.agent_access.read(cx).is_granted(id);
@@ -7480,6 +7494,23 @@ impl Workspace {
                     }),
             );
         }
+        items.push(
+            MenuItem::new(
+                "toggle-pin-tab",
+                if is_pinned { "Unpin Tab" } else { "Pin Tab" },
+            )
+            .icon(IconName::Pin)
+            .on_click({
+                let view = view.clone();
+                move |_, _, cx| {
+                    view.update(cx, |this, cx| {
+                        this.context_menu = None;
+                        this.tabs
+                            .update(cx, |store, cx| store.set_pinned(id, !is_pinned, cx));
+                    });
+                }
+            }),
+        );
         items.push(
             MenuItem::new("rename", "Rename")
                 .icon(IconName::Pencil)
