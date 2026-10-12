@@ -12148,7 +12148,11 @@ impl Render for EditorView {
                     gpui::ScrollDelta::Lines(p) => p.y,
                     gpui::ScrollDelta::Pixels(p) => f32::from(p.y) / this.metrics.1,
                 };
-                if ev.modifiers.platform || ev.modifiers.control {
+                if should_zoom_font_on_scroll(
+                    this.prefs.mouse_wheel_zoom(),
+                    ev.modifiers.platform,
+                    ev.modifiers.control,
+                ) {
                     let steps = font_zoom_steps(&mut this.font_zoom_remainder, dy);
                     this.adjust_font_size(steps, cx);
                     cx.stop_propagation();
@@ -12189,6 +12193,14 @@ fn font_zoom_steps(remainder: &mut f32, delta: f32) -> i32 {
         0.0
     };
     steps
+}
+
+fn should_zoom_font_on_scroll(
+    enabled: bool,
+    platform_modifier: bool,
+    control_modifier: bool,
+) -> bool {
+    enabled && (platform_modifier || control_modifier)
 }
 
 fn notify(cx: &mut App, title: &str, body: &str) {
@@ -12290,6 +12302,15 @@ mod tests {
         assert_eq!(font_zoom_steps(&mut remainder, f32::NAN), 0);
         assert_eq!(font_zoom_steps(&mut remainder, 12.0), 8);
         assert_eq!(remainder, 0.0);
+    }
+
+    #[test]
+    fn modifier_wheel_zoom_requires_its_editor_preference() {
+        assert!(!should_zoom_font_on_scroll(false, true, false));
+        assert!(!should_zoom_font_on_scroll(false, false, true));
+        assert!(!should_zoom_font_on_scroll(true, false, false));
+        assert!(should_zoom_font_on_scroll(true, true, false));
+        assert!(should_zoom_font_on_scroll(true, false, true));
     }
 
     #[gpui::test]

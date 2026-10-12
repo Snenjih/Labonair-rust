@@ -91,6 +91,7 @@
     "editorRelativeLineNumbers": false,
     "editorIndentWithTabs": false,
     "editorDragAndDropSelection": true,
+    "editorMouseWheelZoom": false,
     "editorIndentationGuides": true,
     "editorWhitespace": "none",
     "editorWhitespaceSpace": "•",

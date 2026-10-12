@@ -285,6 +285,7 @@ pub struct EditorContent {
     pub editor_relative_line_numbers: Option<bool>,
     pub editor_indent_with_tabs: Option<bool>,
     pub editor_drag_and_drop_selection: Option<bool>,
+    pub editor_mouse_wheel_zoom: Option<bool>,
     pub editor_indentation_guides: Option<bool>,
     pub editor_whitespace: Option<String>,
     pub editor_whitespace_space: Option<String>,
@@ -390,6 +391,7 @@ impl EditorContent {
             editor_relative_line_numbers: Some(false),
             editor_indent_with_tabs: Some(false),
             editor_drag_and_drop_selection: Some(true),
+            editor_mouse_wheel_zoom: Some(false),
             editor_indentation_guides: Some(true),
             editor_whitespace: Some("none".to_string()),
             editor_whitespace_space: Some("•".to_string()),
@@ -549,6 +551,18 @@ mod tests {
 
         let value = serde_json::to_value(parsed).expect("serialize editor preferences");
         assert_eq!(value["editorDragAndDropSelection"], false);
+    }
+
+    #[test]
+    fn mouse_wheel_zoom_setting_parses_and_serializes() {
+        let parsed: EditorContent = serde_json::from_value(serde_json::json!({
+            "editorMouseWheelZoom": true
+        }))
+        .expect("parse editor mouse-wheel zoom preference");
+        assert_eq!(parsed.editor_mouse_wheel_zoom, Some(true));
+
+        let value = serde_json::to_value(parsed).expect("serialize editor preferences");
+        assert_eq!(value["editorMouseWheelZoom"], true);
     }
 
     #[test]

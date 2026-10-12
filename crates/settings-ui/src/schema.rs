@@ -559,6 +559,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Move a selected range by dragging it to another place in the editor."
         ),
         field!(
+            editor.editor_mouse_wheel_zoom,
+            "editorMouseWheelZoom",
+            Switch,
+            "Modifier + mouse wheel zoom",
+            "Zoom the editor font with the platform modifier and mouse wheel."
+        ),
+        field!(
             editor.editor_indentation_guides,
             "editorIndentationGuides",
             Switch,
@@ -1599,6 +1606,19 @@ mod tests {
         let mut content = SettingsContent::default();
         assert!((field.set)(&mut content, Value::Bool(false)));
         assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn editor_mouse_wheel_zoom_is_an_exposed_switch() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorMouseWheelZoom")
+            .expect("editor mouse-wheel zoom setting");
+        assert!(matches!(field.control, FieldControl::Switch));
+
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::Bool(true)));
+        assert_eq!((field.get)(&content), Some(Value::Bool(true)));
     }
 
     #[test]

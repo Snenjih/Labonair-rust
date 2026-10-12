@@ -368,6 +368,10 @@ impl EditorSettings {
         self.0.editor_drag_and_drop_selection.unwrap_or(true)
     }
 
+    pub fn mouse_wheel_zoom(&self) -> bool {
+        self.0.editor_mouse_wheel_zoom.unwrap_or(false)
+    }
+
     pub fn tab_size(&self) -> u32 {
         self.0.editor_tab_size.unwrap_or(2)
     }
@@ -1086,6 +1090,16 @@ mod tests {
         let mut content = SettingsContent::default();
         content.editor.editor_drag_and_drop_selection = Some(false);
         assert!(!EditorSettings::from_settings(&content).drag_and_drop_selection());
+    }
+
+    #[test]
+    fn editor_mouse_wheel_zoom_defaults_off_and_can_be_enabled() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(!defaults.mouse_wheel_zoom());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_mouse_wheel_zoom = Some(true);
+        assert!(EditorSettings::from_settings(&content).mouse_wheel_zoom());
     }
 
     #[test]
