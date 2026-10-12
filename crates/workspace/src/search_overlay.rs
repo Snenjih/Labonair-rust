@@ -15,12 +15,13 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, AppContext, ClickEvent, Context, DismissEvent, Entity, EventEmitter, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render,
+    Focusable, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use labonair_editor::{
-    ProjectReplaceStatus, ProjectSearchOptions, ProjectSearchQuery, ProjectSearchStatus,
-    SearchCaseMode, SearchError, SearchOptions, SearchQuery, SearchScope, TextRange,
+    ProjectReplaceStatus, ProjectSearchHit, ProjectSearchOptions, ProjectSearchQuery,
+    ProjectSearchStatus, SearchCaseMode, SearchError, SearchOptions, SearchQuery, SearchScope,
+    TextRange,
 };
 use labonair_settings::{EditorSettings, Settings as _};
 use labonair_ui_kit::{
@@ -28,6 +29,7 @@ use labonair_ui_kit::{
     text_input, ButtonSize, ButtonVariant, InputEvent, InputState, ListItem, Palette,
     TextFieldState,
 };
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Mutex;
 
 use crate::modal_layer::ModalView;
@@ -46,6 +48,20 @@ fn save_last_query(query: &str) {
     if let Ok(mut slot) = LAST_QUERY.lock() {
         *slot = query.to_string();
     }
+}
+
+fn grouped_project_hit_indices(hits: &[ProjectSearchHit]) -> Vec<(String, Vec<usize>)> {
+    let mut groups = BTreeMap::<&str, Vec<usize>>::new();
+    for (index, hit) in hits.iter().enumerate() {
+        groups
+            .entry(hit.relative_path.as_str())
+            .or_default()
+            .push(index);
+    }
+    groups
+        .into_iter()
+        .map(|(path, indices)| (path.to_string(), indices))
+        .collect()
 }
 
 fn parse_path_globs(value: &str) -> Vec<String> {
@@ -91,6 +107,7 @@ pub struct SearchOverlay {
     scope: SearchScope,
     options: SearchOptions,
     selection_range: Option<TextRange>,
+    collapsed_project_files: HashSet<String>,
     search_on_type: bool,
     include_ignored: bool,
     only_open_files: bool,
@@ -214,6 +231,7 @@ impl SearchOverlay {
             scope: SearchScope::CurrentFile,
             options,
             selection_range,
+            collapsed_project_files: HashSet::new(),
             search_on_type,
             include_ignored,
             only_open_files: false,
@@ -318,10 +336,7 @@ impl SearchOverlay {
 
     fn step(&mut self, forward: bool, cx: &mut Context<Self>) {
         if self.scope == SearchScope::Project && self.target == SearchTarget::Editor {
-            let _ = self.workspace.update(cx, |workspace, cx| {
-                workspace.project_search_move(if forward { 1 } else { -1 }, cx)
-            });
-            cx.notify();
+            self.move_project_search(if forward { 1 } else { -1 }, cx);
             return;
         }
         match self
@@ -334,6 +349,16 @@ impl SearchOverlay {
             }
             Some(Err(error)) => self.error = Some(error),
             None => self.count = (0, 0),
+        }
+        cx.notify();
+    }
+
+    fn move_project_search(&mut self, delta: isize, cx: &mut Context<Self>) {
+        let hit = self
+            .workspace
+            .update(cx, |workspace, cx| workspace.project_search_move(delta, cx));
+        if let Some(hit) = hit {
+            self.collapsed_project_files.remove(&hit.relative_path);
         }
         cx.notify();
     }
@@ -370,6 +395,33 @@ impl SearchOverlay {
 
     fn toggle_path_filters(&mut self, cx: &mut Context<Self>) {
         self.show_path_filters = !self.show_path_filters;
+        cx.notify();
+    }
+
+    fn toggle_project_file(&mut self, path: String, cx: &mut Context<Self>) {
+        if !self.collapsed_project_files.remove(&path) {
+            self.collapsed_project_files.insert(path);
+        }
+        cx.notify();
+    }
+
+    fn collapse_all_project_files(&mut self, cx: &mut Context<Self>) {
+        self.collapsed_project_files = self
+            .workspace
+            .read(cx)
+            .project_search_snapshot(cx)
+            .map(|snapshot| {
+                grouped_project_hit_indices(&snapshot.hits)
+                    .into_iter()
+                    .map(|(path, _)| path)
+                    .collect()
+            })
+            .unwrap_or_default();
+        cx.notify();
+    }
+
+    fn expand_all_project_files(&mut self, cx: &mut Context<Self>) {
+        self.collapsed_project_files.clear();
         cx.notify();
     }
 
@@ -559,45 +611,75 @@ impl Render for SearchOverlay {
             }
         });
         let project_rows = project_snapshot.as_ref().map(|snapshot| {
-            snapshot
-                .hits
-                .iter()
-                .enumerate()
-                .map(|(index, hit)| {
-                    let label = format!("{}:{}", hit.relative_path, hit.line);
-                    let detail = hit.text.clone();
-                    ListItem::new(
-                        ("project-search-result", index),
-                        palette.fg,
-                        palette.muted,
-                        palette.selected_fill,
-                    )
-                    .selected(snapshot.selected == Some(index))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        let _ = this.workspace.update(cx, |workspace, cx| {
-                            workspace.project_search_move(
-                                index as isize
-                                    - workspace
-                                        .project_search_snapshot(cx)
-                                        .and_then(|s| s.selected)
-                                        .unwrap_or(0)
-                                        as isize,
-                                cx,
-                            )
-                        });
-                    }))
-                    .child(
-                        div().flex().flex_col().child(label).child(
+            let mut rows = Vec::new();
+            for (path, indices) in grouped_project_hit_indices(&snapshot.hits) {
+                let collapsed = self.collapsed_project_files.contains(&path);
+                let toggle_path = path.clone();
+                rows.push(
+                    div()
+                        .id(SharedString::from(format!("project-search-file-{path}")))
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .px_1()
+                        .py_1()
+                        .cursor_pointer()
+                        .hover(|style| style.bg(palette.accent))
+                        .child(if collapsed { "▸" } else { "▾" })
+                        .child(div().flex_1().text_xs().text_color(palette.fg).child(path))
+                        .child(
                             div()
                                 .text_xs()
                                 .text_color(palette.muted)
-                                .overflow_hidden()
-                                .child(detail),
-                        ),
-                    )
-                    .into_any_element()
-                })
-                .collect::<Vec<_>>()
+                                .child(format!("{}", indices.len())),
+                        )
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                            this.toggle_project_file(toggle_path.clone(), cx)
+                        }))
+                        .into_any_element(),
+                );
+                if collapsed {
+                    continue;
+                }
+                for index in indices {
+                    let hit = &snapshot.hits[index];
+                    let label = format!("{}:{}", hit.relative_path, hit.line);
+                    let detail = hit.text.clone();
+                    rows.push(
+                        ListItem::new(
+                            ("project-search-result", index),
+                            palette.fg,
+                            palette.muted,
+                            palette.selected_fill,
+                        )
+                        .selected(snapshot.selected == Some(index))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                            let _ = this.workspace.update(cx, |workspace, cx| {
+                                workspace.project_search_move(
+                                    index as isize
+                                        - workspace
+                                            .project_search_snapshot(cx)
+                                            .and_then(|s| s.selected)
+                                            .unwrap_or(0)
+                                            as isize,
+                                    cx,
+                                )
+                            });
+                        }))
+                        .child(
+                            div().flex().flex_col().child(label).child(
+                                div()
+                                    .text_xs()
+                                    .text_color(palette.muted)
+                                    .overflow_hidden()
+                                    .child(detail),
+                            ),
+                        )
+                        .into_any_element(),
+                    );
+                }
+            }
+            rows
         });
         let replace_input = self.replace_input.clone();
         let include_glob_input = self.include_glob_input.clone();
@@ -1072,6 +1154,39 @@ impl Render for SearchOverlay {
                 })
                 .child(
                     div()
+                        .flex()
+                        .gap_1()
+                        .child(
+                            button(
+                                "project-search-collapse-all",
+                                palette,
+                                ButtonVariant::Subtle,
+                                ButtonSize::Xs,
+                            )
+                            .child("Collapse all")
+                            .on_click(cx.listener(
+                                |this, _: &ClickEvent, _window, cx| {
+                                    this.collapse_all_project_files(cx)
+                                },
+                            )),
+                        )
+                        .child(
+                            button(
+                                "project-search-expand-all",
+                                palette,
+                                ButtonVariant::Subtle,
+                                ButtonSize::Xs,
+                            )
+                            .child("Expand all")
+                            .on_click(cx.listener(
+                                |this, _: &ClickEvent, _window, cx| {
+                                    this.expand_all_project_files(cx)
+                                },
+                            )),
+                        ),
+                )
+                .child(
+                    div()
                         .id("project-search-results")
                         .max_h(px(260.0))
                         .overflow_y_scroll()
@@ -1172,18 +1287,14 @@ impl Render for SearchOverlay {
                     && ev.keystroke.key == "up"
                     && !search_controls_focused
                 {
-                    let _ = this
-                        .workspace
-                        .update(cx, |workspace, cx| workspace.project_search_move(-1, cx));
+                    this.move_project_search(-1, cx);
                     cx.stop_propagation();
                 } else if this.scope == SearchScope::Project
                     && this.target == SearchTarget::Editor
                     && ev.keystroke.key == "down"
                     && !search_controls_focused
                 {
-                    let _ = this
-                        .workspace
-                        .update(cx, |workspace, cx| workspace.project_search_move(1, cx));
+                    this.move_project_search(1, cx);
                     cx.stop_propagation();
                 } else if this.scope == SearchScope::Project
                     && this.target == SearchTarget::Editor
@@ -1234,6 +1345,23 @@ mod tests {
             ["src/**/*.rs", "*.toml", "Cargo.lock"]
         );
         assert!(parse_path_globs(" , \n  ").is_empty());
+    }
+
+    #[test]
+    fn project_hits_group_by_relative_path_without_losing_flat_selection_indices() {
+        let hits = [
+            ProjectSearchHit::with_relative_path("/root/z.rs", "src/z.rs", 2, "hit", 0, 3),
+            ProjectSearchHit::with_relative_path("/root/a.rs", "src/a.rs", 4, "hit", 0, 3),
+            ProjectSearchHit::with_relative_path("/root/z.rs", "src/z.rs", 8, "hit", 0, 3),
+        ];
+
+        assert_eq!(
+            grouped_project_hit_indices(&hits),
+            vec![
+                ("src/a.rs".to_string(), vec![1]),
+                ("src/z.rs".to_string(), vec![0, 2]),
+            ]
+        );
     }
 
     #[test]
