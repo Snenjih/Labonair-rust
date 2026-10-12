@@ -12903,6 +12903,46 @@ mod tests {
     }
 
     #[gpui::test]
+    fn alt_click_adds_a_second_cursor_without_dragging(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, _cx| {
+                this.metrics = (10.0, 18.0);
+                this.gutter_width = 0.0;
+                this.bounds = Some(gpui::Bounds {
+                    origin: gpui::Point::default(),
+                    size: gpui::Size {
+                        width: px(120.0),
+                        height: px(80.0),
+                    },
+                });
+                this.doc = Document::from_file("test.txt".into(), "abc\ndef\nghi", 1);
+                this.doc.set_caret(Position::new(0, 1), false);
+
+                this.begin_selection_drag(gpui::point(px(20.0), px(36.0)), false, true);
+                this.finish_selection_drag();
+
+                let snapshot = this.doc.snapshot();
+                let ranges = this.doc.selection_set().ranges(&snapshot);
+                assert_eq!(ranges.len(), 2);
+                assert!(ranges.iter().all(|range| range.is_empty()));
+                assert!(ranges.contains(&TextRange::new(
+                    snapshot.position_to_byte(Position::new(0, 1)),
+                    snapshot.position_to_byte(Position::new(0, 1)),
+                )));
+                assert!(ranges.contains(&TextRange::new(
+                    snapshot.position_to_byte(Position::new(2, 2)),
+                    snapshot.position_to_byte(Position::new(2, 2)),
+                )));
+
+                assert!(this.doc.undo_selection());
+                assert_eq!(this.doc.selection_set().len(), 1);
+                assert_eq!(this.doc.cursor, Position::new(0, 1));
+            });
+        });
+    }
+
+    #[gpui::test]
     fn dragging_selected_text_moves_it_but_clicking_inside_places_the_caret(
         cx: &mut TestAppContext,
     ) {
