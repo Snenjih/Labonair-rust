@@ -48,6 +48,16 @@ fn save_last_query(query: &str) {
     }
 }
 
+fn parse_path_globs(value: &str) -> Vec<String> {
+    value
+        .lines()
+        .flat_map(|line| line.split(','))
+        .map(str::trim)
+        .filter(|pattern| !pattern.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 fn next_case_mode(mode: SearchCaseMode) -> SearchCaseMode {
     match mode {
         SearchCaseMode::Smart => SearchCaseMode::Sensitive,
@@ -75,16 +85,21 @@ pub struct SearchOverlay {
     theme: Entity<ThemeStore>,
     input: Entity<InputState>,
     replace_input: Option<Entity<InputState>>,
+    include_glob_input: Option<Entity<InputState>>,
+    exclude_glob_input: Option<Entity<InputState>>,
     target: SearchTarget,
     scope: SearchScope,
     options: SearchOptions,
     search_on_type: bool,
     include_ignored: bool,
+    show_path_filters: bool,
     project_query_confirmed: bool,
     count: (usize, usize),
     error: Option<SearchError>,
     _input_sub: Subscription,
     _replace_sub: Option<Subscription>,
+    _include_glob_sub: Option<Subscription>,
+    _exclude_glob_sub: Option<Subscription>,
 }
 
 impl SearchOverlay {
@@ -139,6 +154,31 @@ impl SearchOverlay {
             },
         );
 
+        let (include_glob_input, include_glob_sub) = if target == SearchTarget::Editor {
+            let input =
+                cx.new(|cx| text_field(window, cx).placeholder("Include globs (comma-separated)…"));
+            let sub = cx.subscribe(&input, |this: &mut Self, _input, ev: &InputEvent, cx| {
+                if matches!(ev, InputEvent::Change) {
+                    this.run_search(cx);
+                }
+            });
+            (Some(input), Some(sub))
+        } else {
+            (None, None)
+        };
+        let (exclude_glob_input, exclude_glob_sub) = if target == SearchTarget::Editor {
+            let input =
+                cx.new(|cx| text_field(window, cx).placeholder("Exclude globs (comma-separated)…"));
+            let sub = cx.subscribe(&input, |this: &mut Self, _input, ev: &InputEvent, cx| {
+                if matches!(ev, InputEvent::Change) {
+                    this.run_search(cx);
+                }
+            });
+            (Some(input), Some(sub))
+        } else {
+            (None, None)
+        };
+
         let (replace_input, replace_sub) = if target == SearchTarget::Editor {
             let replace_input = cx.new(|cx| text_field(window, cx).placeholder("Replace…"));
             let replace_sub = cx.subscribe(
@@ -163,16 +203,21 @@ impl SearchOverlay {
             theme,
             input,
             replace_input,
+            include_glob_input,
+            exclude_glob_input,
             target,
             scope: SearchScope::CurrentFile,
             options,
             search_on_type,
             include_ignored,
+            show_path_filters: false,
             project_query_confirmed: false,
             count: (0, 0),
             error: None,
             _input_sub: input_sub,
             _replace_sub: replace_sub,
+            _include_glob_sub: include_glob_sub,
+            _exclude_glob_sub: exclude_glob_sub,
         };
         if !seed.is_empty() && target != SearchTarget::Unavailable {
             this.run_search(cx);
@@ -213,7 +258,18 @@ impl SearchOverlay {
     fn run_project_search(&mut self, text: String, cx: &mut Context<Self>) {
         let mut options = ProjectSearchOptions::from_search_options(self.options);
         options.include_ignored = self.include_ignored;
-        let query = ProjectSearchQuery::new(text, options, ProjectSearchQuery::DEFAULT_MAX_RESULTS);
+        let include_globs = self
+            .include_glob_input
+            .as_ref()
+            .map(|input| parse_path_globs(&input.read(cx).value()))
+            .unwrap_or_default();
+        let exclude_globs = self
+            .exclude_glob_input
+            .as_ref()
+            .map(|input| parse_path_globs(&input.read(cx).value()))
+            .unwrap_or_default();
+        let query = ProjectSearchQuery::new(text, options, ProjectSearchQuery::DEFAULT_MAX_RESULTS)
+            .with_path_filters(include_globs, exclude_globs);
         let _ = self
             .workspace
             .update(cx, |workspace, cx| workspace.project_search_set(query, cx));
@@ -286,6 +342,11 @@ impl SearchOverlay {
     fn toggle_include_ignored(&mut self, cx: &mut Context<Self>) {
         self.include_ignored = !self.include_ignored;
         self.run_search(cx);
+    }
+
+    fn toggle_path_filters(&mut self, cx: &mut Context<Self>) {
+        self.show_path_filters = !self.show_path_filters;
+        cx.notify();
     }
 
     fn replace_one(&mut self, cx: &mut Context<Self>) {
@@ -510,10 +571,46 @@ impl Render for SearchOverlay {
                 .collect::<Vec<_>>()
         });
         let replace_input = self.replace_input.clone();
+        let include_glob_input = self.include_glob_input.clone();
+        let exclude_glob_input = self.exclude_glob_input.clone();
         let search_focused = self.input.read(cx).focus_handle(cx).is_focused(window);
         let replace_focused = replace_input
             .as_ref()
             .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
+        let include_glob_focused = include_glob_input
+            .as_ref()
+            .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
+        let exclude_glob_focused = exclude_glob_input
+            .as_ref()
+            .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
+        let include_glob_field = include_glob_input
+            .as_ref()
+            .map(|input| {
+                search_field(
+                    "search-include-globs",
+                    palette,
+                    include_glob_focused,
+                    search_input(input, palette),
+                    None,
+                )
+                .w(px(260.0))
+                .into_any_element()
+            })
+            .unwrap_or_else(|| div().into_any_element());
+        let exclude_glob_field = exclude_glob_input
+            .as_ref()
+            .map(|input| {
+                search_field(
+                    "search-exclude-globs",
+                    palette,
+                    exclude_glob_focused,
+                    search_input(input, palette),
+                    None,
+                )
+                .w(px(260.0))
+                .into_any_element()
+            })
+            .unwrap_or_else(|| div().into_any_element());
         let previous_button = if has_matches {
             button(
                 "search-prev",
@@ -721,6 +818,22 @@ impl Render for SearchOverlay {
                                         },
                                     )),
                                 )
+                                .child(
+                                    button(
+                                        "search-path-filters-toggle",
+                                        palette,
+                                        ButtonVariant::Subtle,
+                                        ButtonSize::Xs,
+                                    )
+                                    .child("Filters")
+                                    .when(self.show_path_filters, |d| {
+                                        d.bg(palette.selected_fill)
+                                            .text_color(palette.selected_accent)
+                                    })
+                                    .on_click(cx.listener(
+                                        |this, _: &ClickEvent, _w, cx| this.toggle_path_filters(cx),
+                                    )),
+                                )
                             })
                             .when(
                                 matches!(
@@ -877,7 +990,16 @@ impl Render for SearchOverlay {
                 )
             })
             .when(self.scope == SearchScope::Project, |d| {
-                d.child(
+                d.when(self.show_path_filters, |d| {
+                    d.child(
+                        div()
+                            .flex()
+                            .gap_1()
+                            .child(include_glob_field)
+                            .child(exclude_glob_field),
+                    )
+                })
+                .child(
                     div()
                         .id("project-search-results")
                         .max_h(px(260.0))
@@ -961,12 +1083,23 @@ impl Render for SearchOverlay {
                 .on_click(cx.listener(|_this, _: &ClickEvent, _w, cx| cx.emit(DismissEvent))),
             )
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                let query_focused = this.input.read(cx).focus_handle(cx).is_focused(window);
+                let include_focused = this
+                    .include_glob_input
+                    .as_ref()
+                    .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
+                let exclude_focused = this
+                    .exclude_glob_input
+                    .as_ref()
+                    .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
+                let search_controls_focused = query_focused || include_focused || exclude_focused;
                 if ev.keystroke.key == "escape" {
                     cx.emit(DismissEvent);
                     cx.stop_propagation();
                 } else if this.scope == SearchScope::Project
                     && this.target == SearchTarget::Editor
                     && ev.keystroke.key == "up"
+                    && !search_controls_focused
                 {
                     let _ = this
                         .workspace
@@ -975,6 +1108,7 @@ impl Render for SearchOverlay {
                 } else if this.scope == SearchScope::Project
                     && this.target == SearchTarget::Editor
                     && ev.keystroke.key == "down"
+                    && !search_controls_focused
                 {
                     let _ = this
                         .workspace
@@ -984,10 +1118,9 @@ impl Render for SearchOverlay {
                     && this.target == SearchTarget::Editor
                     && ev.keystroke.key == "enter"
                 {
-                    let search_focused = this.input.read(cx).focus_handle(cx).is_focused(window);
-                    if search_focused && !this.search_on_type {
+                    if search_controls_focused && !this.search_on_type {
                         this.confirm_project_search(cx);
-                    } else {
+                    } else if !include_focused && !exclude_focused {
                         this.open_selected_project_result(window, cx);
                     }
                     cx.stop_propagation();
@@ -1021,6 +1154,15 @@ mod tests {
             next_case_mode(SearchCaseMode::Insensitive),
             SearchCaseMode::Smart
         );
+    }
+
+    #[test]
+    fn path_glob_fields_accept_comma_or_line_separated_patterns() {
+        assert_eq!(
+            parse_path_globs(" src/**/*.rs, *.toml\n  Cargo.lock  \n\n"),
+            ["src/**/*.rs", "*.toml", "Cargo.lock"]
+        );
+        assert!(parse_path_globs(" , \n  ").is_empty());
     }
 
     #[test]

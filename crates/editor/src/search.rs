@@ -174,6 +174,8 @@ pub struct ProjectSearchQuery {
     pub text: String,
     pub options: ProjectSearchOptions,
     pub max_results: usize,
+    pub include_globs: Vec<String>,
+    pub exclude_globs: Vec<String>,
 }
 
 impl ProjectSearchQuery {
@@ -185,7 +187,21 @@ impl ProjectSearchQuery {
             text: text.into(),
             options,
             max_results: max_results.clamp(1, Self::MAX_RESULTS),
+            include_globs: Vec::new(),
+            exclude_globs: Vec::new(),
         }
+    }
+
+    /// Restrict results to paths matching an include glob and remove paths
+    /// matching any exclude glob. Empty lists leave that side unfiltered.
+    pub fn with_path_filters(
+        mut self,
+        include_globs: Vec<String>,
+        exclude_globs: Vec<String>,
+    ) -> Self {
+        self.include_globs = include_globs;
+        self.exclude_globs = exclude_globs;
+        self
     }
 
     /// Translate the Editor query to the regex accepted by the existing
@@ -1040,6 +1056,18 @@ mod tests {
         assert_eq!(query.max_results, ProjectSearchQuery::MAX_RESULTS);
         assert_eq!(query.backend_pattern().unwrap(), r"\b(?:a\+b)\b");
         assert_eq!(query.first_match_columns("x a+b y").unwrap(), Some((2, 5)));
+    }
+
+    #[test]
+    fn project_query_keeps_typed_path_filters() {
+        let query = ProjectSearchQuery::new(
+            "needle",
+            ProjectSearchOptions::default(),
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        )
+        .with_path_filters(vec!["src/**/*.rs".into()], vec!["**/generated/**".into()]);
+        assert_eq!(query.include_globs, ["src/**/*.rs"]);
+        assert_eq!(query.exclude_globs, ["**/generated/**"]);
     }
 
     #[test]

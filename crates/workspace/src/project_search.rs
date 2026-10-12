@@ -9,17 +9,18 @@ use std::path::{Path, PathBuf};
 use labonair_editor::{
     ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest, ProjectSearchResult,
 };
-use labonair_filesystem::grep::{fs_grep_with_ignored, GrepResponse};
+use labonair_filesystem::grep::{fs_grep_with_filters, GrepResponse};
 
 pub(crate) fn search_blocking(
     root: PathBuf,
     request: ProjectSearchRequest,
 ) -> Result<ProjectSearchResult, String> {
     let pattern = request.query.backend_pattern().map_err(|e| e.to_string())?;
-    let response = fs_grep_with_ignored(
+    let response = fs_grep_with_filters(
         pattern,
         root.to_string_lossy().into_owned(),
-        None,
+        (!request.query.include_globs.is_empty()).then(|| request.query.include_globs.clone()),
+        (!request.query.exclude_globs.is_empty()).then(|| request.query.exclude_globs.clone()),
         Some(
             !request
                 .query
