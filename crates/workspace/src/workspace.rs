@@ -129,9 +129,9 @@ use crate::views::terminal::TerminalView;
 use labonair_background_host::BackgroundHost;
 use labonair_editor::{
     FileFinderCandidate, FileFinderQuery, FileFinderResult, LanguageServiceRuntime, MultiBuffer,
-    MultiBufferSaveOutcome, MultiBufferSaveRequest, Position, ProjectReplaceResult,
-    ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, SearchError, SearchQuery,
-    TextRange,
+    MultiBufferSaveOutcome, MultiBufferSaveRequest, Position, ProjectDiagnosticRegistry,
+    ProjectReplaceResult, ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, SearchError,
+    SearchQuery, TextRange,
 };
 use labonair_editor_ui::{EditorBufferSnapshot, EditorEvent, EditorView};
 use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
@@ -711,6 +711,8 @@ pub struct Workspace {
     /// stores only the injected handle; process/document state stays in the
     /// editor capability.
     editor_language_services: Arc<LanguageServiceRuntime>,
+    /// Shared typed projection of diagnostics from the open Editor buffers.
+    editor_diagnostics: HashMap<SpaceId, ProjectDiagnosticRegistry>,
     git_graph_service: Arc<dyn GitGraphService>,
     mcp_access: Arc<dyn McpSessionAccessService>,
     mcp_tab_operations: Arc<dyn McpTabOperationService>,
@@ -900,6 +902,7 @@ impl Workspace {
         let editor_git_bridge = Arc::new(WorkspaceGitBridge::new(git.clone(), tokio.clone()));
         let editor_language_services = Arc::new(LanguageServiceRuntime::default());
         editor_language_services.set_tokio_handle(tokio.clone());
+        let editor_diagnostics = HashMap::new();
         let mut this = Self {
             registry,
             tabs,
@@ -960,6 +963,7 @@ impl Workspace {
             git,
             editor_git_bridge,
             editor_language_services,
+            editor_diagnostics,
             git_graph_service,
             mcp_access,
             mcp_tab_operations,
@@ -1655,6 +1659,7 @@ impl Workspace {
         for tab in self.tabs.update(cx, |s, cx| s.close_by_space(id, cx)) {
             self.retire_tab(&tab, cx);
         }
+        self.editor_diagnostics.remove(&id);
         self.spaces.update(cx, |s, cx| {
             s.close(id, cx);
         });
@@ -2589,7 +2594,7 @@ impl Workspace {
                 s.set_peek(id, peek, cx);
                 id
             });
-            let view = self.new_editor_view(cx);
+            let view = self.new_editor_view(tab_id, cx);
             self.watch_editor(tab_id, &view, cx);
             self.editors.insert(tab_id, view);
             tab_id
@@ -2726,7 +2731,7 @@ impl Workspace {
         let tab_id = self
             .tabs
             .update(cx, |s, cx| s.open(TabKind::Editor, TabData::default(), cx));
-        let view = self.new_editor_view(cx);
+        let view = self.new_editor_view(tab_id, cx);
         self.watch_editor(tab_id, &view, cx);
         self.editors.insert(tab_id, view);
         self.focus_active(window, cx);
@@ -3062,13 +3067,21 @@ impl Workspace {
         }
     }
 
-    fn new_editor_view(&self, cx: &mut Context<Self>) -> Entity<EditorView> {
+    fn new_editor_view(&mut self, tab_id: u64, cx: &mut Context<Self>) -> Entity<EditorView> {
         let theme = self.theme.clone();
         let bridge = self.editor_git_bridge.clone();
         let language_services = self.editor_language_services.clone();
+        let space_id = self
+            .tabs
+            .read(cx)
+            .get(tab_id)
+            .map(|tab| tab.space_id)
+            .unwrap_or_else(|| self.spaces.read(cx).active_id());
+        let diagnostics = self.editor_diagnostics.entry(space_id).or_default().clone();
         let workspace = cx.entity();
         cx.new(|cx| {
-            let mut view = EditorView::new_with_language_services(theme, language_services, cx);
+            let mut view =
+                EditorView::new_with_project_diagnostics(theme, language_services, diagnostics, cx);
             view.set_git_bridge(bridge.clone(), bridge.clone());
             let call_hierarchy_workspace = workspace.clone();
             view.set_call_hierarchy_navigator(move |uri, position, window, app| {
@@ -4448,7 +4461,9 @@ impl Workspace {
             self.project_search_owner = None;
             self.project_search_task.take();
         }
-        self.editors.remove(&tab.id);
+        if let Some(editor) = self.editors.remove(&tab.id) {
+            editor.update(cx, |editor, _cx| editor.prepare_for_close());
+        }
         self.previews.remove(&tab.id);
         if self.following_markdown_preview == Some(tab.id) {
             self.following_markdown_preview = None;
@@ -4721,7 +4736,7 @@ impl Workspace {
             s.set_custom_title(id, Some(format!("{base} (remote)")), cx);
             id
         });
-        let view = self.new_editor_view(cx);
+        let view = self.new_editor_view(tab_id, cx);
         self.watch_editor(tab_id, &view, cx);
         view.update(cx, |e, cx| {
             e.open_path(std::path::PathBuf::from(&temp_path), cx)

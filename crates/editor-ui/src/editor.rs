@@ -63,11 +63,12 @@ use labonair_editor::{
     LanguageServiceRuntimeSnapshot, LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus,
     LanguageServiceSnapshot, LanguageServiceState, LocalLanguageServiceRequest, LspPosition,
     LspRange, Match, NavigationHistory, NavigationLocation, NavigationTarget, Position,
-    ProjectBufferCandidate, ProjectReplacePlan, ProjectReplaceRequest, ProjectReplaceResult,
-    ProjectReplaceTarget, ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest,
-    ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot, Revision, SavePolicy,
-    SearchError, SearchOptions, SearchQuery, Selection, SelectionSet, SnippetSession,
-    SyntaxHighlighter, TextRange, Viewport, Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
+    ProjectBufferCandidate, ProjectDiagnosticRegistry, ProjectReplacePlan, ProjectReplaceRequest,
+    ProjectReplaceResult, ProjectReplaceTarget, ProjectSearchHit, ProjectSearchQuery,
+    ProjectSearchRequest, ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot,
+    Revision, SavePolicy, SearchError, SearchOptions, SearchQuery, Selection, SelectionSet,
+    SnippetSession, SyntaxHighlighter, TextRange, Viewport, Vim, VimKey, VimMode, VimOptions,
+    WhitespaceMode,
 };
 use labonair_editor::{build_breadcrumb_state, BreadcrumbState};
 
@@ -1165,6 +1166,7 @@ pub struct EditorView {
     /// Editor-owned language-service runtime and its revision-safe result
     /// projection. Workspace only injects the runtime at composition time.
     language_services: Arc<LanguageServiceRuntime>,
+    diagnostic_registry: ProjectDiagnosticRegistry,
     call_hierarchy_navigator: Option<CallHierarchyNavigator>,
     document_link_navigator: Option<DocumentLinkNavigator>,
     language_service_snapshot: LanguageServiceRuntimeSnapshot,
@@ -1330,6 +1332,20 @@ impl EditorView {
         language_services: Arc<LanguageServiceRuntime>,
         cx: &mut Context<Self>,
     ) -> Self {
+        Self::new_with_project_diagnostics(
+            theme,
+            language_services,
+            ProjectDiagnosticRegistry::default(),
+            cx,
+        )
+    }
+
+    pub fn new_with_project_diagnostics(
+        theme: Entity<ThemeStore>,
+        language_services: Arc<LanguageServiceRuntime>,
+        diagnostic_registry: ProjectDiagnosticRegistry,
+        cx: &mut Context<Self>,
+    ) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
         cx.observe_global::<SettingsStore>(|this, cx| this.apply_prefs(cx))
             .detach();
@@ -1438,6 +1454,7 @@ impl EditorView {
             character_palette_group_open: None,
             git_discard_confirmation: None,
             language_services,
+            diagnostic_registry,
             call_hierarchy_navigator: None,
             document_link_navigator: None,
             language_service_snapshot,
@@ -2176,21 +2193,39 @@ impl EditorView {
         .detach();
     }
 
-    fn show_diagnostics(&self, cx: &mut Context<Self>) {
-        let diagnostics = self.language_service_state.snapshot().diagnostics;
-        let (errors, warnings) = diagnostic_error_warning_counts(&diagnostics);
-        let body = if diagnostics.is_empty() {
-            "No diagnostics for the current document.".to_string()
-        } else {
-            format!(
-                "{} diagnostic(s): {} error(s), {} warning(s), and {} information/hint(s). Use Next/Previous Diagnostic to navigate.",
-                diagnostics.len(),
-                errors,
-                warnings,
-                diagnostics.len().saturating_sub(errors + warnings)
-            )
-        };
-        notify_info(cx, "Editor diagnostics", &body);
+    fn show_diagnostics(&mut self, cx: &mut Context<Self>) {
+        let targets = self
+            .diagnostic_registry
+            .snapshot()
+            .into_iter()
+            .map(|row| {
+                let severity = match row.diagnostic.severity {
+                    labonair_editor::DiagnosticSeverity::Error => "Error",
+                    labonair_editor::DiagnosticSeverity::Warning => "Warning",
+                    labonair_editor::DiagnosticSeverity::Information => "Information",
+                    labonair_editor::DiagnosticSeverity::Hint => "Hint",
+                };
+                NavigationTarget {
+                    name: format!("{severity}: {}", row.diagnostic.message),
+                    uri: Some(row.uri),
+                    range: row.diagnostic.range,
+                    selection_range: row.diagnostic.range,
+                }
+            })
+            .collect::<Vec<_>>();
+        if targets.is_empty() {
+            notify_info(
+                cx,
+                "Project Diagnostics",
+                "No diagnostics are available in open editor buffers.",
+            );
+            return;
+        }
+        self.navigation_results_title = "Project Diagnostics".into();
+        self.navigation_result_direct = false;
+        self.navigation_results_selected = 0;
+        self.navigation_results = Some(targets);
+        cx.notify();
     }
 
     fn navigate_diagnostic(&mut self, forward: bool, cx: &mut Context<Self>) {
@@ -2239,11 +2274,20 @@ impl EditorView {
             .unwrap_or_else(|| "untitled://labonair/editor".to_string())
     }
 
+    /// Release document-owned language-service and project-diagnostic state
+    /// before the Workspace drops a tab.
+    pub fn prepare_for_close(&mut self) {
+        self.close_language_service_document();
+    }
+
     fn close_language_service_document(&mut self) {
-        let (Some(uri), true) = (self.language_service_uri.take(), self.language_service_open)
-        else {
+        let Some(uri) = self.language_service_uri.take() else {
             return;
         };
+        self.diagnostic_registry.remove_document(&uri);
+        if !self.language_service_open {
+            return;
+        }
         self.language_service_open = false;
         let language = LanguageId::new(self.doc.language);
         let _ = self
@@ -2264,6 +2308,10 @@ impl EditorView {
         let version = DocumentVersion::from_revision(snapshot.revision());
         let generation = self.language_service_generation.saturating_add(1);
         self.language_service_generation = generation;
+        if let Some(path) = self.doc.path.clone() {
+            self.diagnostic_registry
+                .update_document(path, uri.clone(), Vec::new());
+        }
         self.server_fold_ranges.clear();
         self.folding_ranges_request_serial = None;
         self.hover = None;
@@ -2689,6 +2737,15 @@ impl EditorView {
         match response {
             LanguageServiceResponse::Diagnostics(_) => {
                 self.diagnostics_revision = Some(self.editor_revision());
+                if let (Some(path), Some(uri)) =
+                    (self.doc.path.clone(), self.language_service_uri.clone())
+                {
+                    self.diagnostic_registry.update_document(
+                        path,
+                        uri,
+                        self.language_service_state.snapshot().diagnostics,
+                    );
+                }
                 self.schedule_error_lens(cx);
             }
             LanguageServiceResponse::Definition(targets)
@@ -11219,6 +11276,61 @@ mod tests {
             let theme = cx.new(|_| ThemeStore::new(gpui::WindowAppearance::Light));
             cx.new(|cx| EditorView::new(theme, cx))
         })
+    }
+
+    #[gpui::test]
+    fn show_diagnostics_lists_rows_from_open_project_buffers(cx: &mut TestAppContext) {
+        use labonair_editor::language_services::DiagnosticSeverity;
+
+        let diagnostics = ProjectDiagnosticRegistry::default();
+        let diagnostic = |line, severity, message: &str| labonair_editor::Diagnostic {
+            range: LspRange {
+                start: LspPosition { line, character: 0 },
+                end: LspPosition { line, character: 1 },
+            },
+            severity,
+            message: message.into(),
+            source: labonair_editor::LanguageServerId::new("test-lsp"),
+            code: None,
+        };
+        diagnostics.update_document(
+            PathBuf::from("/workspace/a.rs"),
+            "file:///workspace/a.rs".into(),
+            vec![diagnostic(2, DiagnosticSeverity::Error, "missing type")],
+        );
+        diagnostics.update_document(
+            PathBuf::from("/workspace/b.rs"),
+            "file:///workspace/b.rs".into(),
+            vec![diagnostic(7, DiagnosticSeverity::Warning, "unused value")],
+        );
+
+        let view = cx.update(|cx| {
+            let theme = cx.new(|_| ThemeStore::new(gpui::WindowAppearance::Light));
+            cx.new(|cx| {
+                EditorView::new_with_project_diagnostics(
+                    theme,
+                    Arc::new(LanguageServiceRuntime::default()),
+                    diagnostics,
+                    cx,
+                )
+            })
+        });
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("/workspace/current.rs".into(), "fn main() {}", 1);
+                assert!(this.dispatch_registered_command(CommandId::EditorShowDiagnostics, cx));
+
+                let rows = this.navigation_results.as_ref().expect("diagnostics list");
+                assert_eq!(this.navigation_results_title, "Project Diagnostics");
+                assert_eq!(rows.len(), 2);
+                assert_eq!(rows[0].name, "Error: missing type");
+                assert_eq!(rows[0].uri.as_deref(), Some("file:///workspace/a.rs"));
+                assert_eq!(rows[0].selection_range.start.line, 2);
+                assert_eq!(rows[1].name, "Warning: unused value");
+                assert_eq!(rows[1].uri.as_deref(), Some("file:///workspace/b.rs"));
+                assert_eq!(rows[1].selection_range.start.line, 7);
+            });
+        });
     }
 
     #[gpui::test]

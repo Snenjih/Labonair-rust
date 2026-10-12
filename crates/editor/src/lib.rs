@@ -10,6 +10,7 @@
 pub mod breadcrumbs;
 pub mod buffer;
 pub mod command_provider;
+pub mod diagnostics;
 pub mod diff;
 pub mod display;
 pub mod document;
@@ -44,6 +45,7 @@ pub use buffer::{
     TextRange, Transaction,
 };
 pub use command_provider::{EditorLanguageCommand, GitEditorCommand};
+pub use diagnostics::{ProjectDiagnosticLocation, ProjectDiagnosticRegistry};
 pub use diff::{side_by_side, ChangeTag, Diff, DiffLine, Hunk, RowKind, SideCell, SideRow};
 pub use display::{
     DisplayConfig, DisplayDiagnostic, DisplayDocumentColor, DisplayInlineHint, DisplayMap,
