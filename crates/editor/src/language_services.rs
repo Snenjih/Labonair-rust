@@ -226,6 +226,16 @@ pub struct CodeLens {
     pub data: Option<Value>,
 }
 
+/// A server-provided link over a document range. Servers may defer the target
+/// until `documentLink/resolve` is requested.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DocumentLink {
+    pub range: LspRange,
+    pub target: Option<String>,
+    pub tooltip: Option<String>,
+    pub data: Option<Value>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CodeAction {
     pub title: String,
@@ -301,6 +311,8 @@ pub enum LanguageServiceCapability {
     CodeLens,
     CodeLensResolve,
     ExecuteCommand,
+    DocumentLinks,
+    DocumentLinkResolve,
     Rename,
     CodeActions,
     SemanticTokens,
@@ -360,6 +372,8 @@ pub struct LanguageServiceCapabilities {
     pub code_lens: bool,
     pub code_lens_resolve: bool,
     pub execute_command: bool,
+    pub document_links: bool,
+    pub document_link_resolve: bool,
     pub rename: bool,
     pub code_actions: bool,
     pub semantic_tokens: bool,
@@ -383,6 +397,8 @@ impl LanguageServiceCapabilities {
         code_lens: false,
         code_lens_resolve: false,
         execute_command: false,
+        document_links: false,
+        document_link_resolve: false,
         rename: true,
         code_actions: true,
         semantic_tokens: true,
@@ -406,6 +422,8 @@ impl LanguageServiceCapabilities {
             LanguageServiceCapability::CodeLens => self.code_lens,
             LanguageServiceCapability::CodeLensResolve => self.code_lens_resolve,
             LanguageServiceCapability::ExecuteCommand => self.execute_command,
+            LanguageServiceCapability::DocumentLinks => self.document_links,
+            LanguageServiceCapability::DocumentLinkResolve => self.document_link_resolve,
             LanguageServiceCapability::Rename => self.rename,
             LanguageServiceCapability::CodeActions => self.code_actions,
             LanguageServiceCapability::SemanticTokens => self.semantic_tokens,
@@ -458,6 +476,10 @@ pub enum LanguageServiceRequest {
         command: String,
         arguments: Vec<Value>,
     },
+    DocumentLinks,
+    ResolveDocumentLink {
+        link: DocumentLink,
+    },
     Rename {
         position: LspPosition,
         new_name: String,
@@ -509,6 +531,8 @@ impl LanguageServiceRequest {
             Self::CodeLenses => LanguageServiceCapability::CodeLens,
             Self::ResolveCodeLens { .. } => LanguageServiceCapability::CodeLensResolve,
             Self::ExecuteCommand { .. } => LanguageServiceCapability::ExecuteCommand,
+            Self::DocumentLinks => LanguageServiceCapability::DocumentLinks,
+            Self::ResolveDocumentLink { .. } => LanguageServiceCapability::DocumentLinkResolve,
             Self::Rename { .. } => LanguageServiceCapability::Rename,
             Self::CodeActions { .. } => LanguageServiceCapability::CodeActions,
             Self::SemanticTokens => LanguageServiceCapability::SemanticTokens,
@@ -535,6 +559,8 @@ pub enum LanguageServiceResponse {
     CodeLenses(Vec<CodeLens>),
     CodeLens(Option<CodeLens>),
     CommandResult(Option<Value>),
+    DocumentLinks(Vec<DocumentLink>),
+    DocumentLink(Option<DocumentLink>),
     Rename(Vec<Edit>),
     CodeActions(Vec<CodeAction>),
     SemanticTokens(Vec<SemanticToken>),
@@ -1481,6 +1507,16 @@ impl LocalLanguageService for SyntaxLanguageService {
                     LanguageServiceCapability::ExecuteCommand,
                 ));
             }
+            LanguageServiceRequest::DocumentLinks => {
+                return Err(LanguageServiceError::UnsupportedCapability(
+                    LanguageServiceCapability::DocumentLinks,
+                ));
+            }
+            LanguageServiceRequest::ResolveDocumentLink { .. } => {
+                return Err(LanguageServiceError::UnsupportedCapability(
+                    LanguageServiceCapability::DocumentLinkResolve,
+                ));
+            }
             LanguageServiceRequest::Rename { position, new_name } => {
                 LanguageServiceResponse::Rename(self.rename(snapshot, position, new_name))
             }
@@ -1826,6 +1862,50 @@ mod tests {
                     arguments: Vec::new(),
                 },
                 LanguageServiceCapability::ExecuteCommand,
+            ),
+        ] {
+            assert_eq!(request.capability(), capability);
+            assert!(!service(Language::Rust).capabilities().supports(capability));
+            assert!(matches!(
+                service(Language::Rust).request(
+                    &snapshot,
+                    DocumentVersion::new(1),
+                    request,
+                    &CancellationToken::default(),
+                ),
+                Err(LanguageServiceError::UnsupportedCapability(actual)) if actual == capability
+            ));
+        }
+    }
+
+    #[test]
+    fn document_links_and_resolution_are_explicit_lsp_capabilities() {
+        let snapshot = snapshot("https://example.com\n");
+        let range = LspRange {
+            start: LspPosition {
+                line: 0,
+                character: 0,
+            },
+            end: LspPosition {
+                line: 0,
+                character: 19,
+            },
+        };
+        for (request, capability) in [
+            (
+                LanguageServiceRequest::DocumentLinks,
+                LanguageServiceCapability::DocumentLinks,
+            ),
+            (
+                LanguageServiceRequest::ResolveDocumentLink {
+                    link: DocumentLink {
+                        range,
+                        target: None,
+                        tooltip: None,
+                        data: Some(serde_json::json!({ "resolve": true })),
+                    },
+                },
+                LanguageServiceCapability::DocumentLinkResolve,
             ),
         ] {
             assert_eq!(request.capability(), capability);

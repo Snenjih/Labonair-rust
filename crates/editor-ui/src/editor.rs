@@ -52,9 +52,9 @@ use labonair_editor::{
     map_range_through_edits, next_match_with_wrap, replace_all_checked, replace_one,
     word_at_cursor, Anchor, AnchorAffinity, BufferSnapshot, CallHierarchyCall, CallHierarchyItem,
     CancellationToken, CodeLens, DisplayConfig, DisplayMap, DisplayRowKind, DisplaySnapshot,
-    Document, DocumentColor, DocumentColorValue, DocumentVersion, Edit, EditorEditability,
-    EditorSessionId, EditorSessionSnapshot, EditorViewSession, FoldRange, FoldingRange,
-    GitBlameRequest, GitBlameSnapshot, GitDecorationProvider, GitDecorationRequest,
+    Document, DocumentColor, DocumentColorValue, DocumentLink, DocumentVersion, Edit,
+    EditorEditability, EditorSessionId, EditorSessionSnapshot, EditorViewSession, FoldRange,
+    FoldingRange, GitBlameRequest, GitBlameSnapshot, GitDecorationProvider, GitDecorationRequest,
     GitDiscardPreview, GitEditorCommand, GitGutterError, GitGutterSnapshot, GitHunkAction,
     GitHunkActionKind, GitHunkStatus, Helix, HelixKey, HelixMode, HunkActionSink, InlayHint,
     InlayHintKind, KillRing, Language, LanguageId, LanguageServiceCapabilities,
@@ -82,6 +82,7 @@ use labonair_ui_kit::{
 };
 
 type CallHierarchyNavigator = Rc<dyn Fn(String, LspPosition, &mut Window, &mut App)>;
+type DocumentLinkNavigator = Rc<dyn Fn(String, &mut Window, &mut App)>;
 
 /// Editor → workspace notifications.
 #[derive(Clone, Debug)]
@@ -777,6 +778,7 @@ enum LanguageServiceRequestSlot {
     TypeDefinition,
     CallHierarchy,
     CodeLens,
+    DocumentLinks,
     InlayHints,
     FoldingRanges,
 }
@@ -899,6 +901,18 @@ fn diagnostic_at_position<'a>(
             let range = diagnostic.range.to_text_range(snapshot);
             (diagnostic.severity, range.end.saturating_sub(range.start))
         })
+}
+
+fn document_link_at_position<'a>(
+    links: &'a [DocumentLink],
+    snapshot: &BufferSnapshot,
+    position: Position,
+) -> Option<&'a DocumentLink> {
+    let offset = snapshot.position_to_byte(position);
+    links.iter().find(|link| {
+        let range = link.range.to_text_range(snapshot);
+        range.start <= offset && offset < range.end
+    })
 }
 
 fn error_lens_for_line(
@@ -1123,6 +1137,7 @@ pub struct EditorView {
     /// projection. Workspace only injects the runtime at composition time.
     language_services: Arc<LanguageServiceRuntime>,
     call_hierarchy_navigator: Option<CallHierarchyNavigator>,
+    document_link_navigator: Option<DocumentLinkNavigator>,
     language_service_snapshot: LanguageServiceRuntimeSnapshot,
     language_service_state: LanguageServiceState,
     language_service_uri: Option<String>,
@@ -1142,6 +1157,8 @@ pub struct EditorView {
     inlay_hints_request_range: Option<LspRange>,
     code_lenses: Vec<CodeLens>,
     code_lens_request_serial: Option<u64>,
+    document_links: Vec<DocumentLink>,
+    document_link_request_serial: Option<u64>,
     signature_help_state: SignatureHelpUiState,
     signature_help_request_serial: Option<u64>,
     signature_help_position: Option<LspPosition>,
@@ -1386,6 +1403,7 @@ impl EditorView {
             git_discard_confirmation: None,
             language_services,
             call_hierarchy_navigator: None,
+            document_link_navigator: None,
             language_service_snapshot,
             language_service_state: LanguageServiceState::new(DocumentVersion::new(0)),
             language_service_uri: None,
@@ -1405,6 +1423,8 @@ impl EditorView {
             inlay_hints_request_range: None,
             code_lenses: Vec::new(),
             code_lens_request_serial: None,
+            document_links: Vec::new(),
+            document_link_request_serial: None,
             signature_help_state: SignatureHelpUiState::Hidden,
             signature_help_request_serial: None,
             signature_help_position: None,
@@ -1453,6 +1473,14 @@ impl EditorView {
         navigator: impl Fn(String, LspPosition, &mut Window, &mut App) + 'static,
     ) {
         self.call_hierarchy_navigator = Some(Rc::new(navigator));
+    }
+
+    /// Inject the Workspace-owned safe navigation path for LSP document links.
+    pub fn set_document_link_navigator(
+        &mut self,
+        navigator: impl Fn(String, &mut Window, &mut App) + 'static,
+    ) {
+        self.document_link_navigator = Some(Rc::new(navigator));
     }
 
     pub fn language_service_snapshot(&self) -> LanguageServiceRuntimeSnapshot {
@@ -2153,6 +2181,8 @@ impl EditorView {
         self.inlay_hints_request_range = None;
         self.code_lenses.clear();
         self.code_lens_request_serial = None;
+        self.document_links.clear();
+        self.document_link_request_serial = None;
         self.language_service_uri = Some(uri.clone());
         self.language_service_open = true;
         self.language_service_state
@@ -2241,6 +2271,9 @@ impl EditorView {
                     {
                         this.request_code_lenses(cx);
                     }
+                    if this.language_service_snapshot.capabilities.document_links {
+                        this.request_document_links(cx);
+                    }
                     if this.prefs.lsp_document_colors() != EditorDocumentColorMode::Off
                         && this.language_service_snapshot.capabilities.document_colors
                     {
@@ -2290,6 +2323,10 @@ impl EditorView {
             | LanguageServiceRequest::ExecuteCommand { .. } => {
                 (LanguageServiceRequestSlot::CodeLens, None)
             }
+            LanguageServiceRequest::DocumentLinks
+            | LanguageServiceRequest::ResolveDocumentLink { .. } => {
+                (LanguageServiceRequestSlot::DocumentLinks, None)
+            }
             LanguageServiceRequest::InlayHints { .. } => {
                 (LanguageServiceRequestSlot::InlayHints, None)
             }
@@ -2326,6 +2363,9 @@ impl EditorView {
             }
             LanguageServiceRequestSlot::CodeLens => {
                 self.code_lens_request_serial = Some(request_serial);
+            }
+            LanguageServiceRequestSlot::DocumentLinks => {
+                self.document_link_request_serial = Some(request_serial);
             }
             LanguageServiceRequestSlot::Other => {}
         }
@@ -2374,6 +2414,7 @@ impl EditorView {
                                 | LanguageServiceRequestSlot::TypeDefinition
                                 | LanguageServiceRequestSlot::CallHierarchy
                                 | LanguageServiceRequestSlot::CodeLens
+                                | LanguageServiceRequestSlot::DocumentLinks
                         ) || this.format_on_save_in_flight))
                 {
                     this.apply_language_service_response(response, slot, cx);
@@ -2419,6 +2460,9 @@ impl EditorView {
             }
             LanguageServiceRequestSlot::CodeLens => {
                 self.code_lens_request_serial == Some(request_serial)
+            }
+            LanguageServiceRequestSlot::DocumentLinks => {
+                self.document_link_request_serial == Some(request_serial)
             }
             LanguageServiceRequestSlot::InlayHints => {
                 self.inlay_hints_request_serial == Some(request_serial)
@@ -2531,6 +2575,9 @@ impl EditorView {
                 self.code_lenses.clear();
                 notify(cx, "Code Lens unavailable", &response_error_text(&response));
                 cx.notify();
+            } else if slot == LanguageServiceRequestSlot::DocumentLinks {
+                self.document_links.clear();
+                cx.notify();
             }
             return;
         };
@@ -2577,6 +2624,13 @@ impl EditorView {
                 } else {
                     Vec::new()
                 };
+                cx.notify();
+            }
+            LanguageServiceResponse::DocumentLinks(links) => {
+                self.document_links = links
+                    .into_iter()
+                    .filter(|link| link.target.is_some())
+                    .collect();
                 cx.notify();
             }
             LanguageServiceResponse::Formatting(edits) => {
@@ -3109,10 +3163,20 @@ impl EditorView {
                     .map(document_color_hover_text)
             })
             .flatten();
+        let document_link_hover = self.document_link_at_position(doc_pos).and_then(|link| {
+            link.target.as_ref().map(|target| {
+                let description = link
+                    .tooltip
+                    .clone()
+                    .unwrap_or_else(|| format!("Open {target}"));
+                format!("{description} · Ctrl/Cmd-click to open")
+            })
+        });
         let next = diagnostic_hover
             .map(|text| (mouse_pos, SharedString::from(text)))
             .or_else(|| inlay_hover.map(|text| (mouse_pos, SharedString::from(text))))
             .or_else(|| color_hover.map(|text| (mouse_pos, SharedString::from(text))))
+            .or_else(|| document_link_hover.map(|text| (mouse_pos, SharedString::from(text))))
             .or_else(|| {
                 if self.is_settings_json() {
                     let offset = snapshot.position_to_byte(doc_pos);
@@ -3454,6 +3518,18 @@ impl EditorView {
             return;
         }
         self.request_language_service(LanguageServiceRequest::CodeLenses, cx);
+    }
+
+    fn request_document_links(&mut self, cx: &mut Context<Self>) {
+        if !self.language_service_snapshot.capabilities.document_links {
+            return;
+        }
+        self.request_language_service(LanguageServiceRequest::DocumentLinks, cx);
+    }
+
+    fn document_link_at_position(&self, position: Position) -> Option<&DocumentLink> {
+        let snapshot = self.doc.snapshot();
+        document_link_at_position(&self.document_links, &snapshot, position)
     }
 
     fn file_limit_bytes(&self) -> u64 {
@@ -10214,6 +10290,34 @@ impl Render for EditorView {
                 );
             }
             row = row.child(text);
+            for link in self
+                .document_links
+                .iter()
+                .filter(|link| link.range.start.line == line && link.range.end.line == line)
+            {
+                let start = link.range.start.to_position(&snapshot);
+                let end = link.range.end.to_position(&snapshot);
+                let start_column = display_row
+                    .display_column_for_source_position(start)
+                    .unwrap_or(start.column)
+                    .saturating_sub(display.viewport.left_column);
+                let end_column = display_row
+                    .display_column_for_source_position(end)
+                    .unwrap_or(end.column)
+                    .saturating_sub(display.viewport.left_column);
+                let width = end_column.saturating_sub(start_column) as f32 * char_w;
+                if width > 0.0 {
+                    row = row.child(
+                        div()
+                            .absolute()
+                            .left(px(start_column as f32 * char_w))
+                            .bottom_0()
+                            .w(px(width))
+                            .h(px(1.0))
+                            .bg(accent.opacity(0.85)),
+                    );
+                }
+            }
             let is_final_text_segment = match display_row.kind {
                 DisplayRowKind::Text { end_column, .. } => end_column >= snapshot.line_len(line),
                 DisplayRowKind::FoldPlaceholder { .. } => false,
@@ -10563,6 +10667,20 @@ impl Render for EditorView {
                         .is_some_and(|bounds| bounds.contains(&ev.position))
                     {
                         return;
+                    }
+                    if ev.modifiers.platform || ev.modifiers.control {
+                        let position = this.position_at(ev.position);
+                        let target = this
+                            .document_link_at_position(position)
+                            .and_then(|link| link.target.clone());
+                        if let (Some(target), Some(navigate)) =
+                            (target, this.document_link_navigator.clone())
+                        {
+                            navigate(target, window, cx);
+                            cx.stop_propagation();
+                            cx.notify();
+                            return;
+                        }
                     }
                     window.focus(&this.focus_handle);
                     this.begin_selection_drag(ev.position, ev.modifiers.shift, ev.modifiers.alt);
@@ -12430,6 +12548,30 @@ mod tests {
             inlay_hint_tooltip_at_position(&hints, &snapshot, Position::new(0, 2), |_| false,),
             None
         );
+    }
+
+    #[test]
+    fn document_link_hit_testing_uses_a_half_open_source_range() {
+        let snapshot = labonair_editor::EditorBuffer::from_text("open here").snapshot();
+        let links = vec![DocumentLink {
+            range: LspRange {
+                start: LspPosition {
+                    line: 0,
+                    character: 5,
+                },
+                end: LspPosition {
+                    line: 0,
+                    character: 9,
+                },
+            },
+            target: Some("https://example.com".into()),
+            tooltip: None,
+            data: None,
+        }];
+
+        assert!(document_link_at_position(&links, &snapshot, Position::new(0, 5)).is_some());
+        assert!(document_link_at_position(&links, &snapshot, Position::new(0, 8)).is_some());
+        assert!(document_link_at_position(&links, &snapshot, Position::new(0, 9)).is_none());
     }
 
     #[test]

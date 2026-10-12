@@ -44,6 +44,7 @@ fn main() -> io::Result<()> {
                     "callHierarchyProvider": !minimal,
                     "codeLensProvider": if !minimal { json!({ "resolveProvider": true }) } else { Value::Null },
                     "executeCommandProvider": if !minimal { json!({ "commands": ["fixture.run"] }) } else { Value::Null },
+                    "documentLinkProvider": if !minimal { json!({ "resolveProvider": true }) } else { Value::Null },
                     "renameProvider": !minimal,
                     "codeActionProvider": if !minimal && !no_organize_imports { json!(true) } else if !minimal { json!({ "codeActionKinds": ["quickfix"] }) } else { Value::Null },
                     "semanticTokensProvider": if !minimal { json!({ "legend": { "tokenTypes": ["function"] }, "full": true }) } else { Value::Null },
@@ -117,6 +118,12 @@ fn main() -> io::Result<()> {
             )?,
             "workspace/executeCommand" => write_message(
                 &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "completed": true } }),
+            )?,
+            "textDocument/documentLink" => write_message(
+                &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": [{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 4 } }, "data": { "link": "fixture" } }] }),
+            )?,
+            "documentLink/resolve" => write_message(
+                &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 4 } }, "target": "file:///fixture-target.rs", "tooltip": "Open fixture target", "data": { "link": "fixture" } } }),
             )?,
             "textDocument/rename" => write_message(
                 &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "changes": { "file:///fixture": [{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 1 } }, "newText": "renamed" }] } } }),

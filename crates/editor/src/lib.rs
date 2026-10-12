@@ -71,14 +71,14 @@ pub use language::Language;
 pub use language_services::{
     default_registry, BackgroundRequest, CallHierarchyCall, CallHierarchyItem, CancellationToken,
     CodeAction, CodeLens, CompletionItem, CompletionKind, CompletionList, CompletionTextFormat,
-    Diagnostic, DiagnosticSeverity, DocumentColor, DocumentColorValue, DocumentVersion,
-    FoldingRange, HoverContent, InlayHint, InlayHintKind, LanguageId, LanguageServerId,
-    LanguageServiceCapabilities, LanguageServiceCapability, LanguageServiceCommand,
-    LanguageServiceEditCapabilities, LanguageServiceEditCapability, LanguageServiceEditRequest,
-    LanguageServiceEditResponse, LanguageServiceError, LanguageServiceRegistry,
-    LanguageServiceRequest, LanguageServiceResponse, LanguageServiceResult,
-    LanguageServiceSnapshot, LanguageServiceState, LocalLanguageService, LspPosition, LspRange,
-    NavigationTarget, SemanticToken, SignatureHelp, SyntaxLanguageService,
+    Diagnostic, DiagnosticSeverity, DocumentColor, DocumentColorValue, DocumentLink,
+    DocumentVersion, FoldingRange, HoverContent, InlayHint, InlayHintKind, LanguageId,
+    LanguageServerId, LanguageServiceCapabilities, LanguageServiceCapability,
+    LanguageServiceCommand, LanguageServiceEditCapabilities, LanguageServiceEditCapability,
+    LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceError,
+    LanguageServiceRegistry, LanguageServiceRequest, LanguageServiceResponse,
+    LanguageServiceResult, LanguageServiceSnapshot, LanguageServiceState, LocalLanguageService,
+    LspPosition, LspRange, NavigationTarget, SemanticToken, SignatureHelp, SyntaxLanguageService,
 };
 pub use lsp_process::{
     ContentLengthFramer, FrameError, LanguageServerTimeoutPolicy, LanguageServiceEvent,

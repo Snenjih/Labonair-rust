@@ -383,6 +383,8 @@ impl LanguageServiceRuntime {
                 code_lens: false,
                 code_lens_resolve: false,
                 execute_command: false,
+                document_links: false,
+                document_link_resolve: false,
                 rename: false,
                 code_actions: false,
                 semantic_tokens: false,

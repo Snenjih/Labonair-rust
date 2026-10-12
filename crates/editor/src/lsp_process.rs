@@ -23,8 +23,8 @@ use crate::buffer::{BufferSnapshot, Edit};
 use crate::language_services::{
     CallHierarchyCall, CallHierarchyItem, CancellationToken, CodeAction, CodeLens, CompletionItem,
     CompletionKind, CompletionList, CompletionTextFormat, Diagnostic, DiagnosticSeverity,
-    DocumentColor, DocumentColorValue, DocumentVersion, FoldingRange, HoverContent, InlayHint,
-    InlayHintKind, LanguageId, LanguageServerId, LanguageServiceCapabilities,
+    DocumentColor, DocumentColorValue, DocumentLink, DocumentVersion, FoldingRange, HoverContent,
+    InlayHint, InlayHintKind, LanguageId, LanguageServerId, LanguageServiceCapabilities,
     LanguageServiceCommand, LanguageServiceEditCapabilities, LanguageServiceEditRequest,
     LanguageServiceEditResponse, LanguageServiceError, LanguageServiceRequest,
     LanguageServiceResponse, LanguageServiceResult, LspPosition, LspRange, NavigationTarget,
@@ -404,6 +404,8 @@ impl LocalLanguageServiceProcess {
                         code_lens: false,
                         code_lens_resolve: false,
                         execute_command: false,
+                        document_links: false,
+                        document_link_resolve: false,
                         rename: false,
                         code_actions: false,
                         semantic_tokens: false,
@@ -779,6 +781,8 @@ impl LocalLanguageServiceProcess {
                 code_lens: false,
                 code_lens_resolve: false,
                 execute_command: false,
+                document_links: false,
+                document_link_resolve: false,
                 rename: false,
                 code_actions: false,
                 semantic_tokens: false,
@@ -819,6 +823,7 @@ impl LocalLanguageServiceProcess {
                             "hover": {},
                             "callHierarchy": { "dynamicRegistration": false },
                             "codeLens": { "dynamicRegistration": false },
+                            "documentLink": { "dynamicRegistration": false },
                             "publishDiagnostics": {},
                             "synchronization": { "dynamicRegistration": false },
                         },
@@ -1123,6 +1128,44 @@ impl LocalLanguageServiceProcess {
             LanguageServiceRequest::ExecuteCommand { .. } => {
                 LanguageServiceResponse::CommandResult((!value.is_null()).then_some(value))
             }
+            LanguageServiceRequest::DocumentLinks => {
+                let mut links = parse_document_links(&value);
+                let resolve_supported = self
+                    .inner
+                    .state
+                    .lock()
+                    .await
+                    .capabilities
+                    .document_link_resolve;
+                if resolve_supported {
+                    for link in &mut links {
+                        if link.target.is_some() {
+                            continue;
+                        }
+                        if cancellation.is_cancelled() {
+                            return Err(LanguageServiceError::Cancelled);
+                        }
+                        let Ok(resolved) = self
+                            .request_value(
+                                "documentLink/resolve",
+                                document_link_value(link),
+                                cancellation,
+                                self.inner.config.timeouts.request,
+                            )
+                            .await
+                        else {
+                            continue;
+                        };
+                        if let Some(resolved_link) = parse_document_link(&resolved) {
+                            *link = resolved_link;
+                        }
+                    }
+                }
+                LanguageServiceResponse::DocumentLinks(links)
+            }
+            LanguageServiceRequest::ResolveDocumentLink { .. } => {
+                LanguageServiceResponse::DocumentLink(parse_document_link(&value))
+            }
             LanguageServiceRequest::Rename { .. } => {
                 LanguageServiceResponse::Rename(parse_workspace_edits(uri, snapshot, &value))
             }
@@ -1424,6 +1467,12 @@ fn parse_server_capabilities(value: &Value) -> (LanguageServiceCapabilities, Vec
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
             execute_command: advertised(capabilities.get("executeCommandProvider")),
+            document_links: advertised(capabilities.get("documentLinkProvider")),
+            document_link_resolve: capabilities
+                .get("documentLinkProvider")
+                .and_then(|provider| provider.get("resolveProvider"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
             rename: advertised(capabilities.get("renameProvider")),
             code_actions: advertised(capabilities.get("codeActionProvider")),
             semantic_tokens: semantic.is_some_and(|value| !value.is_null()),
@@ -1514,6 +1563,13 @@ fn request_parts(uri: &str, request: &LanguageServiceRequest) -> (&'static str, 
             "workspace/executeCommand",
             json!({ "command": command, "arguments": arguments }),
         ),
+        LanguageServiceRequest::DocumentLinks => (
+            "textDocument/documentLink",
+            json!({ "textDocument": text_document }),
+        ),
+        LanguageServiceRequest::ResolveDocumentLink { link } => {
+            ("documentLink/resolve", document_link_value(link))
+        }
         LanguageServiceRequest::Rename { position, new_name } => (
             "textDocument/rename",
             json!({ "textDocument": text_document, "position": position_value(*position), "newName": new_name }),
@@ -1904,6 +1960,44 @@ fn code_lens_value(lens: &CodeLens) -> Value {
         });
     }
     if let Some(data) = &lens.data {
+        value["data"] = data.clone();
+    }
+    value
+}
+
+fn parse_document_links(value: &Value) -> Vec<DocumentLink> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(parse_document_link)
+        .collect()
+}
+
+fn parse_document_link(value: &Value) -> Option<DocumentLink> {
+    Some(DocumentLink {
+        range: parse_range(value.get("range")?)?,
+        target: value
+            .get("target")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        tooltip: value
+            .get("tooltip")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        data: value.get("data").filter(|data| !data.is_null()).cloned(),
+    })
+}
+
+fn document_link_value(link: &DocumentLink) -> Value {
+    let mut value = json!({ "range": range_value(link.range) });
+    if let Some(target) = &link.target {
+        value["target"] = json!(target);
+    }
+    if let Some(tooltip) = &link.tooltip {
+        value["tooltip"] = json!(tooltip);
+    }
+    if let Some(data) = &link.data {
         value["data"] = data.clone();
     }
     value
@@ -2448,6 +2542,49 @@ mod tests {
     }
 
     #[test]
+    fn document_link_requests_resolve_targets_and_preserve_data() {
+        let range = LspRange {
+            start: LspPosition {
+                line: 2,
+                character: 4,
+            },
+            end: LspPosition {
+                line: 2,
+                character: 8,
+            },
+        };
+        let (method, params) =
+            request_parts("file:///fixture.rs", &LanguageServiceRequest::DocumentLinks);
+        assert_eq!(method, "textDocument/documentLink");
+        assert_eq!(params["textDocument"]["uri"], "file:///fixture.rs");
+        assert!(params.get("range").is_none());
+
+        let links = parse_document_links(&json!([{
+            "range": range_value(range),
+            "data": { "resolve": 7 }
+        }]));
+        assert_eq!(links.len(), 1);
+        assert!(links[0].target.is_none());
+        assert_eq!(links[0].data, Some(json!({ "resolve": 7 })));
+
+        let resolved = DocumentLink {
+            range,
+            target: Some("https://example.com/docs".into()),
+            tooltip: Some("Open documentation".into()),
+            data: Some(json!({ "resolve": 7 })),
+        };
+        let (method, params) = request_parts(
+            "file:///fixture.rs",
+            &LanguageServiceRequest::ResolveDocumentLink {
+                link: resolved.clone(),
+            },
+        );
+        assert_eq!(method, "documentLink/resolve");
+        assert_eq!(params, document_link_value(&resolved));
+        assert_eq!(parse_document_link(&params), Some(resolved));
+    }
+
+    #[test]
     fn inlay_hints_use_the_lsp_range_and_parse_labels_without_editing_text() {
         let range = LspRange {
             start: LspPosition {
@@ -2510,7 +2647,7 @@ mod tests {
     #[test]
     fn advertised_capabilities_are_explicit() {
         let (capabilities, types) = parse_server_capabilities(
-            &json!({ "capabilities": { "hoverProvider": true, "typeDefinitionProvider": true, "callHierarchyProvider": true, "codeLensProvider": { "resolveProvider": true }, "executeCommandProvider": { "commands": ["fixture.run"] }, "inlayHintProvider": { "resolveProvider": true }, "colorProvider": true, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
+            &json!({ "capabilities": { "hoverProvider": true, "typeDefinitionProvider": true, "callHierarchyProvider": true, "codeLensProvider": { "resolveProvider": true }, "executeCommandProvider": { "commands": ["fixture.run"] }, "documentLinkProvider": { "resolveProvider": true }, "inlayHintProvider": { "resolveProvider": true }, "colorProvider": true, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
         );
         assert!(capabilities.hover);
         assert!(capabilities.document_colors);
@@ -2519,6 +2656,8 @@ mod tests {
         assert!(capabilities.code_lens);
         assert!(capabilities.code_lens_resolve);
         assert!(capabilities.execute_command);
+        assert!(capabilities.document_links);
+        assert!(capabilities.document_link_resolve);
         assert!(capabilities.inlay_hints);
         assert!(!capabilities.completion);
         assert_eq!(types, vec!["type"]);

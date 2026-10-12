@@ -255,6 +255,46 @@ async fn code_lenses_resolve_and_execute_server_commands() {
 }
 
 #[tokio::test]
+async fn document_links_resolve_targets_and_preserve_server_data() {
+    let process = LocalLanguageServiceProcess::spawn(config())
+        .await
+        .expect("fixture starts");
+    let capabilities = process.capabilities().await;
+    assert!(capabilities.document_links);
+    assert!(capabilities.document_link_resolve);
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "link".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+    let snapshot = EditorBuffer::from_text("link").snapshot();
+    let response = process
+        .request(LocalLanguageServiceRequest {
+            uri: "file:///fixture".into(),
+            snapshot,
+            version: DocumentVersion::new(1),
+            generation: 1,
+            request: LanguageServiceRequest::DocumentLinks,
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(matches!(
+        response.response,
+        Ok(LanguageServiceResponse::DocumentLinks(ref links))
+            if links.len() == 1
+                && links[0].target.as_deref() == Some("file:///fixture-target.rs")
+                && links[0].tooltip.as_deref() == Some("Open fixture target")
+                && links[0].data == Some(serde_json::json!({ "link": "fixture" }))
+    ));
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
 async fn stale_versions_and_unadvertised_capabilities_are_typed() {
     let process = LocalLanguageServiceProcess::spawn(config_with(vec!["minimal".into()]))
         .await

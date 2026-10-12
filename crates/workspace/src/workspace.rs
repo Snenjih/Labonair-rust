@@ -164,16 +164,16 @@ fn relative_path_under_root(path: &Path, root: &Path) -> Option<String> {
 fn decode_local_file_uri(uri: &str) -> Result<std::path::PathBuf, String> {
     let encoded_path = uri
         .strip_prefix("file://")
-        .ok_or_else(|| "Call hierarchy returned a non-file URI.".to_string())?;
+        .ok_or_else(|| "Language server returned a non-file URI.".to_string())?;
     let local_path = if encoded_path.starts_with('/') {
         encoded_path.to_string()
     } else if let Some(path) = encoded_path.strip_prefix("localhost/") {
         format!("/{path}")
     } else {
-        return Err("Call hierarchy returned a non-local file URI.".to_string());
+        return Err("Language server returned a non-local file URI.".to_string());
     };
     if local_path.contains('?') || local_path.contains('#') {
-        return Err("Call hierarchy returned an invalid file URI.".to_string());
+        return Err("Language server returned an invalid file URI.".to_string());
     }
 
     fn hex_digit(byte: u8) -> Option<u8> {
@@ -193,11 +193,11 @@ fn decode_local_file_uri(uri: &str) -> Result<std::path::PathBuf, String> {
             let high = bytes
                 .get(index + 1)
                 .and_then(|byte| hex_digit(*byte))
-                .ok_or_else(|| "Call hierarchy returned a malformed file URI.".to_string())?;
+                .ok_or_else(|| "Language server returned a malformed file URI.".to_string())?;
             let low = bytes
                 .get(index + 2)
                 .and_then(|byte| hex_digit(*byte))
-                .ok_or_else(|| "Call hierarchy returned a malformed file URI.".to_string())?;
+                .ok_or_else(|| "Language server returned a malformed file URI.".to_string())?;
             decoded.push((high << 4) | low);
             index += 3;
         } else {
@@ -206,11 +206,30 @@ fn decode_local_file_uri(uri: &str) -> Result<std::path::PathBuf, String> {
         }
     }
     let path = String::from_utf8(decoded)
-        .map_err(|_| "Call hierarchy returned a non-UTF-8 file path.".to_string())?;
+        .map_err(|_| "Language server returned a non-UTF-8 file path.".to_string())?;
     if path.contains('\0') {
-        return Err("Call hierarchy returned an invalid file path.".to_string());
+        return Err("Language server returned an invalid file path.".to_string());
     }
     Ok(std::path::PathBuf::from(path))
+}
+
+fn is_supported_external_document_link(uri: &str) -> bool {
+    let Some((scheme, rest)) = uri.split_once(':') else {
+        return false;
+    };
+    if uri.chars().any(char::is_whitespace) {
+        return false;
+    }
+    if scheme.eq_ignore_ascii_case("mailto") {
+        return !rest.is_empty();
+    }
+    if scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https") {
+        return rest
+            .strip_prefix("//")
+            .and_then(|authority| authority.split(['/', '?', '#']).next())
+            .is_some_and(|authority| !authority.is_empty());
+    }
+    false
 }
 
 /// Interval for draining backend SSH events into the workspace.
@@ -2525,6 +2544,60 @@ impl Workspace {
         self.focus_active(window, cx);
     }
 
+    fn open_document_link(&mut self, uri: String, window: &mut Window, cx: &mut Context<Self>) {
+        if uri.starts_with("file://") {
+            let path = match decode_local_file_uri(&uri) {
+                Ok(path) => path,
+                Err(error) => {
+                    labonair_notifications::notify_err::<()>("Open document link", Err(error), cx);
+                    return;
+                }
+            };
+            let path = if let Some(root) = self.filesystem_root(cx).map(std::path::PathBuf::from) {
+                match root_safe_path(&root, &path) {
+                    Ok(path) => path,
+                    Err(error) => {
+                        labonair_notifications::notify_err::<()>(
+                            "Open document link",
+                            Err(error),
+                            cx,
+                        );
+                        return;
+                    }
+                }
+            } else {
+                match std::fs::canonicalize(&path) {
+                    Ok(path) => path,
+                    Err(error) => {
+                        labonair_notifications::notify_err::<()>(
+                            "Open document link",
+                            Err(format!("cannot resolve file link: {error}")),
+                            cx,
+                        );
+                        return;
+                    }
+                }
+            };
+            if !path.is_file() {
+                labonair_notifications::notify_err::<()>(
+                    "Open document link",
+                    Err("The linked path is not a file.".to_string()),
+                    cx,
+                );
+                return;
+            }
+            self.open_file(path.to_string_lossy().into_owned(), false, window, cx);
+        } else if is_supported_external_document_link(&uri) {
+            cx.open_url(&uri);
+        } else {
+            labonair_notifications::notify_err::<()>(
+                "Open document link",
+                Err("The linked URI scheme is not supported.".to_string()),
+                cx,
+            );
+        }
+    }
+
     fn open_call_hierarchy_location(
         &mut self,
         uri: String,
@@ -2928,10 +3001,16 @@ impl Workspace {
         cx.new(|cx| {
             let mut view = EditorView::new_with_language_services(theme, language_services, cx);
             view.set_git_bridge(bridge.clone(), bridge.clone());
-            let workspace = workspace.clone();
+            let call_hierarchy_workspace = workspace.clone();
             view.set_call_hierarchy_navigator(move |uri, position, window, app| {
-                workspace.update(app, |this, cx| {
+                call_hierarchy_workspace.update(app, |this, cx| {
                     this.open_call_hierarchy_location(uri, position, window, cx);
+                });
+            });
+            let document_link_workspace = workspace.clone();
+            view.set_document_link_navigator(move |uri, window, app| {
+                document_link_workspace.update(app, |this, cx| {
+                    this.open_document_link(uri, window, cx);
                 });
             });
             view
@@ -8182,7 +8261,10 @@ impl labonair_command_palette::PaletteWorkspace for Workspace {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_local_file_uri, relative_path_under_root, shell_quote, ssh_tab_title};
+    use super::{
+        decode_local_file_uri, is_supported_external_document_link, relative_path_under_root,
+        shell_quote, ssh_tab_title,
+    };
     use std::path::Path;
 
     #[test]
@@ -8202,7 +8284,7 @@ mod tests {
     }
 
     #[test]
-    fn call_hierarchy_file_uri_decodes_local_paths() {
+    fn language_server_file_uri_decodes_local_paths() {
         assert_eq!(
             decode_local_file_uri("file:///repo/src/my%20file.rs").unwrap(),
             Path::new("/repo/src/my file.rs")
@@ -8214,6 +8296,26 @@ mod tests {
         assert!(decode_local_file_uri("https://example.test/file.rs").is_err());
         assert!(decode_local_file_uri("file://remote-host/repo/file.rs").is_err());
         assert!(decode_local_file_uri("file:///repo/bad%2.rs").is_err());
+    }
+
+    #[test]
+    fn document_link_external_schemes_are_allowlisted() {
+        assert!(is_supported_external_document_link(
+            "https://example.test/path"
+        ));
+        assert!(is_supported_external_document_link(
+            "HTTP://example.test/path"
+        ));
+        assert!(is_supported_external_document_link(
+            "mailto:dev@example.test"
+        ));
+        assert!(!is_supported_external_document_link("javascript:alert(1)"));
+        assert!(!is_supported_external_document_link(
+            "https:///missing-host"
+        ));
+        assert!(!is_supported_external_document_link(
+            "https://example.test/a b"
+        ));
     }
 
     #[test]
