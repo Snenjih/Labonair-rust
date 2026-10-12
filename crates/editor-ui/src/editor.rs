@@ -45,15 +45,15 @@ use labonair_editor::{
     document::Motion,
     document_syntax,
     editing::{EditIntent, EditorCommand, EditorCommandResult, SplitIntent},
-    find,
+    expand_emmet_abbreviation, find,
     lifecycle::{
         FileCapabilities, FileLifecycleEvent, FileState, LineEnding, ReloadDecision, SaveIntent,
     },
     map_range_through_edits, next_match_with_wrap, replace_all_checked, replace_one,
-    word_at_cursor, Anchor, AnchorAffinity, BufferSnapshot, CallHierarchyCall, CallHierarchyItem,
-    CancellationToken, CodeLens, DisplayConfig, DisplayMap, DisplayRowKind, DisplaySnapshot,
-    Document, DocumentColor, DocumentColorValue, DocumentLink, DocumentVersion, Edit,
-    EditorEditability, EditorSessionId, EditorSessionSnapshot, EditorViewSession, FoldRange,
+    word_at_cursor, Anchor, AnchorAffinity, AnchorRange, BufferSnapshot, CallHierarchyCall,
+    CallHierarchyItem, CancellationToken, CodeLens, DisplayConfig, DisplayMap, DisplayRowKind,
+    DisplaySnapshot, Document, DocumentColor, DocumentColorValue, DocumentLink, DocumentVersion,
+    Edit, EditorEditability, EditorSessionId, EditorSessionSnapshot, EditorViewSession, FoldRange,
     FoldingRange, GitBlameRequest, GitBlameSnapshot, GitDecorationProvider, GitDecorationRequest,
     GitDiscardPreview, GitEditorCommand, GitGutterError, GitGutterSnapshot, GitHunkAction,
     GitHunkActionKind, GitHunkStatus, Helix, HelixKey, HelixMode, HunkActionSink, InlayHint,
@@ -979,6 +979,37 @@ fn navigation_target_label(target: &NavigationTarget) -> String {
     )
 }
 
+fn emmet_abbreviation_range(language: Language, text: &str, cursor: usize) -> TextRange {
+    let cursor = cursor.min(text.len());
+    let mut start = cursor;
+    let mut brace_depth = 0_usize;
+    for (index, character) in text[..cursor].char_indices().rev() {
+        if language == Language::Css
+            && (character.is_whitespace() || matches!(character, '{' | '}' | ';' | ','))
+        {
+            break;
+        }
+        if language != Language::Css && character == '>' {
+            let ends_markup_tag = text[..index]
+                .rfind('<')
+                .is_some_and(|open| !text[open + 1..index].contains('>'));
+            if ends_markup_tag {
+                break;
+            }
+        }
+        match character {
+            '}' => brace_depth = brace_depth.saturating_add(1),
+            '{' if brace_depth > 0 => brace_depth -= 1,
+            _ => {}
+        }
+        if brace_depth == 0 && (character.is_whitespace() || matches!(character, '<' | ';' | ',')) {
+            break;
+        }
+        start = index;
+    }
+    TextRange::new(start, cursor)
+}
+
 fn diagnostic_hover_text(diagnostic: &labonair_editor::Diagnostic) -> String {
     let severity = match diagnostic.severity {
         labonair_editor::language_services::DiagnosticSeverity::Error => "Error",
@@ -1240,6 +1271,11 @@ pub struct EditorView {
     go_to_line_input: Option<Entity<InputState>>,
     workspace_symbol_requested: bool,
     workspace_symbol_input: Option<Entity<InputState>>,
+    emmet_requested: bool,
+    emmet_input: Option<Entity<InputState>>,
+    emmet_range: Option<AnchorRange>,
+    emmet_preview: Option<String>,
+    emmet_error: Option<String>,
     format_on_save_in_flight: bool,
     save_intent_after_format: Option<SaveIntent>,
     cursor_blink_on: bool,
@@ -1535,6 +1571,11 @@ impl EditorView {
             go_to_line_input: None,
             workspace_symbol_requested: false,
             workspace_symbol_input: None,
+            emmet_requested: false,
+            emmet_input: None,
+            emmet_range: None,
+            emmet_preview: None,
+            emmet_error: None,
             format_on_save_in_flight: false,
             save_intent_after_format: None,
             cursor_blink_on: true,
@@ -1838,6 +1879,14 @@ impl EditorView {
                 self.workspace_symbols_request_serial = None;
                 self.navigation_results = None;
                 self.project_diagnostics = None;
+                cx.notify();
+            }
+            EditorCommandRoute::Ui(EditorUiCommand::ExpandEmmetAbbreviation) => {
+                self.emmet_requested = true;
+                self.emmet_input = None;
+                self.emmet_range = None;
+                self.emmet_preview = None;
+                self.emmet_error = None;
                 cx.notify();
             }
             EditorCommandRoute::Ui(EditorUiCommand::GoBack) => self.navigate_history_back(cx),
@@ -3428,6 +3477,142 @@ impl EditorView {
     fn cancel_workspace_symbol_query(&mut self, cx: &mut Context<Self>) {
         self.workspace_symbol_requested = false;
         self.workspace_symbol_input = None;
+        cx.notify();
+    }
+
+    fn update_emmet_preview(&mut self, abbreviation: &str, cx: &mut Context<Self>) {
+        if abbreviation.trim().is_empty() {
+            self.emmet_preview = None;
+            self.emmet_error = None;
+        } else {
+            match expand_emmet_abbreviation(self.doc.language, abbreviation) {
+                Ok(expansion) => {
+                    self.emmet_preview = Some(expansion);
+                    self.emmet_error = None;
+                }
+                Err(error) => {
+                    self.emmet_preview = None;
+                    self.emmet_error = Some(error.to_string());
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    fn submit_emmet(&mut self, abbreviation: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let expansion = match expand_emmet_abbreviation(self.doc.language, abbreviation) {
+            Ok(expansion) => expansion,
+            Err(error) => {
+                self.emmet_preview = None;
+                self.emmet_error = Some(error.to_string());
+                cx.notify();
+                return;
+            }
+        };
+        if !self.doc.can_edit() {
+            notify_info(cx, "Emmet", "This document is read-only.");
+            self.cancel_emmet(window, cx);
+            return;
+        }
+        let Some(range) = self.emmet_range.take() else {
+            self.cancel_emmet(window, cx);
+            return;
+        };
+        let snapshot = self.doc.snapshot();
+        let range = range.resolve(&snapshot);
+        self.doc.set_selection_set(SelectionSet::from_selections(
+            vec![Selection {
+                anchor: Anchor::new(range.start, AnchorAffinity::Before),
+                head: Anchor::new(range.end, AnchorAffinity::After),
+            }],
+            0,
+        ));
+        self.emmet_requested = false;
+        self.emmet_input = None;
+        self.emmet_preview = None;
+        self.emmet_error = None;
+        let _ = self.execute_command(EditorCommand::Edit(EditIntent::Insert(expansion)), cx);
+        window.focus(&self.focus_handle);
+        cx.notify();
+    }
+
+    fn cancel_emmet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.emmet_requested = false;
+        self.emmet_input = None;
+        self.emmet_range = None;
+        self.emmet_preview = None;
+        self.emmet_error = None;
+        window.focus(&self.focus_handle);
+        cx.notify();
+    }
+
+    fn ensure_emmet_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.emmet_requested || self.emmet_input.is_some() {
+            return;
+        }
+        self.emmet_requested = false;
+        if !self.doc.can_edit() {
+            notify_info(cx, "Emmet", "This document is read-only.");
+            cx.notify();
+            return;
+        }
+        if !matches!(
+            self.doc.language,
+            Language::Html
+                | Language::Xml
+                | Language::JavaScript
+                | Language::TypeScript
+                | Language::Php
+                | Language::Css
+        ) {
+            notify_info(
+                cx,
+                "Emmet",
+                "Open an HTML, CSS, XML, or JavaScript file first.",
+            );
+            cx.notify();
+            return;
+        }
+
+        let snapshot = self.doc.snapshot();
+        let selections = self.doc.selection_set();
+        let selected_range = selections
+            .selections()
+            .get(selections.primary_index())
+            .map(|selection| selection.range().resolve(&snapshot))
+            .unwrap_or_else(|| TextRange::new(0, 0));
+        let text = snapshot.text();
+        let range = if selected_range.is_empty() {
+            emmet_abbreviation_range(self.doc.language, &text, selected_range.start)
+        } else {
+            selected_range
+        };
+        let seed = snapshot.text_range(range);
+        self.emmet_range = Some(AnchorRange::new(
+            Anchor::new(range.start, AnchorAffinity::Before),
+            Anchor::new(range.end, AnchorAffinity::After),
+        ));
+        let input = cx.new(|cx| {
+            text_field(window, cx)
+                .placeholder("Emmet abbreviation")
+                .default_value(seed.clone())
+        });
+        let view = cx.entity();
+        window
+            .subscribe(&input, cx, move |input, event: &InputEvent, window, cx| {
+                let value = input.read(cx).value().to_string();
+                view.update(cx, |this, cx| match event {
+                    InputEvent::Change => this.update_emmet_preview(&value, cx),
+                    InputEvent::PressEnter { secondary: false } => {
+                        this.submit_emmet(&value, window, cx);
+                    }
+                    _ => {}
+                });
+            })
+            .detach();
+        self.emmet_input = Some(input.clone());
+        self.update_emmet_preview(&seed, cx);
+        window.focus(&input.read(cx).focus_handle(cx));
         cx.notify();
     }
 
@@ -6185,6 +6370,29 @@ impl EditorView {
     fn on_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let ks = &ev.keystroke;
         let m = &ks.modifiers;
+
+        if self
+            .emmet_input
+            .as_ref()
+            .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window))
+        {
+            if ks.key.as_str() == "escape" && !m.platform && !m.control && !m.alt {
+                self.cancel_emmet(window, cx);
+                cx.stop_propagation();
+            }
+            return;
+        }
+
+        if self.emmet_requested
+            && ks.key.as_str() == "escape"
+            && !m.platform
+            && !m.control
+            && !m.alt
+        {
+            self.cancel_emmet(window, cx);
+            cx.stop_propagation();
+            return;
+        }
 
         if self.go_to_line_requested
             && ks.key.as_str() == "escape"
@@ -10333,6 +10541,132 @@ impl EditorView {
             .into_any_element()
     }
 
+    fn render_emmet_dialog(
+        &self,
+        input: &Entity<InputState>,
+        palette: Palette,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let input_for_submit = input.clone();
+        let field_state = if input.read(cx).focus_handle(cx).is_focused(window) {
+            TextFieldState::Focused
+        } else {
+            TextFieldState::Normal
+        };
+        let preview = self.emmet_preview.clone();
+        let preview_row = match (preview.as_ref(), self.emmet_error.as_ref()) {
+            (Some(expansion), _) => div()
+                .id("editor-emmet-preview-text")
+                .max_h(px(180.0))
+                .overflow_y_scroll()
+                .font_family("mono")
+                .text_xs()
+                .text_color(palette.fg)
+                .child(SharedString::from(expansion.clone()))
+                .into_any_element(),
+            (None, Some(error)) => div()
+                .text_xs()
+                .text_color(palette.error)
+                .child(SharedString::from(error.clone()))
+                .into_any_element(),
+            (None, None) => div()
+                .text_xs()
+                .text_color(palette.muted)
+                .child("Type an HTML or CSS abbreviation to preview its expansion.")
+                .into_any_element(),
+        };
+        let submit_button = if preview.is_some() {
+            button(
+                "editor-emmet-submit",
+                palette,
+                ButtonVariant::Filled,
+                ButtonSize::Xs,
+            )
+            .child("Expand")
+            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                let value = input_for_submit.read(cx).value().to_string();
+                this.submit_emmet(&value, window, cx);
+            }))
+        } else {
+            button_disabled(
+                "editor-emmet-submit",
+                palette,
+                ButtonVariant::Filled,
+                ButtonSize::Xs,
+            )
+            .child("Expand")
+        };
+        div()
+            .absolute()
+            .top(px(12.0))
+            .right(px(92.0))
+            .w(px(440.0))
+            .p_2()
+            .rounded_md()
+            .border_1()
+            .border_color(palette.border)
+            .bg(palette.popover)
+            .shadow_md()
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(palette.muted)
+                    .child("Emmet abbreviation"),
+            )
+            .child(text_field_surface(
+                "editor-emmet-input",
+                palette,
+                field_state,
+                text_input(input, palette),
+            ))
+            .child(
+                div()
+                    .id("editor-emmet-preview-container")
+                    .mt_2()
+                    .max_h(px(180.0))
+                    .overflow_y_scroll()
+                    .rounded_sm()
+                    .bg(palette.card)
+                    .p_2()
+                    .child(preview_row),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .mt_1()
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(palette.muted)
+                            .child("Enter to expand · Esc to cancel"),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap_1()
+                            .child(
+                                button(
+                                    "editor-emmet-cancel",
+                                    palette,
+                                    ButtonVariant::Subtle,
+                                    ButtonSize::Xs,
+                                )
+                                .child("Cancel")
+                                .on_click(cx.listener(
+                                    |this, _: &ClickEvent, window, cx| {
+                                        this.cancel_emmet(window, cx);
+                                    },
+                                )),
+                            )
+                            .child(submit_button),
+                    ),
+            )
+            .into_any_element()
+    }
+
     fn render_workspace_symbol_dialog(
         &self,
         input: &Entity<InputState>,
@@ -10473,6 +10807,7 @@ impl Render for EditorView {
         self.ensure_rename_input(window, cx);
         self.ensure_go_to_line_input(window, cx);
         self.ensure_workspace_symbol_input(window, cx);
+        self.ensure_emmet_input(window, cx);
         let theme = self.theme.read(cx);
         let bg = theme.background();
         let fg = theme.foreground();
@@ -10567,6 +10902,7 @@ impl Render for EditorView {
         let rename_input = self.rename_input.clone();
         let go_to_line_input = self.go_to_line_input.clone();
         let workspace_symbol_input = self.workspace_symbol_input.clone();
+        let emmet_input = self.emmet_input.clone();
         let symbols = self.symbols_for_snapshot(&snapshot);
         let syntax_ranges = self.syntax_folding_ranges_for_snapshot(&snapshot);
         let fold_candidates = fold_candidates(
@@ -11475,6 +11811,11 @@ impl Render for EditorView {
                     self.render_workspace_symbol_dialog(input, ui_palette, window, cx)
                 }),
             )
+            .children(
+                emmet_input
+                    .as_ref()
+                    .map(|input| self.render_emmet_dialog(input, ui_palette, window, cx)),
+            )
             .children(self.render_hover_tooltip(cx))
             .children(self.render_git_context_menu(cx))
             .children(self.render_text_context_menu(cx))
@@ -11589,6 +11930,22 @@ mod tests {
     }
 
     #[test]
+    fn emmet_range_stops_at_markup_and_css_boundaries() {
+        let markup = "<main>ul>li.item{item}</main>";
+        let markup_cursor = markup.find("</main>").expect("closing tag");
+        let markup_range = emmet_abbreviation_range(Language::Html, markup, markup_cursor);
+        assert_eq!(
+            markup.get(markup_range.start..markup_range.end),
+            Some("ul>li.item{item}")
+        );
+
+        let css = ".card{margin: 0; m10}";
+        let css_cursor = css.find('}').expect("closing rule");
+        let css_range = emmet_abbreviation_range(Language::Css, css, css_cursor);
+        assert_eq!(css.get(css_range.start..css_range.end), Some("m10"));
+    }
+
+    #[test]
     fn tabular_preview_file_types_match_native_preview_resolver() {
         for path in ["data.csv", "data.tsv", "data.ssv", "data.psv", "DATA.CSV"] {
             assert!(is_tabular_preview_path(&PathBuf::from(path)));
@@ -11633,6 +11990,21 @@ mod tests {
                 assert!(!this.workspace_symbol_requested);
                 assert!(this.dispatch_registered_command(CommandId::EditorGoToWorkspaceSymbol, cx));
                 assert!(this.workspace_symbol_requested);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn emmet_command_requests_the_inline_input(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("index.html".into(), "ul>li", 1);
+                assert!(!this.emmet_requested);
+                assert!(
+                    this.dispatch_registered_command(CommandId::EditorExpandEmmetAbbreviation, cx)
+                );
+                assert!(this.emmet_requested);
             });
         });
     }

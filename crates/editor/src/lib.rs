@@ -15,6 +15,7 @@ pub mod diff;
 pub mod display;
 pub mod document;
 pub mod editing;
+pub mod emmet;
 pub mod file_finder;
 pub mod git;
 pub mod helix;
@@ -58,6 +59,7 @@ pub use editing::{
     EditorCommandSink, EditorSnapshotStream, EditorState, EditorViewEvent, EditorViewSnapshot,
     MultiSelection, SnippetSession, SplitIntent,
 };
+pub use emmet::{expand_emmet_abbreviation, EmmetError};
 pub use file_finder::{
     FileFinderCandidate, FileFinderQuery, FileFinderResult, FileFinderSession, FileFinderSnapshot,
     FileFinderStatus, DEFAULT_FILE_FINDER_MAX_RESULTS, MAX_FILE_FINDER_RESULTS,

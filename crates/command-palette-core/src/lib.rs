@@ -131,6 +131,7 @@ pub enum CommandId {
     EditorOpenTabularPreview,
     EditorToggleBreadcrumb,
     EditorToggleInlayHints,
+    EditorExpandEmmetAbbreviation,
     EditorDeleteLine,
     EditorJoinLines,
     EditorRewrap,
@@ -661,6 +662,10 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::EditorOpenTabularPreview, "tabular::OpenPreview"),
     (CommandId::EditorToggleBreadcrumb, "editor.toggle-breadcrumb"),
     (CommandId::EditorToggleInlayHints, "editor.toggle-inlay-hints"),
+    (
+        CommandId::EditorExpandEmmetAbbreviation,
+        "editor.expand-emmet-abbreviation",
+    ),
     (CommandId::EditorDeleteLine, "editor.delete-line"),
     (CommandId::EditorJoinLines, "editor.join-lines"),
     (CommandId::EditorRewrap, "editor.rewrap"),

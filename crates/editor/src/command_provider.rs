@@ -49,6 +49,7 @@ pub enum GitEditorCommand {
 pub enum EditorUiCommand {
     GoToLineColumn,
     GoToWorkspaceSymbol,
+    ExpandEmmetAbbreviation,
     GoBack,
     GoForward,
     ToggleSearchSelection,
@@ -133,6 +134,9 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         CommandId::EditorGoToLineColumn => EditorCommandRoute::Ui(EditorUiCommand::GoToLineColumn),
         CommandId::EditorGoToWorkspaceSymbol => {
             EditorCommandRoute::Ui(EditorUiCommand::GoToWorkspaceSymbol)
+        }
+        CommandId::EditorExpandEmmetAbbreviation => {
+            EditorCommandRoute::Ui(EditorUiCommand::ExpandEmmetAbbreviation)
         }
         CommandId::EditorGoBack => EditorCommandRoute::Ui(EditorUiCommand::GoBack),
         CommandId::EditorGoForward => EditorCommandRoute::Ui(EditorUiCommand::GoForward),
@@ -316,6 +320,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorPreviousSnippetTabstop,
     CommandId::EditorGoToLineColumn,
     CommandId::EditorGoToWorkspaceSymbol,
+    CommandId::EditorExpandEmmetAbbreviation,
     CommandId::EditorGoBack,
     CommandId::EditorGoForward,
     CommandId::EditorToggleSearchSelection,
@@ -584,6 +589,12 @@ impl CommandProvider for EditorCommandProvider {
             CommandDescriptor::new(
                 CommandId::EditorGoToWorkspaceSymbol,
                 "Go to Workspace Symbol…",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(
+                CommandId::EditorExpandEmmetAbbreviation,
+                "Expand Emmet Abbreviation…",
                 "Editor",
             )
             .with_contexts(&[CommandContext::Editor]),
@@ -1016,6 +1027,25 @@ mod tests {
             );
             assert!(route_for_command(id).is_some());
         }
+    }
+
+    #[test]
+    fn emmet_expansion_is_an_editor_palette_command() {
+        let command = EditorCommandProvider
+            .commands()
+            .into_iter()
+            .find(|command| command.id == CommandId::EditorExpandEmmetAbbreviation)
+            .expect("Emmet command descriptor");
+
+        assert_eq!(command.title, "Expand Emmet Abbreviation…");
+        assert_eq!(command.contexts, vec![CommandContext::Editor]);
+        assert!(command.default_bindings.is_empty());
+        assert_eq!(
+            route_for_command(CommandId::EditorExpandEmmetAbbreviation),
+            Some(EditorCommandRoute::Ui(
+                EditorUiCommand::ExpandEmmetAbbreviation
+            ))
+        );
     }
 
     #[test]
