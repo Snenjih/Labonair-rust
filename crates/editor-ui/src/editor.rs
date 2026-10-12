@@ -2079,6 +2079,38 @@ impl EditorView {
         )
     }
 
+    fn parse_completion_snippet(&self, template: &str) -> SnippetSession {
+        let snapshot = self.doc.snapshot();
+        let cursor = self.doc.cursor;
+        let line = snapshot.line(cursor.line).to_owned();
+        let current_word = word_at_cursor(&line, cursor.column).unwrap_or_default();
+        let selected_text = self.doc.selected_text().unwrap_or_default();
+        let file_path = self.doc.file_path().map(std::path::Path::to_path_buf);
+        SnippetSession::parse_with_variables(template, |name| match name {
+            "TM_FILENAME" => file_path.as_deref().and_then(|path| {
+                path.file_name()
+                    .map(|value| value.to_string_lossy().into_owned())
+            }),
+            "TM_FILENAME_BASE" => file_path.as_deref().and_then(|path| {
+                path.file_stem()
+                    .map(|value| value.to_string_lossy().into_owned())
+            }),
+            "TM_FILEPATH" => file_path
+                .as_deref()
+                .map(|path| path.to_string_lossy().into_owned()),
+            "TM_DIRECTORY" => file_path.as_deref().and_then(|path| {
+                path.parent()
+                    .map(|value| value.to_string_lossy().into_owned())
+            }),
+            "TM_CURRENT_LINE" => Some(line.clone()),
+            "TM_CURRENT_WORD" => Some(current_word.clone()),
+            "TM_SELECTED_TEXT" => Some(selected_text.clone()),
+            "TM_LINE_INDEX" => Some(cursor.line.to_string()),
+            "TM_LINE_NUMBER" => Some(cursor.line.saturating_add(1).to_string()),
+            _ => None,
+        })
+    }
+
     fn signature_help_trigger(&self) -> Option<char> {
         let line = self.doc.snapshot().line(self.doc.cursor.line);
         line.chars()
@@ -2169,8 +2201,8 @@ impl EditorView {
         let dirty_before = self.doc.is_dirty();
         let selections = self.doc.selection_set();
         let applied = if item.text_format == labonair_editor::CompletionTextFormat::Snippet {
-            self.doc
-                .apply_snippet(range, SnippetSession::parse(&item.insert_text))
+            let snippet = self.parse_completion_snippet(&item.insert_text);
+            self.doc.apply_snippet(range, snippet)
         } else {
             self.doc.apply_edits(
                 vec![Edit::new(range, item.insert_text)],
@@ -9519,6 +9551,49 @@ mod tests {
 
                 assert_eq!(view.doc.text(), "${1:name}");
                 assert_eq!(view.doc.selected_text(), None);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn completion_snippets_expand_file_and_cursor_variables(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |view, cx| {
+                view.doc = Document::from_file("src/main.rs".into(), "let value = word", 1);
+                view.doc.move_caret(Motion::DocEnd, false);
+                view.language_service_generation = 1;
+                let version = DocumentVersion::from_revision(view.editor_revision());
+                view.language_service_state
+                    .set_document_generation(version, 1);
+                assert!(view.language_service_state.apply(LanguageServiceResult {
+                    server: labonair_editor::LanguageServerId::new("test"),
+                    version,
+                    generation: 1,
+                    response: Ok(LanguageServiceResponse::Completion(
+                        labonair_editor::CompletionList {
+                            items: vec![labonair_editor::CompletionItem {
+                                label: "contextual snippet".into(),
+                                kind: labonair_editor::CompletionKind::Snippet,
+                                text_format: labonair_editor::CompletionTextFormat::Snippet,
+                                detail: None,
+                                insert_text: "${TM_FILENAME_BASE}:${TM_CURRENT_WORD}:${TM_LINE_NUMBER}:${1:arg}".into(),
+                                text_edit_range: None,
+                                filter_text: None,
+                                sort_text: None,
+                                documentation: None,
+                            }],
+                            is_incomplete: false,
+                        },
+                    )),
+                }));
+                view.completion_visible = true;
+                view.completion_position = Some(view.current_lsp_position());
+
+                view.apply_completion_item(0, cx);
+
+                assert_eq!(view.doc.text(), "let value = main:word:1:arg");
+                assert_eq!(view.doc.selected_text().as_deref(), Some("arg"));
             });
         });
     }

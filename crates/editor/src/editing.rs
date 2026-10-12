@@ -1944,9 +1944,9 @@ fn is_void_html_tag(name: &str) -> bool {
     )
 }
 
-/// A small typed snippet session. Placeholders are `${1:default}` or `${1}`;
-/// the editor can advance through ranges without embedding snippet state in
-/// the buffer or history.
+/// A typed snippet session with numbered tabstops and resolved variables.
+/// Snippet text stays in the buffer while the active navigation state remains
+/// transient and follows document edits.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SnippetSession {
     pub text: String,
@@ -1956,6 +1956,13 @@ pub struct SnippetSession {
 
 impl SnippetSession {
     pub fn parse(template: &str) -> Self {
+        Self::parse_with_variables(template, |_| None)
+    }
+
+    pub fn parse_with_variables(
+        template: &str,
+        mut resolve_variable: impl FnMut(&str) -> Option<String>,
+    ) -> Self {
         let mut text = String::new();
         let mut tabstops = Vec::new();
         let mut at = 0;
@@ -1977,6 +1984,15 @@ impl SnippetSession {
                             at += 3 + end;
                             continue;
                         }
+                        if let Some((name, default)) = parse_snippet_variable(body) {
+                            if let Some(value) =
+                                resolve_variable(name).or_else(|| default.map(str::to_owned))
+                            {
+                                text.push_str(&value);
+                                at += 3 + end;
+                                continue;
+                            }
+                        }
                         let literal_end = at + 2 + end;
                         text.push_str(&template[at..=literal_end]);
                         at = literal_end + 1;
@@ -1990,6 +2006,18 @@ impl SnippetSession {
                             tabstops.push((index, TextRange::new(position, position)));
                             at += 1 + digit_len;
                             continue;
+                        }
+                    } else {
+                        let variable_len = after_dollar
+                            .bytes()
+                            .take_while(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+                            .count();
+                        if variable_len > 0 && after_dollar.as_bytes()[0].is_ascii_alphabetic() {
+                            if let Some(value) = resolve_variable(&after_dollar[..variable_len]) {
+                                text.push_str(&value);
+                                at += 1 + variable_len;
+                                continue;
+                            }
                         }
                     }
                 }
@@ -2047,6 +2075,21 @@ impl SnippetSession {
         self.active -= 1;
         self.active_placeholder()
     }
+}
+
+fn parse_snippet_variable(body: &str) -> Option<(&str, Option<&str>)> {
+    let (name, default) = body
+        .split_once(':')
+        .map_or((body, None), |(name, default)| (name, Some(default)));
+    let mut bytes = name.bytes();
+    let first = bytes.next()?;
+    if !first.is_ascii_alphabetic() && first != b'_' {
+        return None;
+    }
+    if !bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_') {
+        return None;
+    }
+    Some((name, default))
 }
 
 fn parse_numeric_tabstop(body: &str) -> Option<(u32, &str)> {
@@ -2221,6 +2264,19 @@ mod tests {
         let session = SnippetSession::parse("${TM_FILENAME}-$4294967296-${1:ok}");
         assert_eq!(session.text, "${TM_FILENAME}-$4294967296-ok");
         assert_eq!(session.placeholders, vec![TextRange::new(27, 29)]);
+    }
+
+    #[test]
+    fn snippets_resolve_variables_and_use_defaults_for_unknown_names() {
+        let session = SnippetSession::parse_with_variables(
+            "${TM_FILENAME}:${TM_CURRENT_WORD}:$TM_FILENAME:${UNKNOWN:fallback}:${UNKNOWN}",
+            |name| match name {
+                "TM_FILENAME" => Some("main.rs".to_owned()),
+                "TM_CURRENT_WORD" => Some("value".to_owned()),
+                _ => None,
+            },
+        );
+        assert_eq!(session.text, "main.rs:value:main.rs:fallback:${UNKNOWN}");
     }
 
     #[test]
