@@ -57,6 +57,8 @@ pub struct Document {
     selection_redo: Vec<SelectionSet>,
     /// Preferred column for vertical motion (sticky like every real editor).
     goal_column: Option<usize>,
+    /// User-selected temporary lock for otherwise editable buffers.
+    temporary_read_only: bool,
 }
 
 impl Default for Document {
@@ -79,6 +81,7 @@ impl Document {
             selection_undo: Vec::new(),
             selection_redo: Vec::new(),
             goal_column: None,
+            temporary_read_only: false,
         }
     }
 
@@ -98,6 +101,7 @@ impl Document {
             selection_undo: Vec::new(),
             selection_redo: Vec::new(),
             goal_column: None,
+            temporary_read_only: false,
         }
     }
 
@@ -135,6 +139,7 @@ impl Document {
             selection_undo: Vec::new(),
             selection_redo: Vec::new(),
             goal_column: None,
+            temporary_read_only: false,
         }
     }
 
@@ -166,6 +171,7 @@ impl Document {
             selection_undo: Vec::new(),
             selection_redo: Vec::new(),
             goal_column: None,
+            temporary_read_only: false,
         }
     }
 
@@ -197,7 +203,20 @@ impl Document {
     }
 
     pub fn can_edit(&self) -> bool {
-        self.lifecycle.can_edit()
+        self.lifecycle.can_edit() && !self.temporary_read_only
+    }
+
+    pub fn temporary_read_only(&self) -> bool {
+        self.temporary_read_only
+    }
+
+    /// Toggle the temporary lock only for files the lifecycle allows editing.
+    pub fn toggle_temporary_read_only(&mut self) -> bool {
+        if !self.lifecycle.can_edit() {
+            return false;
+        }
+        self.temporary_read_only = !self.temporary_read_only;
+        true
     }
 
     pub fn session_file_metadata(&self) -> Option<FileSessionMetadata> {
@@ -443,7 +462,7 @@ impl Document {
         source: EditSource,
         label: Option<String>,
     ) -> bool {
-        if edits.is_empty() || !self.lifecycle.can_edit() {
+        if edits.is_empty() || !self.can_edit() {
             return false;
         }
         let selection_before = self.selection_set();
@@ -544,6 +563,9 @@ impl Document {
     }
 
     pub fn undo(&mut self) {
+        if !self.can_edit() {
+            return;
+        }
         let Some(transactions) = self.history.undo() else {
             return;
         };
@@ -564,6 +586,9 @@ impl Document {
     }
 
     pub fn redo(&mut self) {
+        if !self.can_edit() {
+            return;
+        }
         let Some(transactions) = self.history.redo() else {
             return;
         };
@@ -845,6 +870,41 @@ mod tests {
         d.accept_saved(snapshot("f.txt", &d.text(), 2)).unwrap();
         assert!(!d.is_dirty());
         assert_eq!(d.text(), "hello!");
+    }
+
+    #[test]
+    fn temporary_read_only_blocks_edits_and_text_undo_until_unlocked() {
+        let mut document = Document::from_file(PathBuf::from("/tmp/read-only.txt"), "abc", 0);
+        document.insert("X");
+        assert_eq!(document.text(), "Xabc");
+
+        assert!(document.toggle_temporary_read_only());
+        assert!(document.temporary_read_only());
+        assert!(!document.can_edit());
+        document.insert("Y");
+        document.undo();
+        assert_eq!(document.text(), "Xabc");
+
+        assert!(document.toggle_temporary_read_only());
+        assert!(!document.temporary_read_only());
+        assert!(document.can_edit());
+        document.undo();
+        assert_eq!(document.text(), "abc");
+    }
+
+    #[test]
+    fn temporary_read_only_cannot_unlock_a_lifecycle_read_only_file() {
+        let identity = FileIdentity::from_bytes("/tmp/source.bin", 0, b"data");
+        let document = Document::from_uneditable(
+            PathBuf::from("/tmp/source.bin"),
+            FileState::Binary,
+            Some(identity),
+            FileCapabilities::read_only(),
+        );
+        let mut document = document;
+
+        assert!(!document.toggle_temporary_read_only());
+        assert!(!document.can_edit());
     }
 
     #[test]

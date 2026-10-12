@@ -107,6 +107,7 @@ pub enum CommandId {
     EditorRedoSelection,
     EditorGoToLineColumn,
     EditorToggleSearchSelection,
+    EditorToggleReadOnly,
     EditorToggleBreadcrumb,
     EditorToggleInlayHints,
     EditorDeleteLine,
@@ -599,6 +600,7 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
         CommandId::EditorToggleSearchSelection,
         "search::ToggleSelection"
     ),
+    (CommandId::EditorToggleReadOnly, "editor.toggle-read-only"),
     (CommandId::EditorToggleBreadcrumb, "editor.toggle-breadcrumb"),
     (CommandId::EditorToggleInlayHints, "editor.toggle-inlay-hints"),
     (CommandId::EditorDeleteLine, "editor.delete-line"),

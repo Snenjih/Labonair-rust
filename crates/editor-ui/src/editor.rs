@@ -1272,6 +1272,12 @@ impl EditorView {
             EditorCommandRoute::Ui(EditorUiCommand::ToggleSearchSelection) => {
                 self.toggle_search_selection_scope(cx);
             }
+            EditorCommandRoute::Ui(EditorUiCommand::ToggleReadOnly) => {
+                if self.doc.toggle_temporary_read_only() {
+                    cx.emit(EditorEvent::Changed);
+                    cx.notify();
+                }
+            }
             EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb) => {
                 self.breadcrumb_visible_override = Some(!self.breadcrumbs_visible());
                 cx.notify();
@@ -6606,12 +6612,14 @@ impl EditorView {
         let selections_menu = self.prefs.selections_menu();
         let code_actions = self.prefs.toolbar_code_actions()
             && self.language_service_snapshot.capabilities.code_actions;
+        let temporary_read_only = self.doc.temporary_read_only();
         if !editor_toolbar_has_contribution(
             breadcrumbs,
             quick_actions,
             selections_menu,
             code_actions,
-        ) {
+        ) && !temporary_read_only
+        {
             return None;
         }
         let mut row = div()
@@ -6638,6 +6646,19 @@ impl EditorView {
             .justify_end()
             .gap_1()
             .flex_shrink_0();
+        if temporary_read_only {
+            let toggle = button(
+                "editor-read-only-toggle",
+                palette,
+                ButtonVariant::Outlined,
+                ButtonSize::Xs,
+            )
+            .child("Read only")
+            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                let _ = this.dispatch_registered_command(CommandId::EditorToggleReadOnly, cx);
+            }));
+            actions = actions.child(toggle);
+        }
         if quick_actions {
             let search =
                 icon_button_builder("editor-buffer-search-toggle", palette, IconName::Search)
@@ -9080,6 +9101,24 @@ mod tests {
                 v.edit(cx, |d| d.insert("d"));
                 assert!(v.is_dirty());
                 assert_eq!(v.doc.text(), "abcd");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn registered_read_only_command_locks_and_unlocks_the_document(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("lock.txt".into(), "text", 1);
+
+                assert!(this.dispatch_registered_command(CommandId::EditorToggleReadOnly, cx));
+                assert!(this.doc.temporary_read_only());
+                assert!(!this.doc.can_edit());
+
+                assert!(this.dispatch_registered_command(CommandId::EditorToggleReadOnly, cx));
+                assert!(!this.doc.temporary_read_only());
+                assert!(this.doc.can_edit());
             });
         });
     }

@@ -47,6 +47,7 @@ pub enum GitEditorCommand {
 pub enum EditorUiCommand {
     GoToLineColumn,
     ToggleSearchSelection,
+    ToggleReadOnly,
     ToggleBreadcrumb,
     ToggleInlayHints,
     Rewrap,
@@ -116,6 +117,7 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         CommandId::EditorToggleSearchSelection => {
             EditorCommandRoute::Ui(EditorUiCommand::ToggleSearchSelection)
         }
+        CommandId::EditorToggleReadOnly => EditorCommandRoute::Ui(EditorUiCommand::ToggleReadOnly),
         CommandId::EditorToggleBreadcrumb => {
             EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb)
         }
@@ -271,6 +273,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorRedoSelection,
     CommandId::EditorGoToLineColumn,
     CommandId::EditorToggleSearchSelection,
+    CommandId::EditorToggleReadOnly,
     CommandId::EditorToggleBreadcrumb,
     CommandId::EditorToggleInlayHints,
     CommandId::EditorDeleteLine,
@@ -423,6 +426,12 @@ impl CommandProvider for EditorCommandProvider {
             )
             .with_contexts(&[CommandContext::Editor])
             .with_default_binding("cmd-alt-l", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
+                CommandId::EditorToggleReadOnly,
+                "Toggle Read Only",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(CommandId::GoToSymbol, "Go to Symbol…", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_icon(CommandIcon::FileCode)
