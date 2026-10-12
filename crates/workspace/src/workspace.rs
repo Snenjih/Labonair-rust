@@ -133,7 +133,7 @@ use labonair_editor::{
     ProjectReplaceResult, ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, SearchError,
     SearchQuery, TextRange,
 };
-use labonair_editor_ui::{EditorBufferSnapshot, EditorEvent, EditorView};
+use labonair_editor_ui::{EditorBufferSnapshot, EditorEvent, EditorSidePreviewContent, EditorView};
 use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
 use labonair_hosts_host::{ActiveTunnelRow, HostStatus, HostView};
 use labonair_hosts_ui::HostManagerView;
@@ -514,6 +514,13 @@ impl Render for TabDragPreview {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EditorSidePreviewKind {
+    Markdown,
+    Svg,
+    Tabular,
+}
+
 /// One pane's backing session + content view.
 struct PaneEntry {
     session_id: SessionId,
@@ -620,6 +627,15 @@ pub struct Workspace {
     markdown_previews: HashMap<u64, u64>,
     /// SVG preview tabs that follow edits from their source editor tab.
     svg_previews: HashMap<u64, u64>,
+    /// A PreviewView embedded in one Editor split group per source tab.
+    editor_side_previews: HashMap<
+        u64,
+        (
+            labonair_editor::EditorGroupId,
+            EditorSidePreviewKind,
+            Entity<PreviewView>,
+        ),
+    >,
     /// Single preview tab that follows whichever editor was last activated.
     following_markdown_preview: Option<u64>,
     following_markdown_editor: Option<u64>,
@@ -935,6 +951,7 @@ impl Workspace {
             previews: HashMap::new(),
             markdown_previews: HashMap::new(),
             svg_previews: HashMap::new(),
+            editor_side_previews: HashMap::new(),
             following_markdown_preview: None,
             following_markdown_editor: None,
             following_svg_preview: None,
@@ -2972,6 +2989,78 @@ impl Workspace {
         cx.notify();
     }
 
+    fn open_editor_preview_to_side(
+        &mut self,
+        editor_tab_id: u64,
+        group: labonair_editor::EditorGroupId,
+        content: EditorSidePreviewContent,
+        cx: &mut Context<Self>,
+    ) {
+        let kind = match &content {
+            EditorSidePreviewContent::Markdown(_) => EditorSidePreviewKind::Markdown,
+            EditorSidePreviewContent::Svg(_) => EditorSidePreviewKind::Svg,
+            EditorSidePreviewContent::Tabular(_) => EditorSidePreviewKind::Tabular,
+        };
+        let preview = self
+            .editor_side_previews
+            .get(&editor_tab_id)
+            .filter(|(current_group, current_kind, _)| {
+                *current_group == group && *current_kind == kind
+            })
+            .map(|(_, _, preview)| preview.clone())
+            .unwrap_or_else(|| {
+                let theme = self.theme.clone();
+                let preview = cx.new(|cx| PreviewView::new(theme, cx));
+                self.editor_side_previews
+                    .insert(editor_tab_id, (group, kind, preview.clone()));
+                preview
+            });
+        Self::set_editor_side_preview_content(&preview, content, cx);
+        if let Some(editor) = self.editors.get(&editor_tab_id).cloned() {
+            editor.update(cx, |editor, cx| {
+                editor.set_external_split_view(group, preview.clone().into(), cx)
+            });
+        }
+        cx.notify();
+    }
+
+    fn set_editor_side_preview_content(
+        preview: &Entity<PreviewView>,
+        content: EditorSidePreviewContent,
+        cx: &mut Context<Self>,
+    ) {
+        preview.update(cx, |preview, cx| match content {
+            EditorSidePreviewContent::Markdown(source) => {
+                preview.set_editor_source(source.path, source.language, source.snapshot, cx)
+            }
+            EditorSidePreviewContent::Svg(source) => {
+                preview.set_editor_svg_source(source.path, source.snapshot, cx)
+            }
+            EditorSidePreviewContent::Tabular(source) => {
+                preview.set_editor_tabular_source(source.path, source.snapshot, cx)
+            }
+        });
+    }
+
+    fn update_editor_side_preview_for_source(
+        preview: &Entity<PreviewView>,
+        kind: EditorSidePreviewKind,
+        source: EditorBufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        preview.update(cx, |preview, cx| match kind {
+            EditorSidePreviewKind::Markdown => {
+                preview.set_editor_source(source.path, source.language, source.snapshot, cx)
+            }
+            EditorSidePreviewKind::Svg => {
+                preview.set_editor_svg_source(source.path, source.snapshot, cx)
+            }
+            EditorSidePreviewKind::Tabular => {
+                preview.set_editor_tabular_source(source.path, source.snapshot, cx)
+            }
+        });
+    }
+
     fn open_following_svg_preview(
         &mut self,
         editor_tab_id: u64,
@@ -3420,6 +3509,18 @@ impl Workspace {
                 EditorEvent::SvgFollowingPreviewRequested(source) => {
                     this.open_following_svg_preview(tab_id, source.clone(), cx);
                 }
+                EditorEvent::PreviewToSideRequested { group, content } => {
+                    this.open_editor_preview_to_side(tab_id, *group, content.clone(), cx);
+                }
+                EditorEvent::EditorSplitPaneClosed(group) => {
+                    if this
+                        .editor_side_previews
+                        .get(&tab_id)
+                        .is_some_and(|(preview_group, _, _)| preview_group == group)
+                    {
+                        this.editor_side_previews.remove(&tab_id);
+                    }
+                }
                 EditorEvent::TabularPreviewRequested(path) => {
                     this.activate_preview_target(path.to_string_lossy().into_owned(), cx);
                     this.pending_preview_focus = true;
@@ -3454,6 +3555,16 @@ impl Workspace {
                     }
                     if this.following_svg_editor == Some(tab_id) {
                         this.update_following_svg_preview_source(source.clone(), cx);
+                    }
+                    if let Some((_, kind, preview)) =
+                        this.editor_side_previews.get(&tab_id).cloned()
+                    {
+                        Self::update_editor_side_preview_for_source(
+                            &preview,
+                            kind,
+                            source.clone(),
+                            cx,
+                        );
                     }
                 }
                 _ => {}
@@ -4699,6 +4810,7 @@ impl Workspace {
             editor.update(cx, |editor, _cx| editor.prepare_for_close());
         }
         self.previews.remove(&tab.id);
+        self.editor_side_previews.remove(&tab.id);
         if self.following_markdown_preview == Some(tab.id) {
             self.following_markdown_preview = None;
             self.following_markdown_editor = None;

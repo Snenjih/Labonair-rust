@@ -17,11 +17,12 @@ use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    canvas, div, px, relative, AnyElement, App, AppContext, Bounds, ClickEvent, ClipboardItem,
-    Context, Entity, EventEmitter, FocusHandle, Focusable, HighlightStyle, InteractiveElement,
-    IntoElement, KeyContext, KeyDownEvent, ListAlignment, ListState, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollWheelEvent,
-    SharedString, StatefulInteractiveElement, Styled, StyledText, Task, Window,
+    canvas, div, px, relative, AnyElement, AnyView, App, AppContext, Bounds, ClickEvent,
+    ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable, HighlightStyle,
+    InteractiveElement, IntoElement, KeyContext, KeyDownEvent, ListAlignment, ListState,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point,
+    Render, ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, StyledText, Task,
+    Window,
 };
 use labonair_command_palette_core::CommandId;
 use labonair_filesystem::file::{
@@ -104,6 +105,13 @@ pub enum EditorEvent {
     SvgPreviewRequested(EditorBufferSnapshot),
     /// A single SVG preview should follow whichever Editor tab was last active.
     SvgFollowingPreviewRequested(EditorBufferSnapshot),
+    /// Open a native preview in an Editor split beside its source buffer.
+    PreviewToSideRequested {
+        group: labonair_editor::EditorGroupId,
+        content: EditorSidePreviewContent,
+    },
+    /// A side preview group was closed by the Editor split controls.
+    EditorSplitPaneClosed(labonair_editor::EditorGroupId),
     /// A delimited text preview should open for this file in the Workspace preview host.
     TabularPreviewRequested(PathBuf),
     /// The content or file identity of an editor buffer changed.
@@ -125,6 +133,14 @@ pub struct EditorBufferSnapshot {
     pub path: Option<PathBuf>,
     pub language: Language,
     pub snapshot: BufferSnapshot,
+}
+
+/// Preview payloads accepted by the Editor's adjacent split pane.
+#[derive(Clone, Debug)]
+pub enum EditorSidePreviewContent {
+    Markdown(EditorBufferSnapshot),
+    Svg(EditorBufferSnapshot),
+    Tabular(EditorBufferSnapshot),
 }
 
 /// Editor-owned query and match state shared by the workspace search overlay
@@ -568,6 +584,12 @@ fn is_tabular_preview_path(path: &Path) -> bool {
                 "csv" | "tsv" | "ssv" | "psv"
             )
         })
+}
+
+fn is_svg_preview_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1161,6 +1183,8 @@ pub struct EditorView {
     /// Editor-internal groups. Workspace pane layouts remain a separate
     /// capability; this tree is changed only by Editor commands.
     editor_splits: labonair_editor::EditorSplitTree,
+    /// Workspace-hosted native preview views attached to Editor split groups.
+    external_split_views: HashMap<labonair_editor::EditorGroupId, AnyView>,
     /// Independent selection, fold, and viewport state for each split group.
     editor_group_views: HashMap<labonair_editor::EditorGroupId, EditorViewSession>,
     split_drag_last: Option<f32>,
@@ -1479,6 +1503,7 @@ impl EditorView {
             selections_menu_enabled_override: None,
             modal_mode_override: None,
             editor_splits: labonair_editor::EditorSplitTree::default(),
+            external_split_views: HashMap::new(),
             editor_group_views: HashMap::new(),
             split_drag_last: None,
             metrics: (8.0, 18.0),
@@ -1618,6 +1643,19 @@ impl EditorView {
         self.document_link_navigator = Some(Rc::new(navigator));
     }
 
+    /// Attach a Workspace-owned preview view to one Editor split group.
+    pub fn set_external_split_view(
+        &mut self,
+        group: labonair_editor::EditorGroupId,
+        view: AnyView,
+        cx: &mut Context<Self>,
+    ) {
+        if self.editor_splits.groups().contains(&group) {
+            self.external_split_views.insert(group, view);
+            cx.notify();
+        }
+    }
+
     pub fn language_service_snapshot(&self) -> LanguageServiceRuntimeSnapshot {
         self.language_service_snapshot.clone()
     }
@@ -1728,10 +1766,17 @@ impl EditorView {
         true
     }
 
-    fn close_editor_group(&mut self, group: labonair_editor::EditorGroupId) -> bool {
+    fn close_editor_group(
+        &mut self,
+        group: labonair_editor::EditorGroupId,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let previous_focus = self.editor_splits.focused_group();
         if self.editor_splits.close(group).is_err() {
             return false;
+        }
+        if self.external_split_views.remove(&group).is_some() {
+            cx.emit(EditorEvent::EditorSplitPaneClosed(group));
         }
         let focused = self.editor_splits.focused_group();
         if focused != previous_focus {
@@ -1749,6 +1794,7 @@ impl EditorView {
         &mut self,
         previous_focus: labonair_editor::EditorGroupId,
         previous_group_count: usize,
+        cx: &mut Context<Self>,
     ) {
         let focused = self.editor_splits.focused_group();
         if self.editor_splits.group_count() > previous_group_count {
@@ -1764,12 +1810,41 @@ impl EditorView {
         }
         self.doc.activate_editor_group_view(focused);
         let groups = self.editor_splits.groups();
+        let removed_external_groups = self
+            .external_split_views
+            .keys()
+            .copied()
+            .filter(|group| !groups.contains(group))
+            .collect::<Vec<_>>();
+        for group in removed_external_groups {
+            self.external_split_views.remove(&group);
+            cx.emit(EditorEvent::EditorSplitPaneClosed(group));
+        }
         self.doc.retain_editor_group_views(&groups);
         self.editor_group_views
             .retain(|group, _| groups.contains(group));
         if focused != previous_focus {
             self.restore_editor_group_view(focused);
         }
+    }
+
+    fn request_preview_to_side(
+        &mut self,
+        content: EditorSidePreviewContent,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let group = if let Some(group) = self.external_split_views.keys().next().copied() {
+            self.focus_editor_group(group);
+            group
+        } else {
+            let result = self.execute_command(EditorCommand::Split(SplitIntent::Right), cx);
+            if !result.changed {
+                return false;
+            }
+            self.editor_splits.focused_group()
+        };
+        cx.emit(EditorEvent::PreviewToSideRequested { group, content });
+        true
     }
 
     /// Execute a typed Editor command from the canonical command registry.
@@ -1825,7 +1900,7 @@ impl EditorView {
                     ),
                 };
                 if result.is_ok() && self.editor_splits != before {
-                    self.synchronize_editor_group_views(previous_focus, previous_group_count);
+                    self.synchronize_editor_group_views(previous_focus, previous_group_count, cx);
                     cx.emit(EditorEvent::Changed);
                     cx.notify();
                     EditorCommandResult {
@@ -1925,6 +2000,37 @@ impl EditorView {
                         "Markdown Preview",
                         "Open a Markdown file before opening its preview.",
                     );
+                }
+            }
+            EditorCommandRoute::Ui(EditorUiCommand::OpenPreviewToSide) => {
+                let content = if let Some(source) = self.markdown_source_snapshot() {
+                    Some(EditorSidePreviewContent::Markdown(source))
+                } else if self
+                    .doc
+                    .path
+                    .as_ref()
+                    .is_some_and(|path| is_svg_preview_path(path))
+                {
+                    Some(EditorSidePreviewContent::Svg(self.buffer_snapshot()))
+                } else if self
+                    .doc
+                    .path
+                    .as_ref()
+                    .is_some_and(|path| is_tabular_preview_path(path))
+                {
+                    Some(EditorSidePreviewContent::Tabular(self.buffer_snapshot()))
+                } else {
+                    notify_info(
+                        cx,
+                        "Preview",
+                        "Open a Markdown, SVG, CSV, TSV, SSV, or PSV file before previewing it to the side.",
+                    );
+                    None
+                };
+                if let Some(content) = content {
+                    if !self.request_preview_to_side(content, cx) {
+                        notify_info(cx, "Preview", "Could not create an adjacent editor pane.");
+                    }
                 }
             }
             EditorCommandRoute::Ui(EditorUiCommand::OpenSvgPreview) => {
@@ -6392,6 +6498,13 @@ impl EditorView {
         let m = &ks.modifiers;
 
         if self
+            .external_split_views
+            .contains_key(&self.editor_splits.focused_group())
+        {
+            return;
+        }
+
+        if self
             .emmet_input
             .as_ref()
             .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window))
@@ -8281,7 +8394,7 @@ impl EditorView {
         )
         .child("×")
         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-            if this.close_editor_group(group) {
+            if this.close_editor_group(group, cx) {
                 cx.emit(EditorEvent::Changed);
                 cx.notify();
             }
@@ -8331,6 +8444,68 @@ impl EditorView {
             .into_any_element()
     }
 
+    fn render_external_split_view(
+        &self,
+        group: labonair_editor::EditorGroupId,
+        view: AnyView,
+        palette: Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let group_value = group.value();
+        let active = self.editor_splits.focused_group() == group;
+        let close = button(
+            ("editor-split-close", group_value),
+            palette,
+            ButtonVariant::Subtle,
+            ButtonSize::IconXs,
+        )
+        .child("×")
+        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+            if this.close_editor_group(group, cx) {
+                cx.emit(EditorEvent::Changed);
+                cx.notify();
+            }
+        }));
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .border_1()
+            .border_color(if active {
+                palette.accent
+            } else {
+                palette.border
+            })
+            .child(
+                div()
+                    .h(px(24.0))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .px_2()
+                    .bg(palette.muted_bg)
+                    .text_xs()
+                    .text_color(palette.fg)
+                    .child(SharedString::from(format!(
+                        "Editor group {group_value} · preview"
+                    )))
+                    .child(close),
+            )
+            .child(div().flex_1().min_h_0().child(view.into_any_element()))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _: &MouseDownEvent, _window, cx| {
+                    if this.focus_editor_group(group) {
+                        cx.emit(EditorEvent::Changed);
+                        cx.notify();
+                    }
+                }),
+            )
+            .into_any_element()
+    }
+
     /// Recursively materialize the Editor-owned split tree. Every split node
     /// gets its own flex axis, local first-child ratio, and local drag
     /// coordinate space; flattening leaves at the root would make nested
@@ -8353,6 +8528,9 @@ impl EditorView {
     ) -> AnyElement {
         match node {
             labonair_editor::SplitNode::Leaf(group) => {
+                if let Some(view) = self.external_split_views.get(group) {
+                    return self.render_external_split_view(*group, view.clone(), palette, cx);
+                }
                 if *group == focused_group {
                     if let Some(text_area) = active_text_area.take() {
                         let group = *group;
@@ -8366,7 +8544,7 @@ impl EditorView {
                         .child("×")
                         .on_click(cx.listener(
                             move |this, _: &ClickEvent, _window, cx| {
-                                if this.close_editor_group(group) {
+                                if this.close_editor_group(group, cx) {
                                     cx.emit(EditorEvent::Changed);
                                     cx.notify();
                                 }
@@ -9006,11 +9184,15 @@ impl EditorView {
                 icon_button_builder("editor-markdown-preview-toggle", palette, IconName::Eye)
                     .size(ButtonSize::IconSm)
                     .shape(IconButtonShape::Square)
-                    .tooltip("Open Markdown Preview")
+                    .tooltip("Open Markdown Preview · Alt-click to open to the side")
                     .render()
-                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                        let _ = this
-                            .dispatch_registered_command(CommandId::EditorOpenMarkdownPreview, cx);
+                    .on_click(cx.listener(|this, ev: &ClickEvent, _window, cx| {
+                        let command = if ev.modifiers().alt {
+                            CommandId::EditorOpenPreviewToSide
+                        } else {
+                            CommandId::EditorOpenMarkdownPreview
+                        };
+                        let _ = this.dispatch_registered_command(command, cx);
                     }));
             actions = actions.child(preview);
         }
@@ -9018,10 +9200,15 @@ impl EditorView {
             let preview = icon_button_builder("editor-svg-preview-toggle", palette, IconName::Eye)
                 .size(ButtonSize::IconSm)
                 .shape(IconButtonShape::Square)
-                .tooltip("Open SVG Preview")
+                .tooltip("Open SVG Preview · Alt-click to open to the side")
                 .render()
-                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                    let _ = this.dispatch_registered_command(CommandId::EditorOpenSvgPreview, cx);
+                .on_click(cx.listener(|this, ev: &ClickEvent, _window, cx| {
+                    let command = if ev.modifiers().alt {
+                        CommandId::EditorOpenPreviewToSide
+                    } else {
+                        CommandId::EditorOpenSvgPreview
+                    };
+                    let _ = this.dispatch_registered_command(command, cx);
                 }));
             actions = actions.child(preview);
         }
@@ -9030,11 +9217,15 @@ impl EditorView {
                 icon_button_builder("editor-tabular-preview-toggle", palette, IconName::Eye)
                     .size(ButtonSize::IconSm)
                     .shape(IconButtonShape::Square)
-                    .tooltip("Open Table Preview")
+                    .tooltip("Open Table Preview · Alt-click to open to the side")
                     .render()
-                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                        let _ = this
-                            .dispatch_registered_command(CommandId::EditorOpenTabularPreview, cx);
+                    .on_click(cx.listener(|this, ev: &ClickEvent, _window, cx| {
+                        let command = if ev.modifiers().alt {
+                            CommandId::EditorOpenPreviewToSide
+                        } else {
+                            CommandId::EditorOpenTabularPreview
+                        };
+                        let _ = this.dispatch_registered_command(command, cx);
                     }));
             actions = actions.child(preview);
         }
@@ -12108,6 +12299,42 @@ mod tests {
             source.snapshot.text(),
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>"#
         );
+    }
+
+    #[gpui::test]
+    fn preview_to_side_command_creates_an_editor_split_with_typed_source(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        let captured = Arc::new(std::sync::Mutex::new(None));
+        let captured_event = captured.clone();
+        let _subscription = cx.update(|cx| {
+            cx.subscribe(&view, move |_, event: &EditorEvent, _| {
+                if let EditorEvent::PreviewToSideRequested {
+                    group,
+                    content: EditorSidePreviewContent::Markdown(source),
+                } = event
+                {
+                    if let Ok(mut captured) = captured_event.lock() {
+                        *captured = Some((group.value(), source.snapshot.text()));
+                    }
+                }
+            })
+        });
+
+        cx.update(|cx| {
+            view.update(cx, |view, cx| {
+                view.doc = Document::from_file("guide.md".into(), "# Guide", 1);
+                assert!(view.dispatch_registered_command(CommandId::EditorOpenPreviewToSide, cx));
+                assert_eq!(view.editor_splits.group_count(), 2);
+            });
+        });
+
+        let (group, source) = captured
+            .lock()
+            .expect("event capture lock")
+            .clone()
+            .expect("side preview event");
+        assert_ne!(group, 0);
+        assert_eq!(source, "# Guide");
     }
 
     #[gpui::test]

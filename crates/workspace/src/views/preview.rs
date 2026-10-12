@@ -587,6 +587,89 @@ impl PreviewView {
         cx.notify();
     }
 
+    /// Parse an immutable table editor revision off the GPUI thread.
+    pub fn set_editor_tabular_source(
+        &mut self,
+        path: Option<PathBuf>,
+        snapshot: BufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        self.load_generation = self.load_generation.wrapping_add(1);
+        let generation = self.load_generation;
+        let next_url = path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled.csv".to_string());
+        self.pending_fragment = None;
+        self.markdown_images.clear();
+        self.markdown_syntax_runs.clear();
+        self.markdown_source_path = None;
+        self.image_zoom = ImageZoom::Fit;
+        self.image_zoom_input = None;
+        self.image_pan = None;
+        self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
+        self.url = next_url;
+        self.source_bound = true;
+
+        let delimiter = path
+            .as_deref()
+            .and_then(Path::extension)
+            .and_then(|extension| extension.to_str())
+            .map(str::to_ascii_lowercase)
+            .and_then(|extension| match extension.as_str() {
+                "csv" => Some(','),
+                "tsv" => Some('\t'),
+                "ssv" => Some(';'),
+                "psv" => Some('|'),
+                _ => None,
+            });
+        let Some(delimiter) = delimiter else {
+            self.content =
+                Content::Unsupported("The followed editor buffer is not tabular data.".into());
+            cx.notify();
+            return;
+        };
+
+        self.content = Content::Loading;
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let text = snapshot.text();
+                    parse_delimited(&text, delimiter)
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.load_generation != generation {
+                    return;
+                }
+                match result {
+                    Ok(table) => this.content = Content::Table(table),
+                    Err(error) => {
+                        let url = this.url.clone();
+                        let message: SharedString = error.into();
+                        notification_center(cx).update(cx, |center, cx| {
+                            center.push(
+                                Notification::error(
+                                    "Preview unavailable",
+                                    "Could not parse the table preview.",
+                                )
+                                .source("preview")
+                                .details(message.clone())
+                                .dedupe_key(format!("preview:table:{url}")),
+                                cx,
+                            );
+                        });
+                        this.content = Content::Error(message);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
     /// Re-read the current address from disk.
     pub fn reload(&mut self, cx: &mut Context<Self>) {
         if self.source_bound {
@@ -2278,6 +2361,39 @@ mod tests {
                     Content::Unsupported(message) if message.contains("not SVG")
                 ));
             });
+        });
+    }
+
+    #[gpui::test]
+    fn table_preview_parses_the_current_editor_revision_in_background(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let view = cx.update(|cx| {
+            let theme = cx.new(|_| ThemeStore::new(gpui::WindowAppearance::Light));
+            cx.new(|cx| PreviewView::new(theme, cx))
+        });
+        let source =
+            labonair_editor::EditorBuffer::from_text("name,note\nAda,\"hello, world\"").snapshot();
+        cx.update(|cx| {
+            view.update(cx, |preview, cx| {
+                preview.set_editor_tabular_source(
+                    Some(PathBuf::from("/data/people.csv")),
+                    source,
+                    cx,
+                );
+                assert!(matches!(preview.content, Content::Loading));
+            });
+        });
+
+        cx.background_executor.run_until_parked();
+        cx.update(|cx| {
+            let preview = view.read(cx);
+            assert!(preview.source_bound);
+            assert!(matches!(
+                &preview.content,
+                Content::Table(table)
+                    if table.total_rows == 2 && table.rows[1] == ["Ada", "hello, world"]
+            ));
         });
     }
 
