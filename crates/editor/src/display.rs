@@ -93,6 +93,7 @@ impl DisplayTextProjection {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WhitespaceMode {
     None,
+    Selection,
     Boundary,
     All,
 }
@@ -526,8 +527,19 @@ impl DisplaySnapshot {
         &self,
         snapshot: &BufferSnapshot,
         row: &DisplayRow,
+        selections: &crate::SelectionSet,
     ) -> Vec<WhitespaceToken> {
         if self.config.whitespace == WhitespaceMode::None {
+            return Vec::new();
+        }
+        let selected_ranges = if self.config.whitespace == WhitespaceMode::Selection {
+            selections.ranges(snapshot)
+        } else {
+            Vec::new()
+        };
+        if self.config.whitespace == WhitespaceMode::Selection
+            && selected_ranges.iter().all(|range| range.is_empty())
+        {
             return Vec::new();
         }
         let DisplayRowKind::Text {
@@ -554,6 +566,13 @@ impl DisplaySnapshot {
             }
             let byte = snapshot.position_to_byte(Position::new(logical_line, index));
             let end = snapshot.position_to_byte(Position::new(logical_line, index + 1));
+            if self.config.whitespace == WhitespaceMode::Selection
+                && !selected_ranges
+                    .iter()
+                    .any(|range| range.start <= byte && end <= range.end)
+            {
+                continue;
+            }
             tokens.push(WhitespaceToken {
                 range: TextRange::new(byte, end),
                 marker: if ch == '\t' { '→' } else { '·' },
@@ -1071,6 +1090,7 @@ mod tests {
     #[test]
     fn whitespace_tokens_use_snapshot_byte_ranges() {
         let source = snapshot("  λ\t");
+        let selections = crate::SelectionSet::default();
         let display = DisplayMap::build(
             &source,
             Viewport::default(),
@@ -1080,10 +1100,65 @@ mod tests {
             },
             &[],
         );
-        let tokens = display.whitespace_tokens(&source, &display.rows[0]);
+        let tokens = display.whitespace_tokens(&source, &display.rows[0], &selections);
         assert_eq!(tokens.len(), 3);
         assert_eq!(source.text_range(tokens[0].range), " ");
         assert_eq!(tokens[2].marker, '→');
+    }
+
+    #[test]
+    fn selection_whitespace_tokens_follow_all_nonempty_selections() {
+        let source = snapshot("a  b\t c");
+        let selections = crate::SelectionSet::from_selections(
+            vec![
+                crate::Selection {
+                    anchor: crate::Anchor::new(1, crate::AnchorAffinity::Before),
+                    head: crate::Anchor::new(3, crate::AnchorAffinity::After),
+                },
+                crate::Selection {
+                    anchor: crate::Anchor::new(4, crate::AnchorAffinity::Before),
+                    head: crate::Anchor::new(5, crate::AnchorAffinity::After),
+                },
+            ],
+            0,
+        );
+        let display = DisplayMap::build(
+            &source,
+            Viewport::default(),
+            DisplayConfig {
+                whitespace: WhitespaceMode::Selection,
+                ..Default::default()
+            },
+            &[],
+        );
+        let tokens = display.whitespace_tokens(&source, &display.rows[0], &selections);
+
+        assert_eq!(
+            tokens
+                .iter()
+                .map(|token| source.text_range(token.range))
+                .collect::<Vec<_>>(),
+            vec![" ", " ", "\t"]
+        );
+    }
+
+    #[test]
+    fn selection_whitespace_hides_markers_for_carets() {
+        let source = snapshot("a b");
+        let selections = crate::SelectionSet::default();
+        let display = DisplayMap::build(
+            &source,
+            Viewport::default(),
+            DisplayConfig {
+                whitespace: WhitespaceMode::Selection,
+                ..Default::default()
+            },
+            &[],
+        );
+
+        assert!(display
+            .whitespace_tokens(&source, &display.rows[0], &selections)
+            .is_empty());
     }
 
     #[test]

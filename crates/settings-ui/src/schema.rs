@@ -561,7 +561,12 @@ pub fn all_fields() -> Vec<AnyField> {
         field!(
             editor.editor_whitespace,
             "editorWhitespace",
-            Select(&[("none", "None"), ("boundary", "Boundary"), ("all", "All")]),
+            Select(&[
+                ("none", "None"),
+                ("selection", "Selection"),
+                ("boundary", "Boundary"),
+                ("all", "All")
+            ]),
             "Whitespace",
             "Show spaces, tabs, and line endings in the editor."
         ),

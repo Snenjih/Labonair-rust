@@ -2715,6 +2715,7 @@ impl EditorView {
     fn display_config(&self) -> DisplayConfig {
         let whitespace = match self.prefs.whitespace() {
             "all" => WhitespaceMode::All,
+            "selection" => WhitespaceMode::Selection,
             "boundary" => WhitespaceMode::Boundary,
             _ => WhitespaceMode::None,
         };
@@ -8395,6 +8396,7 @@ impl Render for EditorView {
         };
 
         let sel = self.doc.selection();
+        let selections = self.doc.selection_set();
         let cursor = self.doc.cursor;
         let gutter_width = self.gutter_width;
 
@@ -8663,7 +8665,7 @@ impl Render for EditorView {
                         }
                     }
                 }
-                for token in display.whitespace_tokens(&snapshot, display_row) {
+                for token in display.whitespace_tokens(&snapshot, display_row, &selections) {
                     let marker_column = snapshot.byte_to_position(token.range.start).column;
                     if marker_column < start_column || marker_column >= end_column {
                         continue;
