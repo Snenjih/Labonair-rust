@@ -94,6 +94,7 @@
     "editorMouseWheelZoom": false,
     "editorScrollSensitivity": 1.0,
     "editorFastScrollSensitivity": 4.0,
+    "editorVerticalScrollMargin": 3,
     "editorIndentationGuides": true,
     "editorWhitespace": "none",
     "editorWhitespaceSpace": "•",

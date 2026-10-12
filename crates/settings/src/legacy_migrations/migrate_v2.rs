@@ -475,6 +475,7 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_mouse_wheel_zoom: Some(false),
         editor_scroll_sensitivity: Some(1.0),
         editor_fast_scroll_sensitivity: Some(4.0),
+        editor_vertical_scroll_margin: Some(3),
         editor_indentation_guides: Some(p.editor_indentation_guides),
         editor_whitespace: Some("none".to_string()),
         editor_whitespace_space: Some("•".to_string()),

@@ -5871,11 +5871,12 @@ impl EditorView {
         let old_scroll_top = self.scroll_top;
         let rows = self.visible_rows();
         let line = self.doc.cursor.line;
-        if line < self.scroll_top {
-            self.scroll_top = line;
-        } else if line >= self.scroll_top + rows {
-            self.scroll_top = line + 1 - rows;
-        }
+        self.scroll_top = cursor_scroll_top(
+            self.scroll_top,
+            line,
+            rows,
+            self.prefs.vertical_scroll_margin(),
+        );
         self.clamp_scroll();
         if self.scroll_top != old_scroll_top {
             self.schedule_inlay_hints(self.prefs.inlay_scroll_debounce_ms(), cx);
@@ -12223,6 +12224,20 @@ fn scroll_wheel_line_delta(
     (delta * scale).round().clamp(-limit, limit) as isize
 }
 
+fn cursor_scroll_top(scroll_top: usize, line: usize, rows: usize, margin: usize) -> usize {
+    let rows = rows.max(1);
+    let margin = margin.min(rows.saturating_sub(1) / 2);
+    if line < scroll_top.saturating_add(margin) {
+        line.saturating_sub(margin)
+    } else if line.saturating_add(margin) >= scroll_top.saturating_add(rows) {
+        line.saturating_add(margin)
+            .saturating_add(1)
+            .saturating_sub(rows)
+    } else {
+        scroll_top
+    }
+}
+
 fn notify(cx: &mut App, title: &str, body: &str) {
     let (title, body) = (title.to_string(), body.to_string());
     notification_center(cx).update(cx, |center, cx| {
@@ -12281,6 +12296,29 @@ mod tests {
         assert_eq!(parse_line_column("1:0"), None);
         assert_eq!(parse_line_column("one"), None);
         assert_eq!(parse_line_column("1:2:3"), None);
+    }
+
+    #[test]
+    fn cursor_scroll_margin_keeps_lines_away_from_viewport_edges() {
+        assert_eq!(cursor_scroll_top(10, 10, 10, 3), 7);
+        assert_eq!(cursor_scroll_top(10, 19, 10, 3), 13);
+        assert_eq!(cursor_scroll_top(10, 15, 10, 3), 10);
+    }
+
+    #[test]
+    fn cursor_scroll_margin_shrinks_for_short_viewports() {
+        assert_eq!(cursor_scroll_top(0, 1, 2, 3), 0);
+        assert_eq!(cursor_scroll_top(0, 2, 3, 3), 1);
+        assert_eq!(cursor_scroll_top(0, 0, 1, 3), 0);
+    }
+
+    #[test]
+    fn cursor_scroll_margin_saturates_near_document_limits() {
+        assert_eq!(cursor_scroll_top(0, 0, 8, 3), 0);
+        assert_eq!(
+            cursor_scroll_top(usize::MAX - 2, usize::MAX, 8, 3),
+            usize::MAX - 8
+        );
     }
 
     #[test]

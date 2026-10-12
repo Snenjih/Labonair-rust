@@ -583,6 +583,15 @@ pub fn all_fields() -> Vec<AnyField> {
             "×",
             "Applies while scrolling with Alt held."
         ),
+        field_with_details!(
+            editor.editor_vertical_scroll_margin,
+            "editorVerticalScrollMargin",
+            Int { min: 0, max: 20, step: 1 },
+            "Vertical scroll margin",
+            "Keep this many rows around the cursor when it scrolls into view.",
+            "lines",
+            "The margin shrinks automatically for short editor viewports."
+        ),
         field!(
             editor.editor_indentation_guides,
             "editorIndentationGuides",

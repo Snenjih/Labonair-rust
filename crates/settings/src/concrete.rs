@@ -387,6 +387,10 @@ impl EditorSettings {
         bounded_finite_float(self.0.editor_fast_scroll_sensitivity, 4.0, 1.0, 20.0)
     }
 
+    pub fn vertical_scroll_margin(&self) -> usize {
+        self.0.editor_vertical_scroll_margin.unwrap_or(3).min(20) as usize
+    }
+
     pub fn tab_size(&self) -> u32 {
         self.0.editor_tab_size.unwrap_or(2)
     }
@@ -1129,6 +1133,19 @@ mod tests {
         let settings = EditorSettings::from_settings(&content);
         assert_eq!(settings.scroll_sensitivity(), 0.25);
         assert_eq!(settings.fast_scroll_sensitivity(), 4.0);
+    }
+
+    #[test]
+    fn editor_vertical_scroll_margin_defaults_and_clamps() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(defaults.vertical_scroll_margin(), 3);
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_vertical_scroll_margin = Some(99);
+        assert_eq!(
+            EditorSettings::from_settings(&content).vertical_scroll_margin(),
+            20
+        );
     }
 
     #[test]

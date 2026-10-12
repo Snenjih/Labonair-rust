@@ -288,6 +288,7 @@ pub struct EditorContent {
     pub editor_mouse_wheel_zoom: Option<bool>,
     pub editor_scroll_sensitivity: Option<f32>,
     pub editor_fast_scroll_sensitivity: Option<f32>,
+    pub editor_vertical_scroll_margin: Option<u32>,
     pub editor_indentation_guides: Option<bool>,
     pub editor_whitespace: Option<String>,
     pub editor_whitespace_space: Option<String>,
@@ -396,6 +397,7 @@ impl EditorContent {
             editor_mouse_wheel_zoom: Some(false),
             editor_scroll_sensitivity: Some(1.0),
             editor_fast_scroll_sensitivity: Some(4.0),
+            editor_vertical_scroll_margin: Some(3),
             editor_indentation_guides: Some(true),
             editor_whitespace: Some("none".to_string()),
             editor_whitespace_space: Some("•".to_string()),
@@ -582,6 +584,18 @@ mod tests {
         let value = serde_json::to_value(parsed).expect("serialize editor preferences");
         assert_eq!(value["editorScrollSensitivity"], 1.5);
         assert_eq!(value["editorFastScrollSensitivity"], 5.0);
+    }
+
+    #[test]
+    fn vertical_scroll_margin_parses_and_serializes() {
+        let parsed: EditorContent = serde_json::from_value(serde_json::json!({
+            "editorVerticalScrollMargin": 6
+        }))
+        .expect("parse vertical scroll margin");
+        assert_eq!(parsed.editor_vertical_scroll_margin, Some(6));
+
+        let value = serde_json::to_value(parsed).expect("serialize editor preferences");
+        assert_eq!(value["editorVerticalScrollMargin"], 6);
     }
 
     #[test]
