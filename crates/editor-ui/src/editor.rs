@@ -29,12 +29,10 @@ use labonair_filesystem::file::{
     StorageEncoding, StorageFileCapabilities, StorageFileIdentity, StorageFileSnapshot,
     StorageLineEnding, StorageSaveIntent,
 };
-#[cfg(test)]
-use labonair_settings::content::editor::EditorModalMode;
 use labonair_settings::content::editor::{
     EditorDiagnosticMaxSeverity, EditorDocumentColorMode, EditorMinimapCurrentLineHighlight,
     EditorMinimapDisplayIn, EditorMinimapThumb, EditorMinimapThumbBorder, EditorMinimapVisibility,
-    EditorScrollbarVisibility, SearchSeedBehavior,
+    EditorModalMode, EditorScrollbarVisibility, SearchSeedBehavior,
 };
 use labonair_settings::{EditorSettings, Settings as _, SettingsStore};
 
@@ -57,17 +55,17 @@ use labonair_editor::{
     EditorViewSession, FoldRange, FoldingRange, GitDecorationProvider, GitDecorationRequest,
     GitDiscardPreview, GitEditorCommand, GitGutterError, GitGutterSnapshot, GitHunkAction,
     GitHunkActionKind, GitHunkStatus, Helix, HelixKey, HelixMode, HunkActionSink, InlayHint,
-    InlayHintKind, KillRing, Language, LanguageId, LanguageServiceEditRequest,
-    LanguageServiceEditResponse, LanguageServiceRequest, LanguageServiceResponse,
-    LanguageServiceResult, LanguageServiceRuntime, LanguageServiceRuntimeSnapshot,
-    LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus, LanguageServiceSnapshot,
-    LanguageServiceState, LocalLanguageServiceRequest, LspPosition, LspRange, Match,
-    NavigationHistory, NavigationLocation, Position, ProjectBufferCandidate, ProjectReplacePlan,
-    ProjectReplaceRequest, ProjectReplaceResult, ProjectReplaceTarget, ProjectSearchHit,
-    ProjectSearchQuery, ProjectSearchRequest, ProjectSearchResult, ProjectSearchSession,
-    ProjectSearchSnapshot, Revision, SavePolicy, SearchError, SearchOptions, SearchQuery,
-    Selection, SelectionSet, SnippetSession, SyntaxHighlighter, TextRange, Viewport, Vim, VimKey,
-    VimMode, VimOptions, WhitespaceMode,
+    InlayHintKind, KillRing, Language, LanguageId, LanguageServiceCapabilities,
+    LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceRequest,
+    LanguageServiceResponse, LanguageServiceResult, LanguageServiceRuntime,
+    LanguageServiceRuntimeSnapshot, LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus,
+    LanguageServiceSnapshot, LanguageServiceState, LocalLanguageServiceRequest, LspPosition,
+    LspRange, Match, NavigationHistory, NavigationLocation, Position, ProjectBufferCandidate,
+    ProjectReplacePlan, ProjectReplaceRequest, ProjectReplaceResult, ProjectReplaceTarget,
+    ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest, ProjectSearchResult,
+    ProjectSearchSession, ProjectSearchSnapshot, Revision, SavePolicy, SearchError, SearchOptions,
+    SearchQuery, Selection, SelectionSet, SnippetSession, SyntaxHighlighter, TextRange, Viewport,
+    Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
 };
 use labonair_editor::{build_breadcrumb_state, BreadcrumbState};
 
@@ -547,6 +545,67 @@ struct FoldMarker {
     folded: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EditorControl {
+    Diagnostics,
+    InlineDiagnostics,
+    LineNumbers,
+    Minimap,
+    SelectionMenu,
+    InlayHints,
+    SemanticHighlights,
+    VimMode,
+    HelixMode,
+}
+
+impl EditorControl {
+    fn id(self) -> &'static str {
+        match self {
+            Self::Diagnostics => "editor-control-diagnostics",
+            Self::InlineDiagnostics => "editor-control-inline-diagnostics",
+            Self::LineNumbers => "editor-control-line-numbers",
+            Self::Minimap => "editor-control-minimap",
+            Self::SelectionMenu => "editor-control-selections-menu",
+            Self::InlayHints => "editor-control-inlay-hints",
+            Self::SemanticHighlights => "editor-control-semantic-highlights",
+            Self::VimMode => "editor-control-vim-mode",
+            Self::HelixMode => "editor-control-helix-mode",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Diagnostics => "Diagnostics",
+            Self::InlineDiagnostics => "Inline Diagnostics",
+            Self::LineNumbers => "Line Numbers",
+            Self::Minimap => "Minimap",
+            Self::SelectionMenu => "Selections Menu",
+            Self::InlayHints => "Inlay Hints",
+            Self::SemanticHighlights => "Semantic Highlights",
+            Self::VimMode => "Vim Mode",
+            Self::HelixMode => "Helix Mode",
+        }
+    }
+}
+
+fn available_editor_controls(capabilities: LanguageServiceCapabilities) -> Vec<EditorControl> {
+    let mut controls = vec![
+        EditorControl::Diagnostics,
+        EditorControl::InlineDiagnostics,
+        EditorControl::LineNumbers,
+        EditorControl::Minimap,
+        EditorControl::SelectionMenu,
+    ];
+    if capabilities.inlay_hints {
+        controls.push(EditorControl::InlayHints);
+    }
+    if capabilities.semantic_tokens {
+        controls.push(EditorControl::SemanticHighlights);
+    }
+    controls.extend([EditorControl::VimMode, EditorControl::HelixMode]);
+    controls
+}
+
 fn fold_ranges_from_symbols(
     symbols: &[labonair_editor::DocumentSymbol],
     snapshot: &labonair_editor::BufferSnapshot,
@@ -886,6 +945,7 @@ pub struct EditorView {
     /// or unavailable results fall back to the local symbol ranges.
     server_fold_ranges: Vec<FoldRange>,
     selection_menu_anchor: Option<Point<Pixels>>,
+    editor_controls_anchor: Option<Point<Pixels>>,
     language_menu_anchor: Option<Point<Pixels>>,
     language_list_state: ListState,
     line_ending_menu_anchor: Option<Point<Pixels>>,
@@ -893,6 +953,13 @@ pub struct EditorView {
     selection_drag: Option<EditorSelectionDrag>,
     outline_open: bool,
     breadcrumb_visible_override: Option<bool>,
+    diagnostics_enabled_override: Option<bool>,
+    inline_diagnostics_enabled_override: Option<bool>,
+    line_numbers_enabled_override: Option<bool>,
+    minimap_enabled_override: Option<bool>,
+    semantic_tokens_enabled_override: Option<bool>,
+    selections_menu_enabled_override: Option<bool>,
+    modal_mode_override: Option<EditorModalMode>,
     /// Editor-internal groups. Workspace pane layouts remain a separate
     /// capability; this tree is changed only by Editor commands.
     editor_splits: labonair_editor::EditorSplitTree,
@@ -1139,6 +1206,7 @@ impl EditorView {
             folds: Vec::new(),
             server_fold_ranges: Vec::new(),
             selection_menu_anchor: None,
+            editor_controls_anchor: None,
             language_menu_anchor: None,
             language_list_state: ListState::new(Language::ALL.len(), ListAlignment::Top, px(32.0)),
             line_ending_menu_anchor: None,
@@ -1146,6 +1214,13 @@ impl EditorView {
             selection_drag: None,
             outline_open: false,
             breadcrumb_visible_override: None,
+            diagnostics_enabled_override: None,
+            inline_diagnostics_enabled_override: None,
+            line_numbers_enabled_override: None,
+            minimap_enabled_override: None,
+            semantic_tokens_enabled_override: None,
+            selections_menu_enabled_override: None,
+            modal_mode_override: None,
             editor_splits: labonair_editor::EditorSplitTree::default(),
             editor_group_views: HashMap::new(),
             split_drag_last: None,
@@ -2546,7 +2621,7 @@ impl EditorView {
     fn schedule_error_lens(&mut self, cx: &mut Context<Self>) {
         self.error_lens_task = None;
         self.error_lens_revision = None;
-        if !self.prefs.error_lens() || !self.prefs.diagnostics() {
+        if !self.inline_diagnostics_enabled() || !self.diagnostics_enabled() {
             cx.notify();
             return;
         }
@@ -2566,8 +2641,8 @@ impl EditorView {
             cx.background_executor().timer(delay).await;
             let _ = view.update(cx, |this, cx| {
                 if this.editor_revision() != revision
-                    || !this.prefs.error_lens()
-                    || !this.prefs.diagnostics()
+                    || !this.inline_diagnostics_enabled()
+                    || !this.diagnostics_enabled()
                 {
                     return;
                 }
@@ -2725,7 +2800,7 @@ impl EditorView {
         let snapshot = self.doc.snapshot();
         let doc_pos = self.position_at(mouse_pos);
         let language_state = self.language_service_state.snapshot();
-        let diagnostic_hover = if self.prefs.diagnostics() {
+        let diagnostic_hover = if self.diagnostics_enabled() {
             diagnostic_at_position(
                 &language_state.diagnostics,
                 &snapshot,
@@ -2789,8 +2864,32 @@ impl EditorView {
         let inlay_hints_setting_changed = p.inlay_hints() != self.prefs.inlay_hints();
         let document_color_mode_changed =
             p.lsp_document_colors() != self.prefs.lsp_document_colors();
-        let error_lens_was_enabled = self.prefs.error_lens() && self.prefs.diagnostics();
+        let modal_mode_setting_changed =
+            p.vim_mode() != self.prefs.vim_mode() || p.helix_mode() != self.prefs.helix_mode();
+        let error_lens_was_enabled =
+            self.inline_diagnostics_enabled() && self.diagnostics_enabled();
         let error_lens_delay_changed = p.error_lens_delay_ms() != self.prefs.error_lens_delay_ms();
+        if p.diagnostics() != self.prefs.diagnostics() {
+            self.diagnostics_enabled_override = None;
+        }
+        if p.error_lens() != self.prefs.error_lens() {
+            self.inline_diagnostics_enabled_override = None;
+        }
+        if p.line_numbers() != self.prefs.line_numbers() {
+            self.line_numbers_enabled_override = None;
+        }
+        if p.minimap_visibility() != self.prefs.minimap_visibility() {
+            self.minimap_enabled_override = None;
+        }
+        if p.semantic_tokens() != self.prefs.semantic_tokens() {
+            self.semantic_tokens_enabled_override = None;
+        }
+        if p.selections_menu() != self.prefs.selections_menu() {
+            self.selections_menu_enabled_override = None;
+        }
+        if modal_mode_setting_changed {
+            self.modal_mode_override = None;
+        }
         self.prefs = p;
         if inlay_hints_setting_changed {
             self.inlay_hints_enabled_override = None;
@@ -2799,10 +2898,13 @@ impl EditorView {
             self.buffer_search_open = false;
             self.search_close(cx);
         }
-        if !self.prefs.selections_menu() {
+        if !self.prefs.toolbar_quick_actions() {
+            self.editor_controls_anchor = None;
+        }
+        if !self.selections_menu_enabled() {
             self.selection_menu_anchor = None;
         }
-        if !self.prefs.error_lens() || !self.prefs.diagnostics() {
+        if !self.inline_diagnostics_enabled() || !self.diagnostics_enabled() {
             self.error_lens_task = None;
             self.error_lens_revision = None;
         } else if !error_lens_was_enabled || error_lens_delay_changed {
@@ -2815,18 +2917,21 @@ impl EditorView {
             self.prefs.hover(),
             self.prefs.semantic_tokens(),
         );
-        if self.prefs.vim_mode() {
-            self.helix = None;
-            match &mut self.vim {
-                Some(vim) => vim.options = vim_options(&self.prefs),
-                None => self.vim = Some(Vim::new(vim_options(&self.prefs))),
-            }
-        } else {
-            self.vim = None;
-            if self.prefs.helix_mode() {
-                self.helix.get_or_insert_with(Helix::new);
-            } else {
+        match self.active_modal_mode() {
+            EditorModalMode::Normal => {
+                self.vim = None;
                 self.helix = None;
+            }
+            EditorModalMode::Vim => {
+                self.helix = None;
+                match &mut self.vim {
+                    Some(vim) => vim.options = vim_options(&self.prefs),
+                    None => self.vim = Some(Vim::new(vim_options(&self.prefs))),
+                }
+            }
+            EditorModalMode::Helix => {
+                self.vim = None;
+                self.helix.get_or_insert_with(Helix::new);
             }
         }
         let inlay_hints_are_enabled = self.inlay_hints_enabled();
@@ -2859,6 +2964,141 @@ impl EditorView {
     fn breadcrumbs_visible(&self) -> bool {
         self.breadcrumb_visible_override
             .unwrap_or_else(|| self.prefs.toolbar_breadcrumbs())
+    }
+
+    fn diagnostics_enabled(&self) -> bool {
+        self.diagnostics_enabled_override
+            .unwrap_or_else(|| self.prefs.diagnostics())
+    }
+
+    fn inline_diagnostics_enabled(&self) -> bool {
+        self.inline_diagnostics_enabled_override
+            .unwrap_or_else(|| self.prefs.error_lens())
+    }
+
+    fn line_numbers_enabled(&self) -> bool {
+        self.line_numbers_enabled_override.unwrap_or_else(|| {
+            self.vim
+                .as_ref()
+                .map(|vim| vim.options.number)
+                .unwrap_or_else(|| self.prefs.line_numbers())
+        })
+    }
+
+    fn minimap_visibility(&self) -> EditorMinimapVisibility {
+        self.minimap_enabled_override
+            .map(|enabled| {
+                if enabled {
+                    EditorMinimapVisibility::Always
+                } else {
+                    EditorMinimapVisibility::Never
+                }
+            })
+            .unwrap_or_else(|| self.prefs.minimap_visibility())
+    }
+
+    fn minimap_enabled(&self) -> bool {
+        self.minimap_enabled_override
+            .unwrap_or_else(|| self.prefs.minimap())
+    }
+
+    fn semantic_tokens_enabled(&self) -> bool {
+        self.semantic_tokens_enabled_override
+            .unwrap_or_else(|| self.prefs.semantic_tokens())
+    }
+
+    fn selections_menu_enabled(&self) -> bool {
+        self.selections_menu_enabled_override
+            .unwrap_or_else(|| self.prefs.selections_menu())
+    }
+
+    fn editor_control_enabled(&self, control: EditorControl) -> bool {
+        match control {
+            EditorControl::Diagnostics => self.diagnostics_enabled(),
+            EditorControl::InlineDiagnostics => self.inline_diagnostics_enabled(),
+            EditorControl::LineNumbers => self.line_numbers_enabled(),
+            EditorControl::Minimap => self.minimap_enabled(),
+            EditorControl::SelectionMenu => self.selections_menu_enabled(),
+            EditorControl::InlayHints => self.inlay_hints_enabled(),
+            EditorControl::SemanticHighlights => self.semantic_tokens_enabled(),
+            EditorControl::VimMode => self.vim.is_some(),
+            EditorControl::HelixMode => self.helix.is_some(),
+        }
+    }
+
+    fn active_modal_mode(&self) -> EditorModalMode {
+        self.modal_mode_override.unwrap_or_else(|| {
+            if self.prefs.vim_mode() {
+                EditorModalMode::Vim
+            } else if self.prefs.helix_mode() {
+                EditorModalMode::Helix
+            } else {
+                EditorModalMode::Normal
+            }
+        })
+    }
+
+    fn toggle_editor_control(&mut self, control: EditorControl, cx: &mut Context<Self>) {
+        match control {
+            EditorControl::Diagnostics => {
+                let enabled = !self.diagnostics_enabled();
+                self.diagnostics_enabled_override = Some(enabled);
+                if !enabled {
+                    self.error_lens_task = None;
+                    self.error_lens_revision = None;
+                } else if self.inline_diagnostics_enabled() {
+                    self.schedule_error_lens(cx);
+                }
+            }
+            EditorControl::InlineDiagnostics => {
+                let enabled = !self.inline_diagnostics_enabled();
+                self.inline_diagnostics_enabled_override = Some(enabled);
+                if !enabled || !self.diagnostics_enabled() {
+                    self.error_lens_task = None;
+                    self.error_lens_revision = None;
+                } else {
+                    self.schedule_error_lens(cx);
+                }
+            }
+            EditorControl::LineNumbers => {
+                self.line_numbers_enabled_override = Some(!self.line_numbers_enabled());
+            }
+            EditorControl::Minimap => {
+                self.minimap_enabled_override = Some(!self.minimap_enabled());
+            }
+            EditorControl::SelectionMenu => {
+                let enabled = !self.selections_menu_enabled();
+                self.selections_menu_enabled_override = Some(enabled);
+                if !enabled {
+                    self.selection_menu_anchor = None;
+                }
+            }
+            EditorControl::InlayHints => self.toggle_inlay_hints(cx),
+            EditorControl::SemanticHighlights => {
+                self.semantic_tokens_enabled_override = Some(!self.semantic_tokens_enabled());
+            }
+            EditorControl::VimMode => {
+                self.set_modal_mode(if self.active_modal_mode() == EditorModalMode::Vim {
+                    EditorModalMode::Normal
+                } else {
+                    EditorModalMode::Vim
+                });
+            }
+            EditorControl::HelixMode => {
+                self.set_modal_mode(if self.active_modal_mode() == EditorModalMode::Helix {
+                    EditorModalMode::Normal
+                } else {
+                    EditorModalMode::Helix
+                });
+            }
+        }
+        cx.notify();
+    }
+
+    fn set_modal_mode(&mut self, mode: EditorModalMode) {
+        self.modal_mode_override = Some(mode);
+        self.vim = (mode == EditorModalMode::Vim).then(|| Vim::new(vim_options(&self.prefs)));
+        self.helix = (mode == EditorModalMode::Helix).then(Helix::new);
     }
 
     fn inlay_hints_enabled(&self) -> bool {
@@ -2931,11 +3171,7 @@ impl EditorView {
         };
         DisplayConfig {
             wrap_columns: (self.wrap_cols() > 0).then_some(self.wrap_cols()),
-            show_line_numbers: self
-                .vim
-                .as_ref()
-                .map(|vim| vim.options.number)
-                .unwrap_or_else(|| self.prefs.line_numbers()),
+            show_line_numbers: self.line_numbers_enabled(),
             relative_line_numbers: self
                 .vim
                 .as_ref()
@@ -3770,6 +4006,7 @@ impl EditorView {
         self.close_language_service_document();
         self.line_ending_menu_anchor = None;
         self.encoding_menu_anchor = None;
+        self.editor_controls_anchor = None;
         self.format_on_save_in_flight = false;
         self.save_intent_after_format = None;
         self.pending_navigation = None;
@@ -3883,6 +4120,7 @@ impl EditorView {
         };
         self.line_ending_menu_anchor = None;
         self.encoding_menu_anchor = None;
+        self.editor_controls_anchor = None;
         self.format_on_save_in_flight = false;
         self.save_intent_after_format = None;
         self.invalidate_git_requests();
@@ -5565,7 +5803,7 @@ impl EditorView {
         }
 
         let language_state = self.language_service_state.snapshot();
-        if self.prefs.diagnostics()
+        if self.diagnostics_enabled()
             && language_state.version == DocumentVersion::from_revision(self.editor_revision())
         {
             for diagnostic in language_state.diagnostics {
@@ -6946,7 +7184,7 @@ impl EditorView {
                 "{} lines",
                 snapshot.line_count()
             )));
-        if self.prefs.diagnostics() && self.diagnostics_revision == Some(snapshot.revision()) {
+        if self.diagnostics_enabled() && self.diagnostics_revision == Some(snapshot.revision()) {
             let diagnostics = self.language_service_state.snapshot().diagnostics;
             let (errors, warnings) = diagnostic_error_warning_counts(&diagnostics);
             let label = if errors == 0 && warnings == 0 {
@@ -7236,7 +7474,7 @@ impl EditorView {
     ) -> Option<AnyElement> {
         let breadcrumbs = self.breadcrumbs_visible();
         let quick_actions = self.prefs.toolbar_quick_actions();
-        let selections_menu = self.prefs.selections_menu();
+        let selections_menu = self.selections_menu_enabled();
         let code_actions = self.prefs.toolbar_code_actions()
             && self.language_service_snapshot.capabilities.code_actions;
         let markdown_preview = self.doc.language == Language::Markdown;
@@ -7329,6 +7567,28 @@ impl EditorView {
                         this.toggle_buffer_search(window, cx);
                     }));
             actions = actions.child(search);
+            let controls = icon_button_builder("editor-controls-toggle", palette, IconName::Filter)
+                .size(ButtonSize::IconSm)
+                .shape(IconButtonShape::Square)
+                .selected(self.editor_controls_anchor.is_some())
+                .tooltip("Editor Controls")
+                .render()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, event: &MouseDownEvent, _window, cx| {
+                        this.editor_controls_anchor = if this.editor_controls_anchor.is_some() {
+                            None
+                        } else {
+                            Some(Point {
+                                x: event.position.x,
+                                y: event.position.y + px(4.0),
+                            })
+                        };
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                );
+            actions = actions.child(controls);
         }
         if selections_menu {
             let trigger =
@@ -7375,6 +7635,37 @@ impl EditorView {
             toolbar = toolbar.children(self.render_buffer_search_bar(palette, window, cx));
         }
         Some(toolbar.into_any_element())
+    }
+
+    fn render_editor_controls_menu(
+        &self,
+        palette: Palette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let anchor = self.editor_controls_anchor?;
+        let editor = cx.entity();
+        let mut items = vec![MenuItem::label("Editor Controls")];
+        for control in available_editor_controls(self.language_service_snapshot.capabilities) {
+            let editor = editor.clone();
+            items.push(
+                MenuItem::new(control.id(), control.label())
+                    .checked(self.editor_control_enabled(control))
+                    .on_click(move |_, _window, app| {
+                        editor.update(app, |this, cx| {
+                            this.editor_controls_anchor = None;
+                            this.toggle_editor_control(control, cx);
+                        });
+                    }),
+            );
+        }
+        let dismiss_editor = editor;
+        let dismiss = move |_window: &mut Window, app: &mut App| {
+            dismiss_editor.update(app, |this, cx| {
+                this.editor_controls_anchor = None;
+                cx.notify();
+            });
+        };
+        Some(popover_menu(anchor, palette, dismiss, items))
     }
 
     fn render_buffer_search_bar(
@@ -7466,7 +7757,7 @@ impl EditorView {
         palette: Palette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        if !self.prefs.selections_menu() {
+        if !self.selections_menu_enabled() {
             return None;
         }
         let anchor = self.selection_menu_anchor?;
@@ -7861,7 +8152,7 @@ impl EditorView {
             }
         }
         let language_state = self.language_service_state.snapshot();
-        if self.prefs.diagnostics()
+        if self.diagnostics_enabled()
             && language_state.version == DocumentVersion::from_revision(self.editor_revision())
         {
             for diagnostic in language_state.diagnostics {
@@ -8666,12 +8957,12 @@ impl Render for EditorView {
             })
             .cloned()
             .collect::<Vec<_>>();
-        let diagnostic_decorations = if self.prefs.diagnostics() {
+        let diagnostic_decorations = if self.diagnostics_enabled() {
             display.diagnostic_decorations(&snapshot, &visible_diagnostics)
         } else {
             Vec::new()
         };
-        let semantic_decorations = if self.prefs.semantic_tokens() {
+        let semantic_decorations = if self.semantic_tokens_enabled() {
             display.semantic_token_decorations(&snapshot, &service_state.semantic_tokens)
         } else {
             Vec::new()
@@ -8829,6 +9120,8 @@ impl Render for EditorView {
         });
 
         // Text + selection rows.
+        let diagnostics_enabled = self.diagnostics_enabled();
+        let inline_diagnostics_enabled = self.inline_diagnostics_enabled();
         let text_rows = display_rows.iter().map(|display_row| {
             let line = display_row.logical_line();
             let row_top = (display_row.visual_row.saturating_sub(first_visual) as f32) * line_h;
@@ -9167,8 +9460,8 @@ impl Render for EditorView {
                 DisplayRowKind::Text { end_column, .. } => end_column >= snapshot.line_len(line),
                 DisplayRowKind::FoldPlaceholder { .. } => false,
             };
-            if self.prefs.error_lens()
-                && self.prefs.diagnostics()
+            if inline_diagnostics_enabled
+                && diagnostics_enabled
                 && self.error_lens_revision == Some(snapshot.revision())
                 && is_final_text_segment
             {
@@ -9397,7 +9690,7 @@ impl Render for EditorView {
         let file_status = self.render_file_status(cx);
         let show_text_area = self.should_render_text_area();
         let minimap = minimap_policy_visible(
-            self.prefs.minimap_visibility(),
+            self.minimap_visibility(),
             self.prefs.minimap_display_in(),
             self.editor_focused,
             display.total_rows > display.viewport.height_rows,
@@ -9449,6 +9742,7 @@ impl Render for EditorView {
             .children(self.render_language_service_status(cx))
             .child(buffer_surface)
             .children(self.render_selection_menu(ui_palette, cx))
+            .children(self.render_editor_controls_menu(ui_palette, cx))
             .children(self.render_language_menu(ui_palette, cx))
             .children(self.render_line_ending_menu(ui_palette, cx))
             .children(self.render_encoding_menu(ui_palette, cx))
@@ -9733,6 +10027,26 @@ mod tests {
         assert_eq!(next_completion_selection(2, 3, 1), 0);
         assert_eq!(next_completion_selection(99, 3, -1), 1);
         assert_eq!(next_completion_selection(4, 0, 1), 0);
+    }
+
+    #[test]
+    fn editor_controls_hide_language_features_without_provider_support() {
+        let mut capabilities = LanguageServiceCapabilities::SYNTAX_DERIVED;
+        capabilities.inlay_hints = false;
+        capabilities.semantic_tokens = false;
+        let controls = available_editor_controls(capabilities);
+
+        assert!(controls.contains(&EditorControl::Diagnostics));
+        assert!(controls.contains(&EditorControl::LineNumbers));
+        assert!(controls.contains(&EditorControl::Minimap));
+        assert!(!controls.contains(&EditorControl::InlayHints));
+        assert!(!controls.contains(&EditorControl::SemanticHighlights));
+
+        capabilities.inlay_hints = true;
+        capabilities.semantic_tokens = true;
+        let controls = available_editor_controls(capabilities);
+        assert!(controls.contains(&EditorControl::InlayHints));
+        assert!(controls.contains(&EditorControl::SemanticHighlights));
     }
 
     #[test]
@@ -10798,6 +11112,86 @@ mod tests {
                 assert!(editor_toolbar_has_contribution(
                     false, false, false, false, true
                 ));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn editor_controls_toggle_local_display_and_exclusive_modal_modes(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                assert!(this.line_numbers_enabled());
+                this.toggle_editor_control(EditorControl::LineNumbers, cx);
+                assert!(!this.display_config().show_line_numbers);
+
+                assert!(!this.minimap_enabled());
+                this.toggle_editor_control(EditorControl::Minimap, cx);
+                assert!(this.minimap_enabled());
+                assert_eq!(this.minimap_visibility(), EditorMinimapVisibility::Always);
+
+                this.toggle_editor_control(EditorControl::Diagnostics, cx);
+                assert!(!this.diagnostics_enabled());
+                this.toggle_editor_control(EditorControl::InlineDiagnostics, cx);
+                assert!(this.editor_control_enabled(EditorControl::InlineDiagnostics));
+
+                this.toggle_editor_control(EditorControl::VimMode, cx);
+                assert!(this.vim.is_some());
+                assert!(this.helix.is_none());
+                this.toggle_editor_control(EditorControl::HelixMode, cx);
+                assert!(this.vim.is_none());
+                assert!(this.helix.is_some());
+                this.toggle_editor_control(EditorControl::HelixMode, cx);
+                assert!(this.helix.is_none());
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn editor_control_overrides_reconcile_with_global_settings(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.toggle_editor_control(EditorControl::LineNumbers, cx);
+                assert!(!this.line_numbers_enabled());
+            });
+        });
+        cx.update(|cx| {
+            install_editor_prefs(cx, |editor| editor.editor_line_numbers = Some(false));
+        });
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.apply_prefs(cx);
+                assert_eq!(this.line_numbers_enabled_override, None);
+                assert!(!this.line_numbers_enabled());
+
+                this.toggle_editor_control(EditorControl::VimMode, cx);
+                assert!(this.vim.is_some());
+            });
+        });
+        cx.update(|cx| {
+            install_editor_prefs(cx, |editor| {
+                editor.editor_show_cursor_position = Some(false)
+            });
+        });
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.apply_prefs(cx);
+                assert_eq!(this.modal_mode_override, Some(EditorModalMode::Vim));
+                assert!(this.vim.is_some());
+            });
+        });
+        cx.update(|cx| {
+            install_editor_prefs(cx, |editor| {
+                editor.editor_modal_mode = Some(EditorModalMode::Helix)
+            });
+        });
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.apply_prefs(cx);
+                assert_eq!(this.modal_mode_override, None);
+                assert!(this.vim.is_none());
+                assert!(this.helix.is_some());
             });
         });
     }
