@@ -155,6 +155,25 @@ pub fn stash_display_message(msg: &str) -> String {
     }
 }
 
+fn stash_diff_request(
+    repo_root: String,
+    session_id: Option<String>,
+    hash: String,
+    message: &str,
+) -> ProjectDiffRequest {
+    ProjectDiffRequest {
+        repo_root,
+        session_id,
+        source: DiffSource::Stash {
+            hash,
+            subject: format!("Stash · {}", stash_display_message(message)),
+        },
+        files: Vec::new(),
+        selected: None,
+        mode: ProjectDiffMode::Unified,
+    }
+}
+
 /// `git stash pop`/`apply` that hit merge conflicts — the entry is kept (pop
 /// behaves like apply) and the working tree carries the conflicts.
 pub fn is_stash_conflict_error(err: &str) -> bool {
@@ -2067,6 +2086,18 @@ impl GitPanelView {
         );
     }
 
+    fn open_stash_diff(&mut self, hash: String, message: String, cx: &mut Context<Self>) {
+        let Some(repo_root) = self.repo_root.clone() else {
+            return;
+        };
+        cx.emit(ScmEvent::OpenProjectDiff(stash_diff_request(
+            repo_root,
+            self.session_id.clone(),
+            hash,
+            &message,
+        )));
+    }
+
     fn stash_drop(&mut self, hash: String, cx: &mut Context<Self>) {
         let Some((root, sid, git)) = self.ctx() else {
             return;
@@ -3356,12 +3387,30 @@ impl GitPanelView {
         }
 
         for e in &entries {
+            let diff_hash = e.hash.clone();
+            let diff_message = e.message.clone();
             let apply_hash = e.hash.clone();
             let pop_hash = e.hash.clone();
             let drop_idx = e.index;
             let drop_hash = e.hash.clone();
             let trailing = h_stack()
                 .gap(px(4.0))
+                .child(
+                    labonair_ui_kit::button_no_hover(
+                        SharedString::from(format!("git-stash-diff-{}", e.index)),
+                        c.palette,
+                        ButtonVariant::Subtle,
+                        ButtonSize::IconXs,
+                    )
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.fg))
+                    .child(IconName::GitCompare.svg(c.muted))
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _w, cx| {
+                            this.open_stash_diff(diff_hash.clone(), diff_message.clone(), cx);
+                        },
+                    )),
+                )
                 .child(
                     labonair_ui_kit::button_no_hover(
                         SharedString::from(format!("git-stash-apply-{}", e.index)),
@@ -4362,6 +4411,27 @@ mod tests {
         ));
         assert!(stash_conflict_message("CONFLICT in a.txt").contains("stash was kept"));
         assert_eq!(stash_conflict_message("plain error"), "plain error");
+    }
+
+    #[test]
+    fn stash_diff_request_opens_the_commit_projection_read_only() {
+        let request = stash_diff_request(
+            "/repo".into(),
+            Some("ssh-session".into()),
+            "stash-hash".into(),
+            "  saved work ",
+        );
+        assert_eq!(request.repo_root, "/repo");
+        assert_eq!(request.session_id.as_deref(), Some("ssh-session"));
+        assert_eq!(
+            request.source,
+            DiffSource::Stash {
+                hash: "stash-hash".into(),
+                subject: "Stash · saved work".into()
+            }
+        );
+        assert!(request.files.is_empty());
+        assert_eq!(request.mode, ProjectDiffMode::Unified);
     }
 
     #[test]

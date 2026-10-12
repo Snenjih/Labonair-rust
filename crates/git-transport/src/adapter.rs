@@ -290,6 +290,19 @@ impl GitService for GitTransportService {
         })
     }
 
+    fn stash_diff(
+        &self,
+        path: String,
+        hash: String,
+        session_id: Option<String>,
+    ) -> GitFuture<String> {
+        let ssh_state = self.ssh_state.clone();
+        let events = self.events.clone();
+        Box::pin(async move {
+            super::git_get_stash_diff(path, hash, session_id, &ssh_state, events.clone()).await
+        })
+    }
+
     fn stage_file(&self, path: String, file: String, session_id: Option<String>) -> GitFuture<()> {
         let ssh_state = self.ssh_state.clone();
         let events = self.events.clone();

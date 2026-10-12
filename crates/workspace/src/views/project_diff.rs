@@ -11,6 +11,8 @@
 //!   hunks can be staged / unstaged individually (`git apply --cached`).
 //! * [`DiffSource::Commit`] — a single committed change, fetched once as a whole
 //!   patch (`git show`), split per file for the rail, rendered **read-only**.
+//! * [`DiffSource::Stash`] — a saved stash, fetched once as a whole patch,
+//!   including untracked files, then rendered **read-only**.
 //!
 //! The hunk body is virtualised ([`uniform_list`]) so large diffs stay cheap.
 //! Repeated `WorkingTree` requests re-point the selection instead of
@@ -98,9 +100,10 @@ pub struct ProjectDiffView {
     selected: Option<String>,
     mode: ProjectDiffMode,
 
-    /// `WorkingTree`: loaded `git diff` text for `selected`. `Commit`: unused.
+    /// `WorkingTree`: loaded `git diff` text for `selected`. Read-only sources:
+    /// unused.
     diff_text: Option<String>,
-    /// `Commit`: the whole commit patch, parsed once per file.
+    /// Read-only source patch, parsed once per file.
     commit_files: Vec<FileDiff>,
     /// Flattened body of the selected file, rebuilt on select / mode / reload.
     rows: Vec<DiffRow>,
@@ -140,8 +143,8 @@ impl ProjectDiffView {
         }
     }
 
-    /// Point the item at a (possibly new) review. Idempotent for the working
-    /// tree — repeated calls just re-point the selection.
+    /// Point the item at a (possibly new) review. Idempotent for a repeated
+    /// working-tree or read-only source — calls just re-point the selection.
     pub fn apply_request(&mut self, req: ProjectDiffRequest, cx: &mut Context<Self>) {
         self.repo_root = Some(req.repo_root);
         self.session_id = req.session_id;
@@ -159,14 +162,11 @@ impl ProjectDiffView {
                     self.reload(cx);
                 }
             }
-            DiffSource::Commit { hash, .. } => {
-                let same_commit = matches!(
-                    &self.source,
-                    DiffSource::Commit { hash: h, .. } if *h == hash
-                );
-                self.source = req.source;
-                if !same_commit {
-                    self.load_commit(hash, cx);
+            DiffSource::Commit { .. } | DiffSource::Stash { .. } => {
+                let same_source = same_read_only_source(&self.source, &req.source);
+                self.source = req.source.clone();
+                if !same_source {
+                    self.load_read_only_diff(req.source, cx);
                 } else if let Some(sel) = req.selected {
                     if self.selected.as_deref() != Some(sel.as_str()) {
                         self.collapsed_hunks.clear();
@@ -187,7 +187,7 @@ impl ProjectDiffView {
         self.collapsed_hunks.clear();
         match self.source {
             DiffSource::WorkingTree => self.reload(cx),
-            DiffSource::Commit { .. } => self.rebuild_rows(),
+            DiffSource::Commit { .. } | DiffSource::Stash { .. } => self.rebuild_rows(),
         }
         cx.notify();
     }
@@ -267,8 +267,8 @@ impl ProjectDiffView {
         .detach();
     }
 
-    /// `Commit`: fetch the whole commit patch once, split per file for the rail.
-    fn load_commit(&mut self, hash: String, cx: &mut Context<Self>) {
+    /// Fetch a read-only patch once, then split it per file for the rail.
+    fn load_read_only_diff(&mut self, source: DiffSource, cx: &mut Context<Self>) {
         let Some(root) = self.repo_root.clone() else {
             return;
         };
@@ -282,9 +282,13 @@ impl ProjectDiffView {
         let generation = self.gen;
         let session = self.session_id.clone();
         let git = self.git.clone();
-        let jh = self
-            .tokio
-            .spawn(async move { git.commit_diff(root, hash, session).await });
+        let jh = self.tokio.spawn(async move {
+            match source {
+                DiffSource::Commit { hash, .. } => git.commit_diff(root, hash, session).await,
+                DiffSource::Stash { hash, .. } => git.stash_diff(root, hash, session).await,
+                DiffSource::WorkingTree => Err("Working-tree diffs load per file.".to_string()),
+            }
+        });
         cx.spawn(async move |this, cx| {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
@@ -313,8 +317,8 @@ impl ProjectDiffView {
                         notification_center(cx).update(cx, |center, cx| {
                             center.push(
                                 Notification::error(
-                                    "Commit diff load failed",
-                                    "Could not load the selected commit.",
+                                    "Read-only diff load failed",
+                                    "Could not load the selected Git change.",
                                 )
                                 .source("project-diff")
                                 .details(e.clone())
@@ -356,7 +360,7 @@ impl ProjectDiffView {
                     push_file_rows(&mut rows, file, is_split, per_hunk, &self.collapsed_hunks);
                 }
             }
-            DiffSource::Commit { .. } => {
+            DiffSource::Commit { .. } | DiffSource::Stash { .. } => {
                 let selected_file = self
                     .selected
                     .as_deref()
@@ -460,7 +464,7 @@ impl ProjectDiffView {
 
     fn header_title(&self) -> String {
         match &self.source {
-            DiffSource::Commit { hash, subject } => {
+            DiffSource::Commit { hash, subject } | DiffSource::Stash { hash, subject } => {
                 let short: String = hash.chars().take(7).collect();
                 if subject.is_empty() {
                     short
@@ -473,6 +477,16 @@ impl ProjectDiffView {
                 .clone()
                 .unwrap_or_else(|| "Project Diff".to_string()),
         }
+    }
+}
+
+fn same_read_only_source(left: &DiffSource, right: &DiffSource) -> bool {
+    match (left, right) {
+        (DiffSource::Commit { hash: left, .. }, DiffSource::Commit { hash: right, .. })
+        | (DiffSource::Stash { hash: left, .. }, DiffSource::Stash { hash: right, .. }) => {
+            left == right
+        }
+        _ => false,
     }
 }
 
@@ -980,6 +994,31 @@ mod tests {
         );
         // empty change set → nothing
         assert_eq!(resolve_selection(&[], Some("a.rs")), None);
+    }
+
+    #[test]
+    fn read_only_source_identity_includes_kind_and_hash() {
+        let commit = DiffSource::Commit {
+            hash: "abc".into(),
+            subject: "subject changed in place".into(),
+        };
+        let same_commit = DiffSource::Commit {
+            hash: "abc".into(),
+            subject: "updated subject".into(),
+        };
+        let other_commit = DiffSource::Commit {
+            hash: "def".into(),
+            subject: "subject".into(),
+        };
+        let stash = DiffSource::Stash {
+            hash: "abc".into(),
+            subject: "Stash · subject".into(),
+        };
+
+        assert!(same_read_only_source(&commit, &same_commit));
+        assert!(!same_read_only_source(&commit, &other_commit));
+        assert!(!same_read_only_source(&commit, &stash));
+        assert!(same_read_only_source(&stash, &stash));
     }
 
     #[test]

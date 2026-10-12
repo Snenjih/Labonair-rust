@@ -1338,6 +1338,28 @@ pub async fn git_get_commit_diff(
     Ok(truncate_diff(&stdout, MAX_DIFF_BYTES))
 }
 
+pub async fn git_get_stash_diff(
+    path: String,
+    hash: String,
+    session_id: Option<String>,
+    sftp_state: &SshState,
+    events: EventBus,
+) -> Result<String, String> {
+    const MAX_DIFF_BYTES: usize = 200 * 1024;
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
+    let stdout = executor
+        .run_raw(&[
+            "stash",
+            "show",
+            "--include-untracked",
+            "--format=",
+            "--patch",
+            &hash,
+        ])
+        .await?;
+    Ok(truncate_diff(&stdout, MAX_DIFF_BYTES))
+}
+
 pub async fn git_push_force_with_lease(
     path: String,
     remote: Option<String>,
