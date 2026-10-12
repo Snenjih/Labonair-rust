@@ -25,15 +25,18 @@ use std::sync::Arc;
 use gpui::prelude::*;
 use gpui::{
     div, img, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, Image, ImageFormat,
-    InteractiveElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ObjectFit,
-    ScrollHandle, ScrollWheelEvent, SharedString, StatefulInteractiveElement, Window,
+    InteractiveElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ObjectFit, ScrollHandle, ScrollWheelEvent, SharedString, StatefulInteractiveElement, Window,
 };
 
 use labonair_editor::{
     BufferSnapshot, EditorBuffer, HighlightKind, Language, StyledRun, SyntaxHighlighter,
 };
 use labonair_notifications::{notification_center, Notification};
-use labonair_ui_kit::{button, divider, Axis, ButtonSize, ButtonVariant, Palette};
+use labonair_ui_kit::{
+    button, divider, text_field, text_field_surface, text_input, Axis, ButtonSize, ButtonVariant,
+    InputEvent, InputState, Palette, TextFieldState, Tooltip,
+};
 
 use crate::markdown::{parse_markdown, Inline, MdBlock};
 use crate::theme::ThemeStore;
@@ -315,6 +318,29 @@ fn image_zoom_scale(zoom: ImageZoom, fit_scale: f32) -> f32 {
     }
 }
 
+fn parse_image_zoom_percent(value: &str) -> Option<ImageZoom> {
+    let value = value.trim();
+    let value = value.strip_suffix('%').unwrap_or(value).trim();
+    let percent = value.parse::<f32>().ok()?;
+    if !percent.is_finite() {
+        return None;
+    }
+    if (percent - 100.0).abs() < f32::EPSILON {
+        Some(ImageZoom::ActualSize)
+    } else {
+        Some(ImageZoom::Scale(
+            (percent / 100.0).clamp(MIN_IMAGE_ZOOM, MAX_IMAGE_ZOOM),
+        ))
+    }
+}
+
+fn image_zoom_input_seed(zoom: ImageZoom) -> String {
+    match zoom {
+        ImageZoom::Fit | ImageZoom::ActualSize => "100".into(),
+        ImageZoom::Scale(scale) => format!("{:.0}", scale * 100.0),
+    }
+}
+
 fn image_zoom_preset(action: PreviewImageAction) -> Option<ImageZoom> {
     match action {
         PreviewImageAction::ResetZoom | PreviewImageAction::ZoomToActualSize => {
@@ -374,6 +400,7 @@ pub struct PreviewView {
     markdown_syntax_runs: HashMap<usize, Vec<Vec<StyledRun>>>,
     image_scroll: ScrollHandle,
     image_zoom: ImageZoom,
+    image_zoom_input: Option<Entity<InputState>>,
     image_pan: Option<ImagePan>,
 }
 
@@ -394,6 +421,7 @@ impl PreviewView {
             markdown_syntax_runs: HashMap::new(),
             image_scroll: ScrollHandle::new(),
             image_zoom: ImageZoom::Fit,
+            image_zoom_input: None,
             image_pan: None,
         }
     }
@@ -411,6 +439,7 @@ impl PreviewView {
         self.markdown_images.clear();
         self.markdown_syntax_runs.clear();
         self.image_zoom = ImageZoom::Fit;
+        self.image_zoom_input = None;
         self.image_pan = None;
         self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
         self.resolve_content(cx);
@@ -430,6 +459,7 @@ impl PreviewView {
         self.markdown_images.clear();
         self.markdown_syntax_runs.clear();
         self.image_zoom = ImageZoom::Fit;
+        self.image_zoom_input = None;
         self.image_pan = None;
         self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
         self.resolve_content(cx);
@@ -454,6 +484,7 @@ impl PreviewView {
         self.markdown_syntax_runs.clear();
         self.markdown_source_path = path.clone();
         self.image_zoom = ImageZoom::Fit;
+        self.image_zoom_input = None;
         self.image_pan = None;
         self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
         self.url = path
@@ -721,9 +752,32 @@ impl PreviewView {
     fn set_image_zoom(&mut self, zoom: ImageZoom, cx: &mut Context<Self>) {
         if matches!(self.content, Content::Image(_)) {
             self.image_zoom = zoom;
+            self.image_zoom_input = None;
             self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
             cx.notify();
         }
+    }
+
+    fn edit_image_zoom(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !matches!(self.content, Content::Image(_)) || self.image_zoom_input.is_some() {
+            return;
+        }
+        let input = cx
+            .new(|cx| text_field(window, cx).default_value(image_zoom_input_seed(self.image_zoom)));
+        let view = cx.entity();
+        window
+            .subscribe(&input, cx, move |input, event: &InputEvent, _window, cx| {
+                if let InputEvent::PressEnter { secondary: false } = event {
+                    let value = input.read(cx).value().to_string();
+                    if let Some(zoom) = parse_image_zoom_percent(&value) {
+                        view.update(cx, |this, cx| this.set_image_zoom(zoom, cx));
+                    }
+                }
+            })
+            .detach();
+        window.focus(&input.read(cx).focus_handle(cx));
+        self.image_zoom_input = Some(input);
+        cx.notify();
     }
 
     pub fn perform_image_action(
@@ -1307,6 +1361,40 @@ impl Render for PreviewView {
                     Content::Image(image) => image.metadata(),
                     _ => String::new(),
                 };
+                let zoom_control = if let Some(input) = self.image_zoom_input.as_ref() {
+                    text_field_surface(
+                        "preview-image-zoom-input",
+                        c,
+                        TextFieldState::Focused,
+                        text_input(input, c),
+                    )
+                    .w(px(58.0))
+                    .into_any_element()
+                } else {
+                    div()
+                        .id("preview-image-zoom-level")
+                        .min_w(px(38.0))
+                        .text_center()
+                        .text_size(px(10.0))
+                        .text_color(muted)
+                        .cursor_pointer()
+                        .tooltip(|window, cx| {
+                            Tooltip::new("Click to edit; right-click to reset to 100%.")
+                                .build(window, cx)
+                        })
+                        .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                            this.edit_image_zoom(window, cx);
+                        }))
+                        .on_mouse_down(
+                            MouseButton::Right,
+                            cx.listener(|this, _event: &MouseDownEvent, _, cx| {
+                                this.set_image_zoom(ImageZoom::ActualSize, cx);
+                                cx.stop_propagation();
+                            }),
+                        )
+                        .child(zoom)
+                        .into_any_element()
+                };
                 element
                     .child(div().text_size(px(10.0)).text_color(muted).child(metadata))
                     .child(
@@ -1330,22 +1418,7 @@ impl Render for PreviewView {
                         }))
                         .child("−"),
                     )
-                    .child(
-                        div()
-                            .id("preview-image-zoom-level")
-                            .min_w(px(38.0))
-                            .text_center()
-                            .text_size(px(10.0))
-                            .text_color(muted)
-                            .on_mouse_down(
-                                MouseButton::Right,
-                                cx.listener(|this, _event: &MouseDownEvent, _, cx| {
-                                    this.set_image_zoom(ImageZoom::ActualSize, cx);
-                                    cx.stop_propagation();
-                                }),
-                            )
-                            .child(zoom),
-                    )
+                    .child(zoom_control)
                     .child(
                         labonair_ui_kit::button_no_hover(
                             "preview-image-zoom-in",
@@ -1428,6 +1501,14 @@ impl Render for PreviewView {
         div()
             .track_focus(&self.focus_handle)
             .key_context("Preview")
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if event.keystroke.key == "escape" && this.image_zoom_input.is_some() {
+                    this.image_zoom_input = None;
+                    window.focus(&this.focus_handle);
+                    cx.notify();
+                    cx.stop_propagation();
+                }
+            }))
             .size_full()
             .flex()
             .flex_col()
@@ -1829,6 +1910,17 @@ mod tests {
             image_zoom_preset(PreviewImageAction::ZoomToFit),
             Some(ImageZoom::Fit)
         );
+        assert_eq!(
+            parse_image_zoom_percent("75%"),
+            Some(ImageZoom::Scale(0.75))
+        );
+        assert_eq!(parse_image_zoom_percent("100"), Some(ImageZoom::ActualSize));
+        assert_eq!(
+            parse_image_zoom_percent("2000%"),
+            Some(ImageZoom::Scale(MAX_IMAGE_ZOOM))
+        );
+        assert_eq!(parse_image_zoom_percent("not a zoom"), None);
+        assert_eq!(parse_image_zoom_percent("NaN"), None);
         assert_eq!(
             image_zoom_scale(ImageZoom::Scale(20.0), 0.25),
             MAX_IMAGE_ZOOM
