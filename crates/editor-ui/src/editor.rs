@@ -52,12 +52,12 @@ use labonair_editor::{
     word_at_cursor, Anchor, AnchorAffinity, BufferSnapshot, CancellationToken, DisplayConfig,
     DisplayMap, DisplayRowKind, DisplaySnapshot, Document, DocumentColor, DocumentColorValue,
     DocumentVersion, Edit, EditorEditability, EditorSessionId, EditorSessionSnapshot,
-    EditorViewSession, FoldRange, FoldingRange, GitDecorationProvider, GitDecorationRequest,
-    GitDiscardPreview, GitEditorCommand, GitGutterError, GitGutterSnapshot, GitHunkAction,
-    GitHunkActionKind, GitHunkStatus, Helix, HelixKey, HelixMode, HunkActionSink, InlayHint,
-    InlayHintKind, KillRing, Language, LanguageId, LanguageServiceCapabilities,
-    LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceRequest,
-    LanguageServiceResponse, LanguageServiceResult, LanguageServiceRuntime,
+    EditorViewSession, FoldRange, FoldingRange, GitBlameRequest, GitBlameSnapshot,
+    GitDecorationProvider, GitDecorationRequest, GitDiscardPreview, GitEditorCommand,
+    GitGutterError, GitGutterSnapshot, GitHunkAction, GitHunkActionKind, GitHunkStatus, Helix,
+    HelixKey, HelixMode, HunkActionSink, InlayHint, InlayHintKind, KillRing, Language, LanguageId,
+    LanguageServiceCapabilities, LanguageServiceEditRequest, LanguageServiceEditResponse,
+    LanguageServiceRequest, LanguageServiceResponse, LanguageServiceResult, LanguageServiceRuntime,
     LanguageServiceRuntimeSnapshot, LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus,
     LanguageServiceSnapshot, LanguageServiceState, LocalLanguageServiceRequest, LspPosition,
     LspRange, Match, NavigationHistory, NavigationLocation, Position, ProjectBufferCandidate,
@@ -549,6 +549,7 @@ struct FoldMarker {
 enum EditorControl {
     Diagnostics,
     InlineDiagnostics,
+    GitBlame,
     LineNumbers,
     Minimap,
     SelectionMenu,
@@ -563,6 +564,7 @@ impl EditorControl {
         match self {
             Self::Diagnostics => "editor-control-diagnostics",
             Self::InlineDiagnostics => "editor-control-inline-diagnostics",
+            Self::GitBlame => "editor-control-git-blame",
             Self::LineNumbers => "editor-control-line-numbers",
             Self::Minimap => "editor-control-minimap",
             Self::SelectionMenu => "editor-control-selections-menu",
@@ -577,6 +579,7 @@ impl EditorControl {
         match self {
             Self::Diagnostics => "Diagnostics",
             Self::InlineDiagnostics => "Inline Diagnostics",
+            Self::GitBlame => "Git Blame in Status Bar",
             Self::LineNumbers => "Line Numbers",
             Self::Minimap => "Minimap",
             Self::SelectionMenu => "Selections Menu",
@@ -592,6 +595,7 @@ fn available_editor_controls(capabilities: LanguageServiceCapabilities) -> Vec<E
     let mut controls = vec![
         EditorControl::Diagnostics,
         EditorControl::InlineDiagnostics,
+        EditorControl::GitBlame,
         EditorControl::LineNumbers,
         EditorControl::Minimap,
         EditorControl::SelectionMenu,
@@ -826,6 +830,38 @@ fn language_service_status_label(status: LanguageServiceRuntimeStatus) -> &'stat
     }
 }
 
+fn git_blame_status_label(blame: &GitBlameSnapshot) -> String {
+    let compact_summary = blame
+        .summary
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let was_truncated = compact_summary.chars().count() > 56;
+    let summary = compact_summary.chars().take(56).collect::<String>();
+    if was_truncated {
+        format!("{} · {summary}…", blame.author)
+    } else {
+        format!("{} · {summary}", blame.author)
+    }
+}
+
+fn git_blame_age_label(author_time: i64, now: i64) -> String {
+    let elapsed = now.saturating_sub(author_time).max(0) as u64;
+    if elapsed < 60 {
+        "just now".into()
+    } else if elapsed < 60 * 60 {
+        format!("{} min ago", elapsed / 60)
+    } else if elapsed < 24 * 60 * 60 {
+        format!("{} hr ago", elapsed / (60 * 60))
+    } else if elapsed < 30 * 24 * 60 * 60 {
+        format!("{} days ago", elapsed / (24 * 60 * 60))
+    } else if elapsed < 365 * 24 * 60 * 60 {
+        format!("{} mo ago", elapsed / (30 * 24 * 60 * 60))
+    } else {
+        format!("{} yr ago", elapsed / (365 * 24 * 60 * 60))
+    }
+}
+
 fn diagnostic_at_position<'a>(
     diagnostics: &'a [labonair_editor::Diagnostic],
     snapshot: &labonair_editor::BufferSnapshot,
@@ -1052,6 +1088,11 @@ pub struct EditorView {
     git_action_sink: Option<Arc<dyn HunkActionSink>>,
     git_session_id: Option<String>,
     git_refresh_generation: u64,
+    git_blame: Option<GitBlameSnapshot>,
+    git_blame_request: Option<(String, usize, Revision)>,
+    git_blame_generation: u64,
+    git_blame_task: Option<Task<()>>,
+    git_blame_enabled: bool,
     git_context_menu: Option<(Point<Pixels>, String, Revision)>,
     text_context_menu: Option<Point<Pixels>>,
     character_palette_open: bool,
@@ -1298,6 +1339,11 @@ impl EditorView {
             git_action_sink: None,
             git_session_id: None,
             git_refresh_generation: 0,
+            git_blame: None,
+            git_blame_request: None,
+            git_blame_generation: 0,
+            git_blame_task: None,
+            git_blame_enabled: false,
             git_context_menu: None,
             text_context_menu: None,
             character_palette_open: false,
@@ -3065,6 +3111,7 @@ impl EditorView {
         match control {
             EditorControl::Diagnostics => self.diagnostics_enabled(),
             EditorControl::InlineDiagnostics => self.inline_diagnostics_enabled(),
+            EditorControl::GitBlame => self.git_blame_enabled,
             EditorControl::LineNumbers => self.line_numbers_enabled(),
             EditorControl::Minimap => self.minimap_enabled(),
             EditorControl::SelectionMenu => self.selections_menu_enabled(),
@@ -3107,6 +3154,17 @@ impl EditorView {
                     self.error_lens_revision = None;
                 } else {
                     self.schedule_error_lens(cx);
+                }
+            }
+            EditorControl::GitBlame => {
+                self.git_blame_enabled = !self.git_blame_enabled;
+                if self.git_blame_enabled {
+                    self.schedule_git_blame(cx);
+                } else {
+                    self.git_blame_generation = self.git_blame_generation.wrapping_add(1);
+                    self.git_blame_task = None;
+                    self.git_blame_request = None;
+                    self.git_blame = None;
                 }
             }
             EditorControl::LineNumbers => {
@@ -3645,6 +3703,10 @@ impl EditorView {
 
     fn invalidate_git_requests(&mut self) {
         self.git_refresh_generation = self.git_refresh_generation.wrapping_add(1);
+        self.git_blame_generation = self.git_blame_generation.wrapping_add(1);
+        self.git_blame_task = None;
+        self.git_blame_request = None;
+        self.git_blame = None;
         self.git_context_menu = None;
         self.git_discard_confirmation = None;
     }
@@ -3667,11 +3729,70 @@ impl EditorView {
             && self.current_git_path().as_deref() == Some(snapshot.path.as_str())
     }
 
+    fn schedule_git_blame(&mut self, cx: &mut Context<Self>) {
+        if !self.git_blame_enabled {
+            self.git_blame = None;
+            self.git_blame_request = None;
+            return;
+        }
+        let Some(provider) = self.git_provider.clone() else {
+            self.git_blame = None;
+            self.git_blame_request = None;
+            return;
+        };
+        let Some(path) = self.current_git_path() else {
+            self.git_blame = None;
+            self.git_blame_request = None;
+            return;
+        };
+        let line = self.doc.cursor.line;
+        let revision = self.editor_revision();
+        let key = (path.clone(), line, revision);
+        if self.git_blame_request.as_ref() == Some(&key) {
+            return;
+        }
+
+        self.git_blame_generation = self.git_blame_generation.wrapping_add(1);
+        let generation = self.git_blame_generation;
+        self.git_blame_request = Some(key);
+        self.git_blame = None;
+        let session_id = self.git_session_id.clone();
+        let request = GitBlameRequest {
+            path: path.clone(),
+            line,
+            revision,
+            session_id: session_id.clone(),
+        };
+        let blame = provider.blame(request);
+        self.git_blame_task = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(450))
+                .await;
+            let result = blame.await;
+            let _ = this.update(cx, |this, cx| {
+                if this.git_blame_generation != generation
+                    || this.editor_revision() != revision
+                    || this.doc.cursor.line != line
+                    || this.current_git_path().as_deref() != Some(path.as_str())
+                    || this.git_session_id != session_id
+                {
+                    return;
+                }
+                this.git_blame_task = None;
+                this.git_blame = result.ok().filter(|snapshot| {
+                    snapshot.path == path && snapshot.line == line && snapshot.revision == revision
+                });
+                cx.notify();
+            });
+        }));
+    }
+
     /// Request the current Git projection without doing Git work on the GPUI
     /// foreground thread. Every request carries the document path, revision,
     /// session and view generation so late results are discarded completely.
     fn refresh_git(&mut self, cx: &mut Context<Self>) {
         self.invalidate_git_requests();
+        self.schedule_git_blame(cx);
         let generation = self.git_refresh_generation;
         let revision = self.editor_revision();
         let session_id = self.git_session_id.clone();
@@ -4632,6 +4753,7 @@ impl EditorView {
         if self.scroll_top != old_scroll_top {
             self.schedule_inlay_hints(self.prefs.inlay_scroll_debounce_ms(), cx);
         }
+        self.schedule_git_blame(cx);
     }
 
     fn scroll_by(&mut self, lines: isize, cx: &mut Context<Self>) {
@@ -7440,6 +7562,34 @@ impl EditorView {
                         cx.notify();
                     }),
                 ),
+            );
+        }
+        if let Some(blame) = self.git_blame.as_ref().filter(|blame| {
+            self.git_blame_enabled
+                && blame.revision == snapshot.revision()
+                && blame.line == self.doc.cursor.line
+                && self.current_git_path().as_deref() == Some(blame.path.as_str())
+        }) {
+            let label = git_blame_status_label(blame);
+            let tooltip = format!(
+                "{} · {}\nCommit {}\n{}",
+                blame.author,
+                git_blame_age_label(
+                    blame.author_time,
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |duration| duration.as_secs() as i64),
+                ),
+                blame.commit,
+                blame.summary
+            );
+            right = right.child(
+                div()
+                    .id("editor-git-blame-status")
+                    .text_xs()
+                    .text_color(theme.muted_foreground())
+                    .child(SharedString::from(label))
+                    .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx)),
             );
         }
         let file_format = match self.doc.file_state() {
@@ -10282,6 +10432,7 @@ mod tests {
         let controls = available_editor_controls(capabilities);
 
         assert!(controls.contains(&EditorControl::Diagnostics));
+        assert!(controls.contains(&EditorControl::GitBlame));
         assert!(controls.contains(&EditorControl::LineNumbers));
         assert!(controls.contains(&EditorControl::Minimap));
         assert!(!controls.contains(&EditorControl::InlayHints));
@@ -11396,6 +11547,10 @@ mod tests {
                 this.toggle_editor_control(EditorControl::LineNumbers, cx);
                 assert!(!this.display_config().show_line_numbers);
 
+                assert!(!this.editor_control_enabled(EditorControl::GitBlame));
+                this.toggle_editor_control(EditorControl::GitBlame, cx);
+                assert!(this.editor_control_enabled(EditorControl::GitBlame));
+
                 assert!(!this.minimap_enabled());
                 this.toggle_editor_control(EditorControl::Minimap, cx);
                 assert!(this.minimap_enabled());
@@ -12205,6 +12360,37 @@ mod tests {
             1,
             "the line-level Git projection remains available independently"
         );
+    }
+
+    #[test]
+    fn git_blame_status_uses_author_and_a_compact_summary() {
+        let blame = GitBlameSnapshot {
+            path: "/repo/src/lib.rs".into(),
+            line: 3,
+            revision: Revision::new(7),
+            commit: "0123456789abcdef".into(),
+            author: "Ada Lovelace".into(),
+            summary: "Improve parser error handling".into(),
+            author_time: 1_740_000_000,
+        };
+        assert_eq!(
+            git_blame_status_label(&blame),
+            "Ada Lovelace · Improve parser error handling"
+        );
+
+        let long = GitBlameSnapshot {
+            summary: "A very long commit subject that should not take over the editor status row"
+                .into(),
+            ..blame
+        };
+        assert!(git_blame_status_label(&long).ends_with('…'));
+    }
+
+    #[test]
+    fn git_blame_age_uses_compact_relative_units() {
+        assert_eq!(git_blame_age_label(1_000, 1_000), "just now");
+        assert_eq!(git_blame_age_label(939, 1_000), "1 min ago");
+        assert_eq!(git_blame_age_label(0, 90_000), "1 days ago");
     }
 
     #[gpui::test]

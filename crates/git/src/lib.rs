@@ -113,6 +113,17 @@ pub struct FileDiffStat {
     pub staged: bool,
 }
 
+/// Commit attribution for one source line. The timestamp is Unix seconds in
+/// UTC, matching Git's `author-time` field.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitBlameLine {
+    pub commit: String,
+    pub author: String,
+    pub summary: String,
+    pub author_time: i64,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceGitState {
@@ -153,6 +164,13 @@ pub trait GitService: Send + Sync {
         is_untracked: Option<bool>,
         session_id: Option<String>,
     ) -> GitFuture<String>;
+    fn blame_line(
+        &self,
+        path: String,
+        file: String,
+        line: u32,
+        session_id: Option<String>,
+    ) -> GitFuture<GitBlameLine>;
     /// Full unified patch for one commit (`git show --format= --patch <hash>`),
     /// covering every file the commit touched. Used by the workspace Diff item
     /// to render a committed change read-only.

@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex};
 use tokio::runtime::Handle as TokioHandle;
 
 use labonair_editor::{
-    GitDecorationProvider, GitDecorationRequest, GitGutterError, GitGutterSnapshot, GitHunkAction,
-    GitProviderFuture, HunkActionSink, Revision,
+    GitBlameRequest, GitBlameSnapshot, GitDecorationProvider, GitDecorationRequest, GitGutterError,
+    GitGutterSnapshot, GitHunkAction, GitProviderFuture, HunkActionSink, Revision,
 };
 use labonair_git::{FileStatus, GitService, WorkspaceGitState};
 
@@ -238,6 +238,48 @@ impl GitDecorationProvider for WorkspaceGitBridge {
                     }
                     other => other,
                 })
+        }))
+    }
+
+    fn blame(&self, request: GitBlameRequest) -> GitProviderFuture<GitBlameSnapshot> {
+        let context = self.context();
+        if context.session_id != request.session_id {
+            return Box::pin(async {
+                Err(GitGutterError::Provider(
+                    "Git context changed before blame could run".into(),
+                ))
+            });
+        }
+        let Some(root) = context.root else {
+            return Box::pin(async {
+                Err(GitGutterError::Provider(
+                    "No repository is available for this file".into(),
+                ))
+            });
+        };
+        let git = self.git.clone();
+        let tokio = self.tokio.clone();
+        Box::pin(run_on_tokio(tokio, async move {
+            let repo_root = git
+                .repo_root(root, context.session_id.clone())
+                .await
+                .map_err(GitGutterError::Provider)?;
+            let file = relative_path(&repo_root, &request.path);
+            let line = u32::try_from(request.line.saturating_add(1))
+                .map_err(|_| GitGutterError::Provider("line number is too large".into()))?;
+            let blame = git
+                .blame_line(repo_root, file, line, context.session_id)
+                .await
+                .map_err(GitGutterError::Provider)?;
+            Ok(GitBlameSnapshot {
+                path: request.path,
+                line: request.line,
+                revision: request.revision,
+                commit: blame.commit,
+                author: blame.author,
+                summary: blame.summary,
+                author_time: blame.author_time,
+            })
         }))
     }
 }

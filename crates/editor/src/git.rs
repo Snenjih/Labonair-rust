@@ -571,12 +571,38 @@ pub struct GitDecorationRequest {
     pub session_id: Option<String>,
 }
 
+/// One cursor-line attribution request. Line numbers are zero-based in the
+/// editor contract; the Git adapter converts them at the process boundary.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitBlameRequest {
+    pub path: String,
+    pub line: usize,
+    pub revision: Revision,
+    pub session_id: Option<String>,
+}
+
+/// Revision-bound attribution for the requested editor line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitBlameSnapshot {
+    pub path: String,
+    pub line: usize,
+    pub revision: Revision,
+    pub commit: String,
+    pub author: String,
+    pub summary: String,
+    pub author_time: i64,
+}
+
 pub type GitProviderFuture<T> = Pin<Box<dyn Future<Output = Result<T, GitGutterError>> + Send>>;
 
 /// Read-only Git provider boundary. Implementations belong to the Git/workspace
 /// composition layer and must not block GPUI while obtaining a snapshot.
 pub trait GitDecorationProvider: Send + Sync {
     fn refresh(&self, request: GitDecorationRequest) -> GitProviderFuture<GitGutterSnapshot>;
+
+    fn blame(&self, _request: GitBlameRequest) -> GitProviderFuture<GitBlameSnapshot> {
+        Box::pin(async { Err(GitGutterError::Provider("Git blame is unavailable".into())) })
+    }
 }
 
 /// Mutation boundary for stage/unstage/discard/review intents.

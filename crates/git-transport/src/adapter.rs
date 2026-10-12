@@ -1,6 +1,6 @@
 //! Backend adapter for the UI-free Git graph contract.
 
-use labonair_git::{GitFuture, GitGraphService, GitService};
+use labonair_git::{GitBlameLine, GitFuture, GitGraphService, GitService};
 
 use labonair_events::EventBus;
 use labonair_ssh_transport::SshState;
@@ -226,6 +226,21 @@ impl GitService for GitTransportService {
                 events.clone(),
             )
             .await
+        })
+    }
+
+    fn blame_line(
+        &self,
+        path: String,
+        file: String,
+        line: u32,
+        session_id: Option<String>,
+    ) -> GitFuture<GitBlameLine> {
+        let ssh_state = self.ssh_state.clone();
+        let events = self.events.clone();
+        Box::pin(async move {
+            super::git_get_blame_line(path, file, line, session_id, &ssh_state, events.clone())
+                .await
         })
     }
 

@@ -60,9 +60,10 @@ pub use file_finder::{
     FileFinderStatus, DEFAULT_FILE_FINDER_MAX_RESULTS, MAX_FILE_FINDER_RESULTS,
 };
 pub use git::{
-    DisplayGitDecoration, GitDecorationProvider, GitDecorationRequest, GitDiscardPreview,
-    GitGutterError, GitGutterSnapshot, GitGutterState, GitHunk, GitHunkAction, GitHunkActionKind,
-    GitHunkStatus, GitHunkTarget, GitLineDecoration, GitProviderFuture, HunkActionSink,
+    DisplayGitDecoration, GitBlameRequest, GitBlameSnapshot, GitDecorationProvider,
+    GitDecorationRequest, GitDiscardPreview, GitGutterError, GitGutterSnapshot, GitGutterState,
+    GitHunk, GitHunkAction, GitHunkActionKind, GitHunkStatus, GitHunkTarget, GitLineDecoration,
+    GitProviderFuture, HunkActionSink,
 };
 pub use helix::{Helix, HelixKey, HelixMode};
 pub use kill_ring::{KillRing, KILL_RING_CAPACITY};

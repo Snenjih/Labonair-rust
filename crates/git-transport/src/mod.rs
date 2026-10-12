@@ -9,8 +9,8 @@ use labonair_ssh_transport::SshState;
 
 pub use adapter::{GitGraphTransportService, GitTransportService};
 pub use labonair_git::{
-    Branch, CommitInfo, CommitResult, FileDiffStat, FileStatus, GitStatus, StashEntry,
-    SubmoduleState, SubmoduleStatus, SubmoduleSyncState, WorkspaceGitState,
+    Branch, CommitInfo, CommitResult, FileDiffStat, FileStatus, GitBlameLine, GitStatus,
+    StashEntry, SubmoduleState, SubmoduleStatus, SubmoduleSyncState, WorkspaceGitState,
 };
 
 // ─── Pure parsers (shared by the standalone commands and the bundle) ──────────
@@ -612,6 +612,61 @@ pub async fn git_get_diff(
     };
 
     Ok(truncate_diff(&stdout, MAX_DIFF_BYTES))
+}
+
+/// Return Git's attribution for one one-based source line.
+pub async fn git_get_blame_line(
+    path: String,
+    file: String,
+    line: u32,
+    session_id: Option<String>,
+    sftp_state: &SshState,
+    events: EventBus,
+) -> Result<GitBlameLine, String> {
+    if line == 0 {
+        return Err("Git blame line numbers start at one".into());
+    }
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
+    let line_range = format!("{line},{line}");
+    let output = executor
+        .run(&["blame", "--line-porcelain", "-L", &line_range, "--", &file])
+        .await?;
+    parse_blame_line(&output)
+}
+
+fn parse_blame_line(output: &str) -> Result<GitBlameLine, String> {
+    let mut lines = output.lines();
+    let header = lines
+        .next()
+        .ok_or_else(|| "Git blame returned no line attribution".to_string())?;
+    let commit = header
+        .split_whitespace()
+        .next()
+        .map(|value| value.trim_start_matches('^'))
+        .filter(|value| value.len() >= 7 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .ok_or_else(|| "Git blame returned an invalid commit id".to_string())?
+        .to_string();
+    let mut author = None;
+    let mut summary = None;
+    let mut author_time = None;
+    for line in lines {
+        if let Some(value) = line.strip_prefix("author ") {
+            author = Some(value.to_string());
+        } else if let Some(value) = line.strip_prefix("summary ") {
+            summary = Some(value.to_string());
+        } else if let Some(value) = line.strip_prefix("author-time ") {
+            author_time = value.parse::<i64>().ok();
+        } else if line.starts_with('\t') {
+            break;
+        }
+    }
+    Ok(GitBlameLine {
+        commit,
+        author: author.ok_or_else(|| "Git blame omitted the author".to_string())?,
+        summary: summary.ok_or_else(|| "Git blame omitted the commit summary".to_string())?,
+        author_time: author_time
+            .ok_or_else(|| "Git blame omitted the author timestamp".to_string())?,
+    })
 }
 
 fn truncate_diff(stdout: &[u8], max: usize) -> String {
@@ -1629,6 +1684,18 @@ pub async fn git_init(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blame_porcelain_extracts_commit_author_summary_and_timestamp() {
+        let blame = parse_blame_line(
+            "^0123456789abcdef0123456789abcdef01234567 4 9 1\nauthor Ada Lovelace\nauthor-time 1740000000\nsummary Improve parser\nfilename src/lib.rs\n\tlet value = 1;\n",
+        )
+        .expect("valid porcelain blame");
+        assert_eq!(blame.commit, "0123456789abcdef0123456789abcdef01234567");
+        assert_eq!(blame.author, "Ada Lovelace");
+        assert_eq!(blame.summary, "Improve parser");
+        assert_eq!(blame.author_time, 1_740_000_000);
+    }
 
     #[test]
     fn shortstat_parses_all_fields() {
