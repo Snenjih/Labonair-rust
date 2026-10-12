@@ -151,6 +151,7 @@
     "searchWrap": true,
     "searchIncludeIgnored": false,
     "searchOnType": true,
+    "searchSeedFromCursor": "always",
     "editorMode": "normal",
     "vimMode": false,
     // Syntax colour scheme slug; "auto" (not the default) follows the app theme.

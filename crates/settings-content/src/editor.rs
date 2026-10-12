@@ -44,6 +44,27 @@ impl crate::MergeFrom for EditorModalMode {
     }
 }
 
+/// How a new editor search query is seeded from the current buffer.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchSeedBehavior {
+    /// Prefer a selection, otherwise use the word under the cursor.
+    #[default]
+    Always,
+    /// Seed only from a non-empty single-line selection.
+    Selection,
+    /// Never replace the previous search query from buffer text.
+    Never,
+}
+
+impl crate::MergeFrom for SearchSeedBehavior {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
 /// Visibility policy for editor-owned scrollbars.
 #[derive(
     Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
@@ -306,6 +327,7 @@ pub struct EditorContent {
     pub search_wrap: Option<bool>,
     pub search_include_ignored: Option<bool>,
     pub search_on_type: Option<bool>,
+    pub search_seed_from_cursor: Option<SearchSeedBehavior>,
     #[serde(rename = "editorMode")]
     pub editor_modal_mode: Option<EditorModalMode>,
     /// Legacy Vim toggle read when `editorMode` is absent.
@@ -402,6 +424,7 @@ impl EditorContent {
             search_wrap: Some(true),
             search_include_ignored: Some(false),
             search_on_type: Some(true),
+            search_seed_from_cursor: Some(SearchSeedBehavior::Always),
             editor_modal_mode: Some(EditorModalMode::Normal),
             editor_vim_mode: Some(false),
             editor_theme: Some("atomone".to_string()),
@@ -440,7 +463,8 @@ mod tests {
             "searchRegex": true,
             "searchWrap": false,
             "searchIncludeIgnored": true,
-            "searchOnType": false
+            "searchOnType": false,
+            "searchSeedFromCursor": "never"
         }))
         .expect("search settings");
         assert_eq!(parsed.search_case_sensitive, Some(true));
@@ -450,6 +474,10 @@ mod tests {
         assert_eq!(parsed.search_wrap, Some(false));
         assert_eq!(parsed.search_include_ignored, Some(true));
         assert_eq!(parsed.search_on_type, Some(false));
+        assert_eq!(
+            parsed.search_seed_from_cursor,
+            Some(SearchSeedBehavior::Never)
+        );
 
         let defaults = serde_json::to_value(EditorContent::defaults()).expect("editor defaults");
         assert_eq!(defaults["searchCaseSensitive"], false);
@@ -459,6 +487,7 @@ mod tests {
         assert_eq!(defaults["searchWrap"], true);
         assert_eq!(defaults["searchIncludeIgnored"], false);
         assert_eq!(defaults["searchOnType"], true);
+        assert_eq!(defaults["searchSeedFromCursor"], "always");
     }
 
     #[test]

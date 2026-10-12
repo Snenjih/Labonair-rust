@@ -63,6 +63,36 @@ impl SearchOptions {
     }
 }
 
+/// Return the identifier-style word at or immediately before a Unicode
+/// scalar column. Letters, numbers, and underscores form words.
+pub fn word_at_cursor(line: &str, column: usize) -> Option<String> {
+    let characters = line.chars().collect::<Vec<_>>();
+    let column = column.min(characters.len());
+    let is_word = |character: char| character.is_alphanumeric() || character == '_';
+    let index = if characters
+        .get(column)
+        .is_some_and(|character| is_word(*character))
+    {
+        column
+    } else {
+        column.checked_sub(1).filter(|index| {
+            characters
+                .get(*index)
+                .is_some_and(|character| is_word(*character))
+        })?
+    };
+
+    let mut start = index;
+    while start > 0 && is_word(characters[start - 1]) {
+        start -= 1;
+    }
+    let mut end = index + 1;
+    while end < characters.len() && is_word(characters[end]) {
+        end += 1;
+    }
+    Some(characters[start..end].iter().collect())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SearchQuery {
     pub text: String,
@@ -907,6 +937,16 @@ mod tests {
             },
         );
         assert_eq!(find_all(&source, &bar).len(), 1);
+    }
+
+    #[test]
+    fn word_at_cursor_uses_unicode_scalar_columns_and_identifier_characters() {
+        assert_eq!(word_at_cursor("alpha beta", 2).as_deref(), Some("alpha"));
+        assert_eq!(word_at_cursor("alpha beta", 5).as_deref(), Some("alpha"));
+        assert_eq!(word_at_cursor("alpha beta", 6).as_deref(), Some("beta"));
+        assert_eq!(word_at_cursor("café_2 λ", 3).as_deref(), Some("café_2"));
+        assert_eq!(word_at_cursor("...", 2), None);
+        assert_eq!(word_at_cursor("", 0), None);
     }
 
     #[test]

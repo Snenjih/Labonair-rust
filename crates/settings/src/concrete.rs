@@ -15,7 +15,7 @@ use labonair_settings_content::{
         EditorContent, EditorCursorStyle, EditorDiagnosticMaxSeverity, EditorDocumentColorMode,
         EditorMinimapCurrentLineHighlight, EditorMinimapDisplayIn, EditorMinimapThumb,
         EditorMinimapThumbBorder, EditorMinimapVisibility, EditorModalMode,
-        EditorScrollbarVisibility,
+        EditorScrollbarVisibility, SearchSeedBehavior,
     },
     file_manager::{default_sftp_columns, FileManagerContent, SftpColumn},
     general::{GeneralContent, StartupTab, ThemePref},
@@ -403,6 +403,10 @@ impl EditorSettings {
 
     pub fn search_on_type(&self) -> bool {
         self.0.search_on_type.unwrap_or(true)
+    }
+
+    pub fn search_seed_from_cursor(&self) -> SearchSeedBehavior {
+        self.0.search_seed_from_cursor.unwrap_or_default()
     }
 
     /// Syntax colour-scheme slug.
@@ -999,6 +1003,10 @@ mod tests {
         assert!(defaults.search_wrap());
         assert!(!defaults.search_include_ignored());
         assert!(defaults.search_on_type());
+        assert_eq!(
+            defaults.search_seed_from_cursor(),
+            SearchSeedBehavior::Always
+        );
 
         let mut content = SettingsContent::default();
         content.editor.search_case_sensitive = Some(true);
@@ -1008,6 +1016,7 @@ mod tests {
         content.editor.search_wrap = Some(false);
         content.editor.search_include_ignored = Some(true);
         content.editor.search_on_type = Some(false);
+        content.editor.search_seed_from_cursor = Some(SearchSeedBehavior::Selection);
         let settings = EditorSettings::from_settings(&content);
         assert!(settings.search_case_sensitive());
         assert!(settings.search_smart_case());
@@ -1016,6 +1025,10 @@ mod tests {
         assert!(!settings.search_wrap());
         assert!(settings.search_include_ignored());
         assert!(!settings.search_on_type());
+        assert_eq!(
+            settings.search_seed_from_cursor(),
+            SearchSeedBehavior::Selection
+        );
     }
 
     #[test]

@@ -464,7 +464,8 @@ const FILE_GROUPS: &[Group] = &[
             "searchRegex",
             "searchWrap",
             "searchIncludeIgnored",
-            "searchOnType"
+            "searchOnType",
+            "searchSeedFromCursor"
         ),
     ),
     (

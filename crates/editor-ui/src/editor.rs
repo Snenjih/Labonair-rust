@@ -34,7 +34,7 @@ use labonair_settings::content::editor::EditorModalMode;
 use labonair_settings::content::editor::{
     EditorDiagnosticMaxSeverity, EditorDocumentColorMode, EditorMinimapCurrentLineHighlight,
     EditorMinimapDisplayIn, EditorMinimapThumb, EditorMinimapThumbBorder, EditorMinimapVisibility,
-    EditorScrollbarVisibility,
+    EditorScrollbarVisibility, SearchSeedBehavior,
 };
 use labonair_settings::{EditorSettings, Settings as _, SettingsStore};
 
@@ -50,10 +50,10 @@ use labonair_editor::{
     lifecycle::{
         FileCapabilities, FileLifecycleEvent, FileState, LineEnding, ReloadDecision, SaveIntent,
     },
-    next_match_with_wrap, Anchor, AnchorAffinity, CancellationToken, DisplayConfig, DisplayMap,
-    DisplayRowKind, DisplaySnapshot, Document, DocumentColor, DocumentColorValue, DocumentVersion,
-    Edit, EditorSessionId, EditorSessionSnapshot, EditorViewSession, FoldRange, FoldingRange,
-    GitDecorationProvider, GitDecorationRequest, GitDiscardPreview, GitEditorCommand,
+    next_match_with_wrap, word_at_cursor, Anchor, AnchorAffinity, CancellationToken, DisplayConfig,
+    DisplayMap, DisplayRowKind, DisplaySnapshot, Document, DocumentColor, DocumentColorValue,
+    DocumentVersion, Edit, EditorSessionId, EditorSessionSnapshot, EditorViewSession, FoldRange,
+    FoldingRange, GitDecorationProvider, GitDecorationRequest, GitDiscardPreview, GitEditorCommand,
     GitGutterError, GitGutterSnapshot, GitHunkAction, GitHunkActionKind, GitHunkStatus, Helix,
     HelixKey, HelixMode, HunkActionSink, InlayHint, InlayHintKind, KillRing, Language, LanguageId,
     LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceRequest,
@@ -3985,9 +3985,19 @@ impl EditorView {
 
     /// A one-line pre-fill for the search overlay (current selection).
     pub fn search_seed(&self) -> Option<String> {
-        self.doc
+        let selection = self
+            .doc
             .selected_text()
-            .filter(|s| !s.is_empty() && !s.contains('\n'))
+            .filter(|s| !s.is_empty() && !s.contains('\n'));
+        match self.prefs.search_seed_from_cursor() {
+            SearchSeedBehavior::Always => selection.or_else(|| {
+                let cursor = self.doc.cursor;
+                let line = self.doc.snapshot().line(cursor.line);
+                word_at_cursor(&line, cursor.column)
+            }),
+            SearchSeedBehavior::Selection => selection,
+            SearchSeedBehavior::Never => None,
+        }
     }
 
     fn ensure_buffer_search_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {

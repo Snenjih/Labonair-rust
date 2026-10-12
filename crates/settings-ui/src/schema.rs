@@ -1103,6 +1103,17 @@ pub fn all_fields() -> Vec<AnyField> {
             "Project search: search as you type",
             "Update project results while typing; turn off to search with Enter."
         ),
+        field!(
+            editor.search_seed_from_cursor,
+            "searchSeedFromCursor",
+            Select(&[
+                ("always", "Always"),
+                ("selection", "Selection"),
+                ("never", "Never")
+            ]),
+            "Search: seed from buffer",
+            "Choose whether a new search uses the selected text or word under the cursor."
+        ),
         // ── file_manager ────────────────────────────────────────────────
         field!(
             file_manager.explorer_show_hidden_by_default,
