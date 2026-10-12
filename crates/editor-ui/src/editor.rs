@@ -925,6 +925,31 @@ fn diagnostic_error_warning_counts(diagnostics: &[labonair_editor::Diagnostic]) 
         })
 }
 
+fn diagnostic_menu_labels(
+    diagnostic: &labonair_editor::Diagnostic,
+    snapshot: &BufferSnapshot,
+) -> (String, String) {
+    use labonair_editor::language_services::DiagnosticSeverity;
+
+    let position = diagnostic.range.start.to_position(snapshot);
+    let severity = match diagnostic.severity {
+        DiagnosticSeverity::Error => "Error",
+        DiagnosticSeverity::Warning => "Warning",
+        DiagnosticSeverity::Information => "Information",
+        DiagnosticSeverity::Hint => "Hint",
+    };
+    let label = format!("{}:{} · {severity}", position.line + 1, position.column + 1);
+    let detail = diagnostic
+        .code
+        .as_deref()
+        .map(|code| format!("{code}: {}", diagnostic.message))
+        .unwrap_or_else(|| diagnostic.message.clone())
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    (label, detail)
+}
+
 fn completion_kind_label(kind: labonair_editor::CompletionKind) -> &'static str {
     match kind {
         labonair_editor::CompletionKind::Keyword => "keyword",
@@ -966,6 +991,7 @@ pub struct EditorView {
     selection_menu_anchor: Option<Point<Pixels>>,
     editor_controls_anchor: Option<Point<Pixels>>,
     language_menu_anchor: Option<Point<Pixels>>,
+    diagnostics_menu_anchor: Option<Point<Pixels>>,
     language_service_menu_anchor: Option<Point<Pixels>>,
     language_list_state: ListState,
     line_ending_menu_anchor: Option<Point<Pixels>>,
@@ -1228,6 +1254,7 @@ impl EditorView {
             selection_menu_anchor: None,
             editor_controls_anchor: None,
             language_menu_anchor: None,
+            diagnostics_menu_anchor: None,
             language_service_menu_anchor: None,
             language_list_state: ListState::new(Language::ALL.len(), ListAlignment::Top, px(32.0)),
             line_ending_menu_anchor: None,
@@ -1980,6 +2007,7 @@ impl EditorView {
         self.language_service_state
             .set_document_generation(version, generation);
         self.diagnostics_revision = None;
+        self.diagnostics_menu_anchor = None;
         self.completion_visible = false;
         self.completion_request = None;
         self.completion_selected = 0;
@@ -4028,6 +4056,7 @@ impl EditorView {
         self.line_ending_menu_anchor = None;
         self.encoding_menu_anchor = None;
         self.editor_controls_anchor = None;
+        self.diagnostics_menu_anchor = None;
         self.language_service_menu_anchor = None;
         self.format_on_save_in_flight = false;
         self.save_intent_after_format = None;
@@ -4143,6 +4172,7 @@ impl EditorView {
         self.line_ending_menu_anchor = None;
         self.encoding_menu_anchor = None;
         self.editor_controls_anchor = None;
+        self.diagnostics_menu_anchor = None;
         self.language_service_menu_anchor = None;
         self.format_on_save_in_flight = false;
         self.save_intent_after_format = None;
@@ -6648,6 +6678,68 @@ impl EditorView {
         Some(popover_menu(anchor, palette, dismiss, items))
     }
 
+    fn render_diagnostics_menu(
+        &self,
+        palette: Palette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let anchor = self.diagnostics_menu_anchor?;
+        if !self.diagnostics_enabled() {
+            return None;
+        }
+        let snapshot = self.doc.snapshot();
+        if self.diagnostics_revision != Some(snapshot.revision()) {
+            return None;
+        }
+
+        let mut diagnostics = self.language_service_state.snapshot().diagnostics;
+        diagnostics.sort_by_key(|diagnostic| {
+            let position = diagnostic.range.start.to_position(&snapshot);
+            (position.line, position.column, diagnostic.severity)
+        });
+        let total = diagnostics.len();
+        let editor = cx.entity();
+        let mut items = vec![MenuItem::label(format!("{total} document diagnostics"))];
+        if total == 0 {
+            items.push(MenuItem::label("No diagnostics for the current document."));
+        } else {
+            for (index, diagnostic) in diagnostics.into_iter().take(100).enumerate() {
+                let (label, detail) = diagnostic_menu_labels(&diagnostic, &snapshot);
+                let item_editor = editor.clone();
+                items.push(
+                    MenuItem::new(format!("editor-diagnostic-{index}"), label)
+                        .detail(detail)
+                        .on_click(move |_, _window, app| {
+                            item_editor.update(app, |this, cx| {
+                                this.diagnostics_menu_anchor = None;
+                                let snapshot = this.doc.snapshot();
+                                if this.diagnostics_revision != Some(snapshot.revision()) {
+                                    return;
+                                }
+                                let position = diagnostic.range.start.to_position(&snapshot);
+                                this.doc.set_caret(position, false);
+                                this.ensure_cursor_visible(cx);
+                                cx.emit(EditorEvent::Changed);
+                                cx.notify();
+                            });
+                        }),
+                );
+            }
+            if total > 100 {
+                items.push(MenuItem::label(format!("Showing 100 of {total}")));
+            }
+        }
+
+        let dismiss_editor = editor;
+        let dismiss = move |_window: &mut Window, app: &mut App| {
+            dismiss_editor.update(app, |this, cx| {
+                this.diagnostics_menu_anchor = None;
+                cx.notify();
+            });
+        };
+        Some(popover_menu(anchor, palette, dismiss, items))
+    }
+
     /// Render the file-lifecycle state without putting non-text content into
     /// the editable buffer. Binary, oversized, missing and failed loads use a
     /// dedicated status surface; read-only text remains visible with editing
@@ -7337,9 +7429,17 @@ impl EditorView {
                 )
                 .child(SharedString::from(label))
                 .tooltip(move |window, cx| Tooltip::new(tooltip).build(window, cx))
-                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                    this.show_diagnostics(cx);
-                })),
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, event: &MouseDownEvent, _window, cx| {
+                        this.diagnostics_menu_anchor = Some(Point {
+                            x: event.position.x,
+                            y: event.position.y + px(4.0),
+                        });
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                ),
             );
         }
         let file_format = match self.doc.file_state() {
@@ -9872,6 +9972,7 @@ impl Render for EditorView {
             .children(file_status)
             .children(self.render_language_service_status(cx))
             .children(self.render_language_service_menu(ui_palette, cx))
+            .children(self.render_diagnostics_menu(ui_palette, cx))
             .child(buffer_surface)
             .children(self.render_selection_menu(ui_palette, cx))
             .children(self.render_editor_controls_menu(ui_palette, cx))
@@ -11623,6 +11724,34 @@ mod tests {
         .collect::<Vec<_>>();
 
         assert_eq!(diagnostic_error_warning_counts(&diagnostics), (1, 1));
+    }
+
+    #[test]
+    fn diagnostic_menu_labels_use_editor_columns_and_include_codes() {
+        use labonair_editor::language_services::DiagnosticSeverity as Severity;
+
+        let snapshot = labonair_editor::EditorBuffer::from_text("aλb").snapshot();
+        let diagnostic = labonair_editor::Diagnostic {
+            range: LspRange {
+                start: LspPosition {
+                    line: 0,
+                    character: 2,
+                },
+                end: LspPosition {
+                    line: 0,
+                    character: 3,
+                },
+            },
+            severity: Severity::Error,
+            message: "invalid token".into(),
+            source: labonair_editor::LanguageServerId::new("test-lsp"),
+            code: Some("E101".into()),
+        };
+
+        assert_eq!(
+            diagnostic_menu_labels(&diagnostic, &snapshot),
+            ("1:3 · Error".into(), "E101: invalid token".into())
+        );
     }
 
     #[test]
