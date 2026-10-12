@@ -795,13 +795,15 @@ impl CommandProvider for EditorCommandProvider {
             .with_contexts(&[CommandContext::Editor])
             .with_default_binding("shift-f8", Some(CommandContext::Editor)),
             CommandDescriptor::new(CommandId::EditorNextGitChange, "Next Git Change", "Editor")
-                .with_contexts(&[CommandContext::Editor]),
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("cmd-f8", Some(CommandContext::Editor)),
             CommandDescriptor::new(
                 CommandId::EditorPreviousGitChange,
                 "Previous Git Change",
                 "Editor",
             )
-            .with_contexts(&[CommandContext::Editor]),
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("cmd-shift-f8", Some(CommandContext::Editor)),
             CommandDescriptor::new(
                 CommandId::EditorOpenProjectDiff,
                 "Open Project Diff",
@@ -944,6 +946,27 @@ mod tests {
                 .iter()
                 .find(|command| command.id == id)
                 .expect("diagnostic navigation descriptor");
+            assert_eq!(command.default_bindings.len(), 1);
+            assert_eq!(command.default_bindings[0].keystrokes, binding);
+            assert_eq!(
+                command.default_bindings[0].context,
+                Some(CommandContext::Editor)
+            );
+            assert!(route_for_command(id).is_some());
+        }
+    }
+
+    #[test]
+    fn git_change_navigation_commands_use_the_standard_editor_bindings() {
+        let commands = EditorCommandProvider.commands();
+        for (id, binding) in [
+            (CommandId::EditorNextGitChange, "cmd-f8"),
+            (CommandId::EditorPreviousGitChange, "cmd-shift-f8"),
+        ] {
+            let command = commands
+                .iter()
+                .find(|command| command.id == id)
+                .expect("Git change navigation descriptor");
             assert_eq!(command.default_bindings.len(), 1);
             assert_eq!(command.default_bindings[0].keystrokes, binding);
             assert_eq!(
