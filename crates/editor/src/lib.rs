@@ -23,6 +23,7 @@ pub mod language;
 pub mod language_services;
 pub mod lifecycle;
 pub mod lsp_process;
+pub mod multibuffer;
 pub mod navigation;
 pub mod policy;
 pub mod runtime;
@@ -85,6 +86,10 @@ pub use lsp_process::{
     LocalLanguageServerConfig, LocalLanguageServiceEditRequest, LocalLanguageServiceEditResult,
     LocalLanguageServiceProcess, LocalLanguageServiceRequest, ProcessLifecycleState,
     ProcessServerConfig, ProjectRootPolicy,
+};
+pub use multibuffer::{
+    ExcerptId, MultiBuffer, MultiBufferEdit, MultiBufferError, MultiBufferExcerptSnapshot,
+    MultiBufferFileSnapshot, MultiBufferLocation, MultiBufferSnapshot, MultiBufferSource,
 };
 pub use navigation::{NavigationHistory, NavigationLocation};
 pub use policy::{apply_text_policies, SavePolicy};
