@@ -1312,6 +1312,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Show a colored marker when an open editor file has Git changes."
         ),
         field!(
+            workspace.show_editor_tab_diagnostics,
+            "showEditorTabDiagnostics",
+            Switch,
+            "Show diagnostics in editor tabs",
+            "Show an error or warning marker when an open editor file has diagnostics."
+        ),
+        field!(
             workspace.confirm_quit_with_active_sessions,
             "confirmQuitWithActiveSessions",
             Switch,
@@ -1426,6 +1433,7 @@ mod tests {
             "workspace.showNavHistoryButtons",
             "workspace.showTabBarButtons",
             "workspace.showEditorTabGitStatus",
+            "workspace.showEditorTabDiagnostics",
         ] {
             let field = fields
                 .iter()

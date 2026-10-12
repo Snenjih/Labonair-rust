@@ -38,7 +38,7 @@ pub struct TabItemBuilder {
     selected: bool,
     disabled: bool,
     dirty: bool,
-    status_color: Option<Hsla>,
+    status_colors: Vec<Hsla>,
     busy: bool,
     peek: bool,
     pinned: bool,
@@ -65,7 +65,7 @@ pub fn tab_item(
         selected: false,
         disabled: false,
         dirty: false,
-        status_color: None,
+        status_colors: Vec::new(),
         busy: false,
         peek: false,
         pinned: false,
@@ -104,7 +104,17 @@ impl TabItemBuilder {
 
     /// Append a small owner-colored state marker after the tab title.
     pub fn status_color(mut self, color: Option<Hsla>) -> Self {
-        self.status_color = color;
+        if let Some(color) = color {
+            self.status_colors.push(color);
+        }
+        self
+    }
+
+    /// Append another small owner-colored state marker after existing markers.
+    pub fn status_marker(mut self, color: Option<Hsla>) -> Self {
+        if let Some(color) = color {
+            self.status_colors.push(color);
+        }
         self
     }
 
@@ -167,7 +177,7 @@ impl TabItemBuilder {
             selected,
             disabled,
             dirty,
-            status_color,
+            status_colors,
             busy,
             peek,
             pinned,
@@ -253,7 +263,7 @@ impl TabItemBuilder {
         if dirty {
             row = row.child(indicator(IndicatorSize::Xs, palette.fg.opacity(0.7)));
         }
-        if let Some(color) = status_color {
+        for color in status_colors {
             row = row.child(indicator(IndicatorSize::Xs, color));
         }
         if busy {

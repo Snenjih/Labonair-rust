@@ -392,6 +392,7 @@ fn workspace_from(p: &Preferences) -> WorkspaceContent {
         show_nav_history_buttons: WorkspaceContent::defaults().show_nav_history_buttons,
         show_tab_bar_buttons: WorkspaceContent::defaults().show_tab_bar_buttons,
         show_editor_tab_git_status: WorkspaceContent::defaults().show_editor_tab_git_status,
+        show_editor_tab_diagnostics: WorkspaceContent::defaults().show_editor_tab_diagnostics,
         // No v1 `Preferences` equivalent — inherits the shipped default.
         confirm_quit_with_active_sessions: WorkspaceContent::defaults()
             .confirm_quit_with_active_sessions,

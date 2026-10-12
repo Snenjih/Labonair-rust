@@ -204,6 +204,7 @@
     "showNavHistoryButtons": true,
     "showTabBarButtons": true,
     "showEditorTabGitStatus": true,
+    "showEditorTabDiagnostics": false,
     // Block the first quit attempt while a terminal/SSH shell is running.
     "confirmQuitWithActiveSessions": true
   },

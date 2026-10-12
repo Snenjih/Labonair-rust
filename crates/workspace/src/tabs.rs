@@ -33,6 +33,13 @@ pub enum TabGitStatus {
     Deleted,
 }
 
+/// Highest visible diagnostic severity for an editor tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabDiagnosticStatus {
+    Error,
+    Warning,
+}
+
 /// The category of a tab. Content views for most kinds arrive in later phases;
 /// the model already covers them so the tab bar and store are stable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -154,6 +161,8 @@ pub struct Tab {
     pub pinned: bool,
     /// Current editor file Git status, when its gutter snapshot is current.
     pub git_status: Option<TabGitStatus>,
+    /// Highest error/warning severity reported for this editor file.
+    pub diagnostic_status: Option<TabDiagnosticStatus>,
     pub data: TabData,
     /// The Space this tab belongs to (T20-008 Spaces). Set once, from
     /// [`TabStore::current_space`], at creation time — there is no such thing
@@ -299,6 +308,7 @@ impl TabStore {
             peek: false,
             pinned: false,
             git_status: None,
+            diagnostic_status: None,
             data,
             space_id: self.current_space,
         });
@@ -530,6 +540,23 @@ impl TabStore {
             return;
         }
         tab.git_status = status;
+        cx.notify();
+    }
+
+    /// Update the diagnostic marker for an editor tab.
+    pub fn set_diagnostic_status(
+        &mut self,
+        id: u64,
+        status: Option<TabDiagnosticStatus>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+            return;
+        };
+        if tab.diagnostic_status == status {
+            return;
+        }
+        tab.diagnostic_status = status;
         cx.notify();
     }
 

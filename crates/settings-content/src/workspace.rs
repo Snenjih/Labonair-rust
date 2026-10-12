@@ -40,6 +40,7 @@ pub struct WorkspaceContent {
     pub show_nav_history_buttons: Option<bool>,
     pub show_tab_bar_buttons: Option<bool>,
     pub show_editor_tab_git_status: Option<bool>,
+    pub show_editor_tab_diagnostics: Option<bool>,
 
     // ── Quit confirmation ──────────────────────────────────────────────
     /// Block the first quit attempt (and show a notification) while a
@@ -60,6 +61,7 @@ impl WorkspaceContent {
             show_nav_history_buttons: Some(true),
             show_tab_bar_buttons: Some(true),
             show_editor_tab_git_status: Some(true),
+            show_editor_tab_diagnostics: Some(false),
             confirm_quit_with_active_sessions: Some(true),
         }
     }
@@ -75,15 +77,18 @@ mod tests {
         assert_eq!(defaults["showNavHistoryButtons"], true);
         assert_eq!(defaults["showTabBarButtons"], true);
         assert_eq!(defaults["showEditorTabGitStatus"], true);
+        assert_eq!(defaults["showEditorTabDiagnostics"], false);
 
         let parsed: WorkspaceContent = serde_json::from_value(serde_json::json!({
             "showNavHistoryButtons": false,
             "showTabBarButtons": false,
-            "showEditorTabGitStatus": false
+            "showEditorTabGitStatus": false,
+            "showEditorTabDiagnostics": true
         }))
         .expect("tab-bar settings");
         assert_eq!(parsed.show_nav_history_buttons, Some(false));
         assert_eq!(parsed.show_tab_bar_buttons, Some(false));
         assert_eq!(parsed.show_editor_tab_git_status, Some(false));
+        assert_eq!(parsed.show_editor_tab_diagnostics, Some(true));
     }
 }
