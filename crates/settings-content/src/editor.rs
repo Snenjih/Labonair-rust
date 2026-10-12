@@ -298,6 +298,14 @@ pub struct EditorContent {
     pub editor_toolbar_code_actions: Option<bool>,
     pub editor_autocomplete_debounce_ms: Option<u32>,
     pub editor_max_file_size_mb: Option<u32>,
+    /// Defaults and behavior for the editor's search surfaces.
+    pub search_case_sensitive: Option<bool>,
+    pub search_smart_case: Option<bool>,
+    pub search_whole_word: Option<bool>,
+    pub search_regex: Option<bool>,
+    pub search_wrap: Option<bool>,
+    pub search_include_ignored: Option<bool>,
+    pub search_on_type: Option<bool>,
     #[serde(rename = "editorMode")]
     pub editor_modal_mode: Option<EditorModalMode>,
     /// Legacy Vim toggle read when `editorMode` is absent.
@@ -387,6 +395,13 @@ impl EditorContent {
             editor_toolbar_code_actions: Some(false),
             editor_autocomplete_debounce_ms: Some(350),
             editor_max_file_size_mb: Some(10),
+            search_case_sensitive: Some(false),
+            search_smart_case: Some(false),
+            search_whole_word: Some(false),
+            search_regex: Some(false),
+            search_wrap: Some(true),
+            search_include_ignored: Some(false),
+            search_on_type: Some(true),
             editor_modal_mode: Some(EditorModalMode::Normal),
             editor_vim_mode: Some(false),
             editor_theme: Some("atomone".to_string()),
@@ -414,6 +429,36 @@ mod tests {
     fn git_word_diff_uses_the_canonical_camel_case_key() {
         let value = serde_json::to_value(EditorContent::defaults()).expect("editor defaults");
         assert_eq!(value["editorGitWordDiff"], true);
+    }
+
+    #[test]
+    fn search_defaults_parse_and_serialize_with_canonical_names() {
+        let parsed: EditorContent = serde_json::from_value(serde_json::json!({
+            "searchCaseSensitive": true,
+            "searchSmartCase": true,
+            "searchWholeWord": true,
+            "searchRegex": true,
+            "searchWrap": false,
+            "searchIncludeIgnored": true,
+            "searchOnType": false
+        }))
+        .expect("search settings");
+        assert_eq!(parsed.search_case_sensitive, Some(true));
+        assert_eq!(parsed.search_smart_case, Some(true));
+        assert_eq!(parsed.search_whole_word, Some(true));
+        assert_eq!(parsed.search_regex, Some(true));
+        assert_eq!(parsed.search_wrap, Some(false));
+        assert_eq!(parsed.search_include_ignored, Some(true));
+        assert_eq!(parsed.search_on_type, Some(false));
+
+        let defaults = serde_json::to_value(EditorContent::defaults()).expect("editor defaults");
+        assert_eq!(defaults["searchCaseSensitive"], false);
+        assert_eq!(defaults["searchSmartCase"], false);
+        assert_eq!(defaults["searchWholeWord"], false);
+        assert_eq!(defaults["searchRegex"], false);
+        assert_eq!(defaults["searchWrap"], true);
+        assert_eq!(defaults["searchIncludeIgnored"], false);
+        assert_eq!(defaults["searchOnType"], true);
     }
 
     #[test]

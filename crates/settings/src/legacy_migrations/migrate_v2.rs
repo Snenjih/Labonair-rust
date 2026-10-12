@@ -445,6 +445,7 @@ fn fast_scroll_modifier(v: &str) -> terminal::FastScrollModifier {
 /// `hlsearch`/`incsearch`/`smartcase` (which have no `Preferences`
 /// counterpart).
 fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
+    let defaults = EditorContent::defaults();
     if e.vim_mode != p.editor_vim_mode {
         log::debug!(
             "settings v1->v2: old 'editor'.vimMode ({}) disagrees with preferences.vimMode ({}); keeping preferences",
@@ -492,7 +493,7 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_diagnostics: Some(true),
         editor_diagnostics_max_severity: Some(EditorDiagnosticMaxSeverity::All),
         // No v1 equivalent — inherit the shipped document-color presentation.
-        editor_lsp_document_colors: EditorContent::defaults().editor_lsp_document_colors,
+        editor_lsp_document_colors: defaults.editor_lsp_document_colors,
         editor_error_lens: Some(false),
         editor_error_lens_delay_ms: Some(150),
         editor_error_lens_spacing: Some(4),
@@ -534,10 +535,17 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         vim_incsearch: Some(e.incsearch),
         vim_smartcase: Some(e.smartcase),
         // No v1 `Preferences` equivalent — inherits the shipped default.
-        editor_highlight_current_line: EditorContent::defaults().editor_highlight_current_line,
-        editor_cursor_blink: EditorContent::defaults().editor_cursor_blink,
-        editor_cursor_blink_interval_ms: EditorContent::defaults().editor_cursor_blink_interval_ms,
-        editor_cursor_style: EditorContent::defaults().editor_cursor_style,
+        editor_highlight_current_line: defaults.editor_highlight_current_line,
+        editor_cursor_blink: defaults.editor_cursor_blink,
+        editor_cursor_blink_interval_ms: defaults.editor_cursor_blink_interval_ms,
+        editor_cursor_style: defaults.editor_cursor_style,
+        search_case_sensitive: defaults.search_case_sensitive,
+        search_smart_case: defaults.search_smart_case,
+        search_whole_word: defaults.search_whole_word,
+        search_regex: defaults.search_regex,
+        search_wrap: defaults.search_wrap,
+        search_include_ignored: defaults.search_include_ignored,
+        search_on_type: defaults.search_on_type,
     }
 }
 

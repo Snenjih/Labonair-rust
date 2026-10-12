@@ -22,6 +22,7 @@ use labonair_editor::{
     ProjectReplaceStatus, ProjectSearchOptions, ProjectSearchQuery, ProjectSearchStatus,
     SearchCaseMode, SearchError, SearchOptions, SearchQuery, SearchScope,
 };
+use labonair_settings::{EditorSettings, Settings as _};
 use labonair_ui_kit::{
     button, button_disabled, search_field, search_input, text_field, text_field_surface,
     text_input, ButtonSize, ButtonVariant, InputEvent, InputState, ListItem, Palette,
@@ -77,7 +78,9 @@ pub struct SearchOverlay {
     target: SearchTarget,
     scope: SearchScope,
     options: SearchOptions,
+    search_on_type: bool,
     include_ignored: bool,
+    project_query_confirmed: bool,
     count: (usize, usize),
     error: Option<SearchError>,
     _input_sub: Subscription,
@@ -91,11 +94,34 @@ impl SearchOverlay {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let search_settings = EditorSettings::try_get(cx).cloned();
         let target = workspace.read(cx).active_search_target(cx);
         let seed = workspace
             .read(cx)
             .search_seed(cx)
             .unwrap_or_else(last_query);
+        let options = search_settings
+            .as_ref()
+            .map(|settings| SearchOptions {
+                case_sensitive: settings.search_case_sensitive(),
+                smart_case: settings.search_smart_case(),
+                whole_word: settings.search_whole_word(),
+                regex: settings.search_regex(),
+                wrap: settings.search_wrap(),
+                ..SearchOptions::default()
+            })
+            .unwrap_or_else(|| SearchOptions {
+                smart_case: false,
+                ..SearchOptions::default()
+            });
+        let search_on_type = search_settings
+            .as_ref()
+            .map(EditorSettings::search_on_type)
+            .unwrap_or(true);
+        let include_ignored = search_settings
+            .as_ref()
+            .map(EditorSettings::search_include_ignored)
+            .unwrap_or(false);
 
         let input = cx.new(|cx| {
             text_field(window, cx)
@@ -139,8 +165,10 @@ impl SearchOverlay {
             replace_input,
             target,
             scope: SearchScope::CurrentFile,
-            options: SearchOptions::default(),
-            include_ignored: false,
+            options,
+            search_on_type,
+            include_ignored,
+            project_query_confirmed: false,
             count: (0, 0),
             error: None,
             _input_sub: input_sub,
@@ -156,7 +184,11 @@ impl SearchOverlay {
         let text = self.input.read(cx).value().to_string();
         save_last_query(&text);
         if self.target == SearchTarget::Editor && self.scope == SearchScope::Project {
-            self.run_project_search(text, cx);
+            if self.search_on_type {
+                self.run_project_search(text, cx);
+            } else {
+                self.clear_project_search(cx);
+            }
             return;
         }
         let query = SearchQuery::new(text, self.options);
@@ -185,8 +217,28 @@ impl SearchOverlay {
         let _ = self
             .workspace
             .update(cx, |workspace, cx| workspace.project_search_set(query, cx));
+        self.project_query_confirmed = !self.input.read(cx).value().is_empty();
+        self.count = (0, 0);
         self.error = None;
         cx.notify();
+    }
+
+    fn clear_project_search(&mut self, cx: &mut Context<Self>) {
+        let mut options = ProjectSearchOptions::from_search_options(self.options);
+        options.include_ignored = self.include_ignored;
+        let query = ProjectSearchQuery::new("", options, ProjectSearchQuery::DEFAULT_MAX_RESULTS);
+        let _ = self
+            .workspace
+            .update(cx, |workspace, cx| workspace.project_search_set(query, cx));
+        self.project_query_confirmed = false;
+        self.count = (0, 0);
+        self.error = None;
+        cx.notify();
+    }
+
+    fn confirm_project_search(&mut self, cx: &mut Context<Self>) {
+        let text = self.input.read(cx).value().to_string();
+        self.run_project_search(text, cx);
     }
 
     fn set_scope(&mut self, scope: SearchScope, cx: &mut Context<Self>) {
@@ -392,6 +444,11 @@ impl Render for SearchOverlay {
         let project_loading = project_snapshot
             .as_ref()
             .is_some_and(|snapshot| snapshot.status == ProjectSearchStatus::Loading);
+        let project_query_pending = editor
+            && self.scope == SearchScope::Project
+            && !self.search_on_type
+            && !self.project_query_confirmed
+            && !self.input.read(cx).value().is_empty();
         let project_truncated = project_snapshot
             .as_ref()
             .is_some_and(|snapshot| snapshot.truncated);
@@ -665,52 +722,66 @@ impl Render for SearchOverlay {
                                     )),
                                 )
                             })
-                            .when(self.scope == SearchScope::CurrentFile, |d| {
-                                d.child(
-                                    button(
-                                        "search-regex",
-                                        palette,
-                                        ButtonVariant::Subtle,
-                                        ButtonSize::Xs,
+                            .when(
+                                matches!(
+                                    self.scope,
+                                    SearchScope::CurrentFile | SearchScope::Project
+                                ),
+                                |d| {
+                                    d.child(
+                                        button(
+                                            "search-regex",
+                                            palette,
+                                            ButtonVariant::Subtle,
+                                            ButtonSize::Xs,
+                                        )
+                                        .child(".*")
+                                        .when(self.options.regex, |d| {
+                                            d.bg(palette.selected_fill)
+                                                .text_color(palette.selected_accent)
+                                        })
+                                        .on_click(
+                                            cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                                this.toggle_option(
+                                                    |options| options.regex = !options.regex,
+                                                    cx,
+                                                )
+                                            }),
+                                        ),
                                     )
-                                    .child(".*")
-                                    .when(self.options.regex, |d| {
-                                        d.bg(palette.selected_fill)
-                                            .text_color(palette.selected_accent)
-                                    })
-                                    .on_click(cx.listener(
-                                        |this, _: &ClickEvent, _w, cx| {
-                                            this.toggle_option(
-                                                |options| options.regex = !options.regex,
-                                                cx,
-                                            )
-                                        },
-                                    )),
-                                )
-                            })
-                            .when(self.scope == SearchScope::CurrentFile, |d| {
-                                d.child(
-                                    button(
-                                        "search-word",
-                                        palette,
-                                        ButtonVariant::Subtle,
-                                        ButtonSize::Xs,
+                                },
+                            )
+                            .when(
+                                matches!(
+                                    self.scope,
+                                    SearchScope::CurrentFile | SearchScope::Project
+                                ),
+                                |d| {
+                                    d.child(
+                                        button(
+                                            "search-word",
+                                            palette,
+                                            ButtonVariant::Subtle,
+                                            ButtonSize::Xs,
+                                        )
+                                        .child("Word")
+                                        .when(self.options.whole_word, |d| {
+                                            d.bg(palette.selected_fill)
+                                                .text_color(palette.selected_accent)
+                                        })
+                                        .on_click(
+                                            cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                                this.toggle_option(
+                                                    |options| {
+                                                        options.whole_word = !options.whole_word
+                                                    },
+                                                    cx,
+                                                )
+                                            }),
+                                        ),
                                     )
-                                    .child("Word")
-                                    .when(self.options.whole_word, |d| {
-                                        d.bg(palette.selected_fill)
-                                            .text_color(palette.selected_accent)
-                                    })
-                                    .on_click(cx.listener(
-                                        |this, _: &ClickEvent, _w, cx| {
-                                            this.toggle_option(
-                                                |options| options.whole_word = !options.whole_word,
-                                                cx,
-                                            )
-                                        },
-                                    )),
-                                )
-                            })
+                                },
+                            )
                             .when(self.scope == SearchScope::CurrentFile, |d| {
                                 d.child(
                                     button(
@@ -819,14 +890,28 @@ impl Render for SearchOverlay {
                                     .child("Searching project…"),
                             )
                         })
-                        .when(!project_loading && total == 0 && error.is_none(), |d| {
+                        .when(project_query_pending, |d| {
                             d.child(
                                 div()
                                     .text_xs()
                                     .text_color(palette.muted)
-                                    .child("No project results"),
+                                    .child("Press Enter to search"),
                             )
                         })
+                        .when(
+                            !project_query_pending
+                                && !project_loading
+                                && total == 0
+                                && error.is_none(),
+                            |d| {
+                                d.child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(palette.muted)
+                                        .child("No project results"),
+                                )
+                            },
+                        )
                         .when_some(project_rows, |d, rows| d.children(rows)),
                 )
                 .when(project_truncated, |d| {
@@ -899,7 +984,12 @@ impl Render for SearchOverlay {
                     && this.target == SearchTarget::Editor
                     && ev.keystroke.key == "enter"
                 {
-                    this.open_selected_project_result(window, cx);
+                    let search_focused = this.input.read(cx).focus_handle(cx).is_focused(window);
+                    if search_focused && !this.search_on_type {
+                        this.confirm_project_search(cx);
+                    } else {
+                        this.open_selected_project_result(window, cx);
+                    }
                     cx.stop_propagation();
                 } else if ev.keystroke.key == "enter" && ev.keystroke.modifiers.platform {
                     if ev.keystroke.modifiers.shift {

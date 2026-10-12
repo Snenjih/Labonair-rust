@@ -377,6 +377,34 @@ impl EditorSettings {
         self.0.vim_smartcase.unwrap_or(true)
     }
 
+    pub fn search_case_sensitive(&self) -> bool {
+        self.0.search_case_sensitive.unwrap_or(false)
+    }
+
+    pub fn search_smart_case(&self) -> bool {
+        self.0.search_smart_case.unwrap_or(false)
+    }
+
+    pub fn search_whole_word(&self) -> bool {
+        self.0.search_whole_word.unwrap_or(false)
+    }
+
+    pub fn search_regex(&self) -> bool {
+        self.0.search_regex.unwrap_or(false)
+    }
+
+    pub fn search_wrap(&self) -> bool {
+        self.0.search_wrap.unwrap_or(true)
+    }
+
+    pub fn search_include_ignored(&self) -> bool {
+        self.0.search_include_ignored.unwrap_or(false)
+    }
+
+    pub fn search_on_type(&self) -> bool {
+        self.0.search_on_type.unwrap_or(true)
+    }
+
     /// Syntax colour-scheme slug.
     pub fn editor_theme(&self) -> &str {
         self.0.editor_theme.as_deref().unwrap_or("atomone")
@@ -959,6 +987,35 @@ mod tests {
         content.editor.editor_git_word_diff = Some(false);
         let settings = EditorSettings::from_settings(&content);
         assert!(!settings.git_word_diff());
+    }
+
+    #[test]
+    fn editor_settings_reads_search_defaults_and_overrides() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(!defaults.search_case_sensitive());
+        assert!(!defaults.search_smart_case());
+        assert!(!defaults.search_whole_word());
+        assert!(!defaults.search_regex());
+        assert!(defaults.search_wrap());
+        assert!(!defaults.search_include_ignored());
+        assert!(defaults.search_on_type());
+
+        let mut content = SettingsContent::default();
+        content.editor.search_case_sensitive = Some(true);
+        content.editor.search_smart_case = Some(true);
+        content.editor.search_whole_word = Some(true);
+        content.editor.search_regex = Some(true);
+        content.editor.search_wrap = Some(false);
+        content.editor.search_include_ignored = Some(true);
+        content.editor.search_on_type = Some(false);
+        let settings = EditorSettings::from_settings(&content);
+        assert!(settings.search_case_sensitive());
+        assert!(settings.search_smart_case());
+        assert!(settings.search_whole_word());
+        assert!(settings.search_regex());
+        assert!(!settings.search_wrap());
+        assert!(settings.search_include_ignored());
+        assert!(!settings.search_on_type());
     }
 
     #[test]

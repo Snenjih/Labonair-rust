@@ -144,6 +144,13 @@
     "editorToolbarCodeActions": false,
     "editorAutocompleteDebounceMs": 350,
     "editorMaxFileSizeMb": 10,
+    "searchCaseSensitive": false,
+    "searchSmartCase": false,
+    "searchWholeWord": false,
+    "searchRegex": false,
+    "searchWrap": true,
+    "searchIncludeIgnored": false,
+    "searchOnType": true,
     "editorMode": "normal",
     "vimMode": false,
     // Syntax colour scheme slug; "auto" (not the default) follows the app theme.

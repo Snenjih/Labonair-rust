@@ -1054,6 +1054,55 @@ pub fn all_fields() -> Vec<AnyField> {
             "ms",
             "Only applies while the editor is focused."
         ),
+        field!(
+            editor.search_case_sensitive,
+            "searchCaseSensitive",
+            Switch,
+            "Search: case sensitive",
+            "Use case-sensitive matching for new searches."
+        ),
+        field!(
+            editor.search_smart_case,
+            "searchSmartCase",
+            Switch,
+            "Search: smart case",
+            "Match case when the query contains uppercase letters."
+        ),
+        field!(
+            editor.search_whole_word,
+            "searchWholeWord",
+            Switch,
+            "Search: whole word",
+            "Match complete words for new searches."
+        ),
+        field!(
+            editor.search_regex,
+            "searchRegex",
+            Switch,
+            "Search: regular expressions",
+            "Treat new search queries as regular expressions."
+        ),
+        field!(
+            editor.search_wrap,
+            "searchWrap",
+            Switch,
+            "Search: wrap around",
+            "Continue from the opposite end after reaching the last match."
+        ),
+        field!(
+            editor.search_include_ignored,
+            "searchIncludeIgnored",
+            Switch,
+            "Project search: include ignored files",
+            "Include files excluded by Git and ignore rules in project results."
+        ),
+        field!(
+            editor.search_on_type,
+            "searchOnType",
+            Switch,
+            "Project search: search as you type",
+            "Update project results while typing; turn off to search with Enter."
+        ),
         // ── file_manager ────────────────────────────────────────────────
         field!(
             file_manager.explorer_show_hidden_by_default,

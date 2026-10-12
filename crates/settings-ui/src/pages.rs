@@ -456,6 +456,18 @@ const LANGUAGE_GROUPS: &[Group] = &[(
 
 const FILE_GROUPS: &[Group] = &[
     (
+        "Search",
+        paths!("editor":
+            "searchCaseSensitive",
+            "searchSmartCase",
+            "searchWholeWord",
+            "searchRegex",
+            "searchWrap",
+            "searchIncludeIgnored",
+            "searchOnType"
+        ),
+    ),
+    (
         "Browsing",
         paths!("file_manager": "explorerShowHiddenByDefault"),
     ),
