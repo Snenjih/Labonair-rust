@@ -1149,6 +1149,16 @@ mod tests {
     }
 
     #[test]
+    fn editor_bracket_matching_defaults_on_and_can_be_disabled() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(defaults.bracket_matching());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_bracket_matching = Some(false);
+        assert!(!EditorSettings::from_settings(&content).bracket_matching());
+    }
+
+    #[test]
     fn editor_whitespace_map_accepts_one_character_and_falls_back_on_invalid_values() {
         let defaults = EditorSettings::from_settings(&SettingsContent::default());
         assert_eq!(defaults.whitespace_space_marker(), '•');

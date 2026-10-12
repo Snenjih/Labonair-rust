@@ -723,6 +723,45 @@ impl BufferSnapshot {
         line_end_without_terminator(&self.rope, line)
     }
 
+    /// Find the matching ASCII bracket in this snapshot without copying the
+    /// buffer's full text. The input and result are UTF-8 byte offsets.
+    pub fn matching_bracket(&self, offset: usize) -> Option<usize> {
+        if offset >= self.rope.len() {
+            return None;
+        }
+        let bracket_index = self.rope.byte_to_char_idx(offset);
+        if self.rope.char_to_byte_idx(bracket_index) != offset {
+            return None;
+        }
+        let bracket = self.rope.char(offset);
+        let (mate, direction) = match bracket {
+            '(' => (')', 1isize),
+            '[' => (']', 1),
+            '{' => ('}', 1),
+            ')' => ('(', -1),
+            ']' => ('[', -1),
+            '}' => ('{', -1),
+            _ => return None,
+        };
+        let mut depth = 0usize;
+        let mut index = bracket_index as isize + direction;
+        while index >= 0 && (index as usize) < self.rope.len_chars() {
+            let current_offset = self.rope.char_to_byte_idx(index as usize);
+            let current = self.rope.char(current_offset);
+            if current == bracket {
+                depth += 1;
+            }
+            if current == mate {
+                if depth == 0 {
+                    return Some(current_offset);
+                }
+                depth -= 1;
+            }
+            index += direction;
+        }
+        None
+    }
+
     /// Map a Unicode-scalar position into the snapshot's UTF-8 byte space.
     pub fn position_to_byte(&self, position: Position) -> usize {
         position_to_byte(&self.rope, clamp_position(&self.rope, position))
@@ -895,6 +934,18 @@ mod tests {
         let byte = buffer.position_to_byte(position);
         assert_eq!(byte, "é•".len());
         assert_eq!(buffer.byte_to_position(byte), position);
+    }
+
+    #[test]
+    fn snapshot_matches_brackets_in_rope_byte_offsets() {
+        let buffer = EditorBuffer::from_text("λ call([first, (second)])");
+        let snapshot = buffer.snapshot();
+        let open = snapshot.text().find('[').expect("opening bracket");
+        let close = snapshot.text().find(']').expect("closing bracket");
+        assert_eq!(snapshot.matching_bracket(open), Some(close));
+        assert_eq!(snapshot.matching_bracket(close), Some(open));
+        assert_eq!(snapshot.matching_bracket(1), None);
+        assert_eq!(snapshot.matching_bracket(snapshot.byte_len()), None);
     }
 
     #[test]

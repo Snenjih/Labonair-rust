@@ -11202,6 +11202,18 @@ impl Render for EditorView {
         let sel = self.doc.selection();
         let selections = self.doc.selection_set();
         let cursor = self.doc.cursor;
+        let bracket_pair_positions = if self.prefs.bracket_matching() {
+            matching_bracket_pair(&snapshot, snapshot.position_to_byte(cursor)).map(
+                |(first, second)| {
+                    [
+                        snapshot.byte_to_position(first),
+                        snapshot.byte_to_position(second),
+                    ]
+                },
+            )
+        } else {
+            None
+        };
         let gutter_width = self.gutter_width;
 
         // Syntax highlighting (T06-002): parse once per revision, keep only the
@@ -11508,6 +11520,24 @@ impl Render for EditorView {
             );
             let runs = full_line.then(|| self.syntax.line_runs(&snapshot, line));
             let mut highlights: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
+            for position in bracket_pair_positions
+                .into_iter()
+                .flatten()
+                .filter(|position| position.line == line)
+            {
+                if let Some(range) = projection.project_source_range(
+                    position.column,
+                    position.column.saturating_add(1),
+                ) {
+                    highlights.push((
+                        range,
+                        HighlightStyle {
+                            background_color: Some(accent.opacity(0.28)),
+                            ..Default::default()
+                        },
+                    ));
+                }
+            }
             let mut byte = 0usize;
             for run in runs.as_deref().unwrap_or_default() {
                 let len = run.text.len();
@@ -12238,6 +12268,21 @@ fn cursor_scroll_top(scroll_top: usize, line: usize, rows: usize, margin: usize)
     }
 }
 
+fn matching_bracket_pair(
+    snapshot: &BufferSnapshot,
+    cursor_offset: usize,
+) -> Option<(usize, usize)> {
+    for bracket_offset in [Some(cursor_offset), cursor_offset.checked_sub(1)]
+        .into_iter()
+        .flatten()
+    {
+        if let Some(mate_offset) = snapshot.matching_bracket(bracket_offset) {
+            return Some((bracket_offset, mate_offset));
+        }
+    }
+    None
+}
+
 fn notify(cx: &mut App, title: &str, body: &str) {
     let (title, body) = (title.to_string(), body.to_string());
     notification_center(cx).update(cx, |center, cx| {
@@ -12319,6 +12364,37 @@ mod tests {
             cursor_scroll_top(usize::MAX - 2, usize::MAX, 8, 3),
             usize::MAX - 8
         );
+    }
+
+    #[test]
+    fn bracket_matching_finds_nested_pairs_at_or_next_to_the_caret() {
+        let buffer = labonair_editor::EditorBuffer::from_text("λ call([first, (second)])");
+        let snapshot = buffer.snapshot();
+        let text = snapshot.text();
+        let open = text.find('[').expect("opening bracket");
+        let close = text.find(']').expect("closing bracket");
+        assert_eq!(matching_bracket_pair(&snapshot, open), Some((open, close)));
+        assert_eq!(matching_bracket_pair(&snapshot, close), Some((close, open)));
+
+        let buffer = labonair_editor::EditorBuffer::from_text("λ [x]");
+        let snapshot = buffer.snapshot();
+        let text = snapshot.text();
+        let open = text.find('[').expect("opening bracket");
+        let close = text.find(']').expect("closing bracket");
+        assert_eq!(
+            matching_bracket_pair(&snapshot, snapshot.byte_len()),
+            Some((close, open))
+        );
+    }
+
+    #[test]
+    fn bracket_matching_ignores_non_brackets_unmatched_brackets_and_utf8_interiors() {
+        let buffer = labonair_editor::EditorBuffer::from_text("name");
+        assert_eq!(matching_bracket_pair(&buffer.snapshot(), 1), None);
+        let buffer = labonair_editor::EditorBuffer::from_text("(open");
+        assert_eq!(matching_bracket_pair(&buffer.snapshot(), 0), None);
+        let buffer = labonair_editor::EditorBuffer::from_text("λ()");
+        assert_eq!(matching_bracket_pair(&buffer.snapshot(), 1), None);
     }
 
     #[test]

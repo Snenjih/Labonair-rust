@@ -392,7 +392,8 @@ const EDITOR_GROUPS: &[Group] = &[
             "editorScrollSensitivity",
             "editorFastScrollSensitivity",
             "editorVerticalScrollMargin",
-            "editorHighlightCurrentLine"
+            "editorHighlightCurrentLine",
+            "editorBracketMatching"
         ),
     ),
     (
