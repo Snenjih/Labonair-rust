@@ -81,7 +81,9 @@ pub type MultiSelection = Selection;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SplitIntent {
+    Left,
     Right,
+    Up,
     Down,
     FocusNext,
     FocusPrevious,
@@ -201,7 +203,9 @@ impl EditorState {
     fn execute_split(&mut self, intent: SplitIntent) -> EditorCommandResult {
         let before = self.splits.clone();
         let result = match intent {
+            SplitIntent::Left => self.splits.split_left().map(|_| ()),
             SplitIntent::Right => self.splits.split_right().map(|_| ()),
+            SplitIntent::Up => self.splits.split_up().map(|_| ()),
             SplitIntent::Down => self.splits.split_down().map(|_| ()),
             SplitIntent::FocusNext => {
                 self.splits.focus_next();

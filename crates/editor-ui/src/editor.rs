@@ -1260,7 +1260,9 @@ impl EditorView {
             EditorCommand::Split(intent) => {
                 let before = self.editor_splits.clone();
                 let result = match intent {
+                    SplitIntent::Left => self.editor_splits.split_left().map(|_| ()),
                     SplitIntent::Right => self.editor_splits.split_right().map(|_| ()),
+                    SplitIntent::Up => self.editor_splits.split_up().map(|_| ()),
                     SplitIntent::Down => self.editor_splits.split_down().map(|_| ()),
                     SplitIntent::FocusNext => {
                         self.editor_splits.focus_next();

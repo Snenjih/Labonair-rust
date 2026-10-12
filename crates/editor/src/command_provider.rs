@@ -206,7 +206,9 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         }
         CommandId::EditorToggleComment => EditorCommandRoute::Edit(EditIntent::ToggleComment),
         CommandId::EditorTranspose => EditorCommandRoute::Edit(EditIntent::Transpose),
+        CommandId::EditorSplitLeft => EditorCommandRoute::Split(SplitIntent::Left),
         CommandId::EditorSplitRight => EditorCommandRoute::Split(SplitIntent::Right),
+        CommandId::EditorSplitUp => EditorCommandRoute::Split(SplitIntent::Up),
         CommandId::EditorSplitDown => EditorCommandRoute::Split(SplitIntent::Down),
         CommandId::EditorFocusNextGroup => EditorCommandRoute::Split(SplitIntent::FocusNext),
         CommandId::EditorFocusPreviousGroup => {
@@ -343,7 +345,9 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorOutdent,
     CommandId::EditorToggleComment,
     CommandId::EditorTranspose,
+    CommandId::EditorSplitLeft,
     CommandId::EditorSplitRight,
+    CommandId::EditorSplitUp,
     CommandId::EditorSplitDown,
     CommandId::EditorFocusNextGroup,
     CommandId::EditorFocusPreviousGroup,
@@ -678,9 +682,13 @@ impl CommandProvider for EditorCommandProvider {
                 .with_default_binding("cmd-/", Some(CommandContext::Editor)),
             CommandDescriptor::new(CommandId::EditorTranspose, "Transpose Characters", "Editor")
                 .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(CommandId::EditorSplitLeft, "Split Editor Left", "Editor")
+                .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(CommandId::EditorSplitRight, "Split Editor Right", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("cmd-alt-]", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorSplitUp, "Split Editor Up", "Editor")
+                .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(CommandId::EditorSplitDown, "Split Editor Down", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_default_binding("cmd-alt-shift-d", Some(CommandContext::Editor)),
@@ -1052,6 +1060,14 @@ mod tests {
             Some(EditorCommandRoute::Edit(
                 EditIntent::SelectPreviousOccurrence
             ))
+        );
+        assert_eq!(
+            route_for_command(CommandId::EditorSplitLeft),
+            Some(EditorCommandRoute::Split(SplitIntent::Left))
+        );
+        assert_eq!(
+            route_for_command(CommandId::EditorSplitUp),
+            Some(EditorCommandRoute::Split(SplitIntent::Up))
         );
         assert_eq!(
             route_for_command(CommandId::EditorUndoSelection),
