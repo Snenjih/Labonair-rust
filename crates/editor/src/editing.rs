@@ -203,6 +203,7 @@ impl EditorCommandSink for EditorState {
 impl EditorState {
     fn execute_split(&mut self, intent: SplitIntent) -> EditorCommandResult {
         let before = self.splits.clone();
+        let before_count = before.group_count();
         let result = match intent {
             SplitIntent::Left => self.splits.split_left().map(|_| ()),
             SplitIntent::Right => self.splits.split_right().map(|_| ()),
@@ -228,6 +229,13 @@ impl EditorState {
         };
         match result {
             Ok(()) if self.splits != before => {
+                let focused = self.splits.focused_group();
+                if self.splits.group_count() > before_count {
+                    self.document.create_editor_group_view(focused);
+                }
+                self.document.activate_editor_group_view(focused);
+                self.document
+                    .retain_editor_group_views(&self.splits.groups());
                 EditorCommandResult::changed(EditorViewEvent::SplitChanged)
             }
             Ok(()) => EditorCommandResult::unchanged(),
@@ -2141,6 +2149,22 @@ mod tests {
 
     fn doc(text: &str) -> Document {
         Document::from_file("test.rs".into(), text, 0)
+    }
+
+    #[test]
+    fn editor_state_split_groups_restore_independent_carets() {
+        let mut state = EditorState::new(doc("one two"));
+        state.document_mut().set_caret(Position::new(0, 3), false);
+
+        state.execute(EditorCommand::Split(SplitIntent::Right));
+        let second = state.split_tree().focused_group();
+        state.document_mut().set_caret(Position::new(0, 7), false);
+
+        state.execute(EditorCommand::Split(SplitIntent::FocusPrevious));
+        assert_eq!(state.document().cursor, Position::new(0, 3));
+        state.execute(EditorCommand::Split(SplitIntent::FocusNext));
+        assert_eq!(state.split_tree().focused_group(), second);
+        assert_eq!(state.document().cursor, Position::new(0, 7));
     }
 
     #[test]

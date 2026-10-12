@@ -10,7 +10,7 @@
 //! `cx.background_executor().spawn`. It emits [`EditorEvent`] for the hosting
 //! Workspace to mirror the dirty flag and peek state onto its tab.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -890,6 +890,8 @@ pub struct EditorView {
     /// Editor-internal groups. Workspace pane layouts remain a separate
     /// capability; this tree is changed only by Editor commands.
     editor_splits: labonair_editor::EditorSplitTree,
+    /// Independent selection, fold, and viewport state for each split group.
+    editor_group_views: HashMap<labonair_editor::EditorGroupId, EditorViewSession>,
     split_drag_last: Option<f32>,
     /// Cached glyph metrics `(char_width, line_height)` in px.
     metrics: (f32, f32),
@@ -1139,6 +1141,7 @@ impl EditorView {
             outline_open: false,
             breadcrumb_visible_override: None,
             editor_splits: labonair_editor::EditorSplitTree::default(),
+            editor_group_views: HashMap::new(),
             split_drag_last: None,
             metrics: (8.0, 18.0),
             gutter_width: 48.0,
@@ -1234,6 +1237,151 @@ impl EditorView {
         self.doc.editability()
     }
 
+    fn capture_active_editor_group_view(&mut self) -> EditorViewSession {
+        let group = self.editor_splits.focused_group();
+        let view = self.editor_group_view_snapshot(group);
+        self.editor_group_views.insert(group, view.clone());
+        view
+    }
+
+    fn editor_group_view_snapshot(
+        &self,
+        group: labonair_editor::EditorGroupId,
+    ) -> EditorViewSession {
+        if group == self.editor_splits.focused_group() {
+            return EditorViewSession {
+                group_id: group.value(),
+                scroll_top: self.scroll_top,
+                scroll_left: self.scroll_left,
+                folds: self.folds.clone(),
+                selections: self.doc.selection_set(),
+            };
+        }
+        let mut view = self
+            .editor_group_views
+            .get(&group)
+            .cloned()
+            .unwrap_or_else(|| EditorViewSession {
+                group_id: group.value(),
+                scroll_top: 0,
+                scroll_left: 0,
+                folds: Vec::new(),
+                selections: SelectionSet::default(),
+            });
+        view.group_id = group.value();
+        view.selections = self
+            .doc
+            .editor_group_selection(group)
+            .unwrap_or(view.selections);
+        view
+    }
+
+    fn restore_editor_group_view(&mut self, group: labonair_editor::EditorGroupId) {
+        let view = self
+            .editor_group_views
+            .get(&group)
+            .cloned()
+            .unwrap_or_else(|| EditorViewSession {
+                group_id: group.value(),
+                scroll_top: 0,
+                scroll_left: 0,
+                folds: Vec::new(),
+                selections: self.doc.editor_group_selection(group).unwrap_or_default(),
+            });
+        self.scroll_top = view.scroll_top;
+        self.scroll_left = view.scroll_left;
+        self.folds = view.folds;
+        self.display_layout_cache = None;
+        self.clamp_scroll();
+    }
+
+    fn reset_editor_group_views(&mut self) {
+        self.scroll_top = 0;
+        self.scroll_left = 0;
+        self.folds.clear();
+        self.editor_group_views.clear();
+        let groups = self.editor_splits.groups();
+        let focused = self.editor_splits.focused_group();
+        self.doc.activate_editor_group_view(focused);
+        self.doc.retain_editor_group_views(&groups);
+        let selection = self.doc.selection_set();
+        for group in groups {
+            if group != focused {
+                self.doc.create_editor_group_view(group);
+                self.doc
+                    .set_editor_group_selection(group, selection.clone());
+            }
+            self.editor_group_views.insert(
+                group,
+                EditorViewSession {
+                    group_id: group.value(),
+                    scroll_top: 0,
+                    scroll_left: 0,
+                    folds: Vec::new(),
+                    selections: selection.clone(),
+                },
+            );
+        }
+        self.display_layout_cache = None;
+    }
+
+    fn focus_editor_group(&mut self, group: labonair_editor::EditorGroupId) -> bool {
+        if self.editor_splits.focused_group() == group {
+            return false;
+        }
+        self.capture_active_editor_group_view();
+        if self.editor_splits.focus(group).is_err() {
+            return false;
+        }
+        self.doc.activate_editor_group_view(group);
+        self.restore_editor_group_view(group);
+        true
+    }
+
+    fn close_editor_group(&mut self, group: labonair_editor::EditorGroupId) -> bool {
+        let previous_focus = self.editor_splits.focused_group();
+        if self.editor_splits.close(group).is_err() {
+            return false;
+        }
+        let focused = self.editor_splits.focused_group();
+        if focused != previous_focus {
+            self.doc.activate_editor_group_view(focused);
+            self.restore_editor_group_view(focused);
+        }
+        let groups = self.editor_splits.groups();
+        self.doc.retain_editor_group_views(&groups);
+        self.editor_group_views
+            .retain(|view_group, _| groups.contains(view_group));
+        true
+    }
+
+    fn synchronize_editor_group_views(
+        &mut self,
+        previous_focus: labonair_editor::EditorGroupId,
+        previous_group_count: usize,
+    ) {
+        let focused = self.editor_splits.focused_group();
+        if self.editor_splits.group_count() > previous_group_count {
+            let new_view = self
+                .editor_group_views
+                .get(&previous_focus)
+                .cloned()
+                .unwrap_or_else(|| self.capture_active_editor_group_view());
+            let mut new_view = new_view;
+            new_view.group_id = focused.value();
+            self.editor_group_views.insert(focused, new_view);
+            self.doc.create_editor_group_view(focused);
+        }
+        self.doc.activate_editor_group_view(focused);
+        let groups = self.editor_splits.groups();
+        self.doc.retain_editor_group_views(&groups);
+        self.editor_group_views
+            .retain(|group, _| groups.contains(group));
+        if focused != previous_focus {
+            self.restore_editor_group_view(focused);
+        }
+    }
+
     /// Execute a typed Editor command from the canonical command registry.
     /// Workspace supplies only the active view and never interprets the
     /// document or split-tree state itself.
@@ -1259,6 +1407,9 @@ impl EditorView {
             }
             EditorCommand::Split(intent) => {
                 let before = self.editor_splits.clone();
+                let previous_group_count = before.group_count();
+                let previous_focus = before.focused_group();
+                self.capture_active_editor_group_view();
                 let result = match intent {
                     SplitIntent::Left => self.editor_splits.split_left().map(|_| ()),
                     SplitIntent::Right => self.editor_splits.split_right().map(|_| ()),
@@ -1284,6 +1435,7 @@ impl EditorView {
                     ),
                 };
                 if result.is_ok() && self.editor_splits != before {
+                    self.synchronize_editor_group_views(previous_focus, previous_group_count);
                     cx.emit(EditorEvent::Changed);
                     cx.notify();
                     EditorCommandResult {
@@ -2980,18 +3132,11 @@ impl EditorView {
         snapshot.language = self.doc.language.label().to_string();
         snapshot.split_tree = self.editor_splits.clone();
         snapshot.active_group = self.editor_splits.focused_group().value();
-        let selections = self.doc.selection_set();
         snapshot.views = self
             .editor_splits
             .groups()
             .into_iter()
-            .map(|group| EditorViewSession {
-                group_id: group.value(),
-                scroll_top: self.scroll_top,
-                scroll_left: self.scroll_left,
-                folds: self.folds.clone(),
-                selections: selections.clone(),
-            })
+            .map(|group| self.editor_group_view_snapshot(group))
             .collect();
         snapshot.search = self.search.as_ref().map(|search| search.query.clone());
         if self.doc.is_dirty() {
@@ -3040,16 +3185,32 @@ impl EditorView {
         let _ = self
             .editor_splits
             .focus(labonair_editor::EditorGroupId::new(snapshot.active_group));
-        if let Some(view) = snapshot
+        let mut saved_views = snapshot
             .views
             .into_iter()
-            .find(|view| view.group_id == self.editor_splits.focused_group().value())
-        {
-            self.scroll_top = view.scroll_top;
-            self.scroll_left = view.scroll_left;
-            self.folds = view.folds;
-            self.doc.set_selection_set(view.selections);
+            .map(|view| (labonair_editor::EditorGroupId::new(view.group_id), view))
+            .collect::<HashMap<_, _>>();
+        self.editor_group_views.clear();
+        let groups = self.editor_splits.groups();
+        for group in &groups {
+            self.doc.create_editor_group_view(*group);
+            let view = saved_views
+                .remove(group)
+                .unwrap_or_else(|| EditorViewSession {
+                    group_id: group.value(),
+                    scroll_top: 0,
+                    scroll_left: 0,
+                    folds: Vec::new(),
+                    selections: self.doc.editor_group_selection(*group).unwrap_or_default(),
+                });
+            self.doc
+                .set_editor_group_selection(*group, view.selections.clone());
+            self.editor_group_views.insert(*group, view);
         }
+        let focused_group = self.editor_splits.focused_group();
+        self.doc.activate_editor_group_view(focused_group);
+        self.doc.retain_editor_group_views(&groups);
+        self.restore_editor_group_view(focused_group);
         self.search = snapshot.search.map(|query| {
             let selection_seed = query
                 .selection_range
@@ -3608,6 +3769,7 @@ impl EditorView {
         self.pending_navigation = None;
         self.navigation_history.clear();
         self.doc = Document::loading(path.clone());
+        self.reset_editor_group_views();
         self.recovery_prompt = None;
         self.invalidate_git_requests();
         self.git_gutter =
@@ -3623,6 +3785,7 @@ impl EditorView {
             let _ = this.update(cx, |this, cx| {
                 let failed = result.is_err();
                 this.doc = Self::document_from_load(path, result);
+                this.reset_editor_group_views();
                 if !failed {
                     this.apply_pending_session();
                     this.sync_language_service_document(cx);
@@ -6440,16 +6603,25 @@ impl EditorView {
         let muted = palette.muted;
         let fg = palette.fg;
         let group_value = group.value();
-        let rows = display.rows.iter().take(200).map(|row| {
-            div()
-                .h(px(line_h))
-                .flex()
-                .items_center()
-                .text_size(px(font_px))
-                .font(font.clone())
-                .text_color(fg)
-                .child(SharedString::from(row.text(snapshot)))
-        });
+        let first_line = self
+            .editor_group_views
+            .get(&group)
+            .map_or(0, |view| view.scroll_top);
+        let rows = display
+            .rows
+            .iter()
+            .filter(|row| row.logical_line() >= first_line)
+            .take(200)
+            .map(|row| {
+                div()
+                    .h(px(line_h))
+                    .flex()
+                    .items_center()
+                    .text_size(px(font_px))
+                    .font(font.clone())
+                    .text_color(fg)
+                    .child(SharedString::from(row.text(snapshot)))
+            });
         let close = button(
             ("editor-split-close", group_value),
             palette,
@@ -6458,7 +6630,7 @@ impl EditorView {
         )
         .child("×")
         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-            if this.editor_splits.close(group).is_ok() {
+            if this.close_editor_group(group) {
                 cx.emit(EditorEvent::Changed);
                 cx.notify();
             }
@@ -6498,7 +6670,7 @@ impl EditorView {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, _: &MouseDownEvent, _window, cx| {
-                    if this.editor_splits.focus(group).is_ok() {
+                    if this.focus_editor_group(group) {
                         cx.emit(EditorEvent::Changed);
                         cx.notify();
                     }
@@ -6543,7 +6715,7 @@ impl EditorView {
                         .child("×")
                         .on_click(cx.listener(
                             move |this, _: &ClickEvent, _window, cx| {
-                                if this.editor_splits.close(group).is_ok() {
+                                if this.close_editor_group(group) {
                                     cx.emit(EditorEvent::Changed);
                                     cx.notify();
                                 }

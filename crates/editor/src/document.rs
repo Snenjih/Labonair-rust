@@ -6,6 +6,7 @@
 //! existing GPUI adapter, while transaction selections are the durable
 //! undo/redo state.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::buffer::{
@@ -21,6 +22,7 @@ use crate::lifecycle::{
     SaveIntent,
 };
 use crate::search::{self, map_range_through_edits, ProjectSearchQuery, SearchError, SearchQuery};
+use crate::splits::EditorGroupId;
 
 /// Whether a document may be toggled from its editor-tab context menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,6 +66,8 @@ pub struct Document {
     selections: SelectionSet,
     selection_undo: Vec<SelectionSet>,
     selection_redo: Vec<SelectionSet>,
+    active_editor_group: EditorGroupId,
+    inactive_group_selections: HashMap<EditorGroupId, SelectionSet>,
     /// Preferred column for vertical motion (sticky like every real editor).
     goal_column: Option<usize>,
     /// User-selected temporary lock for otherwise editable buffers.
@@ -122,6 +126,8 @@ impl Document {
             selections: SelectionSet::default(),
             selection_undo: Vec::new(),
             selection_redo: Vec::new(),
+            active_editor_group: EditorGroupId::new(1),
+            inactive_group_selections: HashMap::new(),
             goal_column: None,
             temporary_read_only: false,
             active_snippet: None,
@@ -143,6 +149,8 @@ impl Document {
             selections: SelectionSet::default(),
             selection_undo: Vec::new(),
             selection_redo: Vec::new(),
+            active_editor_group: EditorGroupId::new(1),
+            inactive_group_selections: HashMap::new(),
             goal_column: None,
             temporary_read_only: false,
             active_snippet: None,
@@ -182,6 +190,8 @@ impl Document {
             selections: SelectionSet::default(),
             selection_undo: Vec::new(),
             selection_redo: Vec::new(),
+            active_editor_group: EditorGroupId::new(1),
+            inactive_group_selections: HashMap::new(),
             goal_column: None,
             temporary_read_only: false,
             active_snippet: None,
@@ -215,6 +225,8 @@ impl Document {
             selections: SelectionSet::default(),
             selection_undo: Vec::new(),
             selection_redo: Vec::new(),
+            active_editor_group: EditorGroupId::new(1),
+            inactive_group_selections: HashMap::new(),
             goal_column: None,
             temporary_read_only: false,
             active_snippet: None,
@@ -403,6 +415,65 @@ impl Document {
         }
     }
 
+    /// The split group whose selections currently drive this document view.
+    pub fn active_editor_group(&self) -> EditorGroupId {
+        self.active_editor_group
+    }
+
+    /// Initialize a split group with the active group's current selection.
+    pub fn create_editor_group_view(&mut self, group: EditorGroupId) {
+        if group != self.active_editor_group {
+            let selection = self.selection_set();
+            self.inactive_group_selections
+                .entry(group)
+                .or_insert(selection);
+        }
+    }
+
+    /// Activate a split group's independent selection while keeping all views
+    /// on the same canonical text buffer.
+    pub fn activate_editor_group_view(&mut self, group: EditorGroupId) {
+        if group == self.active_editor_group {
+            return;
+        }
+        let current = self.selection_set();
+        self.inactive_group_selections
+            .insert(self.active_editor_group, current.clone());
+        let next = self
+            .inactive_group_selections
+            .remove(&group)
+            .unwrap_or(current);
+        self.active_editor_group = group;
+        self.clear_selection_history();
+        self.goal_column = None;
+        self.set_selection_set_transient(self.clamp_selection_set(&next));
+    }
+
+    /// Return a split group's current selection for session persistence.
+    pub fn editor_group_selection(&self, group: EditorGroupId) -> Option<SelectionSet> {
+        if group == self.active_editor_group {
+            Some(self.selection_set())
+        } else {
+            self.inactive_group_selections.get(&group).cloned()
+        }
+    }
+
+    /// Restore a saved selection for an active or inactive split group.
+    pub fn set_editor_group_selection(&mut self, group: EditorGroupId, selection: SelectionSet) {
+        let selection = self.clamp_selection_set(&selection);
+        if group == self.active_editor_group {
+            self.set_selection_set_transient(selection);
+        } else {
+            self.inactive_group_selections.insert(group, selection);
+        }
+    }
+
+    /// Remove view state for groups no longer present in the split tree.
+    pub fn retain_editor_group_views(&mut self, groups: &[EditorGroupId]) {
+        self.inactive_group_selections
+            .retain(|group, _| groups.contains(group));
+    }
+
     /// Replace the canonical selection set without changing document text.
     pub fn set_selection_set(&mut self, selections: SelectionSet) {
         let previous = self.selection_set();
@@ -478,6 +549,34 @@ impl Document {
         self.selection_redo.clear();
     }
 
+    fn map_inactive_group_selections(&mut self, edits: &[Edit]) {
+        for selections in self.inactive_group_selections.values_mut() {
+            for edit in edits.iter().rev() {
+                selections.map_through(edit.range, edit.replacement.len());
+            }
+        }
+    }
+
+    fn clamp_selection_set(&self, selections: &SelectionSet) -> SelectionSet {
+        let snapshot = self.buffer.snapshot();
+        let primary = selections.primary_index();
+        let normalized = selections
+            .selections()
+            .iter()
+            .map(|selection| {
+                let anchor =
+                    snapshot.position_to_byte(snapshot.byte_to_position(selection.anchor.offset()));
+                let head =
+                    snapshot.position_to_byte(snapshot.byte_to_position(selection.head.offset()));
+                Selection {
+                    anchor: Anchor::new(anchor, selection.anchor.affinity()),
+                    head: Anchor::new(head, selection.head.affinity()),
+                }
+            })
+            .collect();
+        SelectionSet::from_selections(normalized, primary)
+    }
+
     fn begin_or_extend(&mut self, extend: bool) {
         if extend {
             if self.anchor.is_none() {
@@ -551,6 +650,7 @@ impl Document {
             Ok(applied) => applied,
             Err(_) => return false,
         };
+        self.map_inactive_group_selections(transaction.edits());
         if let Some(snippet) = self.active_snippet.as_mut() {
             snippet.map_through_edits(transaction.edits());
         }
@@ -742,6 +842,7 @@ impl Document {
             let rebased = transaction.with_base_revision(self.buffer.revision(), EditSource::Undo);
             match self.buffer.apply_transaction(&rebased) {
                 Ok(_) => {
+                    self.map_inactive_group_selections(rebased.edits());
                     if source == EditSource::Completion {
                         self.active_snippet = None;
                     } else if let Some(snippet) = self.active_snippet.as_mut() {
@@ -772,6 +873,7 @@ impl Document {
             let rebased = transaction.with_base_revision(self.buffer.revision(), EditSource::Redo);
             match self.buffer.apply_transaction(&rebased) {
                 Ok(_) => {
+                    self.map_inactive_group_selections(rebased.edits());
                     if let Some(snippet) = self.active_snippet.as_mut() {
                         snippet.map_through_edits(rebased.edits());
                     }
@@ -1202,6 +1304,28 @@ mod tests {
         );
         assert!(d.redo_selection());
         assert_eq!(d.selected_text().as_deref(), Some("bcde"));
+    }
+
+    #[test]
+    fn split_group_selections_are_independent_and_rebased_through_edits() {
+        let mut document = Document::from_file("f.rs".into(), "one two", 0);
+        let first = EditorGroupId::new(1);
+        let second = EditorGroupId::new(2);
+        document.set_caret(Position::new(0, 3), false);
+        document.create_editor_group_view(second);
+        document.activate_editor_group_view(second);
+        document.set_caret(Position::new(0, 7), false);
+        document.activate_editor_group_view(first);
+        document.set_caret(Position::new(0, 0), false);
+
+        document.insert("x");
+        assert_eq!(document.text(), "xone two");
+        document.undo();
+        assert_eq!(document.text(), "one two");
+
+        document.activate_editor_group_view(second);
+        assert_eq!(document.cursor, Position::new(0, 7));
+        assert_eq!(document.active_editor_group(), second);
     }
 
     #[test]
