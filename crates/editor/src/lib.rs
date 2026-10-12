@@ -89,7 +89,8 @@ pub use lsp_process::{
 };
 pub use multibuffer::{
     ExcerptId, MultiBuffer, MultiBufferEdit, MultiBufferError, MultiBufferExcerptSnapshot,
-    MultiBufferFileSnapshot, MultiBufferLocation, MultiBufferSnapshot, MultiBufferSource,
+    MultiBufferFileContent, MultiBufferFileSnapshot, MultiBufferLocation, MultiBufferSnapshot,
+    MultiBufferSource,
 };
 pub use navigation::{NavigationHistory, NavigationLocation};
 pub use policy::{apply_text_policies, SavePolicy};

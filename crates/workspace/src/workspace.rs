@@ -127,9 +127,9 @@ use crate::views::sftp::{SftpEvent, SftpView};
 use crate::views::terminal::TerminalView;
 use labonair_background_host::BackgroundHost;
 use labonair_editor::{
-    FileFinderCandidate, FileFinderQuery, FileFinderResult, LanguageServiceRuntime, Position,
-    ProjectReplaceResult, ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, SearchError,
-    SearchQuery, TextRange,
+    FileFinderCandidate, FileFinderQuery, FileFinderResult, LanguageServiceRuntime, MultiBuffer,
+    MultiBufferFileContent, Position, ProjectReplaceResult, ProjectSearchHit, ProjectSearchQuery,
+    ProjectSearchSnapshot, SearchError, SearchQuery, TextRange,
 };
 use labonair_editor_ui::{EditorBufferSnapshot, EditorEvent, EditorView};
 use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
@@ -2127,6 +2127,51 @@ impl Workspace {
             });
         }));
         Some(())
+    }
+
+    /// Load the source files for project-search hits into the Editor-owned
+    /// Multi-Buffer model. Path checks and file reads run off the foreground
+    /// thread; this method is only the typed Workspace filesystem adapter.
+    pub fn load_project_multibuffer(
+        &mut self,
+        hits: Vec<ProjectSearchHit>,
+        callback: impl FnOnce(Result<MultiBuffer, String>, &mut App) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(root) = self.filesystem_root(cx).map(std::path::PathBuf::from) else {
+            callback(
+                Err("No filesystem root is available for this workspace.".to_string()),
+                cx,
+            );
+            return;
+        };
+        let job = self.tokio.spawn_blocking(move || {
+            let paths = hits
+                .iter()
+                .map(|hit| std::path::PathBuf::from(&hit.path))
+                .collect::<std::collections::BTreeSet<_>>();
+            let mut files = Vec::with_capacity(paths.len());
+            for candidate in paths {
+                let path = root_safe_path(&root, &candidate)?;
+                let text = std::fs::read_to_string(&path).map_err(|error| {
+                    format!("cannot read search result {}: {error}", path.display())
+                })?;
+                let metadata = std::fs::metadata(&path).map_err(|error| {
+                    format!("cannot inspect search result {}: {error}", path.display())
+                })?;
+                files.push(MultiBufferFileContent {
+                    path,
+                    text,
+                    can_edit: !metadata.permissions().readonly(),
+                });
+            }
+            MultiBuffer::from_project_search(&hits, files, 3).map_err(|error| error.to_string())
+        });
+        cx.spawn(async move |this, cx| {
+            let result = job.await.map_err(|error| error.to_string()).and_then(|r| r);
+            let _ = this.update(cx, move |_workspace, cx| callback(result, cx));
+        })
+        .detach();
     }
 
     pub fn project_search_snapshot(&self, cx: &App) -> Option<ProjectSearchSnapshot> {

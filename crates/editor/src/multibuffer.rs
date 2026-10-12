@@ -13,7 +13,7 @@ use crate::buffer::{
     Anchor, AnchorAffinity, BufferSnapshot, Edit, EditSource, EditorBuffer, EditorError, Position,
     Revision, SelectionSet, TextRange, Transaction,
 };
-use crate::search::map_range_through_edits;
+use crate::search::{map_range_through_edits, ProjectSearchHit};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ExcerptId(u64);
@@ -44,6 +44,14 @@ impl MultiBufferSource {
             can_edit,
         }
     }
+}
+
+/// Full text loaded by the Workspace adapter for a project-search preview.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MultiBufferFileContent {
+    pub path: PathBuf,
+    pub text: String,
+    pub can_edit: bool,
 }
 
 /// An edit expressed relative to one excerpt's current source text.
@@ -267,6 +275,72 @@ impl MultiBuffer {
             undo: Vec::new(),
             redo: Vec::new(),
         })
+    }
+
+    /// Build context excerpts around project-search hits from loaded file text.
+    /// Each unique source file is stored once even when it contributes many hits.
+    pub fn from_project_search(
+        hits: &[ProjectSearchHit],
+        files: Vec<MultiBufferFileContent>,
+        context_lines: usize,
+    ) -> Result<Self, MultiBufferError> {
+        let hit_paths = hits
+            .iter()
+            .map(|hit| hit.path.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut sources = Vec::new();
+        let mut loaded_paths = std::collections::BTreeSet::new();
+        for file in files {
+            let path_key = file.path.to_string_lossy().into_owned();
+            if !hit_paths.contains(&path_key) {
+                continue;
+            }
+            let snapshot = EditorBuffer::from_text(&file.text).snapshot();
+            let mut ranges = hits
+                .iter()
+                .filter(|hit| hit.path == path_key)
+                .map(|hit| {
+                    let line_index =
+                        usize::try_from(hit.line.saturating_sub(1)).unwrap_or(usize::MAX);
+                    let start_line = line_index.saturating_sub(context_lines);
+                    let end_line = line_index
+                        .saturating_add(context_lines)
+                        .saturating_add(1)
+                        .min(snapshot.line_count());
+                    let start = snapshot.position_to_byte(Position::new(start_line, 0));
+                    let end = if end_line >= snapshot.line_count() {
+                        snapshot.byte_len()
+                    } else {
+                        snapshot.position_to_byte(Position::new(end_line, 0))
+                    };
+                    TextRange::new(start, end)
+                })
+                .collect::<Vec<_>>();
+            ranges.sort_by_key(|range| (range.start, range.end));
+            let mut merged_ranges: Vec<TextRange> = Vec::with_capacity(ranges.len());
+            for range in ranges {
+                if let Some(previous) = merged_ranges.last_mut() {
+                    if range.start <= previous.end {
+                        previous.end = previous.end.max(range.end);
+                        continue;
+                    }
+                }
+                merged_ranges.push(range);
+            }
+            if !merged_ranges.is_empty() {
+                loaded_paths.insert(path_key);
+                sources.push(MultiBufferSource {
+                    path: file.path,
+                    text: file.text,
+                    excerpt_ranges: merged_ranges,
+                    can_edit: file.can_edit,
+                });
+            }
+        }
+        if let Some(missing) = hit_paths.difference(&loaded_paths).next() {
+            return Err(MultiBufferError::UnknownFile(PathBuf::from(missing)));
+        }
+        Self::new(sources)
     }
 
     pub fn snapshot(&self) -> MultiBufferSnapshot {
@@ -757,5 +831,31 @@ mod tests {
             buffer.file_snapshots()[0].snapshot.text(),
             "updated + updated"
         );
+    }
+
+    #[test]
+    fn project_search_builds_context_excerpts_and_deduplicates_files() {
+        let path = Path::new("/repo/a.rs");
+        let hits = vec![
+            ProjectSearchHit::with_relative_path(path.to_string_lossy(), "a.rs", 2, "needle", 0, 6),
+            ProjectSearchHit::with_relative_path(path.to_string_lossy(), "a.rs", 5, "needle", 0, 6),
+        ];
+        let buffer = MultiBuffer::from_project_search(
+            &hits,
+            vec![MultiBufferFileContent {
+                path: path.to_path_buf(),
+                text: "one\nneedle\nthree\nfour\nneedle\nsix\n".to_string(),
+                can_edit: true,
+            }],
+            0,
+        )
+        .expect("search hits resolve to excerpts");
+        let snapshot = buffer.snapshot();
+        assert_eq!(snapshot.excerpts().len(), 2);
+        assert_eq!(snapshot.excerpts()[0].source_range, TextRange::new(4, 11));
+        assert_eq!(snapshot.excerpts()[1].source_range, TextRange::new(22, 29));
+        assert_eq!(buffer.file_snapshots().len(), 1);
+        assert_eq!(snapshot.text().matches("--- /repo/a.rs:").count(), 2);
+        assert!(snapshot.text().contains("needle\n"));
     }
 }

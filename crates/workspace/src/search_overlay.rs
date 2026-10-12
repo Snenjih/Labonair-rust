@@ -19,7 +19,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use labonair_editor::{
-    ProjectReplaceStatus, ProjectSearchHit, ProjectSearchOptions, ProjectSearchQuery,
+    MultiBuffer, ProjectReplaceStatus, ProjectSearchHit, ProjectSearchOptions, ProjectSearchQuery,
     ProjectSearchStatus, SearchCaseMode, SearchError, SearchOptions, SearchQuery, SearchScope,
     TextRange,
 };
@@ -193,6 +193,11 @@ pub struct SearchOverlay {
     options: SearchOptions,
     selection_range: Option<TextRange>,
     collapsed_project_files: HashSet<String>,
+    multi_buffer_preview: Option<MultiBuffer>,
+    multi_buffer_loading: bool,
+    multi_buffer_error: Option<String>,
+    multi_buffer_generation: u64,
+    show_multi_buffer: bool,
     query_history: SearchQueryHistory,
     search_on_type: bool,
     include_ignored: bool,
@@ -324,6 +329,11 @@ impl SearchOverlay {
             options,
             selection_range,
             collapsed_project_files: HashSet::new(),
+            multi_buffer_preview: None,
+            multi_buffer_loading: false,
+            multi_buffer_error: None,
+            multi_buffer_generation: 0,
+            show_multi_buffer: false,
             query_history: SearchQueryHistory::new(query_history()),
             search_on_type,
             include_ignored,
@@ -375,6 +385,7 @@ impl SearchOverlay {
     }
 
     fn run_project_search(&mut self, text: String, cx: &mut Context<Self>) {
+        self.reset_multi_buffer_preview();
         let mut options = ProjectSearchOptions::from_search_options(self.options);
         options.include_ignored = self.include_ignored;
         options.only_open_files = self.only_open_files;
@@ -400,6 +411,7 @@ impl SearchOverlay {
     }
 
     fn clear_project_search(&mut self, cx: &mut Context<Self>) {
+        self.reset_multi_buffer_preview();
         let mut options = ProjectSearchOptions::from_search_options(self.options);
         options.include_ignored = self.include_ignored;
         options.only_open_files = self.only_open_files;
@@ -410,6 +422,57 @@ impl SearchOverlay {
         self.project_query_confirmed = false;
         self.count = (0, 0);
         self.error = None;
+        cx.notify();
+    }
+
+    fn reset_multi_buffer_preview(&mut self) {
+        self.multi_buffer_generation = self.multi_buffer_generation.saturating_add(1);
+        self.multi_buffer_preview = None;
+        self.multi_buffer_loading = false;
+        self.multi_buffer_error = None;
+        self.show_multi_buffer = false;
+    }
+
+    fn open_project_multi_buffer(&mut self, cx: &mut Context<Self>) {
+        let Some(snapshot) = self.workspace.read(cx).project_search_snapshot(cx) else {
+            return;
+        };
+        if snapshot.status != ProjectSearchStatus::Ready || snapshot.hits.is_empty() {
+            return;
+        }
+        self.multi_buffer_generation = self.multi_buffer_generation.saturating_add(1);
+        let generation = self.multi_buffer_generation;
+        self.multi_buffer_preview = None;
+        self.multi_buffer_loading = true;
+        self.multi_buffer_error = None;
+        self.show_multi_buffer = false;
+        let view = cx.entity().downgrade();
+        self.workspace.update(cx, |workspace, cx| {
+            workspace.load_project_multibuffer(
+                snapshot.hits,
+                move |result, cx| {
+                    let _ = view.update(cx, |this, cx| {
+                        if this.multi_buffer_generation != generation {
+                            return;
+                        }
+                        this.multi_buffer_loading = false;
+                        match result {
+                            Ok(buffer) => {
+                                this.multi_buffer_preview = Some(buffer);
+                                this.show_multi_buffer = true;
+                                this.multi_buffer_error = None;
+                            }
+                            Err(error) => {
+                                this.multi_buffer_preview = None;
+                                this.multi_buffer_error = Some(error);
+                            }
+                        }
+                        cx.notify();
+                    });
+                },
+                cx,
+            );
+        });
         cx.notify();
     }
 
@@ -797,6 +860,22 @@ impl Render for SearchOverlay {
             }
             rows
         });
+        let can_open_multi_buffer = project_snapshot.as_ref().is_some_and(|snapshot| {
+            snapshot.status == ProjectSearchStatus::Ready && !snapshot.hits.is_empty()
+        });
+        let multi_buffer_lines = self.multi_buffer_preview.as_ref().map(|buffer| {
+            buffer
+                .snapshot()
+                .text()
+                .lines()
+                .map(|line| {
+                    div()
+                        .whitespace_nowrap()
+                        .child(SharedString::from(line.to_string()))
+                        .into_any_element()
+                })
+                .collect::<Vec<_>>()
+        });
         let replace_input = self.replace_input.clone();
         let include_glob_input = self.include_glob_input.clone();
         let exclude_glob_input = self.exclude_glob_input.clone();
@@ -934,6 +1013,50 @@ impl Render for SearchOverlay {
             } else {
                 "All"
             })
+        };
+        let multi_buffer_button = if self.multi_buffer_loading {
+            button_disabled(
+                "project-search-multibuffer",
+                palette,
+                ButtonVariant::Subtle,
+                ButtonSize::Xs,
+            )
+            .child("Loading excerpts…")
+        } else if self.multi_buffer_preview.is_some() {
+            button(
+                "project-search-multibuffer",
+                palette,
+                ButtonVariant::Subtle,
+                ButtonSize::Xs,
+            )
+            .child(if self.show_multi_buffer {
+                "Hide excerpts"
+            } else {
+                "Show excerpts"
+            })
+            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                this.show_multi_buffer = !this.show_multi_buffer;
+                cx.notify();
+            }))
+        } else if can_open_multi_buffer {
+            button(
+                "project-search-multibuffer",
+                palette,
+                ButtonVariant::Subtle,
+                ButtonSize::Xs,
+            )
+            .child("Preview excerpts")
+            .on_click(
+                cx.listener(|this, _: &ClickEvent, _window, cx| this.open_project_multi_buffer(cx)),
+            )
+        } else {
+            button_disabled(
+                "project-search-multibuffer",
+                palette,
+                ButtonVariant::Subtle,
+                ButtonSize::Xs,
+            )
+            .child("Preview excerpts")
         };
         div()
             .id("search-overlay")
@@ -1299,7 +1422,8 @@ impl Render for SearchOverlay {
                                     this.expand_all_project_files(cx)
                                 },
                             )),
-                        ),
+                        )
+                        .child(multi_buffer_button),
                 )
                 .child(
                     div()
@@ -1338,6 +1462,32 @@ impl Render for SearchOverlay {
                         )
                         .when_some(project_rows, |d, rows| d.children(rows)),
                 )
+                .when(self.multi_buffer_loading, |d| {
+                    d.child(
+                        div()
+                            .text_xs()
+                            .text_color(palette.muted)
+                            .child("Loading source files into Multi-Buffer…"),
+                    )
+                })
+                .when_some(self.multi_buffer_error.clone(), |d, error| {
+                    d.child(div().text_xs().text_color(palette.error).child(error))
+                })
+                .when(self.show_multi_buffer, |d| {
+                    d.child(
+                        div()
+                            .id("project-search-multibuffer-preview")
+                            .max_h(px(240.0))
+                            .overflow_y_scroll()
+                            .p_1()
+                            .rounded(px(palette.radius.sm))
+                            .bg(palette.bg)
+                            .font_family("monospace")
+                            .text_size(px(11.0))
+                            .text_color(palette.fg)
+                            .children(multi_buffer_lines.unwrap_or_default()),
+                    )
+                })
                 .when(project_truncated, |d| {
                     d.child(
                         div()
