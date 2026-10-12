@@ -179,6 +179,15 @@ enum ImageZoom {
     Scale(f32),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreviewImageAction {
+    ZoomIn,
+    ZoomOut,
+    ResetZoom,
+    ZoomToActualSize,
+    ZoomToFit,
+}
+
 #[derive(Clone, Copy)]
 struct ImagePan {
     pointer_x: f32,
@@ -474,6 +483,27 @@ impl PreviewView {
             self.image_zoom = zoom;
             self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
             cx.notify();
+        }
+    }
+
+    pub fn perform_image_action(
+        &mut self,
+        action: PreviewImageAction,
+        viewport_width: f32,
+        viewport_height: f32,
+        cx: &mut Context<Self>,
+    ) {
+        match action {
+            PreviewImageAction::ZoomIn => {
+                self.zoom_image(1.25, viewport_width, viewport_height, None, cx)
+            }
+            PreviewImageAction::ZoomOut => {
+                self.zoom_image(0.8, viewport_width, viewport_height, None, cx)
+            }
+            PreviewImageAction::ResetZoom | PreviewImageAction::ZoomToFit => {
+                self.set_image_zoom(ImageZoom::Fit, cx)
+            }
+            PreviewImageAction::ZoomToActualSize => self.set_image_zoom(ImageZoom::ActualSize, cx),
         }
     }
 

@@ -122,7 +122,7 @@ use crate::ssh_connection::{
 };
 use crate::tabs::{Tab, TabData, TabKind, TabStore};
 use crate::theme::ThemeStore;
-use crate::views::preview::PreviewView;
+use crate::views::preview::{PreviewImageAction, PreviewView};
 use crate::views::sftp::{SftpEvent, SftpView};
 use crate::views::terminal::TerminalView;
 use labonair_background_host::BackgroundHost;
@@ -2546,6 +2546,37 @@ impl Workspace {
             view.update(cx, |p, cx| p.set_url(target, cx));
         }
         self.focus_active(window, cx);
+    }
+
+    /// Apply a registry-backed image-viewer command to the active preview tab.
+    /// Other preview content and tab kinds ignore image-only commands.
+    pub fn apply_active_preview_image_action(
+        &mut self,
+        action: PreviewImageAction,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab_id) = self
+            .tabs
+            .read(cx)
+            .active()
+            .filter(|tab| tab.kind == TabKind::Preview)
+            .map(|tab| tab.id)
+        else {
+            return;
+        };
+        let Some(preview) = self.previews.get(&tab_id).cloned() else {
+            return;
+        };
+        let viewport = window.viewport_size();
+        preview.update(cx, |preview, cx| {
+            preview.perform_image_action(
+                action,
+                f32::from(viewport.width),
+                f32::from(viewport.height),
+                cx,
+            )
+        });
     }
 
     /// Open the Editor-owned Markdown buffer in a Workspace preview tab. The
@@ -7834,6 +7865,7 @@ fn palette_tab_kind(kind: TabKind) -> labonair_command_palette::PaletteTabKind {
     match kind {
         TabKind::Workspace => K::Workspace,
         TabKind::Editor => K::Editor,
+        TabKind::Preview => K::Preview,
         TabKind::Sftp => K::Sftp,
         _ => K::Other,
     }

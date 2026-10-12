@@ -14,6 +14,7 @@ use labonair_command_palette_runtime::CommandHandlerRegistry;
 use labonair_terminal::command_provider::TerminalCommandTarget;
 
 use crate::context::WorkspaceTransition;
+use crate::views::preview::PreviewImageAction;
 use crate::Workspace;
 
 /// Stable command metadata contributed by the workspace capability.
@@ -127,6 +128,32 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
     register!(CommandId::NewPreviewTab, move |window, cx| {
         workspace_handle.update(cx, |workspace, cx| workspace.new_preview_tab(window, cx));
     });
+
+    for (command, action) in [
+        (CommandId::PreviewImageZoomIn, PreviewImageAction::ZoomIn),
+        (CommandId::PreviewImageZoomOut, PreviewImageAction::ZoomOut),
+        (
+            CommandId::PreviewImageResetZoom,
+            PreviewImageAction::ResetZoom,
+        ),
+        (
+            CommandId::PreviewImageZoomToActualSize,
+            PreviewImageAction::ZoomToActualSize,
+        ),
+        (
+            CommandId::PreviewImageZoomToFit,
+            PreviewImageAction::ZoomToFit,
+        ),
+    ] {
+        let workspace_handle = workspace.clone();
+        registry
+            .register(command, move |window, cx| {
+                workspace_handle.update(cx, |workspace, cx| {
+                    workspace.apply_active_preview_image_action(action, window, cx);
+                });
+            })
+            .expect("workspace image-viewer command handler must have a unique id");
+    }
 
     let workspace_handle = workspace.clone();
     register!(CommandId::Save, move |_window, cx| {
@@ -421,6 +448,42 @@ impl CommandProvider for WorkspaceCommandProvider {
             CommandDescriptor::new(CommandId::NewPreviewTab, "New Preview Tab", "Layout")
                 .with_default_binding("cmd-shift-p", None)
                 .with_icon(CommandIcon::File),
+            CommandDescriptor::new(
+                CommandId::PreviewImageZoomIn,
+                "Image Viewer: Zoom In",
+                "Image Viewer",
+            )
+            .with_contexts(&[CommandContext::Preview])
+            .with_default_binding("cmd-=", Some(CommandContext::Preview))
+            .with_default_binding("cmd-+", Some(CommandContext::Preview)),
+            CommandDescriptor::new(
+                CommandId::PreviewImageZoomOut,
+                "Image Viewer: Zoom Out",
+                "Image Viewer",
+            )
+            .with_contexts(&[CommandContext::Preview])
+            .with_default_binding("cmd--", Some(CommandContext::Preview)),
+            CommandDescriptor::new(
+                CommandId::PreviewImageResetZoom,
+                "Image Viewer: Reset Zoom",
+                "Image Viewer",
+            )
+            .with_contexts(&[CommandContext::Preview])
+            .with_default_binding("cmd-0", Some(CommandContext::Preview)),
+            CommandDescriptor::new(
+                CommandId::PreviewImageZoomToActualSize,
+                "Image Viewer: Actual Size",
+                "Image Viewer",
+            )
+            .with_contexts(&[CommandContext::Preview])
+            .with_default_binding("cmd-1", Some(CommandContext::Preview)),
+            CommandDescriptor::new(
+                CommandId::PreviewImageZoomToFit,
+                "Image Viewer: Fit to Window",
+                "Image Viewer",
+            )
+            .with_contexts(&[CommandContext::Preview])
+            .with_default_binding("cmd-shift-0", Some(CommandContext::Preview)),
             CommandDescriptor::new(CommandId::Save, "Save", "Tab Actions")
                 .with_icon(CommandIcon::Edit),
             CommandDescriptor::new(CommandId::CloseTab, "Close Current Tab", "Tab Actions")
@@ -524,6 +587,30 @@ mod tests {
         assert!(commands
             .iter()
             .any(|command| command.id == CommandId::SplitRight));
+    }
+
+    #[test]
+    fn image_viewer_commands_have_preview_scoped_default_bindings() {
+        let commands = WorkspaceCommandProvider.commands();
+        for (id, binding) in [
+            (CommandId::PreviewImageZoomIn, "cmd-="),
+            (CommandId::PreviewImageZoomIn, "cmd-+"),
+            (CommandId::PreviewImageZoomOut, "cmd--"),
+            (CommandId::PreviewImageResetZoom, "cmd-0"),
+            (CommandId::PreviewImageZoomToActualSize, "cmd-1"),
+            (CommandId::PreviewImageZoomToFit, "cmd-shift-0"),
+        ] {
+            let descriptor = commands
+                .iter()
+                .find(|descriptor| descriptor.id == id)
+                .expect("image viewer action descriptor");
+            assert_eq!(descriptor.contexts, vec![CommandContext::Preview]);
+            assert!(descriptor.default_bindings.iter().any(|candidate| {
+                candidate.keystrokes == binding
+                    && candidate.context == Some(CommandContext::Preview)
+            }));
+            assert!(!descriptor.is_available_in(Some(CommandContext::Editor)));
+        }
     }
 
     #[test]

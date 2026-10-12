@@ -141,6 +141,7 @@ fn palette_toggle_state(key: &str, cx: &App) -> bool {
 pub enum PaletteTabKind {
     Workspace,
     Editor,
+    Preview,
     Sftp,
     Home,
     /// Any other tab kind — maps to no context.
@@ -367,6 +368,7 @@ pub fn context_of(kind: PaletteTabKind, is_ssh: bool) -> Option<CommandContext> 
         PaletteTabKind::Workspace if is_ssh => CommandContext::SshTerminal,
         PaletteTabKind::Workspace => CommandContext::Terminal,
         PaletteTabKind::Editor => CommandContext::Editor,
+        PaletteTabKind::Preview => CommandContext::Preview,
         PaletteTabKind::Sftp => CommandContext::Sftp,
         PaletteTabKind::Home => CommandContext::Home,
         PaletteTabKind::Other => return None,
@@ -1547,6 +1549,10 @@ mod tests {
         assert_eq!(
             context_of(PaletteTabKind::Editor, false),
             Some(CommandContext::Editor)
+        );
+        assert_eq!(
+            context_of(PaletteTabKind::Preview, false),
+            Some(CommandContext::Preview)
         );
         assert_eq!(context_of(PaletteTabKind::Other, false), None);
     }
