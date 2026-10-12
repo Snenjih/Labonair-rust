@@ -150,6 +150,7 @@ fn heading_slug(text: &str) -> String {
 /// Resolved preview payload for the current address.
 enum Content {
     Empty,
+    Loading,
     Image(Arc<Image>),
     Markdown(Vec<MdBlock>),
     /// Needs a browser engine — offer "open externally" only. `why` explains it.
@@ -168,6 +169,8 @@ pub struct PreviewView {
     url: String,
     content: Content,
     source_bound: bool,
+    load_generation: u64,
+    pending_fragment: Option<String>,
     markdown_scroll: ScrollHandle,
 }
 
@@ -180,6 +183,8 @@ impl PreviewView {
             url: String::new(),
             content: Content::Empty,
             source_bound: false,
+            load_generation: 0,
+            pending_fragment: None,
             markdown_scroll: ScrollHandle::new(),
         }
     }
@@ -192,6 +197,20 @@ impl PreviewView {
     pub fn set_url(&mut self, url: impl Into<String>, cx: &mut Context<Self>) {
         self.url = url.into();
         self.source_bound = false;
+        self.pending_fragment = None;
+        self.resolve_content(cx);
+        cx.notify();
+    }
+
+    fn set_url_with_fragment(
+        &mut self,
+        url: impl Into<String>,
+        fragment: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.url = url.into();
+        self.source_bound = false;
+        self.pending_fragment = fragment;
         self.resolve_content(cx);
         cx.notify();
     }
@@ -206,6 +225,8 @@ impl PreviewView {
         snapshot: BufferSnapshot,
         cx: &mut Context<Self>,
     ) {
+        self.load_generation = self.load_generation.wrapping_add(1);
+        self.pending_fragment = None;
         self.url = path
             .as_ref()
             .map(|path| path.to_string_lossy().into_owned())
@@ -229,19 +250,47 @@ impl PreviewView {
     }
 
     fn resolve_content(&mut self, cx: &mut Context<Self>) {
-        self.content = resolve(&self.url);
-        if let Content::Error(message) = &self.content {
-            let url = self.url.clone();
-            notification_center(cx).update(cx, |center, cx| {
-                center.push(
-                    Notification::error("Preview unavailable", "Could not load the preview.")
-                        .source("preview")
-                        .details(message.clone())
-                        .dedupe_key(format!("preview:load:{url}")),
-                    cx,
-                );
-            });
+        self.load_generation = self.load_generation.wrapping_add(1);
+        let generation = self.load_generation;
+        let url = self.url.clone();
+        if url.is_empty() || is_remote_url(&url) {
+            self.content = resolve(&url);
+            return;
         }
+
+        self.content = Content::Loading;
+        cx.spawn(async move |this, cx| {
+            let content = cx
+                .background_executor()
+                .spawn(async move { resolve(&url) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.load_generation != generation {
+                    return;
+                }
+                if let Content::Error(message) = &content {
+                    let url = this.url.clone();
+                    notification_center(cx).update(cx, |center, cx| {
+                        center.push(
+                            Notification::error(
+                                "Preview unavailable",
+                                "Could not load the preview.",
+                            )
+                            .source("preview")
+                            .details(message.clone())
+                            .dedupe_key(format!("preview:load:{url}")),
+                            cx,
+                        );
+                    });
+                }
+                this.content = content;
+                if let Some(fragment) = this.pending_fragment.take() {
+                    this.scroll_to_heading(&fragment, cx);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn open_external(&self) {
@@ -257,10 +306,7 @@ impl PreviewView {
                 self.scroll_to_heading(&fragment, cx);
             }
             Some(MarkdownLinkTarget::Local { path, fragment }) => {
-                self.set_url(path.to_string_lossy().into_owned(), cx);
-                if let Some(fragment) = fragment {
-                    self.scroll_to_heading(&fragment, cx);
-                }
+                self.set_url_with_fragment(path.to_string_lossy().into_owned(), fragment, cx);
             }
             None => {}
         }
@@ -366,6 +412,14 @@ impl Render for PreviewView {
                 .justify_center()
                 .text_color(muted)
                 .child("Open a file from the Explorer to preview it here.")
+                .into_any_element(),
+            Content::Loading => div()
+                .flex_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_color(muted)
+                .child("Loading preview…")
                 .into_any_element(),
             Content::Image(image) => div()
                 .flex_1()
@@ -745,6 +799,69 @@ mod tests {
             Content::Markdown(blocks) => assert!(!blocks.is_empty()),
             _ => panic!("expected markdown"),
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[gpui::test]
+    fn local_preview_shows_loading_then_resolves_file(cx: &mut gpui::TestAppContext) {
+        let dir = std::env::temp_dir().join(format!(
+            "labonair-preview-async-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("async.md");
+        std::fs::write(&path, "# Loaded in background").unwrap();
+
+        let view = cx.update(|cx| {
+            let theme = cx.new(|_| ThemeStore::new(gpui::WindowAppearance::Light));
+            cx.new(|cx| PreviewView::new(theme, cx))
+        });
+        cx.update(|cx| {
+            view.update(cx, |preview, cx| {
+                preview.set_url(path.to_string_lossy().into_owned(), cx);
+                assert!(matches!(preview.content, Content::Loading));
+            });
+        });
+        cx.background_executor.run_until_parked();
+        cx.update(|cx| {
+            let preview = view.read(cx);
+            assert!(matches!(
+                &preview.content,
+                Content::Markdown(blocks)
+                    if matches!(blocks.first(), Some(MdBlock::Heading { spans, .. })
+                        if spans.iter().any(|span| span.plain() == "Loaded in background"))
+            ));
+        });
+
+        let stale_path = dir.join("stale.md");
+        std::fs::write(&stale_path, "# Stale disk content").unwrap();
+        cx.update(|cx| {
+            view.update(cx, |preview, cx| {
+                preview.set_url(stale_path.to_string_lossy().into_owned(), cx);
+                preview.set_editor_source(
+                    Some(path.clone()),
+                    Language::Markdown,
+                    labonair_editor::EditorBuffer::from_text("# Current editor source").snapshot(),
+                    cx,
+                );
+            });
+        });
+        cx.background_executor.run_until_parked();
+        cx.update(|cx| {
+            let preview = view.read(cx);
+            assert!(matches!(
+                &preview.content,
+                Content::Markdown(blocks)
+                    if matches!(blocks.first(), Some(MdBlock::Heading { spans, .. })
+                        if spans.iter().any(|span| span.plain() == "Current editor source"))
+            ));
+            assert!(preview.source_bound);
+        });
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 
