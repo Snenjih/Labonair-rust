@@ -12,6 +12,7 @@ use crate::document::{Document, Motion};
 use crate::language::Language;
 use crate::search::{find_all, SearchQuery};
 use crate::splits::{EditorGroupId, EditorSplitTree, SplitError};
+use crate::symbols::{larger_syntax_ranges, smaller_syntax_ranges};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditIntent {
@@ -912,16 +913,23 @@ impl Document {
     fn expand_selection(&mut self) -> EditorCommandResult {
         let snapshot = self.snapshot();
         let current = self.selection_set();
+        let ranges = current
+            .selections()
+            .iter()
+            .map(|selection| selection.range().resolve(&snapshot))
+            .collect::<Vec<_>>();
+        let syntax_ranges = larger_syntax_ranges(self.language, &snapshot, &ranges);
         let mut expanded = Vec::with_capacity(current.len());
-        for selection in current.selections() {
-            let range = selection.range().resolve(&snapshot);
+        for (range, syntax_range) in ranges.into_iter().zip(syntax_ranges) {
             let next = if range.is_empty() {
-                word_range(&snapshot, range.start)
+                syntax_range
+                    .or_else(|| word_range(&snapshot, range.start))
                     .or_else(|| enclosing_bracket_range(&snapshot, range))
                     .or_else(|| line_range(&snapshot, range.start))
                     .unwrap_or(range)
             } else {
-                enclosing_bracket_range(&snapshot, range)
+                syntax_range
+                    .or_else(|| enclosing_bracket_range(&snapshot, range))
                     .or_else(|| line_range(&snapshot, range.start))
                     .unwrap_or(range)
             };
@@ -948,12 +956,18 @@ impl Document {
             return EditorCommandResult::unchanged();
         }
         let snapshot = self.snapshot();
-        let selections = current
+        let ranges = current
             .selections()
             .iter()
-            .map(|selection| {
-                let range = selection.range().resolve(&snapshot);
-                if let Some(inner) = inner_bracket_range(&snapshot, range) {
+            .map(|selection| selection.range().resolve(&snapshot))
+            .collect::<Vec<_>>();
+        let syntax_ranges = smaller_syntax_ranges(self.language, &snapshot, &ranges);
+        let selections = ranges
+            .into_iter()
+            .zip(syntax_ranges)
+            .map(|(range, syntax_range)| {
+                if let Some(inner) = syntax_range.or_else(|| inner_bracket_range(&snapshot, range))
+                {
                     Selection {
                         anchor: Anchor::new(inner.start, AnchorAffinity::Before),
                         head: Anchor::new(inner.end, AnchorAffinity::After),
@@ -2188,6 +2202,46 @@ mod tests {
         let selection_after_edit = document.selection_set();
         assert!(!document.execute_edit(EditIntent::UndoSelection).changed);
         assert_eq!(document.selection_set(), selection_after_edit);
+    }
+
+    #[test]
+    fn selection_expands_and_shrinks_through_rust_syntax_nodes() {
+        let mut document = doc("fn main() { let answer = 1 + 2; }");
+        let number = document.text().find("1 + 2").expect("expression in source");
+        document.set_selection_set(SelectionSet::from_selections(
+            vec![Selection::collapsed(Anchor::new(
+                number,
+                AnchorAffinity::After,
+            ))],
+            0,
+        ));
+
+        document.execute_edit(EditIntent::ExpandSelection);
+        let snapshot = document.snapshot();
+        let range = document
+            .selection_set()
+            .primary()
+            .range()
+            .resolve(&snapshot);
+        assert_eq!(snapshot.text_range(range), "1");
+
+        document.execute_edit(EditIntent::ExpandSelection);
+        let snapshot = document.snapshot();
+        let range = document
+            .selection_set()
+            .primary()
+            .range()
+            .resolve(&snapshot);
+        assert_eq!(snapshot.text_range(range), "1 + 2");
+
+        document.execute_edit(EditIntent::ShrinkSelection);
+        let snapshot = document.snapshot();
+        let range = document
+            .selection_set()
+            .primary()
+            .range()
+            .resolve(&snapshot);
+        assert_eq!(snapshot.text_range(range), "1");
     }
 
     #[test]

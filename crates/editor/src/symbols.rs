@@ -50,36 +50,167 @@ pub struct DocumentSymbol {
     pub name_range: TextRange,
 }
 
-fn grammar(lang: Language) -> Option<(TsLanguage, &'static str)> {
+fn tree_sitter_language(lang: Language) -> Option<TsLanguage> {
     Some(match lang {
-        Language::Rust => (
-            tree_sitter_rust::LANGUAGE.into(),
-            tree_sitter_rust::TAGS_QUERY,
-        ),
-        Language::Python => (
-            tree_sitter_python::LANGUAGE.into(),
-            tree_sitter_python::TAGS_QUERY,
-        ),
-        Language::JavaScript => (
-            tree_sitter_javascript::LANGUAGE.into(),
-            tree_sitter_javascript::TAGS_QUERY,
-        ),
-        Language::TypeScript => (
-            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-            tree_sitter_typescript::TAGS_QUERY,
-        ),
-        Language::Go => (tree_sitter_go::LANGUAGE.into(), tree_sitter_go::TAGS_QUERY),
-        Language::C => (tree_sitter_c::LANGUAGE.into(), tree_sitter_c::TAGS_QUERY),
-        Language::Cpp => (
-            tree_sitter_cpp::LANGUAGE.into(),
-            tree_sitter_cpp::TAGS_QUERY,
-        ),
-        Language::Java => (
-            tree_sitter_java::LANGUAGE.into(),
-            tree_sitter_java::TAGS_QUERY,
-        ),
+        Language::Rust => tree_sitter_rust::LANGUAGE.into(),
+        Language::Json => tree_sitter_json::LANGUAGE.into(),
+        Language::Toml => tree_sitter_toml_ng::LANGUAGE.into(),
+        Language::Yaml => tree_sitter_yaml::LANGUAGE.into(),
+        Language::Python => tree_sitter_python::LANGUAGE.into(),
+        Language::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
+        Language::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        Language::Go => tree_sitter_go::LANGUAGE.into(),
+        Language::C => tree_sitter_c::LANGUAGE.into(),
+        Language::Cpp => tree_sitter_cpp::LANGUAGE.into(),
+        Language::Css => tree_sitter_css::LANGUAGE.into(),
+        Language::Html => tree_sitter_html::LANGUAGE.into(),
+        Language::Java => tree_sitter_java::LANGUAGE.into(),
+        Language::Shell => tree_sitter_bash::LANGUAGE.into(),
         _ => return None,
     })
+}
+
+fn tags_query(lang: Language) -> Option<&'static str> {
+    Some(match lang {
+        Language::Rust => tree_sitter_rust::TAGS_QUERY,
+        Language::Python => tree_sitter_python::TAGS_QUERY,
+        Language::JavaScript => tree_sitter_javascript::TAGS_QUERY,
+        Language::TypeScript => tree_sitter_typescript::TAGS_QUERY,
+        Language::Go => tree_sitter_go::TAGS_QUERY,
+        Language::C => tree_sitter_c::TAGS_QUERY,
+        Language::Cpp => tree_sitter_cpp::TAGS_QUERY,
+        Language::Java => tree_sitter_java::TAGS_QUERY,
+        _ => return None,
+    })
+}
+
+fn grammar(lang: Language) -> Option<(TsLanguage, &'static str)> {
+    Some((tree_sitter_language(lang)?, tags_query(lang)?))
+}
+
+/// Return the next larger named syntax node for each selection range.
+///
+/// Tree-sitter exposes byte ranges, so this helper uses the same UTF-8 byte
+/// offsets as editor anchors and selections. Languages without a bundled
+/// grammar leave the caller's word/bracket/line fallback intact. One parse is
+/// shared by every selection so multi-cursor expansion does not reparse once
+/// per caret.
+pub(crate) fn larger_syntax_ranges(
+    lang: Language,
+    snapshot: &BufferSnapshot,
+    ranges: &[TextRange],
+) -> Vec<Option<TextRange>> {
+    let Some(tree) = syntax_tree(lang, snapshot) else {
+        return vec![None; ranges.len()];
+    };
+    let root = tree.root_node();
+    ranges
+        .iter()
+        .map(|range| larger_syntax_range(root, *range, snapshot.byte_len()))
+        .collect()
+}
+
+fn larger_syntax_range(
+    root: tree_sitter::Node<'_>,
+    range: TextRange,
+    byte_len: usize,
+) -> Option<TextRange> {
+    if range.end > byte_len {
+        return None;
+    }
+    let mut node = root.descendant_for_byte_range(range.start, range.end)?;
+    let mut candidate: Option<TextRange> = None;
+    loop {
+        let node_range = TextRange::new(node.start_byte(), node.end_byte());
+        if node.is_named()
+            && contains_range(node_range, range)
+            && node_range.len() > range.len()
+            && candidate.is_none_or(|current| node_range.len() < current.len())
+        {
+            candidate = Some(node_range);
+        }
+        let Some(parent) = node.parent() else {
+            break;
+        };
+        node = parent;
+    }
+    candidate
+}
+
+/// Return the largest named syntax child fully contained in each selection.
+///
+/// As with [`larger_syntax_ranges`], parsing is shared across all selections
+/// in the document.
+pub(crate) fn smaller_syntax_ranges(
+    lang: Language,
+    snapshot: &BufferSnapshot,
+    ranges: &[TextRange],
+) -> Vec<Option<TextRange>> {
+    let Some(tree) = syntax_tree(lang, snapshot) else {
+        return vec![None; ranges.len()];
+    };
+    let root = tree.root_node();
+    ranges
+        .iter()
+        .map(|range| smaller_syntax_range(root, *range, snapshot.byte_len()))
+        .collect()
+}
+
+fn smaller_syntax_range(
+    root: tree_sitter::Node<'_>,
+    range: TextRange,
+    byte_len: usize,
+) -> Option<TextRange> {
+    if range.is_empty() || range.end > byte_len {
+        return None;
+    }
+    let mut node = root.descendant_for_byte_range(range.start, range.end)?;
+    while !contains_range(TextRange::new(node.start_byte(), node.end_byte()), range) {
+        node = node.parent()?;
+    }
+
+    let mut candidates = Vec::new();
+    collect_contained_named_nodes(node, range, &mut candidates);
+    candidates.sort_by(|left, right| {
+        right
+            .len()
+            .cmp(&left.len())
+            .then_with(|| left.start.cmp(&right.start))
+    });
+    candidates.into_iter().next()
+}
+
+fn syntax_tree(lang: Language, snapshot: &BufferSnapshot) -> Option<tree_sitter::Tree> {
+    if snapshot.byte_len() == 0 {
+        return None;
+    }
+    let language = tree_sitter_language(lang)?;
+    let mut parser = Parser::new();
+    parser.set_language(&language).ok()?;
+    parser.parse(snapshot.text(), None)
+}
+
+fn contains_range(outer: TextRange, inner: TextRange) -> bool {
+    outer.start <= inner.start && outer.end >= inner.end
+}
+
+fn collect_contained_named_nodes(
+    node: tree_sitter::Node<'_>,
+    range: TextRange,
+    candidates: &mut Vec<TextRange>,
+) {
+    for index in 0..node.named_child_count() {
+        let Some(child) = node.named_child(index) else {
+            continue;
+        };
+        let child_range = TextRange::new(child.start_byte(), child.end_byte());
+        if child_range.start >= range.start && child_range.end <= range.end {
+            if child_range.len() < range.len() {
+                candidates.push(child_range);
+            }
+            collect_contained_named_nodes(child, range, candidates);
+        }
+    }
 }
 
 fn classify(def_capture: &str) -> SymbolKind {
@@ -209,5 +340,41 @@ mod tests {
     fn empty_snapshot_has_no_symbols() {
         let buffer = crate::EditorBuffer::default();
         assert!(document_symbols(Language::Rust, &buffer.snapshot()).is_empty());
+    }
+
+    #[test]
+    fn rust_syntax_selection_grows_from_expression_to_parent_and_shrinks() {
+        let source = "fn main() { let answer = add(1 + 2, 3); }";
+        let buffer = crate::EditorBuffer::from_text(source);
+        let snapshot = buffer.snapshot();
+        let one_start = source.find("1 + 2").expect("expression in source");
+        let one = TextRange::new(one_start, one_start + 1);
+        let binary = TextRange::new(one_start, one_start + "1 + 2".len());
+
+        assert_eq!(
+            larger_syntax_ranges(Language::Rust, &snapshot, &[one]),
+            vec![Some(binary)]
+        );
+        assert_eq!(
+            smaller_syntax_ranges(Language::Rust, &snapshot, &[binary]),
+            vec![Some(one)]
+        );
+    }
+
+    #[test]
+    fn syntax_selection_supports_highlight_grammars_without_symbol_queries() {
+        let source = "{\"answer\": 42}";
+        let buffer = crate::EditorBuffer::from_text(source);
+        let snapshot = buffer.snapshot();
+        let number = TextRange::new(
+            source.find("42").expect("number in source"),
+            source.len() - 1,
+        );
+
+        assert_eq!(
+            larger_syntax_ranges(Language::Json, &snapshot, &[number]),
+            vec![Some(TextRange::new(1, source.len() - 1))]
+        );
+        assert!(document_symbols(Language::Json, &snapshot).is_empty());
     }
 }
