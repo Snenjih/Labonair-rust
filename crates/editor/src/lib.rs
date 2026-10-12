@@ -23,6 +23,7 @@ pub mod language;
 pub mod language_services;
 pub mod lifecycle;
 pub mod lsp_process;
+pub mod navigation;
 pub mod policy;
 pub mod runtime;
 pub mod search;
@@ -83,6 +84,7 @@ pub use lsp_process::{
     LocalLanguageServiceProcess, LocalLanguageServiceRequest, ProcessLifecycleState,
     ProcessServerConfig, ProjectRootPolicy,
 };
+pub use navigation::{NavigationHistory, NavigationLocation};
 pub use policy::{apply_text_policies, SavePolicy};
 pub use runtime::{
     BackgroundEditRequest, LanguageServiceEditResult, LanguageServiceRuntime,

@@ -46,6 +46,8 @@ pub enum GitEditorCommand {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EditorUiCommand {
     GoToLineColumn,
+    GoBack,
+    GoForward,
     ToggleSearchSelection,
     ToggleReadOnly,
     OpenMarkdownPreview,
@@ -115,6 +117,8 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         CommandId::EditorUndoSelection => EditorCommandRoute::Edit(EditIntent::UndoSelection),
         CommandId::EditorRedoSelection => EditorCommandRoute::Edit(EditIntent::RedoSelection),
         CommandId::EditorGoToLineColumn => EditorCommandRoute::Ui(EditorUiCommand::GoToLineColumn),
+        CommandId::EditorGoBack => EditorCommandRoute::Ui(EditorUiCommand::GoBack),
+        CommandId::EditorGoForward => EditorCommandRoute::Ui(EditorUiCommand::GoForward),
         CommandId::EditorToggleSearchSelection => {
             EditorCommandRoute::Ui(EditorUiCommand::ToggleSearchSelection)
         }
@@ -276,6 +280,8 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorUndoSelection,
     CommandId::EditorRedoSelection,
     CommandId::EditorGoToLineColumn,
+    CommandId::EditorGoBack,
+    CommandId::EditorGoForward,
     CommandId::EditorToggleSearchSelection,
     CommandId::EditorToggleReadOnly,
     CommandId::EditorOpenMarkdownPreview,
@@ -499,6 +505,12 @@ impl CommandProvider for EditorCommandProvider {
                 "Editor",
             )
             .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(CommandId::EditorGoBack, "Go Back", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("ctrl-alt-left", Some(CommandContext::Editor)),
+            CommandDescriptor::new(CommandId::EditorGoForward, "Go Forward", "Editor")
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("ctrl-alt-right", Some(CommandContext::Editor)),
             CommandDescriptor::new(
                 CommandId::EditorToggleBreadcrumb,
                 "Toggle Breadcrumbs",
@@ -910,6 +922,14 @@ mod tests {
             ))
         );
         assert_eq!(
+            route_for_command(CommandId::EditorGoBack),
+            Some(EditorCommandRoute::Ui(EditorUiCommand::GoBack))
+        );
+        assert_eq!(
+            route_for_command(CommandId::EditorGoForward),
+            Some(EditorCommandRoute::Ui(EditorUiCommand::GoForward))
+        );
+        assert_eq!(
             route_for_command(CommandId::EditorAddCursorAbove),
             Some(EditorCommandRoute::Edit(EditIntent::AddCursorAbove))
         );
@@ -1019,6 +1039,23 @@ mod tests {
             bindings(CommandId::EditorRedoSelection),
             vec!["cmd-shift-u"]
         );
+    }
+
+    #[test]
+    fn navigation_history_commands_have_editor_scoped_shortcuts() {
+        let commands = EditorCommandProvider.commands();
+        for (id, binding) in [
+            (CommandId::EditorGoBack, "ctrl-alt-left"),
+            (CommandId::EditorGoForward, "ctrl-alt-right"),
+        ] {
+            let command = commands.iter().find(|command| command.id == id).unwrap();
+            assert_eq!(command.default_bindings.len(), 1);
+            assert_eq!(command.default_bindings[0].keystrokes, binding);
+            assert_eq!(
+                command.default_bindings[0].context,
+                Some(CommandContext::Editor)
+            );
+        }
     }
 
     #[test]

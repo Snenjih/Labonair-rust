@@ -61,12 +61,13 @@ use labonair_editor::{
     LanguageServiceEditResponse, LanguageServiceRequest, LanguageServiceResponse,
     LanguageServiceResult, LanguageServiceRuntime, LanguageServiceRuntimeSnapshot,
     LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus, LanguageServiceSnapshot,
-    LanguageServiceState, LocalLanguageServiceRequest, LspPosition, LspRange, Match, Position,
-    ProjectBufferCandidate, ProjectReplacePlan, ProjectReplaceRequest, ProjectReplaceResult,
-    ProjectReplaceTarget, ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest,
-    ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot, Revision, SavePolicy,
-    SearchError, SearchOptions, SearchQuery, Selection, SelectionSet, SyntaxHighlighter, TextRange,
-    Viewport, Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
+    LanguageServiceState, LocalLanguageServiceRequest, LspPosition, LspRange, Match,
+    NavigationHistory, NavigationLocation, Position, ProjectBufferCandidate, ProjectReplacePlan,
+    ProjectReplaceRequest, ProjectReplaceResult, ProjectReplaceTarget, ProjectSearchHit,
+    ProjectSearchQuery, ProjectSearchRequest, ProjectSearchResult, ProjectSearchSession,
+    ProjectSearchSnapshot, Revision, SavePolicy, SearchError, SearchOptions, SearchQuery,
+    Selection, SelectionSet, SyntaxHighlighter, TextRange, Viewport, Vim, VimKey, VimMode,
+    VimOptions, WhitespaceMode,
 };
 use labonair_editor::{build_breadcrumb_state, BreadcrumbState};
 
@@ -885,6 +886,7 @@ pub struct EditorView {
     buffer_search_input: Option<Entity<InputState>>,
     project_search: ProjectSearchSession,
     pending_navigation: Option<Position>,
+    navigation_history: NavigationHistory,
     /// Tree-sitter syntax highlighter for the current document (T06-002).
     syntax: SyntaxHighlighter,
     /// Vim keybinding state machine (T06-003) — `None` when Vim mode is off.
@@ -1117,6 +1119,7 @@ impl EditorView {
             buffer_search_input: None,
             project_search: ProjectSearchSession::default(),
             pending_navigation: None,
+            navigation_history: NavigationHistory::default(),
             syntax: SyntaxHighlighter::new(Language::PlainText),
             vim,
             helix,
@@ -1291,6 +1294,8 @@ impl EditorView {
                 self.go_to_line_requested = true;
                 cx.notify();
             }
+            EditorCommandRoute::Ui(EditorUiCommand::GoBack) => self.navigate_history_back(cx),
+            EditorCommandRoute::Ui(EditorUiCommand::GoForward) => self.navigate_history_forward(cx),
             EditorCommandRoute::Ui(EditorUiCommand::ToggleSearchSelection) => {
                 self.toggle_search_selection_scope(cx);
             }
@@ -1977,9 +1982,7 @@ impl EditorView {
                         .selection_range
                         .start
                         .to_position(&self.doc.snapshot());
-                    self.doc.set_caret(position, false);
-                    self.ensure_cursor_visible(cx);
-                    cx.emit(EditorEvent::Changed);
+                    self.goto_position(position, cx);
                 }
             }
             LanguageServiceResponse::Formatting(edits) => {
@@ -2958,11 +2961,7 @@ impl EditorView {
     /// Move the caret to the start of `line0` (0-based, clamped) and scroll it
     /// into view — palette symbol jump.
     pub fn goto_line(&mut self, line0: usize, cx: &mut Context<Self>) {
-        let max = self.doc.snapshot().line_count().saturating_sub(1);
-        let line = line0.min(max);
-        self.doc.set_caret(Position::new(line, 0), false);
-        self.ensure_cursor_visible(cx);
-        cx.notify();
+        self.navigate_to_position(Position::new(line0, 0), cx);
     }
 
     /// Move the caret to a project-search hit. While a newly opened file is
@@ -2972,11 +2971,61 @@ impl EditorView {
             self.pending_navigation = Some(position);
             return;
         }
+        self.navigate_to_position(position, cx);
+    }
+
+    fn navigation_location(&self) -> NavigationLocation {
+        NavigationLocation::new(self.doc.cursor, self.scroll_top, self.scroll_left)
+    }
+
+    fn navigate_to_position(&mut self, position: Position, cx: &mut Context<Self>) {
+        if matches!(self.doc.file_state(), FileState::Loading) {
+            self.pending_navigation = Some(position);
+            return;
+        }
+        self.pending_navigation = None;
+        let from = self.navigation_location();
         let snapshot = self.doc.snapshot();
         let line = position.line.min(snapshot.line_count().saturating_sub(1));
         let column = position.column.min(snapshot.line_len(line));
         self.doc.set_caret(Position::new(line, column), false);
         self.ensure_cursor_visible(cx);
+        self.navigation_history
+            .record_transition(from, self.navigation_location());
+        self.cursor_blink_on = true;
+        cx.emit(EditorEvent::Changed);
+        cx.notify();
+    }
+
+    fn navigate_history_back(&mut self, cx: &mut Context<Self>) {
+        if let Some(location) = self.navigation_history.back() {
+            self.restore_navigation_location(location, cx);
+        }
+    }
+
+    fn navigate_history_forward(&mut self, cx: &mut Context<Self>) {
+        if let Some(location) = self.navigation_history.forward() {
+            self.restore_navigation_location(location, cx);
+        }
+    }
+
+    fn restore_navigation_location(
+        &mut self,
+        location: NavigationLocation,
+        cx: &mut Context<Self>,
+    ) {
+        let snapshot = self.doc.snapshot();
+        let line = location
+            .position
+            .line
+            .min(snapshot.line_count().saturating_sub(1));
+        let column = location.position.column.min(snapshot.line_len(line));
+        self.doc.set_caret(Position::new(line, column), false);
+        self.scroll_top = location.scroll_top;
+        self.scroll_left = location.scroll_left;
+        self.ensure_cursor_visible(cx);
+        self.cursor_blink_on = true;
+        cx.emit(EditorEvent::Changed);
         cx.notify();
     }
 
@@ -3419,6 +3468,7 @@ impl EditorView {
         self.format_on_save_in_flight = false;
         self.save_intent_after_format = None;
         self.pending_navigation = None;
+        self.navigation_history.clear();
         self.doc = Document::loading(path.clone());
         self.recovery_prompt = None;
         self.invalidate_git_requests();
@@ -9353,6 +9403,35 @@ mod tests {
         document.keep_buffer().unwrap();
         assert_eq!(document.file_state(), &FileState::Dirty);
         assert_eq!(document.text(), local_text);
+    }
+
+    #[gpui::test]
+    fn registered_navigation_commands_restore_and_branch_location_history(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file(
+                    "test.rs".into(),
+                    "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight",
+                    1,
+                );
+                this.goto_line(2, cx);
+                this.goto_line(5, cx);
+                assert_eq!(this.cursor_position(), Position::new(5, 0));
+
+                assert!(this.dispatch_registered_command(CommandId::EditorGoBack, cx));
+                assert_eq!(this.cursor_position(), Position::new(2, 0));
+                assert!(this.dispatch_registered_command(CommandId::EditorGoForward, cx));
+                assert_eq!(this.cursor_position(), Position::new(5, 0));
+
+                assert!(this.dispatch_registered_command(CommandId::EditorGoBack, cx));
+                this.goto_line(7, cx);
+                assert!(this.dispatch_registered_command(CommandId::EditorGoBack, cx));
+                assert_eq!(this.cursor_position(), Position::new(2, 0));
+                assert!(this.dispatch_registered_command(CommandId::EditorGoForward, cx));
+                assert_eq!(this.cursor_position(), Position::new(7, 0));
+            });
+        });
     }
 
     #[gpui::test]

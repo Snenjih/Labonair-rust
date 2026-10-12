@@ -106,6 +106,8 @@ pub enum CommandId {
     EditorUndoSelection,
     EditorRedoSelection,
     EditorGoToLineColumn,
+    EditorGoBack,
+    EditorGoForward,
     EditorToggleSearchSelection,
     EditorToggleReadOnly,
     EditorOpenMarkdownPreview,
@@ -597,6 +599,8 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
         CommandId::EditorGoToLineColumn,
         "editor.go-to-line-column"
     ),
+    (CommandId::EditorGoBack, "editor.go-back"),
+    (CommandId::EditorGoForward, "editor.go-forward"),
     (
         CommandId::EditorToggleSearchSelection,
         "search::ToggleSelection"
