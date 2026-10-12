@@ -21,13 +21,13 @@ use tokio::time;
 
 use crate::buffer::{BufferSnapshot, Edit};
 use crate::language_services::{
-    CancellationToken, CodeAction, CompletionItem, CompletionKind, CompletionList, Diagnostic,
-    DiagnosticSeverity, DocumentColor, DocumentColorValue, DocumentVersion, FoldingRange,
-    HoverContent, InlayHint, InlayHintKind, LanguageId, LanguageServerId,
-    LanguageServiceCapabilities, LanguageServiceEditCapabilities, LanguageServiceEditRequest,
-    LanguageServiceEditResponse, LanguageServiceError, LanguageServiceRequest,
-    LanguageServiceResponse, LanguageServiceResult, LspPosition, LspRange, NavigationTarget,
-    SemanticToken, SignatureHelp,
+    CancellationToken, CodeAction, CompletionItem, CompletionKind, CompletionList,
+    CompletionTextFormat, Diagnostic, DiagnosticSeverity, DocumentColor, DocumentColorValue,
+    DocumentVersion, FoldingRange, HoverContent, InlayHint, InlayHintKind, LanguageId,
+    LanguageServerId, LanguageServiceCapabilities, LanguageServiceEditCapabilities,
+    LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceError,
+    LanguageServiceRequest, LanguageServiceResponse, LanguageServiceResult, LspPosition, LspRange,
+    NavigationTarget, SemanticToken, SignatureHelp,
 };
 use crate::symbols::{DocumentSymbol, SymbolKind};
 
@@ -1574,9 +1574,9 @@ fn parse_completion(value: &Value) -> CompletionList {
 
 fn parse_completion_item(value: &Value) -> CompletionItem {
     let label = value_string(value.get("label").unwrap_or(&Value::Null));
+    let text_edit = value.get("textEdit");
     CompletionItem {
-        insert_text: value
-            .get("textEdit")
+        insert_text: text_edit
             .and_then(|edit| edit.get("newText"))
             .and_then(Value::as_str)
             .unwrap_or_else(|| {
@@ -1595,11 +1595,20 @@ fn parse_completion_item(value: &Value) -> CompletionItem {
             15 => CompletionKind::Snippet,
             _ => CompletionKind::Text,
         },
+        text_format: match value.get("insertTextFormat").and_then(Value::as_u64) {
+            Some(2) => CompletionTextFormat::Snippet,
+            _ => CompletionTextFormat::PlainText,
+        },
         label,
         detail: value
             .get("detail")
             .and_then(Value::as_str)
             .map(str::to_string),
+        text_edit_range: text_edit.and_then(|edit| {
+            edit.get("replace")
+                .and_then(parse_range)
+                .or_else(|| edit.get("range").and_then(parse_range))
+        }),
         filter_text: value
             .get("filterText")
             .and_then(Value::as_str)
@@ -2021,8 +2030,40 @@ mod tests {
     #[test]
     fn lsp_mapping_covers_common_values() {
         let snap = snapshot("fn main() {}\n");
-        let completion = parse_completion(&json!([{ "label": "main", "kind": 3 }]));
+        let completion = parse_completion(&json!([
+            { "label": "main", "kind": 3 },
+            {
+                "label": "function snippet",
+                "kind": 15,
+                "insertTextFormat": 2,
+                "textEdit": {
+                    "range": {
+                        "start": { "line": 0, "character": 0 },
+                        "end": { "line": 0, "character": 2 }
+                    },
+                    "newText": "fn ${1:name}"
+                }
+            }
+        ]));
         assert_eq!(completion.items[0].kind, CompletionKind::Function);
+        assert_eq!(
+            completion.items[1].text_format,
+            CompletionTextFormat::Snippet
+        );
+        assert_eq!(
+            completion.items[1].text_edit_range,
+            Some(LspRange {
+                start: LspPosition {
+                    line: 0,
+                    character: 0,
+                },
+                end: LspPosition {
+                    line: 0,
+                    character: 2,
+                },
+            })
+        );
+        assert_eq!(completion.items[1].insert_text, "fn ${1:name}");
         let edits = parse_text_edits(
             "file:///x",
             &snap,

@@ -2151,13 +2151,26 @@ impl EditorView {
             return;
         };
         let snapshot = self.doc.snapshot();
-        let range = self.completion_range(&snapshot);
+        let range = if let Some(lsp_range) = item.text_edit_range {
+            let range = lsp_range.to_text_range(&snapshot);
+            if labonair_editor::LspRange::from_text_range(&snapshot, range) != lsp_range {
+                self.dismiss_completion();
+                return;
+            }
+            range
+        } else {
+            self.completion_range(&snapshot)
+        };
+        if range.start > range.end || range.end > snapshot.byte_len() {
+            self.dismiss_completion();
+            return;
+        }
         let before = self.editor_revision();
         let dirty_before = self.doc.is_dirty();
         let selections = self.doc.selection_set();
-        let snippet = SnippetSession::parse(&item.insert_text);
-        let applied = if snippet.has_placeholders() {
-            self.doc.apply_snippet(range, snippet)
+        let applied = if item.text_format == labonair_editor::CompletionTextFormat::Snippet {
+            self.doc
+                .apply_snippet(range, SnippetSession::parse(&item.insert_text))
         } else {
             self.doc.apply_edits(
                 vec![Edit::new(range, item.insert_text)],
@@ -9351,8 +9364,10 @@ mod tests {
                                 labonair_editor::CompletionItem {
                                     label: "print".into(),
                                     kind: labonair_editor::CompletionKind::Function,
+                                    text_format: labonair_editor::CompletionTextFormat::PlainText,
                                     detail: None,
                                     insert_text: "print".into(),
+                                    text_edit_range: None,
                                     filter_text: None,
                                     sort_text: None,
                                     documentation: None,
@@ -9360,8 +9375,10 @@ mod tests {
                                 labonair_editor::CompletionItem {
                                     label: "println".into(),
                                     kind: labonair_editor::CompletionKind::Function,
+                                    text_format: labonair_editor::CompletionTextFormat::PlainText,
                                     detail: None,
                                     insert_text: "println".into(),
+                                    text_edit_range: None,
                                     filter_text: None,
                                     sort_text: None,
                                     documentation: None,
@@ -9407,8 +9424,10 @@ mod tests {
                             items: vec![labonair_editor::CompletionItem {
                                 label: "print".into(),
                                 kind: labonair_editor::CompletionKind::Snippet,
+                                text_format: labonair_editor::CompletionTextFormat::Snippet,
                                 detail: None,
                                 insert_text: "print_${1:arg}(${2:value})$0".into(),
+                                text_edit_range: None,
                                 filter_text: None,
                                 sort_text: None,
                                 documentation: None,
@@ -9448,6 +9467,58 @@ mod tests {
                     view.dispatch_registered_command(CommandId::EditorPreviousSnippetTabstop, cx,)
                 );
                 assert_eq!(view.doc.selected_text().as_deref(), Some("value"));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn completion_uses_lsp_edit_range_and_respects_plain_text_format(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |view, cx| {
+                view.doc = Document::from_file("completion.rs".into(), "object.field", 1);
+                view.doc.move_caret(Motion::DocEnd, false);
+                view.language_service_generation = 1;
+                let version = DocumentVersion::from_revision(view.editor_revision());
+                view.language_service_state
+                    .set_document_generation(version, 1);
+                assert!(view.language_service_state.apply(LanguageServiceResult {
+                    server: labonair_editor::LanguageServerId::new("test"),
+                    version,
+                    generation: 1,
+                    response: Ok(LanguageServiceResponse::Completion(
+                        labonair_editor::CompletionList {
+                            items: vec![labonair_editor::CompletionItem {
+                                label: "literal".into(),
+                                kind: labonair_editor::CompletionKind::Text,
+                                text_format: labonair_editor::CompletionTextFormat::PlainText,
+                                detail: None,
+                                insert_text: "${1:name}".into(),
+                                text_edit_range: Some(labonair_editor::LspRange {
+                                    start: LspPosition {
+                                        line: 0,
+                                        character: 0,
+                                    },
+                                    end: LspPosition {
+                                        line: 0,
+                                        character: 12,
+                                    },
+                                }),
+                                filter_text: None,
+                                sort_text: None,
+                                documentation: None,
+                            }],
+                            is_incomplete: false,
+                        },
+                    )),
+                }));
+                view.completion_visible = true;
+                view.completion_position = Some(view.current_lsp_position());
+
+                view.apply_completion_item(0, cx);
+
+                assert_eq!(view.doc.text(), "${1:name}");
+                assert_eq!(view.doc.selected_text(), None);
             });
         });
     }

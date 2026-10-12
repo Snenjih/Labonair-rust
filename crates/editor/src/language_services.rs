@@ -146,12 +146,21 @@ pub enum CompletionKind {
     Text,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CompletionTextFormat {
+    #[default]
+    PlainText,
+    Snippet,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompletionItem {
     pub label: String,
     pub kind: CompletionKind,
+    pub text_format: CompletionTextFormat,
     pub detail: Option<String>,
     pub insert_text: String,
+    pub text_edit_range: Option<LspRange>,
     pub filter_text: Option<String>,
     pub sort_text: Option<String>,
     pub documentation: Option<String>,
@@ -1005,8 +1014,10 @@ impl SyntaxLanguageService {
                     CompletionItem {
                         label: (*keyword).to_string(),
                         kind: CompletionKind::Keyword,
+                        text_format: CompletionTextFormat::PlainText,
                         detail: Some("syntax keyword".to_string()),
                         insert_text: (*keyword).to_string(),
+                        text_edit_range: None,
                         filter_text: None,
                         sort_text: Some(format!("0-{keyword}")),
                         documentation: None,
@@ -1025,8 +1036,10 @@ impl SyntaxLanguageService {
                     .or_insert_with(|| CompletionItem {
                         label: name.clone(),
                         kind: CompletionKind::Text,
+                        text_format: CompletionTextFormat::PlainText,
                         detail: Some("document symbol".to_string()),
                         insert_text: name,
+                        text_edit_range: None,
                         filter_text: None,
                         sort_text: Some(sort_text),
                         documentation: None,
