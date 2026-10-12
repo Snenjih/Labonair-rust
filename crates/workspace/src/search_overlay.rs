@@ -39,6 +39,8 @@ use crate::{SearchTarget, Workspace};
 /// The last query typed into any search overlay, pre-filled (and replacing an
 /// editor-selection seed when none exists) the next time one opens.
 static LAST_QUERY: Mutex<String> = Mutex::new(String::new());
+static QUERY_HISTORY: Mutex<Vec<String>> = Mutex::new(Vec::new());
+const MAX_QUERY_HISTORY: usize = 50;
 
 fn last_query() -> String {
     LAST_QUERY.lock().map(|q| q.clone()).unwrap_or_default()
@@ -47,6 +49,89 @@ fn last_query() -> String {
 fn save_last_query(query: &str) {
     if let Ok(mut slot) = LAST_QUERY.lock() {
         *slot = query.to_string();
+    }
+}
+
+fn query_history() -> Vec<String> {
+    QUERY_HISTORY
+        .lock()
+        .map(|queries| queries.clone())
+        .unwrap_or_default()
+}
+
+fn remember_query(query: &str) {
+    if query.trim().is_empty() {
+        return;
+    }
+    if let Ok(mut queries) = QUERY_HISTORY.lock() {
+        if queries.last().is_some_and(|previous| previous == query) {
+            return;
+        }
+        queries.retain(|previous| previous != query);
+        queries.push(query.to_string());
+        if queries.len() > MAX_QUERY_HISTORY {
+            let excess = queries.len() - MAX_QUERY_HISTORY;
+            queries.drain(..excess);
+        }
+    }
+}
+
+#[derive(Default)]
+struct SearchQueryHistory {
+    entries: Vec<String>,
+    index: Option<usize>,
+    draft: String,
+    programmatic_value: Option<String>,
+}
+
+impl SearchQueryHistory {
+    fn new(entries: Vec<String>) -> Self {
+        Self {
+            entries,
+            ..Self::default()
+        }
+    }
+
+    fn previous(&mut self, current: &str) -> Option<String> {
+        if self.entries.is_empty() {
+            return None;
+        }
+        let index = match self.index {
+            Some(index) => index.saturating_sub(1),
+            None => {
+                self.draft = current.to_string();
+                self.entries.len() - 1
+            }
+        };
+        self.index = Some(index);
+        self.entries.get(index).cloned()
+    }
+
+    fn next(&mut self) -> Option<String> {
+        let index = self.index?;
+        if index + 1 < self.entries.len() {
+            self.index = Some(index + 1);
+            self.entries.get(index + 1).cloned()
+        } else {
+            self.index = None;
+            Some(self.draft.clone())
+        }
+    }
+
+    fn consume_programmatic_value(&mut self, value: &str) -> bool {
+        if self.programmatic_value.as_deref() == Some(value) {
+            self.programmatic_value = None;
+            true
+        } else {
+            self.programmatic_value = None;
+            false
+        }
+    }
+
+    fn reset(&mut self) {
+        self.index = None;
+        self.draft.clear();
+        self.programmatic_value = None;
     }
 }
 
@@ -108,6 +193,7 @@ pub struct SearchOverlay {
     options: SearchOptions,
     selection_range: Option<TextRange>,
     collapsed_project_files: HashSet<String>,
+    query_history: SearchQueryHistory,
     search_on_type: bool,
     include_ignored: bool,
     only_open_files: bool,
@@ -167,8 +253,14 @@ impl SearchOverlay {
         });
         let input_sub = cx.subscribe(
             &input,
-            |this: &mut Self, _input, ev: &InputEvent, cx| match ev {
-                InputEvent::Change => this.run_search(cx),
+            |this: &mut Self, input, ev: &InputEvent, cx| match ev {
+                InputEvent::Change => {
+                    let value = input.read(cx).value().to_string();
+                    if !this.query_history.consume_programmatic_value(&value) {
+                        this.query_history.reset();
+                        this.run_search(cx);
+                    }
+                }
                 InputEvent::PressEnter { secondary } if this.scope == SearchScope::CurrentFile => {
                     this.step(!secondary, cx)
                 }
@@ -232,6 +324,7 @@ impl SearchOverlay {
             options,
             selection_range,
             collapsed_project_files: HashSet::new(),
+            query_history: SearchQueryHistory::new(query_history()),
             search_on_type,
             include_ignored,
             only_open_files: false,
@@ -361,6 +454,27 @@ impl SearchOverlay {
             self.collapsed_project_files.remove(&hit.relative_path);
         }
         cx.notify();
+    }
+
+    fn navigate_query_history(
+        &mut self,
+        previous: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let current = self.input.read(cx).value().to_string();
+        let value = if previous {
+            self.query_history.previous(&current)
+        } else {
+            self.query_history.next()
+        };
+        let Some(value) = value else {
+            return;
+        };
+        self.query_history.programmatic_value = Some(value.clone());
+        self.input
+            .update(cx, |input, cx| input.set_value(value, window, cx));
+        self.run_search(cx);
     }
 
     fn toggle_case(&mut self, cx: &mut Context<Self>) {
@@ -506,6 +620,8 @@ impl Focusable for SearchOverlay {
 
 impl ModalView for SearchOverlay {
     fn on_dismiss(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let query = self.input.read(cx).value().to_string();
+        remember_query(&query);
         self.workspace.update(cx, |w, cx| w.search_end(cx));
     }
 
@@ -1282,6 +1398,12 @@ impl Render for SearchOverlay {
                 if ev.keystroke.key == "escape" {
                     cx.emit(DismissEvent);
                     cx.stop_propagation();
+                } else if query_focused && ev.keystroke.key == "up" {
+                    this.navigate_query_history(true, window, cx);
+                    cx.stop_propagation();
+                } else if query_focused && ev.keystroke.key == "down" {
+                    this.navigate_query_history(false, window, cx);
+                    cx.stop_propagation();
                 } else if this.scope == SearchScope::Project
                     && this.target == SearchTarget::Editor
                     && ev.keystroke.key == "up"
@@ -1336,6 +1458,27 @@ mod tests {
             next_case_mode(SearchCaseMode::Insensitive),
             SearchCaseMode::Smart
         );
+    }
+
+    #[test]
+    fn query_history_navigation_keeps_the_draft_and_clamps_at_oldest_entry() {
+        let mut history = SearchQueryHistory::new(vec!["alpha".into(), "beta".into()]);
+
+        assert_eq!(history.previous("draft"), Some("beta".into()));
+        assert_eq!(history.previous("beta"), Some("alpha".into()));
+        assert_eq!(history.previous("alpha"), Some("alpha".into()));
+        assert_eq!(history.next(), Some("beta".into()));
+        assert_eq!(history.next(), Some("draft".into()));
+        assert_eq!(history.next(), None);
+    }
+
+    #[test]
+    fn query_history_distinguishes_programmatic_updates_from_user_edits() {
+        let mut history = SearchQueryHistory::new(vec!["saved".into()]);
+        history.programmatic_value = Some("saved".into());
+
+        assert!(history.consume_programmatic_value("saved"));
+        assert!(!history.consume_programmatic_value("edited"));
     }
 
     #[test]
