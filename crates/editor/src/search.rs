@@ -130,6 +130,7 @@ pub struct ProjectSearchOptions {
     pub smart_case: bool,
     pub whole_word: bool,
     pub regex: bool,
+    pub include_ignored: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,6 +146,7 @@ impl Default for ProjectSearchOptions {
             smart_case: true,
             whole_word: false,
             regex: false,
+            include_ignored: false,
         }
     }
 }
@@ -156,6 +158,7 @@ impl ProjectSearchOptions {
             smart_case: options.smart_case,
             whole_word: options.whole_word,
             regex: options.regex,
+            include_ignored: false,
         }
     }
 

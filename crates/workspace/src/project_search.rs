@@ -9,14 +9,14 @@ use std::path::{Path, PathBuf};
 use labonair_editor::{
     ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest, ProjectSearchResult,
 };
-use labonair_filesystem::grep::{fs_grep, GrepResponse};
+use labonair_filesystem::grep::{fs_grep_with_ignored, GrepResponse};
 
 pub(crate) fn search_blocking(
     root: PathBuf,
     request: ProjectSearchRequest,
 ) -> Result<ProjectSearchResult, String> {
     let pattern = request.query.backend_pattern().map_err(|e| e.to_string())?;
-    let response = fs_grep(
+    let response = fs_grep_with_ignored(
         pattern,
         root.to_string_lossy().into_owned(),
         None,
@@ -27,6 +27,7 @@ pub(crate) fn search_blocking(
                 .case_sensitive_for_matching(&request.query.text),
         ),
         Some(request.query.max_results),
+        request.query.options.include_ignored,
     )?;
     map_response(&root, &request.query, request.generation, response)
 }

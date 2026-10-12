@@ -77,6 +77,7 @@ pub struct SearchOverlay {
     target: SearchTarget,
     scope: SearchScope,
     options: SearchOptions,
+    include_ignored: bool,
     count: (usize, usize),
     error: Option<SearchError>,
     _input_sub: Subscription,
@@ -139,6 +140,7 @@ impl SearchOverlay {
             target,
             scope: SearchScope::CurrentFile,
             options: SearchOptions::default(),
+            include_ignored: false,
             count: (0, 0),
             error: None,
             _input_sub: input_sub,
@@ -177,7 +179,8 @@ impl SearchOverlay {
     }
 
     fn run_project_search(&mut self, text: String, cx: &mut Context<Self>) {
-        let options = ProjectSearchOptions::from_search_options(self.options);
+        let mut options = ProjectSearchOptions::from_search_options(self.options);
+        options.include_ignored = self.include_ignored;
         let query = ProjectSearchQuery::new(text, options, ProjectSearchQuery::DEFAULT_MAX_RESULTS);
         let _ = self
             .workspace
@@ -225,6 +228,11 @@ impl SearchOverlay {
 
     fn toggle_option(&mut self, option: impl FnOnce(&mut SearchOptions), cx: &mut Context<Self>) {
         option(&mut self.options);
+        self.run_search(cx);
+    }
+
+    fn toggle_include_ignored(&mut self, cx: &mut Context<Self>) {
+        self.include_ignored = !self.include_ignored;
         self.run_search(cx);
     }
 
@@ -637,6 +645,26 @@ impl Render for SearchOverlay {
                                     },
                                 )),
                             )
+                            .when(self.scope == SearchScope::Project, |d| {
+                                d.child(
+                                    button(
+                                        "search-include-ignored",
+                                        palette,
+                                        ButtonVariant::Subtle,
+                                        ButtonSize::Xs,
+                                    )
+                                    .child("Ignored")
+                                    .when(self.include_ignored, |d| {
+                                        d.bg(palette.selected_fill)
+                                            .text_color(palette.selected_accent)
+                                    })
+                                    .on_click(cx.listener(
+                                        |this, _: &ClickEvent, _w, cx| {
+                                            this.toggle_include_ignored(cx)
+                                        },
+                                    )),
+                                )
+                            })
                             .when(self.scope == SearchScope::CurrentFile, |d| {
                                 d.child(
                                     button(

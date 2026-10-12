@@ -47,6 +47,19 @@ pub fn fs_grep(
     case_insensitive: Option<bool>,
     max_results: Option<usize>,
 ) -> Result<GrepResponse, String> {
+    fs_grep_with_ignored(pattern, root, glob, case_insensitive, max_results, false)
+}
+
+/// Search files while optionally traversing paths excluded by ignore rules.
+/// Hidden-file handling remains unchanged; this switch only controls ignore files.
+pub fn fs_grep_with_ignored(
+    pattern: String,
+    root: String,
+    glob: Option<Vec<String>>,
+    case_insensitive: Option<bool>,
+    max_results: Option<usize>,
+    include_ignored: bool,
+) -> Result<GrepResponse, String> {
     if pattern.is_empty() {
         return Err("empty pattern".into());
     }
@@ -68,10 +81,10 @@ pub fn fs_grep(
 
     let walker = WalkBuilder::new(&root_path)
         .hidden(true)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
-        .ignore(true)
+        .git_ignore(!include_ignored)
+        .git_global(!include_ignored)
+        .git_exclude(!include_ignored)
+        .ignore(!include_ignored)
         .parents(true)
         .follow_links(false)
         .build_parallel();
@@ -156,6 +169,38 @@ pub fn fs_grep(
         truncated: truncated.load(Ordering::Relaxed),
         files_scanned: scanned.load(Ordering::Relaxed),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ignored_files_are_included_only_when_requested() {
+        let root =
+            std::env::temp_dir().join(format!("labonair-grep-ignored-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create test root");
+        std::fs::create_dir(root.join(".git")).expect("create test git directory");
+        std::fs::write(root.join(".gitignore"), "ignored.txt\n").expect("write gitignore");
+        std::fs::write(root.join("ignored.txt"), "needle\n").expect("write ignored file");
+
+        let run = |include_ignored| {
+            fs_grep_with_ignored(
+                "needle".into(),
+                root.to_string_lossy().into_owned(),
+                None,
+                None,
+                None,
+                include_ignored,
+            )
+            .expect("grep succeeds")
+        };
+        assert!(run(false).hits.is_empty());
+        assert!(run(true).hits.iter().any(|hit| hit.rel == "ignored.txt"));
+
+        std::fs::remove_dir_all(root).expect("remove test root");
+    }
 }
 
 #[derive(Serialize)]
