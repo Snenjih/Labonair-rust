@@ -303,6 +303,21 @@ impl GitService for GitTransportService {
         })
     }
 
+    fn branch_diff(
+        &self,
+        path: String,
+        base: String,
+        head: String,
+        session_id: Option<String>,
+    ) -> GitFuture<String> {
+        let ssh_state = self.ssh_state.clone();
+        let events = self.events.clone();
+        Box::pin(async move {
+            super::git_get_branch_diff(path, base, head, session_id, &ssh_state, events.clone())
+                .await
+        })
+    }
+
     fn stage_file(&self, path: String, file: String, session_id: Option<String>) -> GitFuture<()> {
         let ssh_state = self.ssh_state.clone();
         let events = self.events.clone();

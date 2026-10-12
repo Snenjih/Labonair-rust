@@ -1360,6 +1360,21 @@ pub async fn git_get_stash_diff(
     Ok(truncate_diff(&stdout, MAX_DIFF_BYTES))
 }
 
+pub async fn git_get_branch_diff(
+    path: String,
+    base: String,
+    head: String,
+    session_id: Option<String>,
+    sftp_state: &SshState,
+    events: EventBus,
+) -> Result<String, String> {
+    const MAX_DIFF_BYTES: usize = 200 * 1024;
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
+    let comparison = format!("{base}...{head}");
+    let stdout = executor.run_raw(&["diff", "--patch", &comparison]).await?;
+    Ok(truncate_diff(&stdout, MAX_DIFF_BYTES))
+}
+
 pub async fn git_push_force_with_lease(
     path: String,
     remote: Option<String>,
@@ -2351,6 +2366,55 @@ rename_src.txt\0\
             ssh: labonair_ssh_transport::SshState::default(),
             events: EventBus::new(),
         }
+    }
+
+    #[tokio::test]
+    async fn branch_diff_shows_target_changes_since_merge_base() {
+        let dir = make_temp_repo("branch_diff");
+        let path = dir.to_string_lossy().into_owned();
+        let run = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .unwrap_or_else(|error| panic!("failed to run git {args:?}: {error}"));
+            assert!(
+                output.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        run(&["branch", "-M", "main"]);
+        write_file(&dir, "shared.txt", "base\n");
+        run(&["add", "."]);
+        run(&["commit", "-q", "-m", "base"]);
+        run(&["switch", "-q", "-c", "feature"]);
+        write_file(&dir, "shared.txt", "base\nfeature\n");
+        run(&["commit", "-qam", "feature change"]);
+        run(&["switch", "-q", "main"]);
+        write_file(&dir, "main-only.txt", "main\n");
+        run(&["add", "."]);
+        run(&["commit", "-q", "-m", "main change"]);
+
+        let app = test_capabilities();
+        let diff = git_get_branch_diff(
+            path,
+            "main".into(),
+            "feature".into(),
+            None,
+            &app.ssh,
+            app.events,
+        )
+        .await
+        .expect("load branch comparison");
+
+        assert!(diff.contains("+feature"), "target change missing:\n{diff}");
+        assert!(diff.contains("shared.txt"), "changed path missing:\n{diff}");
+        assert!(
+            !diff.contains("main-only.txt"),
+            "base-only change leaked:\n{diff}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]

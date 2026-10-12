@@ -187,6 +187,15 @@ pub trait GitService: Send + Sync {
         hash: String,
         session_id: Option<String>,
     ) -> GitFuture<String>;
+    /// Unified patch for changes reachable from `head` since the merge base
+    /// with `base`.
+    fn branch_diff(
+        &self,
+        path: String,
+        base: String,
+        head: String,
+        session_id: Option<String>,
+    ) -> GitFuture<String>;
     fn stage_file(&self, path: String, file: String, session_id: Option<String>) -> GitFuture<()>;
     fn unstage_file(&self, path: String, file: String, session_id: Option<String>)
         -> GitFuture<()>;

@@ -13,6 +13,8 @@
 //!   patch (`git show`), split per file for the rail, rendered **read-only**.
 //! * [`DiffSource::Stash`] — a saved stash, fetched once as a whole patch,
 //!   including untracked files, then rendered **read-only**.
+//! * [`DiffSource::Branch`] — changes from a branch's merge base with the
+//!   current branch to that target branch, rendered **read-only**.
 //!
 //! The hunk body is virtualised ([`uniform_list`]) so large diffs stay cheap.
 //! Repeated `WorkingTree` requests re-point the selection instead of
@@ -162,7 +164,7 @@ impl ProjectDiffView {
                     self.reload(cx);
                 }
             }
-            DiffSource::Commit { .. } | DiffSource::Stash { .. } => {
+            DiffSource::Commit { .. } | DiffSource::Stash { .. } | DiffSource::Branch { .. } => {
                 let same_source = same_read_only_source(&self.source, &req.source);
                 self.source = req.source.clone();
                 if !same_source {
@@ -187,7 +189,9 @@ impl ProjectDiffView {
         self.collapsed_hunks.clear();
         match self.source {
             DiffSource::WorkingTree => self.reload(cx),
-            DiffSource::Commit { .. } | DiffSource::Stash { .. } => self.rebuild_rows(),
+            DiffSource::Commit { .. } | DiffSource::Stash { .. } | DiffSource::Branch { .. } => {
+                self.rebuild_rows()
+            }
         }
         cx.notify();
     }
@@ -286,6 +290,9 @@ impl ProjectDiffView {
             match source {
                 DiffSource::Commit { hash, .. } => git.commit_diff(root, hash, session).await,
                 DiffSource::Stash { hash, .. } => git.stash_diff(root, hash, session).await,
+                DiffSource::Branch { base, head, .. } => {
+                    git.branch_diff(root, base, head, session).await
+                }
                 DiffSource::WorkingTree => Err("Working-tree diffs load per file.".to_string()),
             }
         });
@@ -360,7 +367,7 @@ impl ProjectDiffView {
                     push_file_rows(&mut rows, file, is_split, per_hunk, &self.collapsed_hunks);
                 }
             }
-            DiffSource::Commit { .. } | DiffSource::Stash { .. } => {
+            DiffSource::Commit { .. } | DiffSource::Stash { .. } | DiffSource::Branch { .. } => {
                 let selected_file = self
                     .selected
                     .as_deref()
@@ -472,6 +479,7 @@ impl ProjectDiffView {
                     format!("{short}  {subject}")
                 }
             }
+            DiffSource::Branch { subject, .. } => subject.clone(),
             DiffSource::WorkingTree => self
                 .selected
                 .clone()
@@ -486,6 +494,18 @@ fn same_read_only_source(left: &DiffSource, right: &DiffSource) -> bool {
         | (DiffSource::Stash { hash: left, .. }, DiffSource::Stash { hash: right, .. }) => {
             left == right
         }
+        (
+            DiffSource::Branch {
+                base: left_base,
+                head: left_head,
+                ..
+            },
+            DiffSource::Branch {
+                base: right_base,
+                head: right_head,
+                ..
+            },
+        ) => left_base == right_base && left_head == right_head,
         _ => false,
     }
 }
@@ -1014,11 +1034,23 @@ mod tests {
             hash: "abc".into(),
             subject: "Stash · subject".into(),
         };
+        let branch = DiffSource::Branch {
+            base: "main".into(),
+            head: "feature".into(),
+            subject: "main → feature".into(),
+        };
+        let same_branch = DiffSource::Branch {
+            base: "main".into(),
+            head: "feature".into(),
+            subject: "updated subject".into(),
+        };
 
         assert!(same_read_only_source(&commit, &same_commit));
         assert!(!same_read_only_source(&commit, &other_commit));
         assert!(!same_read_only_source(&commit, &stash));
         assert!(same_read_only_source(&stash, &stash));
+        assert!(same_read_only_source(&branch, &same_branch));
+        assert!(!same_read_only_source(&branch, &commit));
     }
 
     #[test]

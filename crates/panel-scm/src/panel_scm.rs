@@ -174,6 +174,26 @@ fn stash_diff_request(
     }
 }
 
+fn branch_diff_request(
+    repo_root: String,
+    session_id: Option<String>,
+    base: String,
+    head: String,
+) -> ProjectDiffRequest {
+    ProjectDiffRequest {
+        repo_root,
+        session_id,
+        source: DiffSource::Branch {
+            subject: format!("{base} → {head}"),
+            base,
+            head,
+        },
+        files: Vec::new(),
+        selected: None,
+        mode: ProjectDiffMode::Unified,
+    }
+}
+
 /// `git stash pop`/`apply` that hit merge conflicts — the entry is kept (pop
 /// behaves like apply) and the working tree carries the conflicts.
 pub fn is_stash_conflict_error(err: &str) -> bool {
@@ -2098,6 +2118,18 @@ impl GitPanelView {
         )));
     }
 
+    fn open_branch_diff(&mut self, base: String, head: String, cx: &mut Context<Self>) {
+        let Some(repo_root) = self.repo_root.clone() else {
+            return;
+        };
+        cx.emit(ScmEvent::OpenProjectDiff(branch_diff_request(
+            repo_root,
+            self.session_id.clone(),
+            base,
+            head,
+        )));
+    }
+
     fn stash_drop(&mut self, hash: String, cx: &mut Context<Self>) {
         let Some((root, sid, git)) = self.ctx() else {
             return;
@@ -2969,8 +3001,27 @@ impl GitPanelView {
         let co_name = name.clone();
         let rn_name = name.clone();
         let del_name = name.clone();
+        let compare_base = resolve_default_from_ref(current);
+        let compare_head = name.clone();
 
         let mut trailing = h_stack().gap(px(4.0));
+        if !is_current {
+            trailing = trailing.child(
+                labonair_ui_kit::button_no_hover(
+                    SharedString::from(format!("git-branch-diff-{}", name)),
+                    c.palette,
+                    ButtonVariant::Subtle,
+                    ButtonSize::IconXs,
+                )
+                .text_color(c.muted)
+                .hover(|s| s.text_color(c.fg))
+                .child(IconName::GitCompare.svg(c.muted).size(px(11.0)))
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    cx.stop_propagation();
+                    this.open_branch_diff(compare_base.clone(), compare_head.clone(), cx);
+                })),
+            );
+        }
         if !b.is_remote {
             trailing = trailing.child(
                 labonair_ui_kit::button_no_hover(
@@ -4428,6 +4479,28 @@ mod tests {
             DiffSource::Stash {
                 hash: "stash-hash".into(),
                 subject: "Stash · saved work".into()
+            }
+        );
+        assert!(request.files.is_empty());
+        assert_eq!(request.mode, ProjectDiffMode::Unified);
+    }
+
+    #[test]
+    fn branch_diff_request_uses_the_current_branch_as_merge_base_side() {
+        let request = branch_diff_request(
+            "/repo".into(),
+            Some("ssh-session".into()),
+            "main".into(),
+            "feature".into(),
+        );
+        assert_eq!(request.repo_root, "/repo");
+        assert_eq!(request.session_id.as_deref(), Some("ssh-session"));
+        assert_eq!(
+            request.source,
+            DiffSource::Branch {
+                base: "main".into(),
+                head: "feature".into(),
+                subject: "main → feature".into(),
             }
         );
         assert!(request.files.is_empty());
