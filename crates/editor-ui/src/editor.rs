@@ -7143,21 +7143,36 @@ impl EditorView {
             .iter()
             .map(|range| snapshot.text_range(*range).chars().count())
             .sum::<usize>();
-        let mut left = Vec::new();
+        let mut left = div().flex().items_center().gap_2();
         if self.prefs.show_cursor_position() {
-            left.push(format!(
-                "Ln {}, Col {}",
-                self.doc.cursor.line + 1,
-                self.doc.cursor.column + 1
-            ));
+            left = left.child(
+                button(
+                    "editor-cursor-position",
+                    palette,
+                    ButtonVariant::Transparent,
+                    ButtonSize::Xs,
+                )
+                .child(SharedString::from(format!(
+                    "Ln {}, Col {}",
+                    self.doc.cursor.line + 1,
+                    self.doc.cursor.column + 1
+                )))
+                .tooltip(|window, cx| Tooltip::new("Go to Line/Column").build(window, cx))
+                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                    let _ = this.dispatch_registered_command(CommandId::EditorGoToLineColumn, cx);
+                })),
+            );
         }
         if self.prefs.show_selection_stats() {
-            left.push(format!(
+            if self.prefs.show_cursor_position() {
+                left = left.child(SharedString::from("·"));
+            }
+            left = left.child(SharedString::from(format!(
                 "{} selection{} · {} chars",
                 selection_set.len(),
                 if selection_set.len() == 1 { "" } else { "s" },
                 selected_chars
-            ));
+            )));
         }
         let language = self.doc.language;
         let language_trigger = select_trigger(
@@ -7296,7 +7311,7 @@ impl EditorView {
             .border_color(palette.border)
             .text_xs()
             .text_color(palette.muted)
-            .child(SharedString::from(left.join("  ·  ")))
+            .child(left)
             .child(right)
             .into_any_element()
     }
@@ -9888,6 +9903,18 @@ mod tests {
         assert_eq!(parse_line_column("1:0"), None);
         assert_eq!(parse_line_column("one"), None);
         assert_eq!(parse_line_column("1:2:3"), None);
+    }
+
+    #[gpui::test]
+    fn go_to_line_column_command_opens_the_editor_input(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                assert!(!this.go_to_line_requested);
+                assert!(this.dispatch_registered_command(CommandId::EditorGoToLineColumn, cx));
+                assert!(this.go_to_line_requested);
+            });
+        });
     }
 
     #[gpui::test]
