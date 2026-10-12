@@ -15,13 +15,14 @@
 //!
 //! This is the single documented deviation from 1:1 parity (see `ROADMAP.md`).
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gpui::prelude::*;
 use gpui::{
     div, img, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, Image, ImageFormat,
-    InteractiveElement, ObjectFit, SharedString, StatefulInteractiveElement, Window,
+    InteractiveElement, ObjectFit, ScrollHandle, SharedString, StatefulInteractiveElement, Window,
 };
 
 use labonair_editor::{BufferSnapshot, Language};
@@ -53,13 +54,20 @@ fn is_remote_url(target: &str) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum MarkdownLinkTarget {
     External(String),
-    Local(PathBuf),
+    Anchor(String),
+    Local {
+        path: PathBuf,
+        fragment: Option<String>,
+    },
 }
 
 fn resolve_markdown_link(base: &str, href: &str) -> Option<MarkdownLinkTarget> {
     let href = href.trim();
-    if href.is_empty() || href.starts_with('#') {
+    if href.is_empty() {
         return None;
+    }
+    if let Some(fragment) = href.strip_prefix('#') {
+        return Some(MarkdownLinkTarget::Anchor(fragment.to_string()));
     }
     if let Some((scheme, _)) = href.split_once(':') {
         let is_scheme = !scheme.is_empty()
@@ -79,7 +87,11 @@ fn resolve_markdown_link(base: &str, href: &str) -> Option<MarkdownLinkTarget> {
     if is_remote_url(base) {
         return None;
     }
-    let target = href.split(['?', '#']).next().unwrap_or_default();
+    let (target, fragment) = href
+        .split_once('#')
+        .map(|(target, fragment)| (target, Some(fragment.to_string())))
+        .unwrap_or((href, None));
+    let target = target.split('?').next().unwrap_or_default();
     if target.is_empty() {
         return None;
     }
@@ -89,7 +101,50 @@ fn resolve_markdown_link(base: &str, href: &str) -> Option<MarkdownLinkTarget> {
     } else {
         Path::new(base).parent()?.join(target)
     };
-    Some(MarkdownLinkTarget::Local(path))
+    Some(MarkdownLinkTarget::Local { path, fragment })
+}
+
+fn heading_index_for_fragment(blocks: &[MdBlock], fragment: &str) -> Option<usize> {
+    let fragment = fragment.strip_prefix('#').unwrap_or(fragment);
+    let mut seen = HashMap::<String, usize>::new();
+    for (index, block) in blocks.iter().enumerate() {
+        let MdBlock::Heading { spans, .. } = block else {
+            continue;
+        };
+        let text = spans.iter().map(Inline::plain).collect::<String>();
+        let base = heading_slug(&text);
+        if base.is_empty() {
+            continue;
+        }
+        let duplicate_index = seen.entry(base.clone()).or_default();
+        let slug = if *duplicate_index == 0 {
+            base
+        } else {
+            format!("{base}-{duplicate_index}")
+        };
+        *duplicate_index += 1;
+        if slug == fragment {
+            return Some(index);
+        }
+    }
+    None
+}
+
+fn heading_slug(text: &str) -> String {
+    let mut slug = String::new();
+    let mut pending_dash = false;
+    for character in text.chars().flat_map(char::to_lowercase) {
+        if character.is_alphanumeric() {
+            if pending_dash && !slug.is_empty() {
+                slug.push('-');
+            }
+            slug.push(character);
+            pending_dash = false;
+        } else {
+            pending_dash = true;
+        }
+    }
+    slug
 }
 
 /// Resolved preview payload for the current address.
@@ -113,6 +168,7 @@ pub struct PreviewView {
     url: String,
     content: Content,
     source_bound: bool,
+    markdown_scroll: ScrollHandle,
 }
 
 impl PreviewView {
@@ -124,6 +180,7 @@ impl PreviewView {
             url: String::new(),
             content: Content::Empty,
             source_bound: false,
+            markdown_scroll: ScrollHandle::new(),
         }
     }
 
@@ -196,10 +253,26 @@ impl PreviewView {
     fn open_markdown_link(&mut self, base: &str, href: &str, cx: &mut Context<Self>) {
         match resolve_markdown_link(base, href) {
             Some(MarkdownLinkTarget::External(target)) => open_external(&target),
-            Some(MarkdownLinkTarget::Local(path)) => {
-                self.set_url(path.to_string_lossy().into_owned(), cx)
+            Some(MarkdownLinkTarget::Anchor(fragment)) => {
+                self.scroll_to_heading(&fragment, cx);
+            }
+            Some(MarkdownLinkTarget::Local { path, fragment }) => {
+                self.set_url(path.to_string_lossy().into_owned(), cx);
+                if let Some(fragment) = fragment {
+                    self.scroll_to_heading(&fragment, cx);
+                }
             }
             None => {}
+        }
+    }
+
+    fn scroll_to_heading(&mut self, fragment: &str, cx: &mut Context<Self>) {
+        let Content::Markdown(blocks) = &self.content else {
+            return;
+        };
+        if let Some(index) = heading_index_for_fragment(blocks, fragment) {
+            self.markdown_scroll.scroll_to_item(index);
+            cx.notify();
         }
     }
 }
@@ -308,6 +381,7 @@ impl Render for PreviewView {
                 .id("preview-md")
                 .flex_1()
                 .overflow_y_scroll()
+                .track_scroll(&self.markdown_scroll)
                 .p_4()
                 .flex()
                 .flex_col()
@@ -622,9 +696,10 @@ mod tests {
     fn markdown_links_resolve_relative_files_and_allow_only_known_external_schemes() {
         assert_eq!(
             resolve_markdown_link("/docs/readme.md", "guide/next.md#intro"),
-            Some(MarkdownLinkTarget::Local(PathBuf::from(
-                "/docs/guide/next.md"
-            )))
+            Some(MarkdownLinkTarget::Local {
+                path: PathBuf::from("/docs/guide/next.md"),
+                fragment: Some("intro".into()),
+            })
         );
         assert_eq!(
             resolve_markdown_link("/docs/readme.md", "https://example.com/help"),
@@ -642,7 +717,22 @@ mod tests {
             resolve_markdown_link("/docs/readme.md", "javascript:alert(1)"),
             None
         );
-        assert_eq!(resolve_markdown_link("/docs/readme.md", "#section"), None);
+        assert_eq!(
+            resolve_markdown_link("/docs/readme.md", "#section"),
+            Some(MarkdownLinkTarget::Anchor("section".into()))
+        );
+    }
+
+    #[test]
+    fn heading_fragments_normalize_text_and_distinguish_duplicates() {
+        let blocks = parse_markdown("# Hello, World!\n\n## Hello World\n\n### Other");
+        assert_eq!(heading_index_for_fragment(&blocks, "hello-world"), Some(0));
+        assert_eq!(
+            heading_index_for_fragment(&blocks, "hello-world-1"),
+            Some(1)
+        );
+        assert_eq!(heading_index_for_fragment(&blocks, "other"), Some(2));
+        assert_eq!(heading_index_for_fragment(&blocks, "missing"), None);
     }
 
     #[test]
