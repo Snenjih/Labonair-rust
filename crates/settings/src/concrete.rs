@@ -618,6 +618,10 @@ impl EditorSettings {
         self.0.editor_semantic_tokens.unwrap_or(true)
     }
 
+    pub fn code_lens(&self) -> bool {
+        self.0.editor_code_lens.unwrap_or(false)
+    }
+
     pub fn inlay_hints(&self) -> bool {
         self.0.editor_inlay_hints.unwrap_or(false)
     }
@@ -1096,6 +1100,17 @@ mod tests {
         assert!(settings.inlay_show_background());
         assert_eq!(settings.inlay_edit_debounce_ms(), 10_000);
         assert_eq!(settings.inlay_scroll_debounce_ms(), 25);
+    }
+
+    #[test]
+    fn code_lens_is_off_by_default_and_can_be_enabled() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::defaults());
+        assert!(!defaults.code_lens());
+
+        let mut content = SettingsContent::defaults();
+        content.editor.editor_code_lens = Some(true);
+        let settings = EditorSettings::from_settings(&content);
+        assert!(settings.code_lens());
     }
 
     #[test]

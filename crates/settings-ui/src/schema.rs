@@ -782,6 +782,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Show semantic token colours when a local provider supports them."
         ),
         field!(
+            editor.editor_code_lens,
+            "editorCodeLens",
+            Switch,
+            "Code Lens",
+            "Show language-server actions and metadata above declarations when supported."
+        ),
+        field!(
             editor.editor_inlay_hints,
             "editorInlayHints",
             Switch,

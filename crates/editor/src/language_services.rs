@@ -208,6 +208,24 @@ pub struct CallHierarchyCall {
     pub ranges: Vec<LspRange>,
 }
 
+/// LSP command exposed by a code lens. Arguments and unresolved server data
+/// stay opaque so the Editor can return them to the originating server.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LanguageServiceCommand {
+    pub title: String,
+    pub command: String,
+    pub arguments: Vec<Value>,
+}
+
+/// A Code Lens positioned on a document range. Servers may defer the command
+/// until `codeLens/resolve` is requested.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CodeLens {
+    pub range: LspRange,
+    pub command: Option<LanguageServiceCommand>,
+    pub data: Option<Value>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CodeAction {
     pub title: String,
@@ -280,6 +298,9 @@ pub enum LanguageServiceCapability {
     TypeDefinition,
     References,
     CallHierarchy,
+    CodeLens,
+    CodeLensResolve,
+    ExecuteCommand,
     Rename,
     CodeActions,
     SemanticTokens,
@@ -336,6 +357,9 @@ pub struct LanguageServiceCapabilities {
     pub type_definition: bool,
     pub references: bool,
     pub call_hierarchy: bool,
+    pub code_lens: bool,
+    pub code_lens_resolve: bool,
+    pub execute_command: bool,
     pub rename: bool,
     pub code_actions: bool,
     pub semantic_tokens: bool,
@@ -356,6 +380,9 @@ impl LanguageServiceCapabilities {
         type_definition: false,
         references: true,
         call_hierarchy: false,
+        code_lens: false,
+        code_lens_resolve: false,
+        execute_command: false,
         rename: true,
         code_actions: true,
         semantic_tokens: true,
@@ -376,6 +403,9 @@ impl LanguageServiceCapabilities {
             LanguageServiceCapability::TypeDefinition => self.type_definition,
             LanguageServiceCapability::References => self.references,
             LanguageServiceCapability::CallHierarchy => self.call_hierarchy,
+            LanguageServiceCapability::CodeLens => self.code_lens,
+            LanguageServiceCapability::CodeLensResolve => self.code_lens_resolve,
+            LanguageServiceCapability::ExecuteCommand => self.execute_command,
             LanguageServiceCapability::Rename => self.rename,
             LanguageServiceCapability::CodeActions => self.code_actions,
             LanguageServiceCapability::SemanticTokens => self.semantic_tokens,
@@ -419,6 +449,14 @@ pub enum LanguageServiceRequest {
     },
     OutgoingCalls {
         item: CallHierarchyItem,
+    },
+    CodeLenses,
+    ResolveCodeLens {
+        lens: CodeLens,
+    },
+    ExecuteCommand {
+        command: String,
+        arguments: Vec<Value>,
     },
     Rename {
         position: LspPosition,
@@ -468,6 +506,9 @@ impl LanguageServiceRequest {
             Self::PrepareCallHierarchy { .. }
             | Self::IncomingCalls { .. }
             | Self::OutgoingCalls { .. } => LanguageServiceCapability::CallHierarchy,
+            Self::CodeLenses => LanguageServiceCapability::CodeLens,
+            Self::ResolveCodeLens { .. } => LanguageServiceCapability::CodeLensResolve,
+            Self::ExecuteCommand { .. } => LanguageServiceCapability::ExecuteCommand,
             Self::Rename { .. } => LanguageServiceCapability::Rename,
             Self::CodeActions { .. } => LanguageServiceCapability::CodeActions,
             Self::SemanticTokens => LanguageServiceCapability::SemanticTokens,
@@ -491,6 +532,9 @@ pub enum LanguageServiceResponse {
     References(Vec<NavigationTarget>),
     CallHierarchyItems(Vec<CallHierarchyItem>),
     CallHierarchyCalls(Vec<CallHierarchyCall>),
+    CodeLenses(Vec<CodeLens>),
+    CodeLens(Option<CodeLens>),
+    CommandResult(Option<Value>),
     Rename(Vec<Edit>),
     CodeActions(Vec<CodeAction>),
     SemanticTokens(Vec<SemanticToken>),
@@ -1422,6 +1466,21 @@ impl LocalLanguageService for SyntaxLanguageService {
                     LanguageServiceCapability::CallHierarchy,
                 ));
             }
+            LanguageServiceRequest::CodeLenses => {
+                return Err(LanguageServiceError::UnsupportedCapability(
+                    LanguageServiceCapability::CodeLens,
+                ));
+            }
+            LanguageServiceRequest::ResolveCodeLens { .. } => {
+                return Err(LanguageServiceError::UnsupportedCapability(
+                    LanguageServiceCapability::CodeLensResolve,
+                ));
+            }
+            LanguageServiceRequest::ExecuteCommand { .. } => {
+                return Err(LanguageServiceError::UnsupportedCapability(
+                    LanguageServiceCapability::ExecuteCommand,
+                ));
+            }
             LanguageServiceRequest::Rename { position, new_name } => {
                 LanguageServiceResponse::Rename(self.rename(snapshot, position, new_name))
             }
@@ -1751,6 +1810,36 @@ mod tests {
                 LanguageServiceCapability::CallHierarchy
             ))
         ));
+    }
+
+    #[test]
+    fn code_lens_and_execute_command_are_explicit_lsp_capabilities() {
+        let snapshot = snapshot("fn main() {}\n");
+        for (request, capability) in [
+            (
+                LanguageServiceRequest::CodeLenses,
+                LanguageServiceCapability::CodeLens,
+            ),
+            (
+                LanguageServiceRequest::ExecuteCommand {
+                    command: "fixture.run".to_string(),
+                    arguments: Vec::new(),
+                },
+                LanguageServiceCapability::ExecuteCommand,
+            ),
+        ] {
+            assert_eq!(request.capability(), capability);
+            assert!(!service(Language::Rust).capabilities().supports(capability));
+            assert!(matches!(
+                service(Language::Rust).request(
+                    &snapshot,
+                    DocumentVersion::new(1),
+                    request,
+                    &CancellationToken::default(),
+                ),
+                Err(LanguageServiceError::UnsupportedCapability(actual)) if actual == capability
+            ));
+        }
     }
 
     #[test]

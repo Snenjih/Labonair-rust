@@ -121,6 +121,7 @@
     "editorErrorLensSpacing": 4,
     "editorErrorLensMinimumColumn": 0,
     "editorSemanticTokens": true,
+    "editorCodeLens": false,
     "editorInlayHints": false,
     "editorInlayTypeHints": true,
     "editorInlayParameterHints": true,

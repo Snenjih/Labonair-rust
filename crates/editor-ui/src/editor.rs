@@ -51,23 +51,23 @@ use labonair_editor::{
     },
     map_range_through_edits, next_match_with_wrap, replace_all_checked, replace_one,
     word_at_cursor, Anchor, AnchorAffinity, BufferSnapshot, CallHierarchyCall, CallHierarchyItem,
-    CancellationToken, DisplayConfig, DisplayMap, DisplayRowKind, DisplaySnapshot, Document,
-    DocumentColor, DocumentColorValue, DocumentVersion, Edit, EditorEditability, EditorSessionId,
-    EditorSessionSnapshot, EditorViewSession, FoldRange, FoldingRange, GitBlameRequest,
-    GitBlameSnapshot, GitDecorationProvider, GitDecorationRequest, GitDiscardPreview,
-    GitEditorCommand, GitGutterError, GitGutterSnapshot, GitHunkAction, GitHunkActionKind,
-    GitHunkStatus, Helix, HelixKey, HelixMode, HunkActionSink, InlayHint, InlayHintKind, KillRing,
-    Language, LanguageId, LanguageServiceCapabilities, LanguageServiceEditRequest,
-    LanguageServiceEditResponse, LanguageServiceRequest, LanguageServiceResponse,
-    LanguageServiceResult, LanguageServiceRuntime, LanguageServiceRuntimeSnapshot,
-    LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus, LanguageServiceSnapshot,
-    LanguageServiceState, LocalLanguageServiceRequest, LspPosition, LspRange, Match,
-    NavigationHistory, NavigationLocation, Position, ProjectBufferCandidate, ProjectReplacePlan,
-    ProjectReplaceRequest, ProjectReplaceResult, ProjectReplaceTarget, ProjectSearchHit,
-    ProjectSearchQuery, ProjectSearchRequest, ProjectSearchResult, ProjectSearchSession,
-    ProjectSearchSnapshot, Revision, SavePolicy, SearchError, SearchOptions, SearchQuery,
-    Selection, SelectionSet, SnippetSession, SyntaxHighlighter, TextRange, Viewport, Vim, VimKey,
-    VimMode, VimOptions, WhitespaceMode,
+    CancellationToken, CodeLens, DisplayConfig, DisplayMap, DisplayRowKind, DisplaySnapshot,
+    Document, DocumentColor, DocumentColorValue, DocumentVersion, Edit, EditorEditability,
+    EditorSessionId, EditorSessionSnapshot, EditorViewSession, FoldRange, FoldingRange,
+    GitBlameRequest, GitBlameSnapshot, GitDecorationProvider, GitDecorationRequest,
+    GitDiscardPreview, GitEditorCommand, GitGutterError, GitGutterSnapshot, GitHunkAction,
+    GitHunkActionKind, GitHunkStatus, Helix, HelixKey, HelixMode, HunkActionSink, InlayHint,
+    InlayHintKind, KillRing, Language, LanguageId, LanguageServiceCapabilities,
+    LanguageServiceCommand, LanguageServiceEditRequest, LanguageServiceEditResponse,
+    LanguageServiceRequest, LanguageServiceResponse, LanguageServiceResult, LanguageServiceRuntime,
+    LanguageServiceRuntimeSnapshot, LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus,
+    LanguageServiceSnapshot, LanguageServiceState, LocalLanguageServiceRequest, LspPosition,
+    LspRange, Match, NavigationHistory, NavigationLocation, Position, ProjectBufferCandidate,
+    ProjectReplacePlan, ProjectReplaceRequest, ProjectReplaceResult, ProjectReplaceTarget,
+    ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest, ProjectSearchResult,
+    ProjectSearchSession, ProjectSearchSnapshot, Revision, SavePolicy, SearchError, SearchOptions,
+    SearchQuery, Selection, SelectionSet, SnippetSession, SyntaxHighlighter, TextRange, Viewport,
+    Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
 };
 use labonair_editor::{build_breadcrumb_state, BreadcrumbState};
 
@@ -558,6 +558,7 @@ enum EditorControl {
     Minimap,
     SelectionMenu,
     InlayHints,
+    CodeLens,
     SemanticHighlights,
     VimMode,
     HelixMode,
@@ -573,6 +574,7 @@ impl EditorControl {
             Self::Minimap => "editor-control-minimap",
             Self::SelectionMenu => "editor-control-selections-menu",
             Self::InlayHints => "editor-control-inlay-hints",
+            Self::CodeLens => "editor-control-code-lens",
             Self::SemanticHighlights => "editor-control-semantic-highlights",
             Self::VimMode => "editor-control-vim-mode",
             Self::HelixMode => "editor-control-helix-mode",
@@ -588,6 +590,7 @@ impl EditorControl {
             Self::Minimap => "Minimap",
             Self::SelectionMenu => "Selections Menu",
             Self::InlayHints => "Inlay Hints",
+            Self::CodeLens => "Code Lens",
             Self::SemanticHighlights => "Semantic Highlights",
             Self::VimMode => "Vim Mode",
             Self::HelixMode => "Helix Mode",
@@ -606,6 +609,9 @@ fn available_editor_controls(capabilities: LanguageServiceCapabilities) -> Vec<E
     ];
     if capabilities.inlay_hints {
         controls.push(EditorControl::InlayHints);
+    }
+    if capabilities.code_lens && capabilities.execute_command {
+        controls.push(EditorControl::CodeLens);
     }
     if capabilities.semantic_tokens {
         controls.push(EditorControl::SemanticHighlights);
@@ -770,6 +776,7 @@ enum LanguageServiceRequestSlot {
     Navigation,
     TypeDefinition,
     CallHierarchy,
+    CodeLens,
     InlayHints,
     FoldingRanges,
 }
@@ -1089,6 +1096,7 @@ pub struct EditorView {
     /// the layered `SettingsStore` (T13-003).
     prefs: EditorSettings,
     inlay_hints_enabled_override: Option<bool>,
+    code_lens_enabled_override: Option<bool>,
     /// Editor-owned hover text and its window-relative pointer anchor. It is
     /// populated by diagnostics, inlay hints, or settings-schema descriptions.
     hover: Option<(Point<Pixels>, SharedString)>,
@@ -1132,6 +1140,8 @@ pub struct EditorView {
     inlay_hints_request: Option<Task<()>>,
     inlay_hints_request_serial: Option<u64>,
     inlay_hints_request_range: Option<LspRange>,
+    code_lenses: Vec<CodeLens>,
+    code_lens_request_serial: Option<u64>,
     signature_help_state: SignatureHelpUiState,
     signature_help_request_serial: Option<u64>,
     signature_help_position: Option<LspPosition>,
@@ -1355,6 +1365,7 @@ impl EditorView {
             helix,
             prefs,
             inlay_hints_enabled_override: None,
+            code_lens_enabled_override: None,
             hover: None,
             error_lens_task: None,
             error_lens_revision: None,
@@ -1392,6 +1403,8 @@ impl EditorView {
             inlay_hints_request: None,
             inlay_hints_request_serial: None,
             inlay_hints_request_range: None,
+            code_lenses: Vec::new(),
+            code_lens_request_serial: None,
             signature_help_state: SignatureHelpUiState::Hidden,
             signature_help_request_serial: None,
             signature_help_position: None,
@@ -1911,6 +1924,16 @@ impl EditorView {
         cx.notify();
     }
 
+    fn execute_code_lens(&mut self, command: LanguageServiceCommand, cx: &mut Context<Self>) {
+        self.request_language_service(
+            LanguageServiceRequest::ExecuteCommand {
+                command: command.command,
+                arguments: command.arguments,
+            },
+            cx,
+        );
+    }
+
     fn toggle_call_hierarchy_direction(&mut self, cx: &mut Context<Self>) {
         let Some(item) = self.call_hierarchy_root.clone() else {
             self.start_call_hierarchy(cx);
@@ -2128,6 +2151,8 @@ impl EditorView {
         self.inlay_hints_request = None;
         self.inlay_hints_request_serial = None;
         self.inlay_hints_request_range = None;
+        self.code_lenses.clear();
+        self.code_lens_request_serial = None;
         self.language_service_uri = Some(uri.clone());
         self.language_service_open = true;
         self.language_service_state
@@ -2210,6 +2235,12 @@ impl EditorView {
                     {
                         this.request_language_service(LanguageServiceRequest::DocumentSymbols, cx);
                     }
+                    if this.code_lens_enabled()
+                        && this.language_service_snapshot.capabilities.code_lens
+                        && this.language_service_snapshot.capabilities.execute_command
+                    {
+                        this.request_code_lenses(cx);
+                    }
                     if this.prefs.lsp_document_colors() != EditorDocumentColorMode::Off
                         && this.language_service_snapshot.capabilities.document_colors
                     {
@@ -2254,6 +2285,11 @@ impl EditorView {
             | LanguageServiceRequest::OutgoingCalls { .. } => {
                 (LanguageServiceRequestSlot::CallHierarchy, None)
             }
+            LanguageServiceRequest::CodeLenses
+            | LanguageServiceRequest::ResolveCodeLens { .. }
+            | LanguageServiceRequest::ExecuteCommand { .. } => {
+                (LanguageServiceRequestSlot::CodeLens, None)
+            }
             LanguageServiceRequest::InlayHints { .. } => {
                 (LanguageServiceRequestSlot::InlayHints, None)
             }
@@ -2287,6 +2323,9 @@ impl EditorView {
             }
             LanguageServiceRequestSlot::CallHierarchy => {
                 self.call_hierarchy_request_serial = Some(request_serial);
+            }
+            LanguageServiceRequestSlot::CodeLens => {
+                self.code_lens_request_serial = Some(request_serial);
             }
             LanguageServiceRequestSlot::Other => {}
         }
@@ -2334,6 +2373,7 @@ impl EditorView {
                                 | LanguageServiceRequestSlot::SignatureHelp
                                 | LanguageServiceRequestSlot::TypeDefinition
                                 | LanguageServiceRequestSlot::CallHierarchy
+                                | LanguageServiceRequestSlot::CodeLens
                         ) || this.format_on_save_in_flight))
                 {
                     this.apply_language_service_response(response, slot, cx);
@@ -2376,6 +2416,9 @@ impl EditorView {
                 self.call_hierarchy_request_serial == Some(request_serial)
                     && request_position
                         .is_none_or(|position| self.current_lsp_position() == position)
+            }
+            LanguageServiceRequestSlot::CodeLens => {
+                self.code_lens_request_serial == Some(request_serial)
             }
             LanguageServiceRequestSlot::InlayHints => {
                 self.inlay_hints_request_serial == Some(request_serial)
@@ -2484,6 +2527,10 @@ impl EditorView {
                     &response_error_text(&response),
                 );
                 cx.notify();
+            } else if slot == LanguageServiceRequestSlot::CodeLens {
+                self.code_lenses.clear();
+                notify(cx, "Code Lens unavailable", &response_error_text(&response));
+                cx.notify();
             }
             return;
         };
@@ -2519,6 +2566,17 @@ impl EditorView {
             LanguageServiceResponse::CallHierarchyCalls(calls) => {
                 self.call_hierarchy_calls = calls;
                 self.call_hierarchy_loading = false;
+                cx.notify();
+            }
+            LanguageServiceResponse::CodeLenses(lenses) => {
+                self.code_lenses = if self.code_lens_enabled() {
+                    lenses
+                        .into_iter()
+                        .filter(|lens| lens.command.is_some())
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 cx.notify();
             }
             LanguageServiceResponse::Formatting(edits) => {
@@ -3084,6 +3142,7 @@ impl EditorView {
         }
         let inlay_hints_were_enabled = self.inlay_hints_enabled();
         let inlay_hints_setting_changed = p.inlay_hints() != self.prefs.inlay_hints();
+        let code_lens_setting_changed = p.code_lens() != self.prefs.code_lens();
         let document_color_mode_changed =
             p.lsp_document_colors() != self.prefs.lsp_document_colors();
         let modal_mode_setting_changed =
@@ -3108,6 +3167,9 @@ impl EditorView {
         }
         if p.selections_menu() != self.prefs.selections_menu() {
             self.selections_menu_enabled_override = None;
+        }
+        if code_lens_setting_changed {
+            self.code_lens_enabled_override = None;
         }
         if modal_mode_setting_changed {
             self.modal_mode_override = None;
@@ -3165,6 +3227,17 @@ impl EditorView {
                 self.inlay_hints_request_serial = None;
                 self.inlay_hints_request_range = None;
                 self.language_service_state.clear_inlay_hints();
+            }
+        }
+        if code_lens_setting_changed {
+            if self.code_lens_enabled()
+                && self.language_service_snapshot.capabilities.code_lens
+                && self.language_service_snapshot.capabilities.execute_command
+            {
+                self.request_code_lenses(cx);
+            } else {
+                self.code_lenses.clear();
+                self.code_lens_request_serial = None;
             }
         }
         if document_color_mode_changed {
@@ -3243,6 +3316,7 @@ impl EditorView {
             EditorControl::Minimap => self.minimap_enabled(),
             EditorControl::SelectionMenu => self.selections_menu_enabled(),
             EditorControl::InlayHints => self.inlay_hints_enabled(),
+            EditorControl::CodeLens => self.code_lens_enabled(),
             EditorControl::SemanticHighlights => self.semantic_tokens_enabled(),
             EditorControl::VimMode => self.vim.is_some(),
             EditorControl::HelixMode => self.helix.is_some(),
@@ -3308,6 +3382,19 @@ impl EditorView {
                 }
             }
             EditorControl::InlayHints => self.toggle_inlay_hints(cx),
+            EditorControl::CodeLens => {
+                let enabled = !self.code_lens_enabled();
+                self.code_lens_enabled_override = Some(enabled);
+                if enabled
+                    && self.language_service_snapshot.capabilities.code_lens
+                    && self.language_service_snapshot.capabilities.execute_command
+                {
+                    self.request_code_lenses(cx);
+                } else {
+                    self.code_lenses.clear();
+                    self.code_lens_request_serial = None;
+                }
+            }
             EditorControl::SemanticHighlights => {
                 self.semantic_tokens_enabled_override = Some(!self.semantic_tokens_enabled());
             }
@@ -3352,6 +3439,21 @@ impl EditorView {
             self.language_service_state.clear_inlay_hints();
             cx.notify();
         }
+    }
+
+    fn code_lens_enabled(&self) -> bool {
+        self.code_lens_enabled_override
+            .unwrap_or_else(|| self.prefs.code_lens())
+    }
+
+    fn request_code_lenses(&mut self, cx: &mut Context<Self>) {
+        if !self.code_lens_enabled()
+            || !self.language_service_snapshot.capabilities.code_lens
+            || !self.language_service_snapshot.capabilities.execute_command
+        {
+            return;
+        }
+        self.request_language_service(LanguageServiceRequest::CodeLenses, cx);
     }
 
     fn file_limit_bytes(&self) -> u64 {
@@ -9777,6 +9879,7 @@ impl Render for EditorView {
         // Text + selection rows.
         let diagnostics_enabled = self.diagnostics_enabled();
         let inline_diagnostics_enabled = self.inline_diagnostics_enabled();
+        let code_lens_enabled = self.code_lens_enabled();
         let text_rows = display_rows.iter().map(|display_row| {
             let line = display_row.logical_line();
             let row_top = (display_row.visual_row.saturating_sub(first_visual) as f32) * line_h;
@@ -10115,6 +10218,49 @@ impl Render for EditorView {
                 DisplayRowKind::Text { end_column, .. } => end_column >= snapshot.line_len(line),
                 DisplayRowKind::FoldPlaceholder { .. } => false,
             };
+            if is_final_text_segment && code_lens_enabled {
+                let display_end = display_row
+                    .display_column_for_source_position(Position::new(
+                        line,
+                        snapshot.line_len(line),
+                    ))
+                    .unwrap_or(snapshot.line_len(line))
+                    .saturating_sub(display.viewport.left_column);
+                let mut left = (display_end as f32 * char_w + 8.0).max(0.0);
+                for (index, lens) in self
+                    .code_lenses
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, lens)| lens.range.start.line == line)
+                {
+                    let Some(command) = lens.command.clone() else {
+                        continue;
+                    };
+                    let title = command.title.clone();
+                    let tooltip = format!("Run Code Lens: {title}");
+                    let width = (title.chars().count() as f32 * char_w * 0.7 + 18.0).max(32.0);
+                    row = row.child(
+                        button(
+                            ("editor-code-lens", index),
+                            ui_palette,
+                            ButtonVariant::Subtle,
+                            ButtonSize::Xs,
+                        )
+                        .child(title)
+                        .tooltip(move |window, cx| {
+                            Tooltip::new(tooltip.clone()).build(window, cx)
+                        })
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                            this.execute_code_lens(command.clone(), cx);
+                        }))
+                        .absolute()
+                        .left(px(left))
+                        .top_0()
+                        .h(px(line_h)),
+                    );
+                    left += width;
+                }
+            }
             if inline_diagnostics_enabled
                 && diagnostics_enabled
                 && self.error_lens_revision == Some(snapshot.revision())
@@ -10771,6 +10917,7 @@ mod tests {
     fn editor_controls_hide_language_features_without_provider_support() {
         let mut capabilities = LanguageServiceCapabilities::SYNTAX_DERIVED;
         capabilities.inlay_hints = false;
+        capabilities.code_lens = false;
         capabilities.semantic_tokens = false;
         let controls = available_editor_controls(capabilities);
 
@@ -10779,12 +10926,19 @@ mod tests {
         assert!(controls.contains(&EditorControl::LineNumbers));
         assert!(controls.contains(&EditorControl::Minimap));
         assert!(!controls.contains(&EditorControl::InlayHints));
+        assert!(!controls.contains(&EditorControl::CodeLens));
         assert!(!controls.contains(&EditorControl::SemanticHighlights));
 
         capabilities.inlay_hints = true;
+        capabilities.code_lens = true;
+        capabilities.execute_command = false;
         capabilities.semantic_tokens = true;
         let controls = available_editor_controls(capabilities);
         assert!(controls.contains(&EditorControl::InlayHints));
+        assert!(!controls.contains(&EditorControl::CodeLens));
+        capabilities.execute_command = true;
+        let controls = available_editor_controls(capabilities);
+        assert!(controls.contains(&EditorControl::CodeLens));
         assert!(controls.contains(&EditorControl::SemanticHighlights));
     }
 

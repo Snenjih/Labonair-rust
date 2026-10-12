@@ -442,6 +442,7 @@ const LANGUAGE_GROUPS: &[Group] = &[(
         "editorErrorLensSpacing",
         "editorErrorLensMinimumColumn",
         "editorSemanticTokens",
+        "editorCodeLens",
         "editorInlayHints",
         "editorInlayTypeHints",
         "editorInlayParameterHints",

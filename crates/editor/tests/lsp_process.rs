@@ -185,6 +185,76 @@ async fn call_hierarchy_prepares_and_loads_incoming_and_outgoing_calls() {
 }
 
 #[tokio::test]
+async fn code_lenses_resolve_and_execute_server_commands() {
+    let process = LocalLanguageServiceProcess::spawn(config())
+        .await
+        .expect("fixture starts");
+    let capabilities = process.capabilities().await;
+    assert!(capabilities.code_lens);
+    assert!(capabilities.execute_command);
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "fn main() {}".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+    let snapshot = EditorBuffer::from_text("fn main() {}").snapshot();
+    let make_request = |request| LocalLanguageServiceRequest {
+        uri: "file:///fixture".into(),
+        snapshot: snapshot.clone(),
+        version: DocumentVersion::new(1),
+        generation: 1,
+        request,
+        cancellation: CancellationToken::default(),
+    };
+    let response = process
+        .request(make_request(LanguageServiceRequest::CodeLenses))
+        .await;
+    let lens = match response.response {
+        Ok(LanguageServiceResponse::CodeLenses(mut lenses)) => {
+            assert_eq!(lenses.len(), 1);
+            assert_eq!(lenses[0].data, Some(serde_json::json!({ "lens": "run" })));
+            lenses.remove(0)
+        }
+        other => panic!("unexpected code lens response: {other:?}"),
+    };
+    let resolved = process
+        .request(make_request(LanguageServiceRequest::ResolveCodeLens {
+            lens,
+        }))
+        .await;
+    let command = match resolved.response {
+        Ok(LanguageServiceResponse::CodeLens(Some(lens))) => {
+            lens.command.expect("resolved command")
+        }
+        other => panic!("unexpected resolve response: {other:?}"),
+    };
+    assert_eq!(command.title, "Run tests");
+    assert_eq!(command.command, "fixture.run");
+    assert_eq!(
+        command.arguments,
+        vec![serde_json::json!({ "target": "main" })]
+    );
+
+    let executed = process
+        .request(make_request(LanguageServiceRequest::ExecuteCommand {
+            command: command.command,
+            arguments: command.arguments,
+        }))
+        .await;
+    assert!(matches!(
+        executed.response,
+        Ok(LanguageServiceResponse::CommandResult(Some(result)))
+            if result["completed"] == true
+    ));
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
 async fn stale_versions_and_unadvertised_capabilities_are_typed() {
     let process = LocalLanguageServiceProcess::spawn(config_with(vec!["minimal".into()]))
         .await

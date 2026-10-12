@@ -501,6 +501,8 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_error_lens_spacing: Some(4),
         editor_error_lens_minimum_column: Some(0),
         editor_semantic_tokens: Some(true),
+        // No v1 equivalent — inherit the shipped Code Lens preference.
+        editor_code_lens: defaults.editor_code_lens,
         editor_inlay_hints: Some(false),
         editor_inlay_type_hints: Some(true),
         editor_inlay_parameter_hints: Some(true),

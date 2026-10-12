@@ -21,13 +21,14 @@ use tokio::time;
 
 use crate::buffer::{BufferSnapshot, Edit};
 use crate::language_services::{
-    CallHierarchyCall, CallHierarchyItem, CancellationToken, CodeAction, CompletionItem,
+    CallHierarchyCall, CallHierarchyItem, CancellationToken, CodeAction, CodeLens, CompletionItem,
     CompletionKind, CompletionList, CompletionTextFormat, Diagnostic, DiagnosticSeverity,
     DocumentColor, DocumentColorValue, DocumentVersion, FoldingRange, HoverContent, InlayHint,
     InlayHintKind, LanguageId, LanguageServerId, LanguageServiceCapabilities,
-    LanguageServiceEditCapabilities, LanguageServiceEditRequest, LanguageServiceEditResponse,
-    LanguageServiceError, LanguageServiceRequest, LanguageServiceResponse, LanguageServiceResult,
-    LspPosition, LspRange, NavigationTarget, SemanticToken, SignatureHelp,
+    LanguageServiceCommand, LanguageServiceEditCapabilities, LanguageServiceEditRequest,
+    LanguageServiceEditResponse, LanguageServiceError, LanguageServiceRequest,
+    LanguageServiceResponse, LanguageServiceResult, LspPosition, LspRange, NavigationTarget,
+    SemanticToken, SignatureHelp,
 };
 use crate::symbols::{DocumentSymbol, SymbolKind};
 
@@ -400,6 +401,9 @@ impl LocalLanguageServiceProcess {
                         type_definition: false,
                         references: false,
                         call_hierarchy: false,
+                        code_lens: false,
+                        code_lens_resolve: false,
+                        execute_command: false,
                         rename: false,
                         code_actions: false,
                         semantic_tokens: false,
@@ -638,8 +642,14 @@ impl LocalLanguageServiceProcess {
                         received: input.version,
                     })
                 } else {
-                    self.convert_response(&input.uri, &input.snapshot, &input.request, value)
-                        .await
+                    self.convert_response(
+                        &input.uri,
+                        &input.snapshot,
+                        &input.request,
+                        value,
+                        &input.cancellation,
+                    )
+                    .await
                 }
             }
             Err(error) => Err(error),
@@ -766,6 +776,9 @@ impl LocalLanguageServiceProcess {
                 type_definition: false,
                 references: false,
                 call_hierarchy: false,
+                code_lens: false,
+                code_lens_resolve: false,
+                execute_command: false,
                 rename: false,
                 code_actions: false,
                 semantic_tokens: false,
@@ -805,6 +818,7 @@ impl LocalLanguageServiceProcess {
                             "completion": { "completionItem": { "snippetSupport": true } },
                             "hover": {},
                             "callHierarchy": { "dynamicRegistration": false },
+                            "codeLens": { "dynamicRegistration": false },
                             "publishDiagnostics": {},
                             "synchronization": { "dynamicRegistration": false },
                         },
@@ -1039,6 +1053,7 @@ impl LocalLanguageServiceProcess {
         snapshot: &BufferSnapshot,
         request: &LanguageServiceRequest,
         value: Value,
+        cancellation: &CancellationToken,
     ) -> Result<LanguageServiceResponse, LanguageServiceError> {
         let response = match request {
             LanguageServiceRequest::Completion { .. } => {
@@ -1071,6 +1086,42 @@ impl LocalLanguageServiceProcess {
                 LanguageServiceResponse::CallHierarchyCalls(parse_call_hierarchy_calls(
                     &value, "to",
                 ))
+            }
+            LanguageServiceRequest::CodeLenses => {
+                let mut lenses = parse_code_lenses(&value);
+                let resolve_supported =
+                    self.inner.state.lock().await.capabilities.code_lens_resolve;
+                if resolve_supported {
+                    for lens in &mut lenses {
+                        if lens.command.is_some() {
+                            continue;
+                        }
+                        if cancellation.is_cancelled() {
+                            return Err(LanguageServiceError::Cancelled);
+                        }
+                        let Ok(resolved) = self
+                            .request_value(
+                                "codeLens/resolve",
+                                code_lens_value(lens),
+                                cancellation,
+                                self.inner.config.timeouts.request,
+                            )
+                            .await
+                        else {
+                            continue;
+                        };
+                        if let Some(resolved_lens) = parse_code_lens(&resolved) {
+                            *lens = resolved_lens;
+                        }
+                    }
+                }
+                LanguageServiceResponse::CodeLenses(lenses)
+            }
+            LanguageServiceRequest::ResolveCodeLens { .. } => {
+                LanguageServiceResponse::CodeLens(parse_code_lens(&value))
+            }
+            LanguageServiceRequest::ExecuteCommand { .. } => {
+                LanguageServiceResponse::CommandResult((!value.is_null()).then_some(value))
             }
             LanguageServiceRequest::Rename { .. } => {
                 LanguageServiceResponse::Rename(parse_workspace_edits(uri, snapshot, &value))
@@ -1366,6 +1417,13 @@ fn parse_server_capabilities(value: &Value) -> (LanguageServiceCapabilities, Vec
             type_definition: advertised(capabilities.get("typeDefinitionProvider")),
             references: advertised(capabilities.get("referencesProvider")),
             call_hierarchy: advertised(capabilities.get("callHierarchyProvider")),
+            code_lens: advertised(capabilities.get("codeLensProvider")),
+            code_lens_resolve: capabilities
+                .get("codeLensProvider")
+                .and_then(|provider| provider.get("resolveProvider"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            execute_command: advertised(capabilities.get("executeCommandProvider")),
             rename: advertised(capabilities.get("renameProvider")),
             code_actions: advertised(capabilities.get("codeActionProvider")),
             semantic_tokens: semantic.is_some_and(|value| !value.is_null()),
@@ -1444,6 +1502,17 @@ fn request_parts(uri: &str, request: &LanguageServiceRequest) -> (&'static str, 
         LanguageServiceRequest::OutgoingCalls { item } => (
             "callHierarchy/outgoingCalls",
             json!({ "item": call_hierarchy_item_value(item) }),
+        ),
+        LanguageServiceRequest::CodeLenses => (
+            "textDocument/codeLens",
+            json!({ "textDocument": text_document }),
+        ),
+        LanguageServiceRequest::ResolveCodeLens { lens } => {
+            ("codeLens/resolve", code_lens_value(lens))
+        }
+        LanguageServiceRequest::ExecuteCommand { command, arguments } => (
+            "workspace/executeCommand",
+            json!({ "command": command, "arguments": arguments }),
         ),
         LanguageServiceRequest::Rename { position, new_name } => (
             "textDocument/rename",
@@ -1792,6 +1861,49 @@ fn call_hierarchy_item_value(item: &CallHierarchyItem) -> Value {
         value["tags"] = json!(item.tags);
     }
     if let Some(data) = &item.data {
+        value["data"] = data.clone();
+    }
+    value
+}
+
+fn parse_code_lenses(value: &Value) -> Vec<CodeLens> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(parse_code_lens)
+        .collect()
+}
+
+fn parse_code_lens(value: &Value) -> Option<CodeLens> {
+    let command = value.get("command").and_then(|command| {
+        Some(LanguageServiceCommand {
+            title: command.get("title")?.as_str()?.to_string(),
+            command: command.get("command")?.as_str()?.to_string(),
+            arguments: command
+                .get("arguments")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+        })
+    });
+    Some(CodeLens {
+        range: parse_range(value.get("range")?)?,
+        command,
+        data: value.get("data").filter(|data| !data.is_null()).cloned(),
+    })
+}
+
+fn code_lens_value(lens: &CodeLens) -> Value {
+    let mut value = json!({ "range": range_value(lens.range) });
+    if let Some(command) = &lens.command {
+        value["command"] = json!({
+            "title": command.title,
+            "command": command.command,
+            "arguments": command.arguments,
+        });
+    }
+    if let Some(data) = &lens.data {
         value["data"] = data.clone();
     }
     value
@@ -2281,6 +2393,61 @@ mod tests {
     }
 
     #[test]
+    fn code_lens_requests_preserve_server_data_and_commands() {
+        let range = LspRange {
+            start: LspPosition {
+                line: 1,
+                character: 0,
+            },
+            end: LspPosition {
+                line: 1,
+                character: 10,
+            },
+        };
+        let (method, params) =
+            request_parts("file:///fixture.rs", &LanguageServiceRequest::CodeLenses);
+        assert_eq!(method, "textDocument/codeLens");
+        assert_eq!(params["textDocument"]["uri"], "file:///fixture.rs");
+        assert!(params.get("range").is_none());
+
+        let lenses = parse_code_lenses(&json!([{
+            "range": range_value(range),
+            "data": { "resolve": 7 }
+        }]));
+        assert_eq!(lenses.len(), 1);
+        assert!(lenses[0].command.is_none());
+        assert_eq!(lenses[0].data, Some(json!({ "resolve": 7 })));
+        let resolved = CodeLens {
+            range,
+            command: Some(LanguageServiceCommand {
+                title: "Run tests".into(),
+                command: "fixture.run".into(),
+                arguments: vec![json!({ "target": "main" })],
+            }),
+            data: Some(json!({ "resolve": 7 })),
+        };
+        let (method, params) = request_parts(
+            "file:///fixture.rs",
+            &LanguageServiceRequest::ResolveCodeLens {
+                lens: resolved.clone(),
+            },
+        );
+        assert_eq!(method, "codeLens/resolve");
+        assert_eq!(params, code_lens_value(&resolved));
+
+        let (method, params) = request_parts(
+            "file:///fixture.rs",
+            &LanguageServiceRequest::ExecuteCommand {
+                command: "fixture.run".into(),
+                arguments: vec![json!({ "target": "main" })],
+            },
+        );
+        assert_eq!(method, "workspace/executeCommand");
+        assert_eq!(params["command"], "fixture.run");
+        assert_eq!(params["arguments"][0]["target"], "main");
+    }
+
+    #[test]
     fn inlay_hints_use_the_lsp_range_and_parse_labels_without_editing_text() {
         let range = LspRange {
             start: LspPosition {
@@ -2343,12 +2510,15 @@ mod tests {
     #[test]
     fn advertised_capabilities_are_explicit() {
         let (capabilities, types) = parse_server_capabilities(
-            &json!({ "capabilities": { "hoverProvider": true, "typeDefinitionProvider": true, "callHierarchyProvider": true, "inlayHintProvider": { "resolveProvider": true }, "colorProvider": true, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
+            &json!({ "capabilities": { "hoverProvider": true, "typeDefinitionProvider": true, "callHierarchyProvider": true, "codeLensProvider": { "resolveProvider": true }, "executeCommandProvider": { "commands": ["fixture.run"] }, "inlayHintProvider": { "resolveProvider": true }, "colorProvider": true, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
         );
         assert!(capabilities.hover);
         assert!(capabilities.document_colors);
         assert!(capabilities.type_definition);
         assert!(capabilities.call_hierarchy);
+        assert!(capabilities.code_lens);
+        assert!(capabilities.code_lens_resolve);
+        assert!(capabilities.execute_command);
         assert!(capabilities.inlay_hints);
         assert!(!capabilities.completion);
         assert_eq!(types, vec!["type"]);

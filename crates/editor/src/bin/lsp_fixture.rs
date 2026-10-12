@@ -42,6 +42,8 @@ fn main() -> io::Result<()> {
                     "definitionProvider": !minimal,
                     "referencesProvider": !minimal,
                     "callHierarchyProvider": !minimal,
+                    "codeLensProvider": if !minimal { json!({ "resolveProvider": true }) } else { Value::Null },
+                    "executeCommandProvider": if !minimal { json!({ "commands": ["fixture.run"] }) } else { Value::Null },
                     "renameProvider": !minimal,
                     "codeActionProvider": if !minimal && !no_organize_imports { json!(true) } else if !minimal { json!({ "codeActionKinds": ["quickfix"] }) } else { Value::Null },
                     "semanticTokensProvider": if !minimal { json!({ "legend": { "tokenTypes": ["function"] }, "full": true }) } else { Value::Null },
@@ -106,6 +108,15 @@ fn main() -> io::Result<()> {
             )?,
             "callHierarchy/outgoingCalls" => write_message(
                 &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": [{ "to": { "name": "callee", "kind": 12, "uri": "file:///callee.rs", "range": { "start": { "line": 5, "character": 0 }, "end": { "line": 5, "character": 12 } }, "selectionRange": { "start": { "line": 5, "character": 3 }, "end": { "line": 5, "character": 9 } } }, "fromRanges": [{ "start": { "line": 0, "character": 4 }, "end": { "line": 0, "character": 9 } }] }] }),
+            )?,
+            "textDocument/codeLens" => write_message(
+                &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": [{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 10 } }, "data": { "lens": "run" } }] }),
+            )?,
+            "codeLens/resolve" => write_message(
+                &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 10 } }, "command": { "title": "Run tests", "command": "fixture.run", "arguments": [{ "target": "main" }] }, "data": { "lens": "run" } } }),
+            )?,
+            "workspace/executeCommand" => write_message(
+                &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "completed": true } }),
             )?,
             "textDocument/rename" => write_message(
                 &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "changes": { "file:///fixture": [{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 1 } }, "newText": "renamed" }] } } }),
