@@ -9,6 +9,9 @@ use serde_json::{json, Value};
 fn main() -> io::Result<()> {
     let arguments = std::env::args().collect::<Vec<_>>();
     let minimal = arguments.iter().any(|argument| argument == "minimal");
+    let pull_diagnostics = arguments
+        .iter()
+        .any(|argument| argument == "pull-diagnostics");
     let no_range_formatting = arguments
         .iter()
         .any(|argument| argument == "no-range-formatting");
@@ -40,7 +43,13 @@ fn main() -> io::Result<()> {
                     "signatureHelpProvider": if !minimal { json!({}) } else { Value::Null },
                     "hoverProvider": !minimal,
                     "definitionProvider": !minimal,
+                    "declarationProvider": !minimal,
+                    "implementationProvider": !minimal,
                     "referencesProvider": !minimal,
+                    "callHierarchyProvider": !minimal,
+                    "codeLensProvider": if !minimal { json!({ "resolveProvider": true }) } else { Value::Null },
+                    "executeCommandProvider": if !minimal { json!({ "commands": ["fixture.run"] }) } else { Value::Null },
+                    "documentLinkProvider": if !minimal { json!({ "resolveProvider": true }) } else { Value::Null },
                     "renameProvider": !minimal,
                     "codeActionProvider": if !minimal && !no_organize_imports { json!(true) } else if !minimal { json!({ "codeActionKinds": ["quickfix"] }) } else { Value::Null },
                     "semanticTokensProvider": if !minimal { json!({ "legend": { "tokenTypes": ["function"] }, "full": true }) } else { Value::Null },
@@ -48,6 +57,11 @@ fn main() -> io::Result<()> {
                     "foldingRangeProvider": !minimal,
                     "documentFormattingProvider": !minimal,
                     "documentRangeFormattingProvider": !minimal && !no_range_formatting,
+                    "diagnosticProvider": if pull_diagnostics {
+                        json!({ "identifier": "fixture", "interFileDependencies": false, "workspaceDiagnostics": false })
+                    } else {
+                        Value::Null
+                    },
                 }},
             }))?,
             "textDocument/didOpen" | "textDocument/didChange" => {
@@ -83,6 +97,43 @@ fn main() -> io::Result<()> {
             "textDocument/completion" => write_message(
                 &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "isIncomplete": false, "items": [{ "label": "fixture", "kind": 3 }] } }),
             )?,
+            "textDocument/diagnostic" => {
+                let previous_result_id = message
+                    .get("params")
+                    .and_then(|params| params.get("previousResultId"))
+                    .and_then(Value::as_str);
+                let result = if previous_result_id == Some("fixture-diagnostics-v1") {
+                    json!({ "kind": "unchanged", "resultId": "fixture-diagnostics-v1" })
+                } else {
+                    json!({
+                        "kind": "full",
+                        "resultId": "fixture-diagnostics-v1",
+                        "items": [{
+                            "range": { "start": { "line": 0, "character": 1 }, "end": { "line": 0, "character": 2 } },
+                            "severity": 1,
+                            "message": "pull fixture diagnostic",
+                            "source": "fixture-pull"
+                        }]
+                    })
+                };
+                write_message(&json!({
+                    "jsonrpc": "2.0",
+                    "id": message.get("id"),
+                    "result": result
+                }))?;
+            }
+            "textDocument/definition"
+            | "textDocument/declaration"
+            | "textDocument/implementation"
+            | "textDocument/typeDefinition"
+            | "textDocument/references" => write_message(&json!({
+                "jsonrpc": "2.0",
+                "id": message.get("id"),
+                "result": [{
+                    "uri": "file:///fixture-target.rs",
+                    "range": { "start": { "line": 2, "character": 3 }, "end": { "line": 2, "character": 8 } }
+                }]
+            }))?,
             "textDocument/signatureHelp" => write_message(
                 &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "signatures": [{ "label": "fixture()", "documentation": { "kind": "markdown", "value": "fixture docs" } }] } }),
             )?,
@@ -94,8 +145,29 @@ fn main() -> io::Result<()> {
                     &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "contents": { "kind": "markdown", "value": "fixture hover" } } }),
                 )?;
             }
-            "textDocument/definition" | "textDocument/references" => write_message(
-                &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": [{ "uri": "file:///fixture", "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 1 } } }] }),
+            "textDocument/prepareCallHierarchy" => write_message(
+                &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": [{ "name": "root", "kind": 12, "uri": "file:///fixture", "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 8 } }, "selectionRange": { "start": { "line": 0, "character": 3 }, "end": { "line": 0, "character": 7 } }, "data": { "symbol": "root" } }] }),
+            )?,
+            "callHierarchy/incomingCalls" => write_message(
+                &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": [{ "from": { "name": "caller", "kind": 12, "uri": "file:///caller.rs", "range": { "start": { "line": 2, "character": 0 }, "end": { "line": 2, "character": 12 } }, "selectionRange": { "start": { "line": 2, "character": 3 }, "end": { "line": 2, "character": 9 } } }, "fromRanges": [{ "start": { "line": 2, "character": 4 }, "end": { "line": 2, "character": 8 } }] }] }),
+            )?,
+            "callHierarchy/outgoingCalls" => write_message(
+                &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": [{ "to": { "name": "callee", "kind": 12, "uri": "file:///callee.rs", "range": { "start": { "line": 5, "character": 0 }, "end": { "line": 5, "character": 12 } }, "selectionRange": { "start": { "line": 5, "character": 3 }, "end": { "line": 5, "character": 9 } } }, "fromRanges": [{ "start": { "line": 0, "character": 4 }, "end": { "line": 0, "character": 9 } }] }] }),
+            )?,
+            "textDocument/codeLens" => write_message(
+                &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": [{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 10 } }, "data": { "lens": "run" } }] }),
+            )?,
+            "codeLens/resolve" => write_message(
+                &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 10 } }, "command": { "title": "Run tests", "command": "fixture.run", "arguments": [{ "target": "main" }] }, "data": { "lens": "run" } } }),
+            )?,
+            "workspace/executeCommand" => write_message(
+                &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "completed": true } }),
+            )?,
+            "textDocument/documentLink" => write_message(
+                &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": [{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 4 } }, "data": { "link": "fixture" } }] }),
+            )?,
+            "documentLink/resolve" => write_message(
+                &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 4 } }, "target": "file:///fixture-target.rs", "tooltip": "Open fixture target", "data": { "link": "fixture" } } }),
             )?,
             "textDocument/rename" => write_message(
                 &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "changes": { "file:///fixture": [{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 1 } }, "newText": "renamed" }] } } }),

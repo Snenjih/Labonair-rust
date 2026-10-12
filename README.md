@@ -2,7 +2,7 @@
 
 Labonair is a standalone native Rust application built with GPUI. It is a fast, keyboard-first Dev-Op workspace for local and remote work, combining terminal, editor, SSH, SFTP, Git, transfers, themes, keymap, notifications, and AI as independently owned capabilities.
 
-The product supports both project workspaces and standalone use. It is not a terminal-only app, an IDE-only app, or a Zed fork. Zed is used as a clean-room reference for interaction patterns and architecture ideas. The frozen predecessor source is [`reference-src/`](reference-src/).
+The product supports both project workspaces and standalone use. It is not a terminal-only app, an IDE-only app, or a Zed fork. Zed is used as a behavioral and architectural reference. Historical reports may mention the frozen predecessor tree as `reference-src/`; the native implementation does not modify or depend on it.
 
 ## Current direction
 

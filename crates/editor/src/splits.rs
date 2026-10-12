@@ -175,18 +175,30 @@ impl EditorSplitTree {
     }
 
     pub fn split_right(&mut self) -> Result<EditorGroupId, SplitError> {
-        self.split(SplitOrientation::Horizontal)
+        self.split(SplitOrientation::Horizontal, false)
     }
 
     pub fn split_down(&mut self) -> Result<EditorGroupId, SplitError> {
-        self.split(SplitOrientation::Vertical)
+        self.split(SplitOrientation::Vertical, false)
     }
 
-    pub fn split(&mut self, orientation: SplitOrientation) -> Result<EditorGroupId, SplitError> {
+    pub fn split_left(&mut self) -> Result<EditorGroupId, SplitError> {
+        self.split(SplitOrientation::Horizontal, true)
+    }
+
+    pub fn split_up(&mut self) -> Result<EditorGroupId, SplitError> {
+        self.split(SplitOrientation::Vertical, true)
+    }
+
+    fn split(
+        &mut self,
+        orientation: SplitOrientation,
+        before: bool,
+    ) -> Result<EditorGroupId, SplitError> {
         let new_group = self
             .allocate_group_id()
             .ok_or(SplitError::GroupNotFound(self.focused))?;
-        if !split_leaf(&mut self.root, self.focused, orientation, new_group) {
+        if !split_leaf(&mut self.root, self.focused, orientation, new_group, before) {
             return Err(SplitError::GroupNotFound(self.focused));
         }
         self.focused = new_group;
@@ -244,6 +256,11 @@ impl EditorSplitTree {
         Ok(())
     }
 
+    /// Restore every divider to an even split while preserving the tree shape.
+    pub fn reset_sizes(&mut self) {
+        reset_sizes(&mut self.root);
+    }
+
     /// Resize the split containing `group`. Positive values give more space
     /// to the first child; negative values give more space to the second.
     pub fn resize(&mut self, group: EditorGroupId, delta: f32) -> Result<(), SplitError> {
@@ -290,6 +307,20 @@ fn collect_groups(node: &SplitNode, groups: &mut Vec<EditorGroupId>) {
             collect_groups(first, groups);
             collect_groups(second, groups);
         }
+    }
+}
+
+fn reset_sizes(node: &mut SplitNode) {
+    if let SplitNode::Split {
+        first_size,
+        first,
+        second,
+        ..
+    } = node
+    {
+        *first_size = 0.5;
+        reset_sizes(first);
+        reset_sizes(second);
     }
 }
 
@@ -364,21 +395,27 @@ fn split_leaf(
     target: EditorGroupId,
     orientation: SplitOrientation,
     new_group: EditorGroupId,
+    before: bool,
 ) -> bool {
     match node {
         SplitNode::Leaf(group) if *group == target => {
+            let (first, second) = if before {
+                (new_group, target)
+            } else {
+                (target, new_group)
+            };
             *node = SplitNode::Split {
                 orientation,
                 first_size: 0.5,
-                first: Box::new(SplitNode::Leaf(target)),
-                second: Box::new(SplitNode::Leaf(new_group)),
+                first: Box::new(SplitNode::Leaf(first)),
+                second: Box::new(SplitNode::Leaf(second)),
             };
             true
         }
         SplitNode::Leaf(_) => false,
         SplitNode::Split { first, second, .. } => {
-            split_leaf(first, target, orientation, new_group)
-                || split_leaf(second, target, orientation, new_group)
+            split_leaf(first, target, orientation, new_group, before)
+                || split_leaf(second, target, orientation, new_group, before)
         }
     }
 }
@@ -468,6 +505,43 @@ mod tests {
     }
 
     #[test]
+    fn left_and_up_splits_place_the_new_group_before_the_focused_group() {
+        let root = EditorGroupId::new(1);
+        let mut horizontal = EditorSplitTree::new(root);
+        let left = horizontal.split_left().expect("split left");
+        assert_eq!(horizontal.groups(), [left, root]);
+        assert_eq!(horizontal.focused_group(), left);
+        assert!(matches!(
+            horizontal.root(),
+            SplitNode::Split {
+                orientation: SplitOrientation::Horizontal,
+                first_size,
+                first,
+                second,
+            } if *first_size == 0.5
+                && matches!(first.as_ref(), SplitNode::Leaf(group) if *group == left)
+                && matches!(second.as_ref(), SplitNode::Leaf(group) if *group == root)
+        ));
+
+        let mut vertical = EditorSplitTree::new(root);
+        let above = vertical.split_up().expect("split up");
+        assert_eq!(vertical.groups(), [above, root]);
+        assert_eq!(vertical.focused_group(), above);
+        assert!(matches!(
+            vertical.root(),
+            SplitNode::Split {
+                orientation: SplitOrientation::Vertical,
+                first,
+                second,
+                ..
+            } if matches!(first.as_ref(), SplitNode::Leaf(group) if *group == above)
+                && matches!(second.as_ref(), SplitNode::Leaf(group) if *group == root)
+        ));
+        horizontal.validate().expect("horizontal split is valid");
+        vertical.validate().expect("vertical split is valid");
+    }
+
+    #[test]
     fn close_other_groups_collapses_nested_splits() {
         let mut tree = EditorSplitTree::new(EditorGroupId::new(1));
         let second = tree.split_down().expect("split");
@@ -476,6 +550,31 @@ mod tests {
         tree.focus(second).expect("focus second");
         tree.close_other_groups().expect("close others");
         assert_eq!(tree.groups(), [second]);
+    }
+
+    #[test]
+    fn reset_sizes_equalizes_every_nested_divider() {
+        let mut tree = EditorSplitTree::new(EditorGroupId::new(1));
+        let second = tree.split_right().expect("split right");
+        tree.resize_at(&SplitPath::root(), 0.2)
+            .expect("resize root");
+        tree.focus(EditorGroupId::new(1))
+            .expect("focus first group");
+        tree.split_down().expect("nested split");
+        tree.resize_at(&SplitPath::root().child(SplitSide::First), -0.15)
+            .expect("resize nested divider");
+
+        tree.reset_sizes();
+
+        assert_eq!(
+            tree.split_handles()
+                .iter()
+                .map(|handle| handle.first_size)
+                .collect::<Vec<_>>(),
+            [0.5, 0.5]
+        );
+        assert!(tree.contains(second));
+        tree.validate().expect("tree remains valid");
     }
 
     #[test]

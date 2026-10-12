@@ -11,7 +11,12 @@
 use labonair_settings_content::{
     appearance::AppearanceContent,
     connections::ConnectionsContent,
-    editor::{EditorContent, EditorCursorStyle},
+    editor::{
+        EditorContent, EditorCursorStyle, EditorDiagnosticMaxSeverity, EditorDocumentColorMode,
+        EditorMinimapCurrentLineHighlight, EditorMinimapDisplayIn, EditorMinimapThumb,
+        EditorMinimapThumbBorder, EditorMinimapVisibility, EditorModalMode,
+        EditorScrollbarVisibility, MultiCursorModifier, SearchSeedBehavior, VimCursorShape,
+    },
     file_manager::{default_sftp_columns, FileManagerContent, SftpColumn},
     general::{GeneralContent, StartupTab, ThemePref},
     terminal::{
@@ -24,6 +29,13 @@ use labonair_settings_content::{
 
 use crate::settings_trait::Settings;
 use crate::RegisterSetting;
+
+fn bounded_finite_float(value: Option<f32>, default: f32, min: f32, max: f32) -> f32 {
+    value
+        .filter(|value| value.is_finite())
+        .unwrap_or(default)
+        .clamp(min, max)
+}
 
 /// `general` area — startup / lifecycle behaviour (app color-mode preference,
 /// update checks, session restore, the startup tab).
@@ -310,14 +322,30 @@ impl TerminalSettings {
     }
 }
 
+fn single_character_setting(value: Option<&str>, fallback: char) -> char {
+    let Some(value) = value else {
+        return fallback;
+    };
+    let mut characters = value.chars();
+    match (characters.next(), characters.next()) {
+        (Some(character), None) => character,
+        _ => fallback,
+    }
+}
+
 /// `editor` area.
 #[derive(Clone, Debug, PartialEq, RegisterSetting)]
 pub struct EditorSettings(EditorContent);
 
 impl Settings for EditorSettings {
     fn from_settings(content: &SettingsContent) -> Self {
+        let legacy_vim_mode = content.editor.editor_modal_mode.is_none()
+            && content.editor.editor_vim_mode.unwrap_or(false);
         let mut merged = EditorContent::defaults();
         merged.merge_from(&content.editor);
+        if legacy_vim_mode {
+            merged.editor_modal_mode = Some(EditorModalMode::Vim);
+        }
         Self(merged)
     }
 }
@@ -343,12 +371,42 @@ impl EditorSettings {
         self.0.editor_indent_with_tabs.unwrap_or(false)
     }
 
+    pub fn drag_and_drop_selection(&self) -> bool {
+        self.0.editor_drag_and_drop_selection.unwrap_or(true)
+    }
+
+    pub fn multi_cursor_modifier(&self) -> MultiCursorModifier {
+        self.0
+            .editor_multi_cursor_modifier
+            .unwrap_or(MultiCursorModifier::Alt)
+    }
+
+    pub fn mouse_wheel_zoom(&self) -> bool {
+        self.0.editor_mouse_wheel_zoom.unwrap_or(false)
+    }
+
+    pub fn scroll_sensitivity(&self) -> f32 {
+        bounded_finite_float(self.0.editor_scroll_sensitivity, 1.0, 0.25, 5.0)
+    }
+
+    pub fn fast_scroll_sensitivity(&self) -> f32 {
+        bounded_finite_float(self.0.editor_fast_scroll_sensitivity, 4.0, 1.0, 20.0)
+    }
+
+    pub fn vertical_scroll_margin(&self) -> usize {
+        self.0.editor_vertical_scroll_margin.unwrap_or(3).min(20) as usize
+    }
+
     pub fn tab_size(&self) -> u32 {
         self.0.editor_tab_size.unwrap_or(2)
     }
 
     pub fn vim_mode(&self) -> bool {
-        self.0.editor_vim_mode.unwrap_or(false)
+        self.0.editor_modal_mode == Some(EditorModalMode::Vim)
+    }
+
+    pub fn helix_mode(&self) -> bool {
+        self.0.editor_modal_mode == Some(EditorModalMode::Helix)
     }
 
     pub fn vim_hlsearch(&self) -> bool {
@@ -361,6 +419,42 @@ impl EditorSettings {
 
     pub fn vim_smartcase(&self) -> bool {
         self.0.vim_smartcase.unwrap_or(true)
+    }
+
+    pub fn search_case_sensitive(&self) -> bool {
+        self.0.search_case_sensitive.unwrap_or(false)
+    }
+
+    pub fn search_smart_case(&self) -> bool {
+        self.0.search_smart_case.unwrap_or(false)
+    }
+
+    pub fn search_whole_word(&self) -> bool {
+        self.0.search_whole_word.unwrap_or(false)
+    }
+
+    pub fn search_regex(&self) -> bool {
+        self.0.search_regex.unwrap_or(false)
+    }
+
+    pub fn search_wrap(&self) -> bool {
+        self.0.search_wrap.unwrap_or(true)
+    }
+
+    pub fn search_center_on_match(&self) -> bool {
+        self.0.search_center_on_match.unwrap_or(false)
+    }
+
+    pub fn search_include_ignored(&self) -> bool {
+        self.0.search_include_ignored.unwrap_or(false)
+    }
+
+    pub fn search_on_type(&self) -> bool {
+        self.0.search_on_type.unwrap_or(true)
+    }
+
+    pub fn search_seed_from_cursor(&self) -> SearchSeedBehavior {
+        self.0.search_seed_from_cursor.unwrap_or_default()
     }
 
     /// Syntax colour-scheme slug.
@@ -379,9 +473,21 @@ impl EditorSettings {
         self.0.editor_font_size.unwrap_or(13)
     }
 
+    pub fn font_weight(&self) -> u32 {
+        self.0.editor_font_weight.unwrap_or(400).clamp(100, 900)
+    }
+
     /// Tint the line the caret is on.
     pub fn highlight_current_line(&self) -> bool {
         self.0.editor_highlight_current_line.unwrap_or(true)
+    }
+
+    pub fn selection_highlight(&self) -> bool {
+        self.0.editor_selection_highlight.unwrap_or(true)
+    }
+
+    pub fn rounded_selection(&self) -> bool {
+        self.0.editor_rounded_selection.unwrap_or(true)
     }
 
     pub fn line_height(&self) -> f32 {
@@ -396,12 +502,105 @@ impl EditorSettings {
         self.0.editor_whitespace.as_deref().unwrap_or("none")
     }
 
+    /// Marker used when rendering a space in the editor whitespace map.
+    pub fn whitespace_space_marker(&self) -> char {
+        single_character_setting(self.0.editor_whitespace_space.as_deref(), '•')
+    }
+
+    /// Marker used when rendering a tab in the editor whitespace map.
+    pub fn whitespace_tab_marker(&self) -> char {
+        single_character_setting(self.0.editor_whitespace_tab.as_deref(), '→')
+    }
+
     pub fn minimap(&self) -> bool {
-        self.0.editor_minimap.unwrap_or(false)
+        self.minimap_visibility() != EditorMinimapVisibility::Never
+    }
+
+    pub fn minimap_visibility(&self) -> EditorMinimapVisibility {
+        self.0.editor_minimap.unwrap_or_default().visibility()
+    }
+
+    pub fn minimap_display_in(&self) -> EditorMinimapDisplayIn {
+        self.0
+            .editor_minimap_display_in
+            .unwrap_or(EditorMinimapDisplayIn::ActiveEditor)
+    }
+
+    pub fn minimap_thumb(&self) -> EditorMinimapThumb {
+        self.0
+            .editor_minimap_thumb
+            .unwrap_or(EditorMinimapThumb::Always)
+    }
+
+    pub fn minimap_thumb_border(&self) -> EditorMinimapThumbBorder {
+        self.0
+            .editor_minimap_thumb_border
+            .unwrap_or(EditorMinimapThumbBorder::LeftOpen)
+    }
+
+    pub fn minimap_current_line_highlight(&self) -> EditorMinimapCurrentLineHighlight {
+        self.0
+            .editor_minimap_current_line_highlight
+            .unwrap_or(EditorMinimapCurrentLineHighlight::Inherit)
+    }
+
+    pub fn minimap_max_width_columns(&self) -> u32 {
+        self.0
+            .editor_minimap_max_width_columns
+            .unwrap_or(80)
+            .clamp(20, 160)
+    }
+
+    pub fn scrollbar_visibility(&self) -> EditorScrollbarVisibility {
+        self.0
+            .editor_scrollbar_show
+            .unwrap_or(EditorScrollbarVisibility::Auto)
+    }
+
+    pub fn scrollbar_cursors(&self) -> bool {
+        self.0.editor_scrollbar_cursors.unwrap_or(true)
+    }
+
+    pub fn scrollbar_git_diff(&self) -> bool {
+        self.0.editor_scrollbar_git_diff.unwrap_or(true)
+    }
+
+    pub fn scrollbar_search_results(&self) -> bool {
+        self.0.editor_scrollbar_search_results.unwrap_or(true)
+    }
+
+    pub fn scrollbar_selected_text(&self) -> bool {
+        self.0.editor_scrollbar_selected_text.unwrap_or(true)
+    }
+
+    pub fn scrollbar_selected_symbol(&self) -> bool {
+        self.0.editor_scrollbar_selected_symbol.unwrap_or(true)
+    }
+
+    pub fn scrollbar_diagnostics(&self) -> EditorDiagnosticMaxSeverity {
+        self.0
+            .editor_scrollbar_diagnostics
+            .unwrap_or(EditorDiagnosticMaxSeverity::All)
+    }
+
+    pub fn horizontal_scrollbar(&self) -> bool {
+        self.0.editor_scrollbar_horizontal.unwrap_or(true)
+    }
+
+    pub fn vertical_scrollbar(&self) -> bool {
+        self.0.editor_scrollbar_vertical.unwrap_or(true)
     }
 
     pub fn bracket_matching(&self) -> bool {
         self.0.editor_bracket_matching.unwrap_or(true)
+    }
+
+    pub fn auto_close_brackets(&self) -> bool {
+        self.0.editor_auto_close_brackets.unwrap_or(true)
+    }
+
+    pub fn auto_surround(&self) -> bool {
+        self.0.editor_auto_surround.unwrap_or(true)
     }
 
     pub fn cursor_blink(&self) -> bool {
@@ -421,6 +620,30 @@ impl EditorSettings {
         self.0.editor_cursor_style.unwrap_or(EditorCursorStyle::Bar)
     }
 
+    pub fn vim_cursor_shape_normal(&self) -> VimCursorShape {
+        self.0
+            .vim_cursor_shape_normal
+            .unwrap_or(VimCursorShape::Block)
+    }
+
+    pub fn vim_cursor_shape_insert(&self) -> VimCursorShape {
+        self.0
+            .vim_cursor_shape_insert
+            .unwrap_or(VimCursorShape::Inherit)
+    }
+
+    pub fn vim_cursor_shape_replace(&self) -> VimCursorShape {
+        self.0
+            .vim_cursor_shape_replace
+            .unwrap_or(VimCursorShape::Underline)
+    }
+
+    pub fn vim_cursor_shape_visual(&self) -> VimCursorShape {
+        self.0
+            .vim_cursor_shape_visual
+            .unwrap_or(VimCursorShape::Block)
+    }
+
     pub fn rulers(&self) -> &str {
         self.0.editor_rulers.as_deref().unwrap_or("")
     }
@@ -437,8 +660,81 @@ impl EditorSettings {
         self.0.editor_diagnostics.unwrap_or(true)
     }
 
+    pub fn diagnostics_max_severity(&self) -> EditorDiagnosticMaxSeverity {
+        self.0
+            .editor_diagnostics_max_severity
+            .unwrap_or(EditorDiagnosticMaxSeverity::All)
+    }
+
+    pub fn lsp_document_colors(&self) -> EditorDocumentColorMode {
+        self.0
+            .editor_lsp_document_colors
+            .unwrap_or(EditorDocumentColorMode::Inlay)
+    }
+
+    pub fn error_lens(&self) -> bool {
+        self.0.editor_error_lens.unwrap_or(false)
+    }
+
+    pub fn error_lens_delay_ms(&self) -> u64 {
+        u64::from(self.0.editor_error_lens_delay_ms.unwrap_or(150).min(5_000))
+    }
+
+    pub fn error_lens_spacing(&self) -> u32 {
+        self.0.editor_error_lens_spacing.unwrap_or(4).min(32)
+    }
+
+    pub fn error_lens_minimum_column(&self) -> u32 {
+        self.0
+            .editor_error_lens_minimum_column
+            .unwrap_or(0)
+            .min(2_000)
+    }
+
     pub fn semantic_tokens(&self) -> bool {
         self.0.editor_semantic_tokens.unwrap_or(true)
+    }
+
+    pub fn code_lens(&self) -> bool {
+        self.0.editor_code_lens.unwrap_or(false)
+    }
+
+    pub fn inlay_hints(&self) -> bool {
+        self.0.editor_inlay_hints.unwrap_or(false)
+    }
+
+    pub fn inlay_type_hints(&self) -> bool {
+        self.0.editor_inlay_type_hints.unwrap_or(true)
+    }
+
+    pub fn inlay_parameter_hints(&self) -> bool {
+        self.0.editor_inlay_parameter_hints.unwrap_or(true)
+    }
+
+    pub fn inlay_other_hints(&self) -> bool {
+        self.0.editor_inlay_other_hints.unwrap_or(true)
+    }
+
+    pub fn inlay_show_background(&self) -> bool {
+        self.0.editor_inlay_show_background.unwrap_or(false)
+    }
+
+    pub fn inlay_edit_debounce_ms(&self) -> u64 {
+        u64::from(
+            self.0
+                .editor_inlay_edit_debounce_ms
+                .unwrap_or(700)
+                .min(10_000),
+        )
+    }
+
+    pub fn inlay_scroll_debounce_ms(&self) -> u64 {
+        u64::from(
+            self.0
+                .editor_inlay_scroll_debounce_ms
+                .unwrap_or(50)
+                .min(2_000),
+        )
     }
 
     pub fn git_gutter(&self) -> bool {
@@ -450,6 +746,10 @@ impl EditorSettings {
     /// [`Self::git_gutter`].
     pub fn git_word_diff(&self) -> bool {
         self.0.editor_git_word_diff.unwrap_or(true)
+    }
+
+    pub fn git_blame_status(&self) -> bool {
+        self.0.editor_git_blame_status.unwrap_or(false)
     }
 
     pub fn completion(&self) -> bool {
@@ -495,6 +795,22 @@ impl EditorSettings {
 
     pub fn show_outline(&self) -> bool {
         self.0.editor_show_outline.unwrap_or(false)
+    }
+
+    pub fn selections_menu(&self) -> bool {
+        self.0.editor_selections_menu.unwrap_or(true)
+    }
+
+    pub fn toolbar_breadcrumbs(&self) -> bool {
+        self.0.editor_toolbar_breadcrumbs.unwrap_or(true)
+    }
+
+    pub fn toolbar_quick_actions(&self) -> bool {
+        self.0.editor_toolbar_quick_actions.unwrap_or(true)
+    }
+
+    pub fn toolbar_code_actions(&self) -> bool {
+        self.0.editor_toolbar_code_actions.unwrap_or(false)
     }
 
     pub fn autocomplete_debounce_ms(&self) -> u32 {
@@ -553,6 +869,22 @@ impl WorkspaceSettings {
         self.0
             .command_palette_close_on_overlay_click
             .unwrap_or(true)
+    }
+
+    pub fn show_nav_history_buttons(&self) -> bool {
+        self.0.show_nav_history_buttons.unwrap_or(true)
+    }
+
+    pub fn show_tab_bar_buttons(&self) -> bool {
+        self.0.show_tab_bar_buttons.unwrap_or(true)
+    }
+
+    pub fn show_editor_tab_git_status(&self) -> bool {
+        self.0.show_editor_tab_git_status.unwrap_or(true)
+    }
+
+    pub fn show_editor_tab_diagnostics(&self) -> bool {
+        self.0.show_editor_tab_diagnostics.unwrap_or(false)
     }
 
     /// Block the first quit attempt while a terminal/SSH shell is running.
@@ -756,6 +1088,28 @@ mod tests {
     }
 
     #[test]
+    fn workspace_editor_tab_git_status_defaults_on_and_can_be_hidden() {
+        let defaults = WorkspaceSettings::from_settings(&SettingsContent::default());
+        assert!(defaults.show_editor_tab_git_status());
+
+        let mut content = SettingsContent::default();
+        content.workspace.show_editor_tab_git_status = Some(false);
+        let settings = WorkspaceSettings::from_settings(&content);
+        assert!(!settings.show_editor_tab_git_status());
+    }
+
+    #[test]
+    fn workspace_editor_tab_diagnostics_defaults_off_and_can_be_shown() {
+        let defaults = WorkspaceSettings::from_settings(&SettingsContent::default());
+        assert!(!defaults.show_editor_tab_diagnostics());
+
+        let mut content = SettingsContent::default();
+        content.workspace.show_editor_tab_diagnostics = Some(true);
+        let settings = WorkspaceSettings::from_settings(&content);
+        assert!(settings.show_editor_tab_diagnostics());
+    }
+
+    #[test]
     fn terminal_settings_new_field_accessors_and_clamping() {
         let base = TerminalSettings::from_settings(&SettingsContent::default());
         assert_eq!(base.line_height(), 1.05);
@@ -785,6 +1139,376 @@ mod tests {
         content.editor.editor_git_word_diff = Some(false);
         let settings = EditorSettings::from_settings(&content);
         assert!(!settings.git_word_diff());
+    }
+
+    #[test]
+    fn editor_git_blame_status_defaults_off_and_can_be_enabled() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(!defaults.git_blame_status());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_git_blame_status = Some(true);
+        assert!(EditorSettings::from_settings(&content).git_blame_status());
+    }
+
+    #[test]
+    fn editor_drag_and_drop_selection_defaults_on_and_can_be_disabled() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(defaults.drag_and_drop_selection());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_drag_and_drop_selection = Some(false);
+        assert!(!EditorSettings::from_settings(&content).drag_and_drop_selection());
+    }
+
+    #[test]
+    fn editor_multi_cursor_modifier_defaults_to_alt_and_can_be_changed() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(defaults.multi_cursor_modifier(), MultiCursorModifier::Alt);
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_multi_cursor_modifier = Some(MultiCursorModifier::Platform);
+        assert_eq!(
+            EditorSettings::from_settings(&content).multi_cursor_modifier(),
+            MultiCursorModifier::Platform
+        );
+    }
+
+    #[test]
+    fn editor_mouse_wheel_zoom_defaults_off_and_can_be_enabled() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(!defaults.mouse_wheel_zoom());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_mouse_wheel_zoom = Some(true);
+        assert!(EditorSettings::from_settings(&content).mouse_wheel_zoom());
+    }
+
+    #[test]
+    fn editor_scroll_sensitivity_defaults_and_clamps_invalid_values() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(defaults.scroll_sensitivity(), 1.0);
+        assert_eq!(defaults.fast_scroll_sensitivity(), 4.0);
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_scroll_sensitivity = Some(0.0);
+        content.editor.editor_fast_scroll_sensitivity = Some(f32::NAN);
+        let settings = EditorSettings::from_settings(&content);
+        assert_eq!(settings.scroll_sensitivity(), 0.25);
+        assert_eq!(settings.fast_scroll_sensitivity(), 4.0);
+    }
+
+    #[test]
+    fn editor_vertical_scroll_margin_defaults_and_clamps() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(defaults.vertical_scroll_margin(), 3);
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_vertical_scroll_margin = Some(99);
+        assert_eq!(
+            EditorSettings::from_settings(&content).vertical_scroll_margin(),
+            20
+        );
+    }
+
+    #[test]
+    fn vim_cursor_shapes_have_mode_defaults_and_inherit_the_editor_shape() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(defaults.vim_cursor_shape_normal(), VimCursorShape::Block);
+        assert_eq!(defaults.vim_cursor_shape_insert(), VimCursorShape::Inherit);
+        assert_eq!(
+            defaults.vim_cursor_shape_replace(),
+            VimCursorShape::Underline
+        );
+        assert_eq!(defaults.vim_cursor_shape_visual(), VimCursorShape::Block);
+        assert_eq!(defaults.cursor_style(), EditorCursorStyle::Bar);
+
+        let mut content = SettingsContent::default();
+        content.editor.vim_cursor_shape_insert = Some(VimCursorShape::Underline);
+        assert_eq!(
+            EditorSettings::from_settings(&content).vim_cursor_shape_insert(),
+            VimCursorShape::Underline
+        );
+    }
+
+    #[test]
+    fn editor_bracket_matching_defaults_on_and_can_be_disabled() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(defaults.bracket_matching());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_bracket_matching = Some(false);
+        assert!(!EditorSettings::from_settings(&content).bracket_matching());
+    }
+
+    #[test]
+    fn editor_bracket_input_preferences_default_on_and_can_be_disabled_separately() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(defaults.auto_close_brackets());
+        assert!(defaults.auto_surround());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_auto_close_brackets = Some(false);
+        content.editor.editor_auto_surround = Some(false);
+        let settings = EditorSettings::from_settings(&content);
+        assert!(!settings.auto_close_brackets());
+        assert!(!settings.auto_surround());
+    }
+
+    #[test]
+    fn editor_selection_highlight_defaults_on_and_can_be_disabled() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(defaults.selection_highlight());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_selection_highlight = Some(false);
+        assert!(!EditorSettings::from_settings(&content).selection_highlight());
+    }
+
+    #[test]
+    fn editor_rounded_selection_defaults_on_and_can_be_disabled() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(defaults.rounded_selection());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_rounded_selection = Some(false);
+        assert!(!EditorSettings::from_settings(&content).rounded_selection());
+    }
+
+    #[test]
+    fn editor_font_weight_defaults_to_normal_and_is_bounded() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(defaults.font_weight(), 400);
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_font_weight = Some(650);
+        assert_eq!(EditorSettings::from_settings(&content).font_weight(), 650);
+        content.editor.editor_font_weight = Some(1_000);
+        assert_eq!(EditorSettings::from_settings(&content).font_weight(), 900);
+    }
+
+    #[test]
+    fn editor_whitespace_map_accepts_one_character_and_falls_back_on_invalid_values() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(defaults.whitespace_space_marker(), '•');
+        assert_eq!(defaults.whitespace_tab_marker(), '→');
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_whitespace_space = Some("∙".to_string());
+        content.editor.editor_whitespace_tab = Some("tab".to_string());
+        let settings = EditorSettings::from_settings(&content);
+        assert_eq!(settings.whitespace_space_marker(), '∙');
+        assert_eq!(settings.whitespace_tab_marker(), '→');
+    }
+
+    #[test]
+    fn editor_settings_reads_search_defaults_and_overrides() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(!defaults.search_case_sensitive());
+        assert!(!defaults.search_smart_case());
+        assert!(!defaults.search_whole_word());
+        assert!(!defaults.search_regex());
+        assert!(defaults.search_wrap());
+        assert!(!defaults.search_center_on_match());
+        assert!(!defaults.search_include_ignored());
+        assert!(defaults.search_on_type());
+        assert_eq!(
+            defaults.search_seed_from_cursor(),
+            SearchSeedBehavior::Always
+        );
+
+        let mut content = SettingsContent::default();
+        content.editor.search_case_sensitive = Some(true);
+        content.editor.search_smart_case = Some(true);
+        content.editor.search_whole_word = Some(true);
+        content.editor.search_regex = Some(true);
+        content.editor.search_wrap = Some(false);
+        content.editor.search_center_on_match = Some(true);
+        content.editor.search_include_ignored = Some(true);
+        content.editor.search_on_type = Some(false);
+        content.editor.search_seed_from_cursor = Some(SearchSeedBehavior::Selection);
+        let settings = EditorSettings::from_settings(&content);
+        assert!(settings.search_case_sensitive());
+        assert!(settings.search_smart_case());
+        assert!(settings.search_whole_word());
+        assert!(settings.search_regex());
+        assert!(!settings.search_wrap());
+        assert!(settings.search_center_on_match());
+        assert!(settings.search_include_ignored());
+        assert!(!settings.search_on_type());
+        assert_eq!(
+            settings.search_seed_from_cursor(),
+            SearchSeedBehavior::Selection
+        );
+    }
+
+    #[test]
+    fn inlay_hints_are_off_by_default_and_can_be_enabled() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(!defaults.inlay_hints());
+        assert!(defaults.inlay_type_hints());
+        assert!(defaults.inlay_parameter_hints());
+        assert!(defaults.inlay_other_hints());
+        assert!(!defaults.inlay_show_background());
+        assert_eq!(defaults.inlay_edit_debounce_ms(), 700);
+        assert_eq!(defaults.inlay_scroll_debounce_ms(), 50);
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_inlay_hints = Some(true);
+        content.editor.editor_inlay_type_hints = Some(false);
+        content.editor.editor_inlay_show_background = Some(true);
+        content.editor.editor_inlay_edit_debounce_ms = Some(20_000);
+        content.editor.editor_inlay_scroll_debounce_ms = Some(25);
+        let settings = EditorSettings::from_settings(&content);
+        assert!(settings.inlay_hints());
+        assert!(!settings.inlay_type_hints());
+        assert!(settings.inlay_show_background());
+        assert_eq!(settings.inlay_edit_debounce_ms(), 10_000);
+        assert_eq!(settings.inlay_scroll_debounce_ms(), 25);
+    }
+
+    #[test]
+    fn code_lens_is_off_by_default_and_can_be_enabled() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::defaults());
+        assert!(!defaults.code_lens());
+
+        let mut content = SettingsContent::defaults();
+        content.editor.editor_code_lens = Some(true);
+        let settings = EditorSettings::from_settings(&content);
+        assert!(settings.code_lens());
+    }
+
+    #[test]
+    fn error_lens_settings_have_safe_defaults_and_clamped_values() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(
+            defaults.diagnostics_max_severity(),
+            EditorDiagnosticMaxSeverity::All
+        );
+        assert!(!defaults.error_lens());
+        assert_eq!(defaults.error_lens_delay_ms(), 150);
+        assert_eq!(defaults.error_lens_spacing(), 4);
+        assert_eq!(defaults.error_lens_minimum_column(), 0);
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_diagnostics_max_severity = Some(EditorDiagnosticMaxSeverity::Warning);
+        content.editor.editor_error_lens = Some(true);
+        content.editor.editor_error_lens_delay_ms = Some(9_000);
+        content.editor.editor_error_lens_spacing = Some(40);
+        content.editor.editor_error_lens_minimum_column = Some(9_000);
+        let settings = EditorSettings::from_settings(&content);
+        assert_eq!(
+            settings.diagnostics_max_severity(),
+            EditorDiagnosticMaxSeverity::Warning
+        );
+        assert!(settings.error_lens());
+        assert_eq!(settings.error_lens_delay_ms(), 5_000);
+        assert_eq!(settings.error_lens_spacing(), 32);
+        assert_eq!(settings.error_lens_minimum_column(), 2_000);
+    }
+
+    #[test]
+    fn document_color_mode_defaults_to_inlay_and_accepts_each_mode() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(
+            defaults.lsp_document_colors(),
+            EditorDocumentColorMode::Inlay
+        );
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_lsp_document_colors = Some(EditorDocumentColorMode::Inline);
+        assert_eq!(
+            EditorSettings::from_settings(&content).lsp_document_colors(),
+            EditorDocumentColorMode::Inline
+        );
+    }
+
+    #[test]
+    fn editor_minimap_settings_default_and_legacy_boolean_mapping() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(
+            defaults.minimap_visibility(),
+            EditorMinimapVisibility::Never
+        );
+        assert!(!defaults.minimap());
+        assert_eq!(
+            defaults.minimap_display_in(),
+            EditorMinimapDisplayIn::ActiveEditor
+        );
+        assert_eq!(defaults.minimap_thumb(), EditorMinimapThumb::Always);
+        assert_eq!(
+            defaults.minimap_thumb_border(),
+            EditorMinimapThumbBorder::LeftOpen
+        );
+        assert_eq!(
+            defaults.minimap_current_line_highlight(),
+            EditorMinimapCurrentLineHighlight::Inherit
+        );
+        assert_eq!(defaults.minimap_max_width_columns(), 80);
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_minimap =
+            Some(labonair_settings_content::editor::EditorMinimapSetting::Legacy(true));
+        let legacy = EditorSettings::from_settings(&content);
+        assert_eq!(legacy.minimap_visibility(), EditorMinimapVisibility::Always);
+        assert!(legacy.minimap());
+    }
+
+    #[test]
+    fn editor_scrollbar_settings_default_and_override() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(
+            defaults.scrollbar_visibility(),
+            EditorScrollbarVisibility::Auto
+        );
+        assert!(defaults.scrollbar_cursors());
+        assert!(defaults.scrollbar_git_diff());
+        assert!(defaults.scrollbar_search_results());
+        assert!(defaults.scrollbar_selected_text());
+        assert!(defaults.scrollbar_selected_symbol());
+        assert_eq!(
+            defaults.scrollbar_diagnostics(),
+            EditorDiagnosticMaxSeverity::All
+        );
+        assert!(defaults.horizontal_scrollbar());
+        assert!(defaults.vertical_scrollbar());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_scrollbar_show = Some(EditorScrollbarVisibility::Never);
+        content.editor.editor_scrollbar_selected_symbol = Some(false);
+        content.editor.editor_scrollbar_diagnostics = Some(EditorDiagnosticMaxSeverity::Warning);
+        content.editor.editor_scrollbar_horizontal = Some(false);
+        let settings = EditorSettings::from_settings(&content);
+        assert_eq!(
+            settings.scrollbar_visibility(),
+            EditorScrollbarVisibility::Never
+        );
+        assert!(!settings.scrollbar_selected_symbol());
+        assert_eq!(
+            settings.scrollbar_diagnostics(),
+            EditorDiagnosticMaxSeverity::Warning
+        );
+        assert!(!settings.horizontal_scrollbar());
+    }
+
+    #[test]
+    fn editor_selections_menu_defaults_on_and_can_be_hidden() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(defaults.selections_menu());
+        assert!(defaults.toolbar_breadcrumbs());
+        assert!(defaults.toolbar_quick_actions());
+        assert!(!defaults.toolbar_code_actions());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_selections_menu = Some(false);
+        content.editor.editor_toolbar_breadcrumbs = Some(false);
+        content.editor.editor_toolbar_quick_actions = Some(false);
+        content.editor.editor_toolbar_code_actions = Some(true);
+        let settings = EditorSettings::from_settings(&content);
+        assert!(!settings.selections_menu());
+        assert!(!settings.toolbar_breadcrumbs());
+        assert!(!settings.toolbar_quick_actions());
+        assert!(settings.toolbar_code_actions());
     }
 
     #[test]

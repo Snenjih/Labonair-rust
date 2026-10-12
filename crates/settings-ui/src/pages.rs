@@ -357,7 +357,7 @@ const EDITOR_GROUPS: &[Group] = &[
     (
         "Keybindings",
         paths!("editor":
-            "vimMode",
+            "editorMode",
             "editorRelativeLineNumbers",
             "vimHlsearch",
             "vimIncsearch",
@@ -373,19 +373,78 @@ const EDITOR_GROUPS: &[Group] = &[
             "editorLineHeight"
         ),
     ),
-    ("Behaviour", paths!("editor": "editorTabSize")),
+    (
+        "Behaviour",
+        paths!("editor":
+            "editorTabSize",
+            "editorAutoCloseBrackets",
+            "editorAutoSurround",
+            "editorDragAndDropSelection"
+        ),
+    ),
     ("Indentation", paths!("editor": "editorIndentWithTabs")),
+    (
+        "Formatting & Save",
+        paths!("editor":
+            "editorFormatOnSave",
+            "editorAutoSave",
+            "editorAutoSaveDelay",
+            "editorTrimTrailingWhitespace",
+            "editorInsertFinalNewline"
+        ),
+    ),
     (
         "Display",
         paths!("editor":
             "editorLineNumbers",
             "editorWordWrap",
             "editorWhitespace",
-            "editorMinimap",
             "editorRulers",
             "editorScrollBeyondLastLine",
             "editorStickyContext",
-            "editorHighlightCurrentLine"
+            "editorMouseWheelZoom",
+            "editorScrollSensitivity",
+            "editorFastScrollSensitivity",
+            "editorVerticalScrollMargin",
+            "editorHighlightCurrentLine",
+            "editorBracketMatching",
+            "editorShowCursorPosition",
+            "editorShowSelectionStats"
+        ),
+    ),
+    (
+        "Minimap",
+        paths!("editor":
+            "editorMinimap",
+            "editorMinimapDisplayIn",
+            "editorMinimapThumb",
+            "editorMinimapThumbBorder",
+            "editorMinimapCurrentLineHighlight",
+            "editorMinimapMaxWidthColumns"
+        ),
+    ),
+    (
+        "Scrollbar",
+        paths!("editor":
+            "editorScrollbarShow",
+            "editorScrollbarCursors",
+            "editorScrollbarGitDiff",
+            "editorScrollbarSearchResults",
+            "editorScrollbarSelectedText",
+            "editorScrollbarSelectedSymbol",
+            "editorScrollbarDiagnostics",
+            "editorScrollbarHorizontal",
+            "editorScrollbarVertical"
+        ),
+    ),
+    (
+        "Toolbar",
+        paths!("editor":
+            "editorToolbarBreadcrumbs",
+            "editorToolbarQuickActions",
+            "editorSelectionsMenu",
+            "editorToolbarCodeActions",
+            "editorShowOutline"
         ),
     ),
     (
@@ -402,13 +461,41 @@ const LANGUAGE_GROUPS: &[Group] = &[(
     "Language Services",
     paths!("editor":
         "editorDiagnostics",
+        "editorDiagnosticsMaxSeverity",
+        "editorErrorLens",
+        "editorErrorLensDelayMs",
+        "editorErrorLensSpacing",
+        "editorErrorLensMinimumColumn",
         "editorSemanticTokens",
+        "editorCodeLens",
+        "editorInlayHints",
+        "editorInlayTypeHints",
+        "editorInlayParameterHints",
+        "editorInlayOtherHints",
+        "editorInlayShowBackground",
+        "editorInlayEditDebounceMs",
+        "editorInlayScrollDebounceMs",
         "editorCompletion",
-        "editorHover"
+        "editorHover",
+        "editorAutocompleteDebounceMs",
+        "editorMaxFileSizeMb"
     ),
 )];
 
 const FILE_GROUPS: &[Group] = &[
+    (
+        "Search",
+        paths!("editor":
+            "searchCaseSensitive",
+            "searchSmartCase",
+            "searchWholeWord",
+            "searchRegex",
+            "searchWrap",
+            "searchIncludeIgnored",
+            "searchOnType",
+            "searchSeedFromCursor"
+        ),
+    ),
     (
         "Browsing",
         paths!("file_manager": "explorerShowHiddenByDefault"),
@@ -722,6 +809,14 @@ mod tests {
             section_label_for_field(&pages, "editor.editorGitWordDiff")
                 .map(|location| (location.page_index, location.section)),
             Some((8, Some("Editor")))
+        );
+        assert_eq!(
+            section_label_for_field(&pages, "editor.editorFormatOnSave"),
+            Some(FieldLocation {
+                page_index: 3,
+                sub_page_slug: None,
+                section: Some("Formatting & Save"),
+            })
         );
         assert_eq!(
             section_label_for_field(&pages, "general.restoreWindowState")

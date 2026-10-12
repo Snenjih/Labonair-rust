@@ -143,6 +143,12 @@ role = "capability"
 layer = "product"
 
 [[crate]]
+name = "labonair-editor-ui"
+owner = "editor"
+role = "presentation"
+layer = "product"
+
+[[crate]]
 name = "labonair-errors"
 owner = "platform"
 role = "contract"
@@ -440,6 +446,7 @@ layer = "product"
 "labonair-command-palette-runtime" = ["labonair-command-palette-core"]
 "labonair-credentials" = ["labonair-persistence", "labonair-secrets"]
 "labonair-editor" = ["labonair-command-palette-core"]
+"labonair-editor-ui" = ["labonair-command-palette-core", "labonair-editor", "labonair-filesystem", "labonair-notifications", "labonair-settings", "labonair-settings-json", "labonair-theme", "labonair-ui-kit"]
 "labonair-errors" = []
 "labonair-events" = []
 "labonair-explorer-host" = []
@@ -487,4 +494,4 @@ layer = "product"
 "labonair-ui-kit" = ["labonair-gpui-ext", "labonair-theme-tokens"]
 "labonair-updater" = ["labonair-filesystem"]
 "labonair-updater-ui" = ["labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-notifications", "labonair-panel", "labonair-theme", "labonair-ui-kit", "labonair-updater"]
-"labonair-workspace" = ["labonair-ai", "labonair-background-host", "labonair-command-palette", "labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-editor", "labonair-explorer-host", "labonair-filesystem", "labonair-git", "labonair-gpui-ext", "labonair-hosts", "labonair-hosts-host", "labonair-hosts-ui", "labonair-keymap", "labonair-keymap-ui", "labonair-mcp-core", "labonair-notifications", "labonair-panel", "labonair-panel-git-graph", "labonair-settings", "labonair-settings-json", "labonair-sftp", "labonair-ssh", "labonair-terminal", "labonair-theme", "labonair-transfers", "labonair-ui-kit"]
+"labonair-workspace" = ["labonair-ai", "labonair-background-host", "labonair-command-palette", "labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-editor", "labonair-editor-ui", "labonair-explorer-host", "labonair-filesystem", "labonair-git", "labonair-gpui-ext", "labonair-hosts", "labonair-hosts-host", "labonair-hosts-ui", "labonair-keymap", "labonair-keymap-ui", "labonair-mcp-core", "labonair-notifications", "labonair-panel", "labonair-panel-git-graph", "labonair-settings", "labonair-settings-json", "labonair-sftp", "labonair-ssh", "labonair-terminal", "labonair-theme", "labonair-transfers", "labonair-ui-kit"]

@@ -40,6 +40,7 @@ pub mod mcp_event_bridge;
 pub mod modal_layer;
 pub mod pane;
 pub mod pane_group;
+pub mod project_multibuffer;
 pub mod project_search;
 pub mod recent_projects;
 pub mod search_overlay;
@@ -50,7 +51,6 @@ pub mod ssh_event_bridge;
 pub mod status_bar;
 pub mod status_items;
 pub mod status_placements;
-pub mod syntax_theme;
 pub mod tabs;
 pub mod tabs_panel;
 pub mod views;
@@ -83,10 +83,10 @@ use crate::mcp_event_bridge::McpEventBridge;
 use crate::ssh_event_bridge::SshEventBridge;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, point, px, relative, Animation, AnimationExt, App, AppContext, ClickEvent, Context,
-    DragMoveEvent, Entity, EventEmitter, ExternalPaths, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Task, Window,
+    div, point, px, relative, Animation, AnimationExt, App, AppContext, ClickEvent, ClipboardItem,
+    Context, DragMoveEvent, Entity, EventEmitter, ExternalPaths, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
 use labonair_command_palette_core::CommandId;
 use labonair_git::{GitGraphService, GitService};
@@ -121,19 +121,20 @@ use crate::spaces::{Space, SpaceId, SpaceStore, DEFAULT_SPACE_ID};
 use crate::ssh_connection::{
     ConnStage, ConnectionKind, ConnectionState, ConnectionStatusStore, StageStatus,
 };
-use crate::tabs::{Tab, TabData, TabKind, TabStore};
+use crate::tabs::{Tab, TabData, TabDiagnosticStatus, TabGitStatus, TabKind, TabStore};
 use crate::theme::ThemeStore;
-use crate::views::editor::{EditorEvent, EditorView};
-use crate::views::preview::PreviewView;
+use crate::views::preview::{PreviewImageAction, PreviewView};
 use crate::views::sftp::{SftpEvent, SftpView};
 use crate::views::terminal::TerminalView;
 use labonair_background_host::BackgroundHost;
 use labonair_editor::{
-    command_provider::{route_for_command, EditorLanguageCommand, GitEditorCommand},
-    editing::{EditIntent, EditorCommand, SplitIntent},
-    FileFinderCandidate, FileFinderQuery, FileFinderResult, LanguageServiceRuntime, Position,
-    ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, SearchError, SearchQuery,
+    FileFinderCandidate, FileFinderQuery, FileFinderResult, GitGutterSnapshot, GitGutterState,
+    GitHunkStatus, LanguageServiceRuntime, MultiBuffer, MultiBufferSaveOutcome,
+    MultiBufferSaveRequest, Position, ProjectDiagnosticRegistry, ProjectReplaceResult,
+    ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, Revision, SearchError,
+    SearchQuery, TextRange,
 };
+use labonair_editor_ui::{EditorBufferSnapshot, EditorEvent, EditorSidePreviewContent, EditorView};
 use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
 use labonair_hosts_host::{ActiveTunnelRow, HostStatus, HostView};
 use labonair_hosts_ui::HostManagerView;
@@ -141,12 +142,158 @@ use labonair_keymap_ui::KeymapManagementView;
 use labonair_panel_git_graph::GitGraphView;
 use labonair_settings::content::general::StartupTab;
 use labonair_settings::content::terminal::CursorStyle as PrefCursorStyle;
-use labonair_settings::{ConnectionsSettings, GeneralSettings, Settings as _, TerminalSettings};
+use labonair_settings::{
+    ConnectionsSettings, GeneralSettings, Settings as _, TerminalSettings, WorkspaceSettings,
+};
 use labonair_ui_kit::{
     caret, context_menu, divider, h_stack, icon_button_builder, indicator, tab_item, Axis,
     BlinkCursor, ButtonSize, ButtonVariant, IconButtonShape, IconName, IndicatorSize, MenuItem,
     Palette, SubmenuHoverSource, TabLayout,
 };
+
+fn editor_tab_git_status(
+    snapshot: &GitGutterSnapshot,
+    revision: Revision,
+    path: &str,
+) -> Option<TabGitStatus> {
+    if snapshot.revision != revision
+        || snapshot.path != path
+        || !matches!(
+            snapshot.state,
+            GitGutterState::Ready | GitGutterState::Empty
+        )
+        || snapshot.hunks.is_empty()
+    {
+        return None;
+    }
+
+    let mut added = false;
+    let mut modified = false;
+    let mut deleted = false;
+    for hunk in &snapshot.hunks {
+        match hunk.status {
+            GitHunkStatus::Added | GitHunkStatus::Untracked => added = true,
+            GitHunkStatus::Modified => modified = true,
+            GitHunkStatus::Deleted => deleted = true,
+        }
+    }
+
+    if modified || (added && deleted) {
+        Some(TabGitStatus::Modified)
+    } else if deleted {
+        Some(TabGitStatus::Deleted)
+    } else if added {
+        Some(TabGitStatus::Added)
+    } else {
+        None
+    }
+}
+
+fn editor_tab_diagnostic_status(
+    diagnostics: &[labonair_editor::Diagnostic],
+) -> Option<TabDiagnosticStatus> {
+    use labonair_editor::language_services::DiagnosticSeverity;
+
+    if diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+    {
+        Some(TabDiagnosticStatus::Error)
+    } else if diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == DiagnosticSeverity::Warning)
+    {
+        Some(TabDiagnosticStatus::Warning)
+    } else {
+        None
+    }
+}
+
+fn relative_path_under_root(path: &Path, root: &Path) -> Option<String> {
+    let relative = path.strip_prefix(root).ok()?;
+    if relative.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::ParentDir
+                | std::path::Component::RootDir
+                | std::path::Component::Prefix(_)
+        )
+    }) {
+        return None;
+    }
+    Some(relative.to_string_lossy().into_owned())
+}
+
+fn decode_local_file_uri(uri: &str) -> Result<std::path::PathBuf, String> {
+    let encoded_path = uri
+        .strip_prefix("file://")
+        .ok_or_else(|| "Language server returned a non-file URI.".to_string())?;
+    let local_path = if encoded_path.starts_with('/') {
+        encoded_path.to_string()
+    } else if let Some(path) = encoded_path.strip_prefix("localhost/") {
+        format!("/{path}")
+    } else {
+        return Err("Language server returned a non-local file URI.".to_string());
+    };
+    if local_path.contains('?') || local_path.contains('#') {
+        return Err("Language server returned an invalid file URI.".to_string());
+    }
+
+    fn hex_digit(byte: u8) -> Option<u8> {
+        match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            b'A'..=b'F' => Some(byte - b'A' + 10),
+            _ => None,
+        }
+    }
+
+    let bytes = local_path.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let high = bytes
+                .get(index + 1)
+                .and_then(|byte| hex_digit(*byte))
+                .ok_or_else(|| "Language server returned a malformed file URI.".to_string())?;
+            let low = bytes
+                .get(index + 2)
+                .and_then(|byte| hex_digit(*byte))
+                .ok_or_else(|| "Language server returned a malformed file URI.".to_string())?;
+            decoded.push((high << 4) | low);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    let path = String::from_utf8(decoded)
+        .map_err(|_| "Language server returned a non-UTF-8 file path.".to_string())?;
+    if path.contains('\0') {
+        return Err("Language server returned an invalid file path.".to_string());
+    }
+    Ok(std::path::PathBuf::from(path))
+}
+
+fn is_supported_external_document_link(uri: &str) -> bool {
+    let Some((scheme, rest)) = uri.split_once(':') else {
+        return false;
+    };
+    if uri.chars().any(char::is_whitespace) {
+        return false;
+    }
+    if scheme.eq_ignore_ascii_case("mailto") {
+        return !rest.is_empty();
+    }
+    if scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https") {
+        return rest
+            .strip_prefix("//")
+            .and_then(|authority| authority.split(['/', '?', '#']).next())
+            .is_some_and(|authority| !authority.is_empty());
+    }
+    false
+}
 
 /// Interval for draining backend SSH events into the workspace.
 const SSH_POLL_INTERVAL: Duration = Duration::from_millis(40);
@@ -171,19 +318,6 @@ pub(crate) enum EditorCommandDispatchResult {
     Forwarded,
     NoActiveEditor,
     Unsupported(CommandId),
-}
-
-fn editor_command_dispatch_target(
-    has_active_editor: bool,
-    id: CommandId,
-) -> EditorCommandDispatchResult {
-    if !has_active_editor {
-        EditorCommandDispatchResult::NoActiveEditor
-    } else if labonair_editor::command_provider::EXECUTABLE_EDITOR_COMMAND_IDS.contains(&id) {
-        EditorCommandDispatchResult::Forwarded
-    } else {
-        EditorCommandDispatchResult::Unsupported(id)
-    }
 }
 
 fn editor_git_files(
@@ -441,6 +575,13 @@ impl Render for TabDragPreview {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EditorSidePreviewKind {
+    Markdown,
+    Svg,
+    Tabular,
+}
+
 /// One pane's backing session + content view.
 struct PaneEntry {
     session_id: SessionId,
@@ -533,13 +674,35 @@ pub struct Workspace {
     panes: HashMap<PaneId, PaneEntry>,
     /// Editor view per `Editor` tab id.
     editors: HashMap<u64, Entity<EditorView>>,
+    /// Editor tab whose Editor-owned project search session is currently shown.
+    /// This stays pinned while opening results changes the active tab.
+    project_search_owner: Option<u64>,
     /// The cancellable operation handle for the Editor-owned project search.
-    /// Query/result/status state remains inside the active Editor entity.
+    /// Query/result/status state remains inside the search owner Editor entity.
     project_search_task: Option<Task<()>>,
     /// SFTP browser view per `Sftp` tab id (T08-001).
     sftp_views: HashMap<u64, Entity<SftpView>>,
     /// Native preview view per `Preview` tab id (T15-006 — WebView replacement).
     previews: HashMap<u64, Entity<PreviewView>>,
+    /// Preview tabs that follow edits from their source editor tab.
+    markdown_previews: HashMap<u64, u64>,
+    /// SVG preview tabs that follow edits from their source editor tab.
+    svg_previews: HashMap<u64, u64>,
+    /// A PreviewView embedded in one Editor split group per source tab.
+    editor_side_previews: HashMap<
+        u64,
+        (
+            labonair_editor::EditorGroupId,
+            EditorSidePreviewKind,
+            Entity<PreviewView>,
+        ),
+    >,
+    /// Single preview tab that follows whichever editor was last activated.
+    following_markdown_preview: Option<u64>,
+    following_markdown_editor: Option<u64>,
+    /// Single SVG preview tab that follows whichever editor was last activated.
+    following_svg_preview: Option<u64>,
+    following_svg_editor: Option<u64>,
     /// The shared commit-graph view, lazily created for the `GitGraph` tab.
     git_graph: Option<Entity<GitGraphView>>,
     /// The keymap-management view, lazily created for the single `Keymap` tab.
@@ -588,6 +751,7 @@ pub struct Workspace {
     pending_sftp: Vec<String>,
     /// File-open requests queued by SFTP views, drained in `render`.
     pending_open: Vec<PendingOpen>,
+    pending_preview_focus: bool,
     next_pane_id: PaneId,
     /// Tab id whose close is awaiting unsaved-changes confirmation.
     confirm_close: Option<u64>,
@@ -629,6 +793,8 @@ pub struct Workspace {
     /// stores only the injected handle; process/document state stays in the
     /// editor capability.
     editor_language_services: Arc<LanguageServiceRuntime>,
+    /// Shared typed projection of diagnostics from the open Editor buffers.
+    editor_diagnostics: HashMap<SpaceId, ProjectDiagnosticRegistry>,
     git_graph_service: Arc<dyn GitGraphService>,
     mcp_access: Arc<dyn McpSessionAccessService>,
     mcp_tab_operations: Arc<dyn McpTabOperationService>,
@@ -717,9 +883,19 @@ impl Workspace {
         let spaces = cx.new(|_| SpaceStore::new());
         cx.observe(&tabs, |_, _, cx| cx.notify()).detach();
         cx.observe(&spaces, |_, _, cx| cx.notify()).detach();
+        if cx.has_global::<labonair_settings::SettingsStore>() {
+            cx.observe_global::<labonair_settings::SettingsStore>(|_, cx| cx.notify())
+                .detach();
+        }
         cx.subscribe(&tabs, |this, _, ev: &crate::tabs::ActiveTabChanged, cx| {
             if let Some(editor) = this.editors.get(&ev.0).cloned() {
                 editor.update(cx, |e, cx| e.check_external(cx));
+                if this.following_markdown_preview.is_some() {
+                    this.update_following_markdown_preview_for_editor(ev.0, cx);
+                }
+                if this.following_svg_preview.is_some() {
+                    this.update_following_svg_preview_for_editor(ev.0, cx);
+                }
             }
             // Keep the active space's "resume here" tab current live, so a
             // later `switch_space` away and back lands on the right tab
@@ -815,6 +991,7 @@ impl Workspace {
         let editor_git_bridge = Arc::new(WorkspaceGitBridge::new(git.clone(), tokio.clone()));
         let editor_language_services = Arc::new(LanguageServiceRuntime::default());
         editor_language_services.set_tokio_handle(tokio.clone());
+        let editor_diagnostics = HashMap::new();
         let mut this = Self {
             registry,
             tabs,
@@ -833,9 +1010,17 @@ impl Workspace {
             layouts: HashMap::new(),
             panes: HashMap::new(),
             editors: HashMap::new(),
+            project_search_owner: None,
             project_search_task: None,
             sftp_views: HashMap::new(),
             previews: HashMap::new(),
+            markdown_previews: HashMap::new(),
+            svg_previews: HashMap::new(),
+            editor_side_previews: HashMap::new(),
+            following_markdown_preview: None,
+            following_markdown_editor: None,
+            following_svg_preview: None,
+            following_svg_editor: None,
             git_graph: None,
             keymap: None,
             hosts,
@@ -853,6 +1038,7 @@ impl Workspace {
             remote_edits: HashMap::new(),
             pending_sftp: Vec::new(),
             pending_open: Vec::new(),
+            pending_preview_focus: false,
             next_pane_id: 1,
             confirm_close: None,
             pending_close: VecDeque::new(),
@@ -870,6 +1056,7 @@ impl Workspace {
             git,
             editor_git_bridge,
             editor_language_services,
+            editor_diagnostics,
             git_graph_service,
             mcp_access,
             mcp_tab_operations,
@@ -1565,6 +1752,7 @@ impl Workspace {
         for tab in self.tabs.update(cx, |s, cx| s.close_by_space(id, cx)) {
             self.retire_tab(&tab, cx);
         }
+        self.editor_diagnostics.remove(&id);
         self.spaces.update(cx, |s, cx| {
             s.close(id, cx);
         });
@@ -1736,30 +1924,99 @@ impl Workspace {
         Some(self.editors.get(&active.id)?.read(cx).cursor_line_col())
     }
 
-    /// Document symbols of the active editor tab (palette "Go to Symbol").
-    pub fn active_editor_symbols(&self, cx: &App) -> Vec<labonair_editor::DocumentSymbol> {
-        let Some(active) = self.tabs.read(cx).active().cloned() else {
-            return Vec::new();
-        };
-        if active.kind != TabKind::Editor {
-            return Vec::new();
+    /// Symbols from every editor tab in the active space, for the Editor-owned
+    /// Go to Symbol palette. This is a live open-buffer projection; it does
+    /// not scan closed files or build a second project index.
+    pub fn editor_symbol_picker_rows(
+        &self,
+        cx: &App,
+    ) -> Vec<labonair_editor::command_provider::EditorSymbolPickerRow> {
+        let active_space = self.spaces.read(cx).active_id();
+        let editors = self
+            .tabs
+            .read(cx)
+            .tabs_in_space(active_space)
+            .into_iter()
+            .filter(|tab| tab.kind == TabKind::Editor)
+            .map(|tab| (tab.id, tab.label()))
+            .collect::<Vec<_>>();
+
+        let mut rows = Vec::new();
+        for (tab_id, file_label) in editors {
+            let Some(editor) = self.editors.get(&tab_id) else {
+                continue;
+            };
+            rows.extend(
+                editor
+                    .read(cx)
+                    .document_symbols()
+                    .into_iter()
+                    .map(
+                        |symbol| labonair_editor::command_provider::EditorSymbolPickerRow {
+                            tab_id,
+                            file_label: file_label.clone(),
+                            symbol,
+                        },
+                    ),
+            );
         }
-        self.editors
-            .get(&active.id)
-            .map(|e| e.read(cx).document_symbols())
-            .unwrap_or_default()
+        rows
     }
 
-    /// Jump the active editor's caret to `line0` (0-based).
-    pub fn active_editor_goto_line(&self, line0: usize, cx: &mut Context<Self>) {
-        let Some(active) = self.tabs.read(cx).active().cloned() else {
-            return;
-        };
-        if active.kind != TabKind::Editor {
+    /// Current diagnostics from each editor tab in the active space, for the
+    /// Editor-owned diagnostics palette page.
+    pub fn editor_diagnostic_picker_rows(
+        &self,
+        cx: &App,
+    ) -> Vec<labonair_editor::command_provider::EditorDiagnosticPickerRow> {
+        let active_space = self.spaces.read(cx).active_id();
+        let editors = self
+            .tabs
+            .read(cx)
+            .tabs_in_space(active_space)
+            .into_iter()
+            .filter(|tab| tab.kind == TabKind::Editor)
+            .map(|tab| (tab.id, tab.label()))
+            .collect::<Vec<_>>();
+
+        let mut rows = Vec::new();
+        for (tab_id, file_label) in editors {
+            let Some(editor) = self.editors.get(&tab_id) else {
+                continue;
+            };
+            rows.extend(editor.read(cx).diagnostics().into_iter().map(|diagnostic| {
+                labonair_editor::command_provider::EditorDiagnosticPickerRow {
+                    tab_id,
+                    file_label: file_label.clone(),
+                    diagnostic,
+                }
+            }));
+        }
+        rows
+    }
+
+    /// Activate an editor tab from the current space and move its caret to a
+    /// symbol definition selected from the Go to Symbol palette.
+    pub fn goto_editor_line(
+        &mut self,
+        tab_id: u64,
+        line0: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let active_space = self.spaces.read(cx).active_id();
+        let valid_target = self
+            .tabs
+            .read(cx)
+            .get(tab_id)
+            .is_some_and(|tab| tab.kind == TabKind::Editor && tab.space_id == active_space);
+        if !valid_target {
             return;
         }
-        if let Some(e) = self.editors.get(&active.id) {
-            e.update(cx, |e, cx| e.goto_line(line0, cx));
+
+        self.reveal_tab(tab_id, window, cx);
+        if let Some(editor) = self.editors.get(&tab_id) {
+            editor.update(cx, |editor, cx| editor.goto_line(line0, cx));
         }
     }
 
@@ -1830,6 +2087,39 @@ impl Workspace {
         self.editors.get(&id).and_then(|e| e.read(cx).search_seed())
     }
 
+    /// Original active-buffer selection captured when the search overlay opens.
+    pub fn search_selection_range(&self, cx: &App) -> Option<TextRange> {
+        let id = self.tabs.read(cx).active_id();
+        self.editors
+            .get(&id)
+            .and_then(|editor| editor.read(cx).search_selection_range())
+    }
+
+    /// Active range for the Editor-owned buffer-search selection toggle.
+    pub fn search_selection_scope(&self, cx: &App) -> Option<TextRange> {
+        let id = self.tabs.read(cx).active_id();
+        self.editors
+            .get(&id)
+            .and_then(|editor| editor.read(cx).search_selection_scope())
+    }
+
+    /// Current `(match_index, total)` for the active Editor buffer query.
+    pub fn buffer_search_count(&self, cx: &App) -> Option<(usize, usize)> {
+        let id = self.tabs.read(cx).active_id();
+        self.editors
+            .get(&id)
+            .map(|editor| editor.read(cx).search_count())
+    }
+
+    /// Toggle the Editor-owned buffer-search selection scope.
+    pub fn toggle_search_selection_scope(&mut self, cx: &mut Context<Self>) -> bool {
+        let id = self.tabs.read(cx).active_id();
+        let Some(editor) = self.editors.get(&id).cloned() else {
+            return false;
+        };
+        editor.update(cx, |editor, cx| editor.toggle_search_selection_scope(cx))
+    }
+
     /// Start / update the search against whichever surface the active tab owns.
     /// Returns `(current_1_based, total)`; `None` when the tab is not searchable.
     pub fn search_set(
@@ -1848,9 +2138,24 @@ impl Workspace {
         })))
     }
 
+    /// Saved editor file paths in the active space for the open-files search
+    /// filter. Unsaved buffers have no filesystem path to pass to the provider.
+    fn open_editor_paths_in_active_space(&self, cx: &App) -> Vec<std::path::PathBuf> {
+        let active_space = self.spaces.read(cx).active_id();
+        self.tabs
+            .read(cx)
+            .tabs_in_space(active_space)
+            .into_iter()
+            .filter(|tab| tab.kind == TabKind::Editor)
+            .filter_map(|tab| self.editors.get(&tab.id))
+            .filter_map(|editor| editor.read(cx).path())
+            .collect()
+    }
+
     /// Start the Editor-owned project search through the explicit workspace
     /// filesystem root. Workspace owns only this async adapter and operation
-    /// handle; all query/result/status state stays in `EditorView`.
+    /// handle; query/result/status state stays in the Editor entity that
+    /// started the search, even when opening a result activates another tab.
     pub fn project_search_set(
         &mut self,
         query: ProjectSearchQuery,
@@ -1859,6 +2164,7 @@ impl Workspace {
         self.project_search_task.take();
         let tab_id = self.tabs.read(cx).active_id();
         let editor = self.editors.get(&tab_id).cloned()?;
+        self.project_search_owner = Some(tab_id);
         let request = editor.update(cx, |editor, cx| editor.begin_project_search(query, cx));
         if request.query.text.is_empty() {
             return Some(());
@@ -1874,14 +2180,24 @@ impl Workspace {
             });
             return Some(());
         };
+        let open_file_paths = if request.query.options.only_open_files {
+            crate::project_search::relative_open_paths(
+                &root,
+                self.open_editor_paths_in_active_space(cx),
+            )
+        } else {
+            Vec::new()
+        };
 
-        let job = self
-            .tokio
-            .spawn_blocking(move || crate::project_search::search_blocking(root, request));
+        let job = self.tokio.spawn_blocking(move || {
+            crate::project_search::search_blocking(root, request, open_file_paths)
+        });
         self.project_search_task = Some(cx.spawn(async move |this, cx| {
             let result = job.await.map_err(|error| error.to_string()).and_then(|r| r);
             let _ = this.update(cx, |workspace, cx| {
-                if workspace.tabs.read(cx).active_id() != tab_id {
+                if workspace.project_search_owner != Some(tab_id)
+                    || !workspace.editors.contains_key(&tab_id)
+                {
                     return;
                 }
                 workspace.project_search_task = None;
@@ -1913,8 +2229,64 @@ impl Workspace {
         Some(())
     }
 
+    /// Load the source files for project-search hits into the Editor-owned
+    /// Multi-Buffer model. Path checks and file reads run off the foreground
+    /// thread; this method is only the typed Workspace filesystem adapter.
+    pub fn load_project_multibuffer(
+        &mut self,
+        hits: Vec<ProjectSearchHit>,
+        callback: impl FnOnce(Result<MultiBuffer, String>, &mut App) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(root) = self.filesystem_root(cx).map(std::path::PathBuf::from) else {
+            callback(
+                Err("No filesystem root is available for this workspace.".to_string()),
+                cx,
+            );
+            return;
+        };
+        let job = self
+            .tokio
+            .spawn_blocking(move || crate::project_multibuffer::load(&root, &hits, 3));
+        cx.spawn(async move |this, cx| {
+            let result = job.await.map_err(|error| error.to_string()).and_then(|r| r);
+            let _ = this.update(cx, move |_workspace, cx| callback(result, cx));
+        })
+        .detach();
+    }
+
+    /// Save dirty Multi-Buffer files through the filesystem lifecycle adapter.
+    /// All disk identities are checked before the first write; a later I/O
+    /// failure returns already saved files so Editor can accept those revisions.
+    pub fn save_project_multibuffer(
+        &self,
+        requests: Vec<MultiBufferSaveRequest>,
+        callback: impl FnOnce(Result<MultiBufferSaveOutcome, String>, &mut App) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        if requests.is_empty() {
+            callback(Ok(MultiBufferSaveOutcome::default()), cx);
+            return;
+        }
+        let Some(root) = self.filesystem_root(cx).map(std::path::PathBuf::from) else {
+            callback(
+                Err("No filesystem root is available for this workspace.".to_string()),
+                cx,
+            );
+            return;
+        };
+        let job = self
+            .tokio
+            .spawn_blocking(move || crate::project_multibuffer::save(&root, requests));
+        cx.spawn(async move |this, cx| {
+            let result = job.await.map_err(|error| error.to_string()).and_then(|r| r);
+            let _ = this.update(cx, move |_workspace, cx| callback(result, cx));
+        })
+        .detach();
+    }
+
     pub fn project_search_snapshot(&self, cx: &App) -> Option<ProjectSearchSnapshot> {
-        let id = self.tabs.read(cx).active_id();
+        let id = self.project_search_owner?;
         self.editors
             .get(&id)
             .map(|editor| editor.read(cx).project_search_snapshot())
@@ -1925,7 +2297,7 @@ impl Workspace {
         delta: isize,
         cx: &mut Context<Self>,
     ) -> Option<ProjectSearchHit> {
-        let id = self.tabs.read(cx).active_id();
+        let id = self.project_search_owner?;
         self.editors.get(&id).cloned().and_then(|editor| {
             let result = editor.update(cx, |editor, _| editor.move_project_search_selection(delta));
             if result.is_some() {
@@ -2006,6 +2378,77 @@ impl Workspace {
         Some(editor.update(cx, |editor, cx| editor.search_replace_all(replacement, cx)))
     }
 
+    /// Replace matches from the active project search in matching open editor
+    /// buffers. Each buffer change is one Editor-owned undoable transaction;
+    /// closed files remain untouched until the project result view can review
+    /// and save cross-file changes safely.
+    pub fn project_replace_all(
+        &mut self,
+        replacement: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<Result<ProjectReplaceResult, SearchError>> {
+        let search_owner = self.project_search_owner?;
+        let active_editor = self.editors.get(&search_owner).cloned()?;
+        let request = match active_editor.update(cx, |editor, cx| {
+            editor.begin_project_replace(replacement.to_string(), cx)
+        }) {
+            Ok(request) => request,
+            Err(error) => return Some(Err(error)),
+        };
+        let mut buffers = Vec::with_capacity(self.editors.len());
+        let mut editors_by_path = std::collections::HashMap::new();
+        for editor in self.editors.values() {
+            if let Some(candidate) = editor.read(cx).project_buffer_candidate() {
+                editors_by_path.insert(candidate.path.clone(), editor.clone());
+                buffers.push(candidate);
+            }
+        }
+        let plan = match active_editor
+            .read(cx)
+            .plan_project_replace(&request, &buffers)
+        {
+            Ok(plan) => plan,
+            Err(error) => {
+                active_editor.update(cx, |editor, cx| {
+                    editor.fail_project_replace(request.generation, error.message.clone(), cx);
+                });
+                return Some(Err(error));
+            }
+        };
+
+        let mut replacements = 0;
+        for target in &plan.targets {
+            let Some(editor) = editors_by_path.get(&target.path).cloned() else {
+                let error = SearchError {
+                    message: format!("{} is no longer open", target.path),
+                };
+                active_editor.update(cx, |editor, cx| {
+                    editor.fail_project_replace(request.generation, error.message.clone(), cx);
+                });
+                return Some(Err(error));
+            };
+            match editor.update(cx, |editor, cx| {
+                editor.apply_project_replace_target(&request, target, cx)
+            }) {
+                Ok(count) => replacements += count,
+                Err(error) => {
+                    active_editor.update(cx, |editor, cx| {
+                        editor.fail_project_replace(request.generation, error.message.clone(), cx);
+                    });
+                    return Some(Err(error));
+                }
+            }
+        }
+        let result = match active_editor.update(cx, |editor, cx| {
+            editor.complete_project_replace(&plan, replacements, cx)
+        }) {
+            Ok(result) => result,
+            Err(error) => return Some(Err(error)),
+        };
+        cx.notify();
+        Some(Ok(result))
+    }
+
     pub fn search_can_replace(&self, cx: &App) -> bool {
         let id = self.tabs.read(cx).active_id();
         self.editors
@@ -2013,12 +2456,18 @@ impl Workspace {
             .is_some_and(|editor| editor.read(cx).search_can_replace())
     }
 
-    /// Clear all search state / match highlights on the active surface.
+    /// Clear search state on the active surface and pinned project-search owner.
     pub fn search_end(&mut self, cx: &mut Context<Self>) {
         self.project_search_task.take();
-        let id = self.tabs.read(cx).active_id();
-        if let Some(e) = self.editors.get(&id).cloned() {
+        let active_id = self.tabs.read(cx).active_id();
+        let search_owner = self.project_search_owner.take();
+        if let Some(e) = search_owner.and_then(|id| self.editors.get(&id).cloned()) {
             e.update(cx, |e, cx| e.search_close(cx));
+        }
+        if search_owner != Some(active_id) {
+            if let Some(e) = self.editors.get(&active_id).cloned() {
+                e.update(cx, |e, cx| e.search_close(cx));
+            }
         }
         if let Some(view) = self.active_pane_view(cx) {
             view.update(cx, |v, cx| v.search_end(cx));
@@ -2238,7 +2687,7 @@ impl Workspace {
                 s.set_peek(id, peek, cx);
                 id
             });
-            let view = self.new_editor_view(cx);
+            let view = self.new_editor_view(tab_id, cx);
             self.watch_editor(tab_id, &view, cx);
             self.editors.insert(tab_id, view);
             tab_id
@@ -2249,6 +2698,101 @@ impl Workspace {
             view.update(cx, |e, cx| e.open_path(pathbuf, cx));
         }
         self.focus_active(window, cx);
+    }
+
+    fn open_document_link(&mut self, uri: String, window: &mut Window, cx: &mut Context<Self>) {
+        if uri.starts_with("file://") {
+            let path = match decode_local_file_uri(&uri) {
+                Ok(path) => path,
+                Err(error) => {
+                    labonair_notifications::notify_err::<()>("Open document link", Err(error), cx);
+                    return;
+                }
+            };
+            let path = if let Some(root) = self.filesystem_root(cx).map(std::path::PathBuf::from) {
+                match root_safe_path(&root, &path) {
+                    Ok(path) => path,
+                    Err(error) => {
+                        labonair_notifications::notify_err::<()>(
+                            "Open document link",
+                            Err(error),
+                            cx,
+                        );
+                        return;
+                    }
+                }
+            } else {
+                match std::fs::canonicalize(&path) {
+                    Ok(path) => path,
+                    Err(error) => {
+                        labonair_notifications::notify_err::<()>(
+                            "Open document link",
+                            Err(format!("cannot resolve file link: {error}")),
+                            cx,
+                        );
+                        return;
+                    }
+                }
+            };
+            if !path.is_file() {
+                labonair_notifications::notify_err::<()>(
+                    "Open document link",
+                    Err("The linked path is not a file.".to_string()),
+                    cx,
+                );
+                return;
+            }
+            self.open_file(path.to_string_lossy().into_owned(), false, window, cx);
+        } else if is_supported_external_document_link(&uri) {
+            cx.open_url(&uri);
+        } else {
+            labonair_notifications::notify_err::<()>(
+                "Open document link",
+                Err("The linked URI scheme is not supported.".to_string()),
+                cx,
+            );
+        }
+    }
+
+    fn open_call_hierarchy_location(
+        &mut self,
+        uri: String,
+        position: labonair_editor::LspPosition,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let path = match decode_local_file_uri(&uri) {
+            Ok(path) => path,
+            Err(error) => {
+                labonair_notifications::notify_err::<()>(
+                    "Call hierarchy navigation",
+                    Err(error),
+                    cx,
+                );
+                return;
+            }
+        };
+        let path = if let Some(root) = self.filesystem_root(cx).map(std::path::PathBuf::from) {
+            match root_safe_path(&root, &path) {
+                Ok(path) => path,
+                Err(error) => {
+                    labonair_notifications::notify_err::<()>("Language navigation", Err(error), cx);
+                    return;
+                }
+            }
+        } else {
+            path
+        };
+        let path_string = path.to_string_lossy().into_owned();
+        self.open_file(path_string, false, window, cx);
+        if let Some(editor) = self
+            .editors
+            .iter()
+            .find(|(_, editor)| editor.read(cx).path().as_deref() == Some(path.as_path()))
+            .map(|(_, editor)| editor.clone())
+        {
+            editor.update(cx, |editor, cx| editor.goto_lsp_position(position, cx));
+        }
     }
 
     /// Open one Finder result only after re-validating it against the current
@@ -2280,7 +2824,7 @@ impl Workspace {
         let tab_id = self
             .tabs
             .update(cx, |s, cx| s.open(TabKind::Editor, TabData::default(), cx));
-        let view = self.new_editor_view(cx);
+        let view = self.new_editor_view(tab_id, cx);
         self.watch_editor(tab_id, &view, cx);
         self.editors.insert(tab_id, view);
         self.focus_active(window, cx);
@@ -2301,6 +2845,11 @@ impl Workspace {
     /// Open `target` (a local path or URL) in a preview tab, reusing the active
     /// preview tab if one is already open.
     pub fn open_preview(&mut self, target: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.activate_preview_target(target, cx);
+        self.focus_active(window, cx);
+    }
+
+    fn activate_preview_target(&mut self, target: String, cx: &mut Context<Self>) {
         let title = std::path::Path::new(&target)
             .file_name()
             .and_then(|s| s.to_str())
@@ -2317,6 +2866,7 @@ impl Workspace {
         let tab_id = if let Some(tab_id) = existing {
             self.tabs.update(cx, |s, cx| {
                 s.set_custom_title(tab_id, Some(title.clone()), cx);
+                s.set_url(tab_id, Some(target.clone()), cx);
                 s.set_active(tab_id, cx);
             });
             tab_id
@@ -2339,10 +2889,517 @@ impl Workspace {
             tab_id
         };
 
+        self.markdown_previews
+            .retain(|_, preview_tab_id| *preview_tab_id != tab_id);
         if let Some(view) = self.previews.get(&tab_id).cloned() {
             view.update(cx, |p, cx| p.set_url(target, cx));
         }
-        self.focus_active(window, cx);
+    }
+
+    /// Apply a registry-backed image-viewer command to the active preview tab.
+    /// Other preview content and tab kinds ignore image-only commands.
+    pub fn apply_active_preview_image_action(
+        &mut self,
+        action: PreviewImageAction,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab_id) = self
+            .tabs
+            .read(cx)
+            .active()
+            .filter(|tab| tab.kind == TabKind::Preview)
+            .map(|tab| tab.id)
+        else {
+            return;
+        };
+        let Some(preview) = self.previews.get(&tab_id).cloned() else {
+            return;
+        };
+        let viewport = window.viewport_size();
+        preview.update(cx, |preview, cx| {
+            preview.perform_image_action(
+                action,
+                f32::from(viewport.width),
+                f32::from(viewport.height),
+                cx,
+            )
+        });
+    }
+
+    /// Open the Editor-owned Markdown buffer in a Workspace preview tab. The
+    /// preview keeps following that editor tab through subsequent revisions.
+    fn open_markdown_preview_for_editor(
+        &mut self,
+        editor_tab_id: u64,
+        source: EditorBufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        let target = source
+            .path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled.md".to_string());
+        let name = source
+            .path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            .unwrap_or("Untitled");
+        let title = format!("{name} Preview");
+        let existing = self
+            .markdown_previews
+            .get(&editor_tab_id)
+            .copied()
+            .filter(|preview_tab_id| self.previews.contains_key(preview_tab_id));
+
+        let preview_tab_id = if let Some(preview_tab_id) = existing {
+            self.tabs.update(cx, |tabs, cx| {
+                tabs.set_custom_title(preview_tab_id, Some(title.clone()), cx);
+                tabs.set_url(preview_tab_id, Some(target.clone()), cx);
+                tabs.set_active(preview_tab_id, cx);
+            });
+            preview_tab_id
+        } else {
+            let preview_tab_id = self.tabs.update(cx, |tabs, cx| {
+                let preview_tab_id = tabs.open(
+                    TabKind::Preview,
+                    TabData {
+                        url: Some(target.clone()),
+                        ..TabData::default()
+                    },
+                    cx,
+                );
+                tabs.set_custom_title(preview_tab_id, Some(title), cx);
+                tabs.set_active(preview_tab_id, cx);
+                preview_tab_id
+            });
+            let theme = self.theme.clone();
+            let view = cx.new(|cx| PreviewView::new(theme, cx));
+            self.previews.insert(preview_tab_id, view);
+            self.markdown_previews.insert(editor_tab_id, preview_tab_id);
+            preview_tab_id
+        };
+
+        if let Some(view) = self.previews.get(&preview_tab_id).cloned() {
+            let language = source.language;
+            let path = source.path;
+            let snapshot = source.snapshot;
+            view.update(cx, |preview, cx| {
+                preview.set_editor_source(path, language, snapshot, cx)
+            });
+        }
+        self.pending_preview_focus = true;
+        cx.notify();
+    }
+
+    fn open_svg_preview_for_editor(
+        &mut self,
+        editor_tab_id: u64,
+        source: EditorBufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        let target = source
+            .path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled.svg".to_string());
+        let name = source
+            .path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            .unwrap_or("Untitled");
+        let title = format!("{name} Preview");
+        let existing = self
+            .svg_previews
+            .get(&editor_tab_id)
+            .copied()
+            .filter(|preview_tab_id| self.previews.contains_key(preview_tab_id));
+
+        let preview_tab_id = if let Some(preview_tab_id) = existing {
+            self.tabs.update(cx, |tabs, cx| {
+                tabs.set_custom_title(preview_tab_id, Some(title.clone()), cx);
+                tabs.set_url(preview_tab_id, Some(target.clone()), cx);
+                tabs.set_active(preview_tab_id, cx);
+            });
+            preview_tab_id
+        } else {
+            let preview_tab_id = self.tabs.update(cx, |tabs, cx| {
+                let preview_tab_id = tabs.open(
+                    TabKind::Preview,
+                    TabData {
+                        url: Some(target.clone()),
+                        ..TabData::default()
+                    },
+                    cx,
+                );
+                tabs.set_custom_title(preview_tab_id, Some(title), cx);
+                tabs.set_active(preview_tab_id, cx);
+                preview_tab_id
+            });
+            let theme = self.theme.clone();
+            let view = cx.new(|cx| PreviewView::new(theme, cx));
+            self.previews.insert(preview_tab_id, view);
+            self.svg_previews.insert(editor_tab_id, preview_tab_id);
+            preview_tab_id
+        };
+
+        if let Some(view) = self.previews.get(&preview_tab_id).cloned() {
+            view.update(cx, |preview, cx| {
+                preview.set_editor_svg_source(source.path, source.snapshot, cx)
+            });
+        }
+        self.pending_preview_focus = true;
+        cx.notify();
+    }
+
+    fn open_editor_preview_to_side(
+        &mut self,
+        editor_tab_id: u64,
+        group: labonair_editor::EditorGroupId,
+        content: EditorSidePreviewContent,
+        cx: &mut Context<Self>,
+    ) {
+        let kind = match &content {
+            EditorSidePreviewContent::Markdown(_) => EditorSidePreviewKind::Markdown,
+            EditorSidePreviewContent::Svg(_) => EditorSidePreviewKind::Svg,
+            EditorSidePreviewContent::Tabular(_) => EditorSidePreviewKind::Tabular,
+        };
+        let preview = self
+            .editor_side_previews
+            .get(&editor_tab_id)
+            .filter(|(current_group, current_kind, _)| {
+                *current_group == group && *current_kind == kind
+            })
+            .map(|(_, _, preview)| preview.clone())
+            .unwrap_or_else(|| {
+                let theme = self.theme.clone();
+                let preview = cx.new(|cx| PreviewView::new(theme, cx));
+                self.editor_side_previews
+                    .insert(editor_tab_id, (group, kind, preview.clone()));
+                preview
+            });
+        Self::set_editor_side_preview_content(&preview, content, cx);
+        if let Some(editor) = self.editors.get(&editor_tab_id).cloned() {
+            editor.update(cx, |editor, cx| {
+                editor.set_external_split_view(group, preview.clone().into(), cx)
+            });
+        }
+        cx.notify();
+    }
+
+    fn set_editor_side_preview_content(
+        preview: &Entity<PreviewView>,
+        content: EditorSidePreviewContent,
+        cx: &mut Context<Self>,
+    ) {
+        preview.update(cx, |preview, cx| match content {
+            EditorSidePreviewContent::Markdown(source) => {
+                preview.set_editor_source(source.path, source.language, source.snapshot, cx)
+            }
+            EditorSidePreviewContent::Svg(source) => {
+                preview.set_editor_svg_source(source.path, source.snapshot, cx)
+            }
+            EditorSidePreviewContent::Tabular(source) => {
+                preview.set_editor_tabular_source(source.path, source.snapshot, cx)
+            }
+        });
+    }
+
+    fn update_editor_side_preview_for_source(
+        preview: &Entity<PreviewView>,
+        kind: EditorSidePreviewKind,
+        source: EditorBufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        preview.update(cx, |preview, cx| match kind {
+            EditorSidePreviewKind::Markdown => {
+                preview.set_editor_source(source.path, source.language, source.snapshot, cx)
+            }
+            EditorSidePreviewKind::Svg => {
+                preview.set_editor_svg_source(source.path, source.snapshot, cx)
+            }
+            EditorSidePreviewKind::Tabular => {
+                preview.set_editor_tabular_source(source.path, source.snapshot, cx)
+            }
+        });
+    }
+
+    fn open_following_svg_preview(
+        &mut self,
+        editor_tab_id: u64,
+        source: EditorBufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        let target = source
+            .path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled.svg".to_string());
+        let name = source
+            .path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            .unwrap_or("Untitled");
+        let title = format!("{name} Following Preview");
+        let existing = self
+            .following_svg_preview
+            .filter(|preview_tab_id| self.previews.contains_key(preview_tab_id));
+        let preview_tab_id = if let Some(preview_tab_id) = existing {
+            self.tabs.update(cx, |tabs, cx| {
+                tabs.set_custom_title(preview_tab_id, Some(title.clone()), cx);
+                tabs.set_url(preview_tab_id, Some(target.clone()), cx);
+                tabs.set_active(preview_tab_id, cx);
+            });
+            preview_tab_id
+        } else {
+            let preview_tab_id = self.tabs.update(cx, |tabs, cx| {
+                let preview_tab_id = tabs.open(
+                    TabKind::Preview,
+                    TabData {
+                        url: Some(target),
+                        ..TabData::default()
+                    },
+                    cx,
+                );
+                tabs.set_custom_title(preview_tab_id, Some(title), cx);
+                tabs.set_active(preview_tab_id, cx);
+                preview_tab_id
+            });
+            let theme = self.theme.clone();
+            let view = cx.new(|cx| PreviewView::new(theme, cx));
+            self.previews.insert(preview_tab_id, view);
+            preview_tab_id
+        };
+
+        self.following_svg_preview = Some(preview_tab_id);
+        self.following_svg_editor = Some(editor_tab_id);
+        self.svg_previews
+            .retain(|_, mapped_preview_id| *mapped_preview_id != preview_tab_id);
+        self.update_following_svg_preview_source(source, cx);
+        self.pending_preview_focus = true;
+        cx.notify();
+    }
+
+    fn update_following_svg_preview_for_editor(
+        &mut self,
+        editor_tab_id: u64,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(editor) = self.editors.get(&editor_tab_id).cloned() else {
+            return;
+        };
+        self.following_svg_editor = Some(editor_tab_id);
+        self.update_following_svg_preview_source(editor.read(cx).buffer_snapshot(), cx);
+    }
+
+    fn update_following_svg_preview_source(
+        &mut self,
+        source: EditorBufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(preview_tab_id) = self.following_svg_preview else {
+            return;
+        };
+        let Some(preview) = self.previews.get(&preview_tab_id).cloned() else {
+            self.following_svg_preview = None;
+            self.following_svg_editor = None;
+            return;
+        };
+        let target = source
+            .path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled.svg".to_string());
+        let title = source
+            .path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            .map(|name| format!("{name} Following Preview"))
+            .unwrap_or_else(|| "Untitled Following Preview".to_string());
+        self.tabs.update(cx, |tabs, cx| {
+            tabs.set_custom_title(preview_tab_id, Some(title), cx);
+            tabs.set_url(preview_tab_id, Some(target), cx);
+        });
+        preview.update(cx, |preview, cx| {
+            preview.set_editor_svg_source(source.path, source.snapshot, cx)
+        });
+    }
+
+    fn update_svg_preview_for_editor(
+        &mut self,
+        editor_tab_id: u64,
+        source: EditorBufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(preview_tab_id) = self.svg_previews.get(&editor_tab_id).copied() else {
+            return;
+        };
+        let Some(preview) = self.previews.get(&preview_tab_id).cloned() else {
+            self.svg_previews.remove(&editor_tab_id);
+            return;
+        };
+        let target = source
+            .path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled.svg".to_string());
+        let title = source
+            .path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            .map(|name| format!("{name} Preview"));
+        self.tabs.update(cx, |tabs, cx| {
+            tabs.set_custom_title(preview_tab_id, title, cx);
+            tabs.set_url(preview_tab_id, Some(target), cx);
+        });
+        preview.update(cx, |preview, cx| {
+            preview.set_editor_svg_source(source.path, source.snapshot, cx)
+        });
+    }
+
+    fn open_following_markdown_preview(
+        &mut self,
+        editor_tab_id: u64,
+        source: EditorBufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        let target = source
+            .path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled.md".to_string());
+        let name = source
+            .path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            .unwrap_or("Untitled");
+        let title = format!("{name} Following Preview");
+        let existing = self
+            .following_markdown_preview
+            .filter(|preview_tab_id| self.previews.contains_key(preview_tab_id));
+        let preview_tab_id = if let Some(preview_tab_id) = existing {
+            self.tabs.update(cx, |tabs, cx| {
+                tabs.set_custom_title(preview_tab_id, Some(title.clone()), cx);
+                tabs.set_url(preview_tab_id, Some(target), cx);
+                tabs.set_active(preview_tab_id, cx);
+            });
+            preview_tab_id
+        } else {
+            let preview_tab_id = self.tabs.update(cx, |tabs, cx| {
+                let preview_tab_id = tabs.open(
+                    TabKind::Preview,
+                    TabData {
+                        url: Some(target),
+                        ..TabData::default()
+                    },
+                    cx,
+                );
+                tabs.set_custom_title(preview_tab_id, Some(title), cx);
+                tabs.set_active(preview_tab_id, cx);
+                preview_tab_id
+            });
+            let theme = self.theme.clone();
+            let view = cx.new(|cx| PreviewView::new(theme, cx));
+            self.previews.insert(preview_tab_id, view);
+            preview_tab_id
+        };
+
+        self.following_markdown_preview = Some(preview_tab_id);
+        self.following_markdown_editor = Some(editor_tab_id);
+        self.markdown_previews
+            .retain(|_, mapped_preview_id| *mapped_preview_id != preview_tab_id);
+        self.update_following_markdown_preview_source(source, cx);
+        self.pending_preview_focus = true;
+        cx.notify();
+    }
+
+    fn update_following_markdown_preview_for_editor(
+        &mut self,
+        editor_tab_id: u64,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(editor) = self.editors.get(&editor_tab_id).cloned() else {
+            return;
+        };
+        let source = editor.read(cx).buffer_snapshot();
+        self.following_markdown_editor = Some(editor_tab_id);
+        self.update_following_markdown_preview_source(source, cx);
+    }
+
+    fn update_following_markdown_preview_source(
+        &mut self,
+        source: EditorBufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(preview_tab_id) = self.following_markdown_preview else {
+            return;
+        };
+        let Some(preview) = self.previews.get(&preview_tab_id).cloned() else {
+            self.following_markdown_preview = None;
+            self.following_markdown_editor = None;
+            return;
+        };
+        let target = source
+            .path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled.md".to_string());
+        let title = source
+            .path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            .map(|name| format!("{name} Following Preview"))
+            .unwrap_or_else(|| "Untitled Following Preview".to_string());
+        self.tabs.update(cx, |tabs, cx| {
+            tabs.set_custom_title(preview_tab_id, Some(title), cx);
+            tabs.set_url(preview_tab_id, Some(target), cx);
+        });
+        preview.update(cx, |preview, cx| {
+            preview.set_editor_source(source.path, source.language, source.snapshot, cx)
+        });
+    }
+
+    fn update_markdown_preview_for_editor(
+        &mut self,
+        editor_tab_id: u64,
+        source: EditorBufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(preview_tab_id) = self.markdown_previews.get(&editor_tab_id).copied() else {
+            return;
+        };
+        let Some(view) = self.previews.get(&preview_tab_id).cloned() else {
+            self.markdown_previews.remove(&editor_tab_id);
+            return;
+        };
+        let title = source
+            .path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            .map(|name| format!("{name} Preview"));
+        let target = source
+            .path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled.md".to_string());
+        self.tabs.update(cx, |tabs, cx| {
+            tabs.set_custom_title(preview_tab_id, title, cx);
+            tabs.set_url(preview_tab_id, Some(target), cx);
+        });
+        let language = source.language;
+        let path = source.path;
+        let snapshot = source.snapshot;
+        view.update(cx, |preview, cx| {
+            preview.set_editor_source(path, language, snapshot, cx)
+        });
     }
 
     /// Save the active editor tab (`Cmd-S`).
@@ -2359,158 +3416,47 @@ impl Workspace {
     pub(crate) fn dispatch_active_editor_command(
         &mut self,
         id: CommandId,
-        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> EditorCommandDispatchResult {
         let tab_id = self.tabs.read(cx).active_id();
-        let target = editor_command_dispatch_target(self.editors.contains_key(&tab_id), id);
-        if !matches!(target, EditorCommandDispatchResult::Forwarded) {
-            return target;
-        }
         let Some(editor) = self.editors.get(&tab_id).cloned() else {
             return EditorCommandDispatchResult::NoActiveEditor;
         };
-        if route_for_command(id, editor.read(cx).cursor_position()).is_none() {
-            return EditorCommandDispatchResult::Unsupported(id);
-        };
-        editor.update(cx, |editor, cx| match id {
-            CommandId::EditorAddCursor => {
-                let _ = editor.execute_command(
-                    EditorCommand::Edit(EditIntent::AddCursor(editor.cursor_position())),
-                    cx,
-                );
-            }
-            CommandId::EditorSelectNextOccurrence => {
-                let _ = editor
-                    .execute_command(EditorCommand::Edit(EditIntent::SelectNextOccurrence), cx);
-            }
-            CommandId::EditorSelectAllOccurrences => {
-                let _ = editor
-                    .execute_command(EditorCommand::Edit(EditIntent::SelectAllOccurrences), cx);
-            }
-            CommandId::EditorExpandSelection => {
-                let _ =
-                    editor.execute_command(EditorCommand::Edit(EditIntent::ExpandSelection), cx);
-            }
-            CommandId::EditorShrinkSelection => {
-                let _ =
-                    editor.execute_command(EditorCommand::Edit(EditIntent::ShrinkSelection), cx);
-            }
-            CommandId::EditorDuplicateLines => {
-                let _ = editor.execute_command(EditorCommand::Edit(EditIntent::DuplicateLines), cx);
-            }
-            CommandId::EditorMoveLines => {
-                let _ = editor.execute_command(
-                    EditorCommand::Edit(EditIntent::MoveLines { down: true }),
-                    cx,
-                );
-            }
-            CommandId::EditorIndent => {
-                let _ = editor.execute_command(
-                    EditorCommand::Edit(EditIntent::Indent { unit: "  ".into() }),
-                    cx,
-                );
-            }
-            CommandId::EditorOutdent => {
-                let _ = editor.execute_command(
-                    EditorCommand::Edit(EditIntent::Outdent { unit: "  ".into() }),
-                    cx,
-                );
-            }
-            CommandId::EditorToggleComment => {
-                let _ = editor.execute_command(EditorCommand::Edit(EditIntent::ToggleComment), cx);
-            }
-            CommandId::EditorTranspose => {
-                let _ = editor.execute_command(EditorCommand::Edit(EditIntent::Transpose), cx);
-            }
-            CommandId::EditorSplitRight => {
-                let _ = editor.execute_command(EditorCommand::Split(SplitIntent::Right), cx);
-            }
-            CommandId::EditorSplitDown => {
-                let _ = editor.execute_command(EditorCommand::Split(SplitIntent::Down), cx);
-            }
-            CommandId::EditorFocusNextGroup => {
-                let _ = editor.execute_command(EditorCommand::Split(SplitIntent::FocusNext), cx);
-            }
-            CommandId::EditorFocusPreviousGroup => {
-                let _ =
-                    editor.execute_command(EditorCommand::Split(SplitIntent::FocusPrevious), cx);
-            }
-            CommandId::EditorCloseGroup => {
-                let _ = editor.execute_command(EditorCommand::Split(SplitIntent::Close), cx);
-            }
-            CommandId::EditorCloseOtherGroups => {
-                let _ = editor.execute_command(EditorCommand::Split(SplitIntent::CloseOthers), cx);
-            }
-            CommandId::EditorTriggerCompletion => {
-                editor.execute_language_command(EditorLanguageCommand::TriggerCompletion, cx)
-            }
-            CommandId::EditorGoToDefinition => {
-                editor.execute_language_command(EditorLanguageCommand::GoToDefinition, cx)
-            }
-            CommandId::EditorGoToDeclaration => {
-                editor.execute_language_command(EditorLanguageCommand::GoToDeclaration, cx)
-            }
-            CommandId::EditorGoToReferences => {
-                editor.execute_language_command(EditorLanguageCommand::GoToReferences, cx)
-            }
-            CommandId::EditorGoToImplementation => {
-                editor.execute_language_command(EditorLanguageCommand::GoToImplementation, cx)
-            }
-            CommandId::EditorPeekDefinition => {
-                editor.execute_language_command(EditorLanguageCommand::PeekDefinition, cx)
-            }
-            CommandId::EditorRenameSymbol => {
-                editor.execute_language_command(EditorLanguageCommand::Rename, cx)
-            }
-            CommandId::EditorCodeAction => {
-                editor.execute_language_command(EditorLanguageCommand::CodeAction, cx)
-            }
-            CommandId::EditorFormatDocument => {
-                editor.execute_language_command(EditorLanguageCommand::FormatDocument, cx)
-            }
-            CommandId::EditorFormatSelection => {
-                editor.execute_language_command(EditorLanguageCommand::FormatSelection, cx)
-            }
-            CommandId::EditorOrganizeImports => {
-                editor.execute_language_command(EditorLanguageCommand::OrganizeImports, cx)
-            }
-            CommandId::EditorRestartLanguageServer => {
-                editor.execute_language_command(EditorLanguageCommand::RestartLanguageServer, cx)
-            }
-            CommandId::EditorStopLanguageServer => {
-                editor.execute_language_command(EditorLanguageCommand::StopLanguageServer, cx)
-            }
-            CommandId::EditorShowDiagnostics => {
-                editor.execute_language_command(EditorLanguageCommand::ShowDiagnostics, cx)
-            }
-            CommandId::EditorNextDiagnostic => {
-                editor.execute_language_command(EditorLanguageCommand::NextDiagnostic, cx)
-            }
-            CommandId::EditorPreviousDiagnostic => {
-                editor.execute_language_command(EditorLanguageCommand::PreviousDiagnostic, cx)
-            }
-            CommandId::EditorNextGitChange => {
-                editor.execute_git_command(GitEditorCommand::NextChange, cx)
-            }
-            CommandId::EditorPreviousGitChange => {
-                editor.execute_git_command(GitEditorCommand::PreviousChange, cx)
-            }
-            CommandId::EditorOpenProjectDiff => {
-                editor.execute_git_command(GitEditorCommand::OpenProjectDiff, cx)
-            }
-            _ => {}
-        });
-        EditorCommandDispatchResult::Forwarded
+        if editor.update(cx, |editor, cx| editor.dispatch_registered_command(id, cx)) {
+            EditorCommandDispatchResult::Forwarded
+        } else {
+            EditorCommandDispatchResult::Unsupported(id)
+        }
     }
 
-    fn new_editor_view(&self, cx: &mut Context<Self>) -> Entity<EditorView> {
+    fn new_editor_view(&mut self, tab_id: u64, cx: &mut Context<Self>) -> Entity<EditorView> {
         let theme = self.theme.clone();
         let bridge = self.editor_git_bridge.clone();
         let language_services = self.editor_language_services.clone();
+        let space_id = self
+            .tabs
+            .read(cx)
+            .get(tab_id)
+            .map(|tab| tab.space_id)
+            .unwrap_or_else(|| self.spaces.read(cx).active_id());
+        let diagnostics = self.editor_diagnostics.entry(space_id).or_default().clone();
+        let workspace = cx.entity();
         cx.new(|cx| {
-            let mut view = EditorView::new_with_language_services(theme, language_services, cx);
+            let mut view =
+                EditorView::new_with_project_diagnostics(theme, language_services, diagnostics, cx);
             view.set_git_bridge(bridge.clone(), bridge.clone());
+            let call_hierarchy_workspace = workspace.clone();
+            view.set_call_hierarchy_navigator(move |uri, position, window, app| {
+                call_hierarchy_workspace.update(app, |this, cx| {
+                    this.open_call_hierarchy_location(uri, position, window, cx);
+                });
+            });
+            let document_link_workspace = workspace.clone();
+            view.set_document_link_navigator(move |uri, window, app| {
+                document_link_workspace.update(app, |this, cx| {
+                    this.open_document_link(uri, window, cx);
+                });
+            });
             view
         })
     }
@@ -2605,14 +3551,107 @@ impl Workspace {
     }
 
     fn watch_editor(&self, tab_id: u64, view: &Entity<EditorView>, cx: &mut Context<Self>) {
+        let tabs = self.tabs.clone();
+        cx.observe(view, move |_, editor, cx| {
+            let editor = editor.read(cx);
+            let path = editor
+                .path()
+                .map(|path| path.to_string_lossy().into_owned());
+            let status = path.as_deref().and_then(|path| {
+                editor_tab_git_status(editor.git_gutter_snapshot(), editor.editor_revision(), path)
+            });
+            let diagnostic_status = path
+                .as_ref()
+                .and_then(|_| editor_tab_diagnostic_status(&editor.diagnostics()));
+            tabs.update(cx, |tabs, cx| {
+                tabs.set_git_status(tab_id, status, cx);
+                tabs.set_diagnostic_status(tab_id, diagnostic_status, cx);
+            });
+        })
+        .detach();
+
         cx.subscribe(view, move |this, view, ev: &EditorEvent, cx| {
             if matches!(ev, EditorEvent::CloseRequested) {
                 // Vim `:q` / `:wq` — close this editor's tab.
+                this.markdown_previews.remove(&tab_id);
                 if let Some(removed) = this.tabs.update(cx, |s, cx| s.close(tab_id, cx)) {
                     this.retire_tab(&removed, cx);
                 }
                 cx.notify();
                 return;
+            }
+            match ev {
+                EditorEvent::MarkdownPreviewRequested(source) => {
+                    this.open_markdown_preview_for_editor(tab_id, source.clone(), cx);
+                }
+                EditorEvent::MarkdownFollowingPreviewRequested(source) => {
+                    this.open_following_markdown_preview(tab_id, source.clone(), cx);
+                }
+                EditorEvent::SvgPreviewRequested(source) => {
+                    this.open_svg_preview_for_editor(tab_id, source.clone(), cx);
+                }
+                EditorEvent::SvgFollowingPreviewRequested(source) => {
+                    this.open_following_svg_preview(tab_id, source.clone(), cx);
+                }
+                EditorEvent::PreviewToSideRequested { group, content } => {
+                    this.open_editor_preview_to_side(tab_id, *group, content.clone(), cx);
+                }
+                EditorEvent::EditorSplitPaneClosed(group) => {
+                    if this
+                        .editor_side_previews
+                        .get(&tab_id)
+                        .is_some_and(|(preview_group, _, _)| preview_group == group)
+                    {
+                        this.editor_side_previews.remove(&tab_id);
+                    }
+                }
+                EditorEvent::TabularPreviewRequested(path) => {
+                    this.activate_preview_target(path.to_string_lossy().into_owned(), cx);
+                    this.pending_preview_focus = true;
+                    cx.notify();
+                }
+                EditorEvent::ProjectDiagnosticsChanged => cx.notify(),
+                EditorEvent::ProjectDiagnosticsRefreshRequested => {
+                    let source_space = this.tabs.read(cx).get(tab_id).map(|tab| tab.space_id);
+                    let editors = this
+                        .editors
+                        .iter()
+                        .filter_map(|(editor_tab_id, editor)| {
+                            let editor_space = this
+                                .tabs
+                                .read(cx)
+                                .get(*editor_tab_id)
+                                .map(|tab| tab.space_id);
+                            (source_space.is_some() && source_space == editor_space)
+                                .then(|| editor.clone())
+                        })
+                        .collect::<Vec<_>>();
+                    for editor in editors {
+                        let _ =
+                            editor.update(cx, |editor, cx| editor.refresh_project_diagnostics(cx));
+                    }
+                }
+                EditorEvent::BufferChanged(source) => {
+                    this.update_markdown_preview_for_editor(tab_id, source.clone(), cx);
+                    this.update_svg_preview_for_editor(tab_id, source.clone(), cx);
+                    if this.following_markdown_editor == Some(tab_id) {
+                        this.update_following_markdown_preview_source(source.clone(), cx);
+                    }
+                    if this.following_svg_editor == Some(tab_id) {
+                        this.update_following_svg_preview_source(source.clone(), cx);
+                    }
+                    if let Some((_, kind, preview)) =
+                        this.editor_side_previews.get(&tab_id).cloned()
+                    {
+                        Self::update_editor_side_preview_for_source(
+                            &preview,
+                            kind,
+                            source.clone(),
+                            cx,
+                        );
+                    }
+                }
+                _ => {}
             }
             let dirty = view.read(cx).is_dirty();
             let is_remote_edit = this.remote_edits.contains_key(&tab_id);
@@ -2667,6 +3706,20 @@ impl Workspace {
         self.split_active(dir, window, cx);
     }
 
+    /// Evenly redistribute every divider in the active workspace layout.
+    pub fn reset_pane_sizes(&mut self, cx: &mut Context<Self>) {
+        let Some(tab_id) = self.active_ws_tab(cx) else {
+            return;
+        };
+        if self
+            .layouts
+            .get_mut(&tab_id)
+            .is_some_and(WorkspaceLayout::reset_sizes)
+        {
+            cx.notify();
+        }
+    }
+
     /// `Close Tab`: close the active pane if the tab is split, else the tab.
     pub fn close_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.close_active_pane_or_tab(window, cx);
@@ -2680,6 +3733,41 @@ impl Workspace {
     /// Cycle to the next (`forward`) or previous tab.
     pub fn cycle(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.cycle_tab(forward, window, cx);
+    }
+
+    fn active_editor_history_state(&self, cx: &App) -> Option<(bool, bool)> {
+        let tab = self.tabs.read(cx).active()?;
+        if tab.kind != TabKind::Editor {
+            return None;
+        }
+        Some(self.editors.get(&tab.id).map_or((false, false), |editor| {
+            let editor = editor.read(cx);
+            (
+                editor.can_navigate_history_back(),
+                editor.can_navigate_history_forward(),
+            )
+        }))
+    }
+
+    fn navigate_tab_bar(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let editor_id = self
+            .tabs
+            .read(cx)
+            .active()
+            .filter(|tab| tab.kind == TabKind::Editor)
+            .map(|tab| tab.id);
+        if let Some(editor) = editor_id.and_then(|id| self.editors.get(&id).cloned()) {
+            let command = if forward {
+                CommandId::EditorGoForward
+            } else {
+                CommandId::EditorGoBack
+            };
+            editor.update(cx, |editor, cx| {
+                editor.dispatch_registered_command(command, cx);
+            });
+            return;
+        }
+        self.cycle(forward, window, cx);
     }
 
     fn cycle_from_tab(
@@ -2970,6 +4058,8 @@ impl Workspace {
         let active_kind = self.tabs.read(cx).active().map(|tab| tab.kind);
         if let Some(editor) = self.editors.get(&active_id) {
             editor.read(cx).focus(window);
+        } else if let Some(preview) = self.previews.get(&active_id) {
+            window.focus(&preview.read(cx).focus_handle(cx));
         } else if active_kind == Some(TabKind::Keymap) {
             if let Some(view) = &self.keymap {
                 window.focus(&view.read(cx).focus_handle(cx));
@@ -3255,6 +4345,23 @@ impl Workspace {
     /// the shell's CWD feed operate on the same view.
     pub fn set_git_graph(&mut self, view: Entity<GitGraphView>) {
         self.git_graph = Some(view);
+    }
+
+    fn ensure_git_graph_view(&mut self, cx: &mut Context<Self>) -> Entity<GitGraphView> {
+        if let Some(view) = &self.git_graph {
+            return view.clone();
+        }
+        let view = cx.new(|cx| {
+            GitGraphView::new(
+                self.git_graph_service.clone(),
+                self.tokio.clone(),
+                self.theme.clone(),
+                cx,
+            )
+        });
+        cx.observe(&view, |_, _, cx| cx.notify()).detach();
+        self.git_graph = Some(view.clone());
+        view
     }
 
     /// The app's [`PanelRegistry`](labonair_panel::PanelRegistry). Populated
@@ -3631,18 +4738,8 @@ impl Workspace {
     }
 
     pub fn open_git_graph_tab(&mut self, cx: &mut Context<Self>) {
-        if self.git_graph.is_none() {
-            let view = cx.new(|cx| {
-                GitGraphView::new(
-                    self.git_graph_service.clone(),
-                    self.tokio.clone(),
-                    self.theme.clone(),
-                    cx,
-                )
-            });
-            cx.observe(&view, |_, _, cx| cx.notify()).detach();
-            self.git_graph = Some(view);
-        }
+        let view = self.ensure_git_graph_view(cx);
+        view.update(cx, |graph, cx| graph.clear_file_history(cx));
         let existing = self
             .tabs
             .read(cx)
@@ -3650,11 +4747,46 @@ impl Workspace {
             .iter()
             .find(|t| t.kind == TabKind::GitGraph)
             .map(|t| t.id);
-        self.tabs.update(cx, |s, cx| match existing {
-            Some(id) => s.set_active(id, cx),
-            None => {
-                s.open(TabKind::GitGraph, TabData::default(), cx);
-            }
+        self.tabs.update(cx, |s, cx| {
+            let id = match existing {
+                Some(id) => {
+                    s.set_active(id, cx);
+                    id
+                }
+                None => s.open(TabKind::GitGraph, TabData::default(), cx),
+            };
+            s.set_custom_title(id, None, cx);
+        });
+    }
+
+    /// Open the Git Graph tab scoped to the history of one local editor file.
+    pub fn open_file_history_tab(&mut self, path: String, cx: &mut Context<Self>) {
+        let graph = self.ensure_git_graph_view(cx);
+        if let Err(error) = graph.update(cx, |graph, cx| graph.set_file_history(path.clone(), cx)) {
+            labonair_notifications::notify_err::<()>("File History", Err(error), cx);
+            return;
+        }
+        let title = Path::new(&path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| format!("History · {name}"))
+            .unwrap_or_else(|| "File History".to_string());
+        let existing = self
+            .tabs
+            .read(cx)
+            .tabs()
+            .iter()
+            .find(|tab| tab.kind == TabKind::GitGraph)
+            .map(|tab| tab.id);
+        self.tabs.update(cx, |tabs, cx| {
+            let id = match existing {
+                Some(id) => {
+                    tabs.set_active(id, cx);
+                    id
+                }
+                None => tabs.open(TabKind::GitGraph, TabData::default(), cx),
+            };
+            tabs.set_custom_title(id, Some(title), cx);
         });
     }
 
@@ -3831,8 +4963,33 @@ impl Workspace {
                 self.retire_pane(leaf);
             }
         }
-        self.editors.remove(&tab.id);
+        if self.project_search_owner == Some(tab.id) {
+            self.project_search_owner = None;
+            self.project_search_task.take();
+        }
+        if let Some(editor) = self.editors.remove(&tab.id) {
+            editor.update(cx, |editor, _cx| editor.prepare_for_close());
+        }
         self.previews.remove(&tab.id);
+        self.editor_side_previews.remove(&tab.id);
+        if self.following_markdown_preview == Some(tab.id) {
+            self.following_markdown_preview = None;
+            self.following_markdown_editor = None;
+        } else if self.following_markdown_editor == Some(tab.id) {
+            self.following_markdown_editor = None;
+        }
+        if self.following_svg_preview == Some(tab.id) {
+            self.following_svg_preview = None;
+            self.following_svg_editor = None;
+        } else if self.following_svg_editor == Some(tab.id) {
+            self.following_svg_editor = None;
+        }
+        self.markdown_previews.remove(&tab.id);
+        self.markdown_previews
+            .retain(|_, preview_tab_id| *preview_tab_id != tab.id);
+        self.svg_previews.remove(&tab.id);
+        self.svg_previews
+            .retain(|_, preview_tab_id| *preview_tab_id != tab.id);
 
         // SFTP browser tab: drop the view and close its SFTP/SSH session.
         let sftp_handle = self
@@ -4095,7 +5252,7 @@ impl Workspace {
             s.set_custom_title(id, Some(format!("{base} (remote)")), cx);
             id
         });
-        let view = self.new_editor_view(cx);
+        let view = self.new_editor_view(tab_id, cx);
         self.watch_editor(tab_id, &view, cx);
         view.update(cx, |e, cx| {
             e.open_path(std::path::PathBuf::from(&temp_path), cx)
@@ -5191,6 +6348,25 @@ impl Workspace {
         let id = tab.id;
         let active = self.tabs.read(cx).active_id() == id;
         let label = SharedString::from(tab.label());
+        let status_color = (tab.kind == TabKind::Editor
+            && WorkspaceSettings::try_get(cx)
+                .is_some_and(|settings| settings.show_editor_tab_git_status()))
+        .then_some(tab.git_status)
+        .flatten()
+        .map(|status| match status {
+            TabGitStatus::Added => c.success,
+            TabGitStatus::Modified => c.warning,
+            TabGitStatus::Deleted => c.error,
+        });
+        let diagnostic_color = (tab.kind == TabKind::Editor
+            && WorkspaceSettings::try_get(cx)
+                .is_some_and(|settings| settings.show_editor_tab_diagnostics()))
+        .then_some(tab.diagnostic_status)
+        .flatten()
+        .map(|status| match status {
+            TabDiagnosticStatus::Error => c.error,
+            TabDiagnosticStatus::Warning => c.warning,
+        });
 
         // D4 — tab-entrance animation (`@keyframes labonair-tab-in` in the
         // reference `globals.css`: fade + `scale(0.86) → 1` over `--dur-base`
@@ -5251,7 +6427,7 @@ impl Workspace {
         if sidebar || tab.kind != TabKind::Editor {
             tab_item = tab_item.leading(tab.kind.indicator());
         }
-        let row = tab_item
+        tab_item = tab_item
             .layout(if sidebar {
                 TabLayout::Vertical
             } else {
@@ -5260,6 +6436,9 @@ impl Workspace {
             .selected(active)
             .dirty(tab.kind == TabKind::Editor && tab.dirty)
             .peek(tab.kind == TabKind::Editor && tab.peek)
+            .pinned(tab.pinned)
+            .status_color(status_color)
+            .status_marker(diagnostic_color)
             .label_content(label_content)
             .on_activate({
                 let view = view.clone();
@@ -5280,14 +6459,18 @@ impl Workspace {
                         if this.tabs.read(cx).get(id).is_some_and(|tab| tab.peek) {
                             this.tabs
                                 .update(cx, |store, cx| store.set_peek(id, false, cx));
+                        } else {
+                            this.begin_tab_rename(id, window, cx);
                         }
-                        this.begin_tab_rename(id, window, cx);
                     });
                 }
-            })
-            .on_close(move |window, app| {
+            });
+        if !tab.pinned {
+            tab_item = tab_item.on_close(move |window, app| {
                 view.update(app, |this, cx| this.request_close(id, window, cx));
-            })
+            });
+        }
+        let row = tab_item
             .render()
             .on_mouse_down(
                 MouseButton::Right,
@@ -5304,7 +6487,9 @@ impl Workspace {
             .on_mouse_down(
                 MouseButton::Middle,
                 cx.listener(move |this, _: &MouseDownEvent, window, cx| {
-                    this.request_close(id, window, cx);
+                    if !this.tabs.read(cx).get(id).is_some_and(|tab| tab.pinned) {
+                        this.request_close(id, window, cx);
+                    }
                 }),
             )
             .on_drag(
@@ -5356,35 +6541,57 @@ impl Workspace {
             .into_iter()
             .cloned()
             .collect();
+        let pinned_tabs: Vec<Tab> = tabs.iter().filter(|tab| tab.pinned).cloned().collect();
+        let unpinned_tabs: Vec<Tab> = tabs.iter().filter(|tab| !tab.pinned).cloned().collect();
 
         let active_space = self.spaces.read(cx).active().cloned();
-        let can_navigate = tabs.len() > 1;
+        let (show_nav_history_buttons, show_tab_bar_buttons) = WorkspaceSettings::try_get(cx)
+            .map(|settings| {
+                (
+                    settings.show_nav_history_buttons(),
+                    settings.show_tab_bar_buttons(),
+                )
+            })
+            .unwrap_or((true, true));
+        let editor_history = self.active_editor_history_state(cx);
+        let can_cycle_tabs = tabs.len() > 1;
+        let (can_go_back, can_go_forward) =
+            editor_history.unwrap_or((can_cycle_tabs, can_cycle_tabs));
+        let history_buttons_active = editor_history.is_some();
         let workspace = cx.entity();
         let previous = icon_button_builder("tab-previous", c, IconName::ArrowLeft)
             .size(ButtonSize::IconLg)
             .shape(IconButtonShape::Square)
-            .disabled(!can_navigate)
-            .tooltip("Previous Tab")
+            .disabled(!can_go_back)
+            .tooltip(if history_buttons_active {
+                "Back"
+            } else {
+                "Previous Tab"
+            })
             .render()
-            .when(can_navigate, |button| {
+            .when(can_go_back, |button| {
                 button.on_click({
                     let workspace = workspace.clone();
                     move |_, window, app| {
-                        workspace.update(app, |this, cx| this.cycle(false, window, cx));
+                        workspace.update(app, |this, cx| this.navigate_tab_bar(false, window, cx));
                     }
                 })
             });
         let next = icon_button_builder("tab-next", c, IconName::ArrowRight)
             .size(ButtonSize::IconLg)
             .shape(IconButtonShape::Square)
-            .disabled(!can_navigate)
-            .tooltip("Next Tab")
+            .disabled(!can_go_forward)
+            .tooltip(if history_buttons_active {
+                "Forward"
+            } else {
+                "Next Tab"
+            })
             .render()
-            .when(can_navigate, |button| {
+            .when(can_go_forward, |button| {
                 button.on_click({
                     let workspace = workspace.clone();
                     move |_, window, app| {
-                        workspace.update(app, |this, cx| this.cycle(true, window, cx));
+                        workspace.update(app, |this, cx| this.navigate_tab_bar(true, window, cx));
                     }
                 })
             });
@@ -5403,6 +6610,39 @@ impl Workspace {
                 }),
             );
 
+        let spaces_trigger = div()
+            .id("spaces-trigger")
+            .flex_shrink_0()
+            .flex()
+            .items_center()
+            .gap_1()
+            .h(px(24.0))
+            .px_1p5()
+            .rounded_md()
+            .cursor_pointer()
+            .hover(|s| s.bg(border))
+            .child(IconName::Box.svg(muted).size(px(13.0)))
+            .when_some(active_space, |d, space| {
+                d.child(
+                    div()
+                        .max_w(px(96.0))
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_xs()
+                        .text_color(fg)
+                        .child(space.name),
+                )
+            })
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
+                    this.spaces_menu = Some(point(ev.position.x, px(TITLEBAR_OFFSET)));
+                    this.new_tab_menu = None;
+                    this.context_menu = None;
+                    cx.notify();
+                }),
+            );
+
         div()
             .flex()
             .items_center()
@@ -5411,51 +6651,20 @@ impl Workspace {
             .w_full()
             .flex_shrink_0()
             .bg(c.toolbar_bg)
-            .child(
-                div()
-                    .id("tab-navigation")
-                    .flex()
-                    .items_center()
-                    .h_full()
-                    .border_r_1()
-                    .border_color(border)
-                    .child(previous)
-                    .child(next),
-            )
-            .child(
-                div()
-                    .id("spaces-trigger")
-                    .flex_shrink_0()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .h(px(24.0))
-                    .px_1p5()
-                    .rounded_md()
-                    .cursor_pointer()
-                    .hover(|s| s.bg(border))
-                    .child(IconName::Box.svg(muted).size(px(13.0)))
-                    .when_some(active_space, |d, space| {
-                        d.child(
-                            div()
-                                .max_w(px(96.0))
-                                .overflow_hidden()
-                                .whitespace_nowrap()
-                                .text_xs()
-                                .text_color(fg)
-                                .child(space.name),
-                        )
-                    })
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
-                            this.spaces_menu = Some(point(ev.position.x, px(TITLEBAR_OFFSET)));
-                            this.new_tab_menu = None;
-                            this.context_menu = None;
-                            cx.notify();
-                        }),
-                    ),
-            )
+            .when(show_nav_history_buttons, |bar| {
+                bar.child(
+                    div()
+                        .id("tab-navigation")
+                        .flex()
+                        .items_center()
+                        .h_full()
+                        .border_r_1()
+                        .border_color(border)
+                        .child(previous)
+                        .child(next),
+                )
+            })
+            .when(show_tab_bar_buttons, |bar| bar.child(spaces_trigger))
             .child(
                 div()
                     .id("tab-strip")
@@ -5465,9 +6674,14 @@ impl Workspace {
                     .min_w_0()
                     .h_full()
                     .overflow_x_scroll()
-                    .children(tabs.iter().map(|t| self.render_tab(t, false, cx))),
+                    .children(pinned_tabs.iter().map(|t| self.render_tab(t, false, cx)))
+                    .when(
+                        !pinned_tabs.is_empty() && !unpinned_tabs.is_empty(),
+                        |strip| strip.child(div().mx_1().w(px(1.0)).h(px(16.0)).bg(border)),
+                    )
+                    .children(unpinned_tabs.iter().map(|t| self.render_tab(t, false, cx))),
             )
-            .child(new_tab)
+            .when(show_tab_bar_buttons, |bar| bar.child(new_tab))
     }
 
     /// The vertical tab list shown in the Tabs sidebar panel when
@@ -6943,6 +8157,7 @@ impl Workspace {
         let tab = self.tabs.read(cx).get(id).cloned();
         let kind = tab.as_ref().map(|t| t.kind);
         let is_peek = tab.as_ref().map(|t| t.peek).unwrap_or(false);
+        let is_pinned = tab.as_ref().is_some_and(|tab| tab.pinned);
         let plural = kind.map(|k| k.plural_label().to_string());
         let grant_target = self.mcp_grant_target(id, cx);
         let is_granted = self.agent_access.read(cx).is_granted(id);
@@ -6950,6 +8165,25 @@ impl Workspace {
             .as_ref()
             .map(|tab| tab.space_id)
             .unwrap_or_else(|| self.spaces.read(cx).active_id());
+        let file_path = tab
+            .as_ref()
+            .filter(|tab| tab.kind == TabKind::Editor && tab.data.host_id.is_none())
+            .and_then(|tab| tab.data.path.as_deref())
+            .filter(|path| Path::new(path).is_absolute())
+            .map(str::to_string);
+        let editor_editability = self
+            .editors
+            .get(&id)
+            .and_then(|editor| editor.read(cx).editability());
+        let project_root = self
+            .spaces
+            .read(cx)
+            .get(space_id)
+            .and_then(|space| space.identity.project_root())
+            .map(Path::to_path_buf);
+        let relative_file_path = file_path
+            .as_deref()
+            .and_then(|path| relative_path_under_root(Path::new(path), project_root.as_deref()?));
         let space_tabs: Vec<Tab> = self
             .tabs
             .read(cx)
@@ -6965,6 +8199,118 @@ impl Workspace {
         let view = cx.entity();
 
         let mut items: Vec<MenuItem> = Vec::new();
+        if let (Some(TabKind::Editor), Some(editability)) = (kind, editor_editability) {
+            let (label, checked, disabled) = match editability {
+                labonair_editor::EditorEditability::Editable => {
+                    ("Make Tab Read-Only", false, false)
+                }
+                labonair_editor::EditorEditability::TemporarilyReadOnly => {
+                    ("Make Tab Editable", true, false)
+                }
+                labonair_editor::EditorEditability::ReadOnly => ("Read-Only", true, true),
+            };
+            items.push(
+                MenuItem::new("toggle-tab-read-only", label)
+                    .icon(IconName::Lock)
+                    .checked(checked)
+                    .disabled(disabled)
+                    .on_click({
+                        let view = view.clone();
+                        move |_, _, cx| {
+                            view.update(cx, |this, cx| {
+                                this.context_menu = None;
+                                if let Some(editor) = this.editors.get(&id).cloned() {
+                                    editor.update(cx, |editor, cx| {
+                                        let _ = editor.dispatch_registered_command(
+                                            CommandId::EditorToggleReadOnly,
+                                            cx,
+                                        );
+                                    });
+                                }
+                                cx.notify();
+                            });
+                        }
+                    }),
+            );
+        }
+        if let Some(path) = file_path.as_deref() {
+            items.push(
+                MenuItem::new("copy-file-path", "Copy Path")
+                    .icon(IconName::Copy)
+                    .on_click({
+                        let view = view.clone();
+                        let path = path.to_string();
+                        move |_, _, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(path.clone()));
+                            view.update(cx, |this, cx| {
+                                this.context_menu = None;
+                                cx.notify();
+                            });
+                        }
+                    }),
+            );
+            if let Some(relative_path) = relative_file_path {
+                items.push(
+                    MenuItem::new("copy-relative-file-path", "Copy Relative Path").on_click({
+                        let view = view.clone();
+                        move |_, _, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(relative_path.clone()));
+                            view.update(cx, |this, cx| {
+                                this.context_menu = None;
+                                cx.notify();
+                            });
+                        }
+                    }),
+                );
+            }
+            items.push(
+                MenuItem::new("reveal-file", "Reveal in File Manager")
+                    .icon(IconName::FolderOpen)
+                    .on_click({
+                        let view = view.clone();
+                        let path = path.to_string();
+                        move |_, _, cx| {
+                            cx.reveal_path(Path::new(&path));
+                            view.update(cx, |this, cx| {
+                                this.context_menu = None;
+                                cx.notify();
+                            });
+                        }
+                    }),
+            );
+            if let Some(directory) = Path::new(path).parent().map(|path| path.to_path_buf()) {
+                items.push(
+                    MenuItem::new("open-file-terminal", "Open Terminal in File Directory")
+                        .icon(IconName::Terminal)
+                        .on_click({
+                            let view = view.clone();
+                            let directory = directory.to_string_lossy().into_owned();
+                            move |_, window, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.context_menu = None;
+                                    this.new_terminal_tab_in(Some(directory.clone()), window, cx);
+                                });
+                            }
+                        }),
+                );
+            }
+            items.push(
+                MenuItem::new("open-file-history", "File History")
+                    .icon(IconName::GitCompare)
+                    .on_click({
+                        let view = view.clone();
+                        let path = path.to_string();
+                        move |_, _, cx| {
+                            view.update(cx, |this, cx| {
+                                this.context_menu = None;
+                                this.open_file_history_tab(path.clone(), cx);
+                                cx.notify();
+                            });
+                        }
+                    }),
+            );
+            items.push(MenuItem::separator());
+        }
         if kind == Some(TabKind::Editor) && is_peek {
             items.push(
                 MenuItem::new("keep", "Keep Tab Open")
@@ -6980,6 +8326,23 @@ impl Workspace {
                     }),
             );
         }
+        items.push(
+            MenuItem::new(
+                "toggle-pin-tab",
+                if is_pinned { "Unpin Tab" } else { "Pin Tab" },
+            )
+            .icon(IconName::Pin)
+            .on_click({
+                let view = view.clone();
+                move |_, _, cx| {
+                    view.update(cx, |this, cx| {
+                        this.context_menu = None;
+                        this.tabs
+                            .update(cx, |store, cx| store.set_pinned(id, !is_pinned, cx));
+                    });
+                }
+            }),
+        );
         items.push(
             MenuItem::new("rename", "Rename")
                 .icon(IconName::Pencil)
@@ -7396,6 +8759,9 @@ impl Render for Workspace {
                 }
             }
         }
+        if std::mem::take(&mut self.pending_preview_focus) {
+            self.focus_active(window, cx);
+        }
         let want_prompt = self.ssh_prompt.is_some();
         if want_prompt && !self.prompt_shown {
             window.focus(&self.prompt_focus);
@@ -7527,6 +8893,7 @@ fn palette_tab_kind(kind: TabKind) -> labonair_command_palette::PaletteTabKind {
     match kind {
         TabKind::Workspace => K::Workspace,
         TabKind::Editor => K::Editor,
+        TabKind::Preview => K::Preview,
         TabKind::Sftp => K::Sftp,
         _ => K::Other,
     }
@@ -7559,9 +8926,139 @@ impl labonair_command_palette::PaletteWorkspace for Workspace {
 #[cfg(test)]
 mod tests {
     use super::{
-        editor_command_dispatch_target, shell_quote, ssh_tab_title, EditorCommandDispatchResult,
+        decode_local_file_uri, editor_tab_diagnostic_status, editor_tab_git_status,
+        is_supported_external_document_link, relative_path_under_root, shell_quote, ssh_tab_title,
+        TabDiagnosticStatus, TabGitStatus,
     };
-    use labonair_command_palette_core::CommandId;
+    use labonair_editor::language_services::{
+        Diagnostic, DiagnosticSeverity, LanguageServerId, LspPosition, LspRange,
+    };
+    use labonair_editor::{GitGutterSnapshot, GitGutterState, GitHunk, GitHunkStatus, Revision};
+    use std::path::Path;
+
+    fn git_hunk(status: GitHunkStatus) -> GitHunk {
+        GitHunk {
+            id: "hunk".into(),
+            status,
+            header: "@@ -1 +1 @@".into(),
+            old_start: 1,
+            old_lines: 1,
+            new_start: 1,
+            new_lines: 1,
+            changed_lines: Vec::new(),
+            patch: String::new(),
+            inline_decorations: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn editor_tab_git_status_requires_a_current_snapshot_and_summarizes_hunks() {
+        let revision = Revision::new(1);
+        let mut snapshot = GitGutterSnapshot::empty("src/lib.rs", revision);
+        snapshot.state = GitGutterState::Ready;
+        snapshot.hunks = vec![git_hunk(GitHunkStatus::Added)];
+        assert_eq!(
+            editor_tab_git_status(&snapshot, revision, "src/lib.rs"),
+            Some(TabGitStatus::Added)
+        );
+
+        snapshot.hunks.push(git_hunk(GitHunkStatus::Deleted));
+        assert_eq!(
+            editor_tab_git_status(&snapshot, revision, "src/lib.rs"),
+            Some(TabGitStatus::Modified)
+        );
+        assert_eq!(
+            editor_tab_git_status(&snapshot, Revision::new(2), "src/lib.rs"),
+            None
+        );
+    }
+
+    #[test]
+    fn editor_tab_diagnostic_status_prefers_errors_then_warnings() {
+        let diagnostic = |severity| Diagnostic {
+            range: LspRange {
+                start: LspPosition {
+                    line: 0,
+                    character: 0,
+                },
+                end: LspPosition {
+                    line: 0,
+                    character: 1,
+                },
+            },
+            severity,
+            message: "diagnostic".into(),
+            source: LanguageServerId::new("test"),
+            code: None,
+        };
+
+        assert_eq!(
+            editor_tab_diagnostic_status(&[diagnostic(DiagnosticSeverity::Warning)]),
+            Some(TabDiagnosticStatus::Warning)
+        );
+        assert_eq!(
+            editor_tab_diagnostic_status(&[
+                diagnostic(DiagnosticSeverity::Warning),
+                diagnostic(DiagnosticSeverity::Error),
+            ]),
+            Some(TabDiagnosticStatus::Error)
+        );
+        assert_eq!(
+            editor_tab_diagnostic_status(&[diagnostic(DiagnosticSeverity::Information)]),
+            None
+        );
+    }
+
+    #[test]
+    fn tab_file_relative_path_requires_a_path_inside_the_project_root() {
+        assert_eq!(
+            relative_path_under_root(Path::new("/repo/src/main.rs"), Path::new("/repo")),
+            Some("src/main.rs".to_string())
+        );
+        assert_eq!(
+            relative_path_under_root(Path::new("/other/main.rs"), Path::new("/repo")),
+            None
+        );
+        assert_eq!(
+            relative_path_under_root(Path::new("/repo/../other/main.rs"), Path::new("/repo")),
+            None
+        );
+    }
+
+    #[test]
+    fn language_server_file_uri_decodes_local_paths() {
+        assert_eq!(
+            decode_local_file_uri("file:///repo/src/my%20file.rs").unwrap(),
+            Path::new("/repo/src/my file.rs")
+        );
+        assert_eq!(
+            decode_local_file_uri("file://localhost/repo/src/file.rs").unwrap(),
+            Path::new("/repo/src/file.rs")
+        );
+        assert!(decode_local_file_uri("https://example.test/file.rs").is_err());
+        assert!(decode_local_file_uri("file://remote-host/repo/file.rs").is_err());
+        assert!(decode_local_file_uri("file:///repo/bad%2.rs").is_err());
+    }
+
+    #[test]
+    fn document_link_external_schemes_are_allowlisted() {
+        assert!(is_supported_external_document_link(
+            "https://example.test/path"
+        ));
+        assert!(is_supported_external_document_link(
+            "HTTP://example.test/path"
+        ));
+        assert!(is_supported_external_document_link(
+            "mailto:dev@example.test"
+        ));
+        assert!(!is_supported_external_document_link("javascript:alert(1)"));
+        assert!(!is_supported_external_document_link(
+            "https:///missing-host"
+        ));
+        assert!(!is_supported_external_document_link(
+            "https://example.test/a b"
+        ));
+    }
 
     #[test]
     fn shell_quote_wraps_and_escapes() {
@@ -7575,22 +9072,6 @@ mod tests {
         assert_eq!(
             ssh_tab_title("prod-web", Some("bastion")),
             "SSH \u{00b7} prod-web  \u{2192} bastion"
-        );
-    }
-
-    #[test]
-    fn editor_dispatch_target_is_clean_for_non_editor_and_unknown_commands() {
-        assert_eq!(
-            editor_command_dispatch_target(false, CommandId::EditorFormatDocument),
-            EditorCommandDispatchResult::NoActiveEditor
-        );
-        assert_eq!(
-            editor_command_dispatch_target(true, CommandId::NewEditorTab),
-            EditorCommandDispatchResult::Unsupported(CommandId::NewEditorTab)
-        );
-        assert_eq!(
-            editor_command_dispatch_target(true, CommandId::EditorFormatDocument),
-            EditorCommandDispatchResult::Forwarded
         );
     }
 }

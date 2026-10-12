@@ -6,19 +6,31 @@
 //! existing GPUI adapter, while transaction selections are the durable
 //! undo/redo state.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::buffer::{
     Anchor, AnchorAffinity, BufferSnapshot, Edit, EditSource, EditorBuffer, Position, Selection,
     SelectionSet, TextRange, Transaction,
 };
+use crate::editing::SnippetSession;
 use crate::history::History;
 use crate::language::Language;
 use crate::lifecycle::{
-    FileCapabilities, FileIdentity, FileLifecycle, FileLifecycleError, FileLifecycleEvent,
-    FileSessionMetadata, FileSnapshot, FileState, ReloadDecision, SaveIntent,
+    FileCapabilities, FileFormat, FileIdentity, FileLifecycle, FileLifecycleError,
+    FileLifecycleEvent, FileSessionMetadata, FileSnapshot, FileState, LineEnding, ReloadDecision,
+    SaveIntent,
 };
-use crate::search::{self, SearchError, SearchQuery};
+use crate::search::{self, map_range_through_edits, ProjectSearchQuery, SearchError, SearchQuery};
+use crate::splits::EditorGroupId;
+
+/// Whether a document may be toggled from its editor-tab context menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorEditability {
+    Editable,
+    TemporarilyReadOnly,
+    ReadOnly,
+}
 
 /// Caret movement primitives (keyboard navigation).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,8 +64,47 @@ pub struct Document {
     /// Canonical selection state. The public cursor/anchor fields below are
     /// kept as a one-selection compatibility view for the existing adapters.
     selections: SelectionSet,
+    selection_undo: Vec<SelectionSet>,
+    selection_redo: Vec<SelectionSet>,
+    active_editor_group: EditorGroupId,
+    inactive_group_selections: HashMap<EditorGroupId, SelectionSet>,
     /// Preferred column for vertical motion (sticky like every real editor).
     goal_column: Option<usize>,
+    /// User-selected temporary lock for otherwise editable buffers.
+    temporary_read_only: bool,
+    /// Transient completion snippet state. Placeholder ranges are mapped
+    /// through document transactions and are never persisted with the buffer.
+    active_snippet: Option<ActiveSnippet>,
+}
+
+#[derive(Clone, Debug)]
+struct ActiveSnippet {
+    session: SnippetSession,
+    base_offset: usize,
+    extent: TextRange,
+}
+
+impl ActiveSnippet {
+    fn map_through_edits(&mut self, edits: &[Edit]) {
+        if edits.is_empty() {
+            return;
+        }
+        let base = self.base_offset;
+        let next_base = map_range_through_edits(TextRange::new(base, base), edits).start;
+        for placeholder in &mut self.session.placeholders {
+            let absolute = TextRange::new(
+                base.saturating_add(placeholder.start),
+                base.saturating_add(placeholder.end),
+            );
+            let mapped = map_range_through_edits(absolute, edits);
+            *placeholder = TextRange::new(
+                mapped.start.saturating_sub(next_base),
+                mapped.end.saturating_sub(next_base),
+            );
+        }
+        self.extent = map_range_through_edits(self.extent, edits);
+        self.base_offset = next_base;
+    }
 }
 
 impl Default for Document {
@@ -73,7 +124,13 @@ impl Document {
             lifecycle: FileLifecycle::new(),
             history: History::default(),
             selections: SelectionSet::default(),
+            selection_undo: Vec::new(),
+            selection_redo: Vec::new(),
+            active_editor_group: EditorGroupId::new(1),
+            inactive_group_selections: HashMap::new(),
             goal_column: None,
+            temporary_read_only: false,
+            active_snippet: None,
         }
     }
 
@@ -90,7 +147,13 @@ impl Document {
             lifecycle,
             history: History::default(),
             selections: SelectionSet::default(),
+            selection_undo: Vec::new(),
+            selection_redo: Vec::new(),
+            active_editor_group: EditorGroupId::new(1),
+            inactive_group_selections: HashMap::new(),
             goal_column: None,
+            temporary_read_only: false,
+            active_snippet: None,
         }
     }
 
@@ -125,7 +188,13 @@ impl Document {
             lifecycle,
             history: History::default(),
             selections: SelectionSet::default(),
+            selection_undo: Vec::new(),
+            selection_redo: Vec::new(),
+            active_editor_group: EditorGroupId::new(1),
+            inactive_group_selections: HashMap::new(),
             goal_column: None,
+            temporary_read_only: false,
+            active_snippet: None,
         }
     }
 
@@ -154,7 +223,13 @@ impl Document {
             lifecycle,
             history: History::default(),
             selections: SelectionSet::default(),
+            selection_undo: Vec::new(),
+            selection_redo: Vec::new(),
+            active_editor_group: EditorGroupId::new(1),
+            inactive_group_selections: HashMap::new(),
             goal_column: None,
+            temporary_read_only: false,
+            active_snippet: None,
         }
     }
 
@@ -181,16 +256,64 @@ impl Document {
         self.lifecycle.path()
     }
 
+    /// Override path-based language detection for this document session.
+    pub fn set_language(&mut self, language: Language) -> bool {
+        if self.language == language {
+            return false;
+        }
+        self.language = language;
+        true
+    }
+
     pub fn file_capabilities(&self) -> Option<crate::lifecycle::FileCapabilities> {
         self.file_snapshot().map(|snapshot| snapshot.capabilities)
     }
 
     pub fn can_edit(&self) -> bool {
-        self.lifecycle.can_edit()
+        self.lifecycle.can_edit() && !self.temporary_read_only
+    }
+
+    pub fn editability(&self) -> Option<EditorEditability> {
+        if self.lifecycle.can_edit() {
+            Some(if self.temporary_read_only {
+                EditorEditability::TemporarilyReadOnly
+            } else {
+                EditorEditability::Editable
+            })
+        } else if matches!(self.lifecycle.state(), FileState::ReadOnly) {
+            Some(EditorEditability::ReadOnly)
+        } else {
+            None
+        }
+    }
+
+    pub fn temporary_read_only(&self) -> bool {
+        self.temporary_read_only
+    }
+
+    /// Toggle the temporary lock only for files the lifecycle allows editing.
+    pub fn toggle_temporary_read_only(&mut self) -> bool {
+        if !self.lifecycle.can_edit() {
+            return false;
+        }
+        self.temporary_read_only = !self.temporary_read_only;
+        true
     }
 
     pub fn session_file_metadata(&self) -> Option<FileSessionMetadata> {
         self.lifecycle.session_metadata()
+    }
+
+    pub fn file_format(&self) -> Option<FileFormat> {
+        self.lifecycle.current_format()
+    }
+
+    pub fn set_line_ending(
+        &mut self,
+        line_ending: LineEnding,
+    ) -> Result<Option<FileLifecycleEvent>, FileLifecycleError> {
+        let current_text = self.buffer.text();
+        self.lifecycle.set_line_ending(line_ending, &current_text)
     }
 
     pub fn observed_identity(&self) -> Option<&FileIdentity> {
@@ -234,6 +357,7 @@ impl Document {
         snapshot: FileSnapshot,
         decision: ReloadDecision,
     ) -> Result<FileLifecycleEvent, FileLifecycleError> {
+        self.active_snippet = None;
         self.buffer = EditorBuffer::from_text(&snapshot.text);
         let event = self.lifecycle.reload_decision(snapshot, decision)?;
         self.cursor = self.buffer.clamp(self.cursor);
@@ -241,6 +365,7 @@ impl Document {
         self.selections =
             SelectionSet::single(Selection::collapsed(Anchor::new(0, AnchorAffinity::After)));
         self.history.clear();
+        self.clear_selection_history();
         self.goal_column = None;
         Ok(event)
     }
@@ -251,6 +376,11 @@ impl Document {
 
     pub fn can_redo(&self) -> bool {
         self.history.can_redo()
+    }
+
+    /// Keep the next typing transaction in a separate undo group.
+    pub fn break_undo_coalescing(&mut self) {
+        self.history.break_coalescing();
     }
 
     /// Current buffer contents (for saving).
@@ -290,18 +420,166 @@ impl Document {
         }
     }
 
+    /// The split group whose selections currently drive this document view.
+    pub fn active_editor_group(&self) -> EditorGroupId {
+        self.active_editor_group
+    }
+
+    /// Initialize a split group with the active group's current selection.
+    pub fn create_editor_group_view(&mut self, group: EditorGroupId) {
+        if group != self.active_editor_group {
+            let selection = self.selection_set();
+            self.inactive_group_selections
+                .entry(group)
+                .or_insert(selection);
+        }
+    }
+
+    /// Activate a split group's independent selection while keeping all views
+    /// on the same canonical text buffer.
+    pub fn activate_editor_group_view(&mut self, group: EditorGroupId) {
+        if group == self.active_editor_group {
+            return;
+        }
+        let current = self.selection_set();
+        self.inactive_group_selections
+            .insert(self.active_editor_group, current.clone());
+        let next = self
+            .inactive_group_selections
+            .remove(&group)
+            .unwrap_or(current);
+        self.active_editor_group = group;
+        self.clear_selection_history();
+        self.goal_column = None;
+        self.set_selection_set_transient(self.clamp_selection_set(&next));
+    }
+
+    /// Return a split group's current selection for session persistence.
+    pub fn editor_group_selection(&self, group: EditorGroupId) -> Option<SelectionSet> {
+        if group == self.active_editor_group {
+            Some(self.selection_set())
+        } else {
+            self.inactive_group_selections.get(&group).cloned()
+        }
+    }
+
+    /// Restore a saved selection for an active or inactive split group.
+    pub fn set_editor_group_selection(&mut self, group: EditorGroupId, selection: SelectionSet) {
+        let selection = self.clamp_selection_set(&selection);
+        if group == self.active_editor_group {
+            self.set_selection_set_transient(selection);
+        } else {
+            self.inactive_group_selections.insert(group, selection);
+        }
+    }
+
+    /// Remove view state for groups no longer present in the split tree.
+    pub fn retain_editor_group_views(&mut self, groups: &[EditorGroupId]) {
+        self.inactive_group_selections
+            .retain(|group, _| groups.contains(group));
+    }
+
     /// Replace the canonical selection set without changing document text.
     pub fn set_selection_set(&mut self, selections: SelectionSet) {
+        let previous = self.selection_set();
+        self.record_selection_change(previous, &selections);
         self.selections = selections;
         self.restore_selection(&self.selections.clone());
         self.history.break_coalescing();
     }
 
+    /// Update a selection while a pointer gesture is in progress. Call
+    /// [`Self::commit_selection_change`] once the gesture ends so one drag
+    /// contributes a single entry to selection undo history.
+    pub fn set_selection_set_transient(&mut self, selections: SelectionSet) {
+        self.selections = selections;
+        self.restore_selection(&self.selections.clone());
+        self.history.break_coalescing();
+    }
+
+    /// Record the completed pointer or keyboard gesture as one selection
+    /// history step.
+    pub fn commit_selection_change(&mut self, previous: SelectionSet) {
+        let next = self.selection_set();
+        self.record_selection_change(previous, &next);
+    }
+
     pub fn select_all(&mut self) {
+        let previous = self.selection_set();
         self.anchor = Some(Position::default());
         self.cursor = self.buffer.end();
         self.selections = self.compatibility_selection_set();
+        let next = self.selection_set();
+        self.record_selection_change(previous, &next);
         self.history.break_coalescing();
+    }
+
+    /// Step backward through selection-only state changes without changing
+    /// the document text or its ordinary undo/redo history.
+    pub fn undo_selection(&mut self) -> bool {
+        let Some(previous) = self.selection_undo.pop() else {
+            return false;
+        };
+        self.selection_redo.push(self.selection_set());
+        self.restore_selection(&previous);
+        self.history.break_coalescing();
+        true
+    }
+
+    /// Reapply a selection state previously undone with [`Self::undo_selection`].
+    pub fn redo_selection(&mut self) -> bool {
+        let Some(next) = self.selection_redo.pop() else {
+            return false;
+        };
+        self.selection_undo.push(self.selection_set());
+        self.restore_selection(&next);
+        self.history.break_coalescing();
+        true
+    }
+
+    fn record_selection_change(&mut self, previous: SelectionSet, next: &SelectionSet) {
+        if previous == *next {
+            return;
+        }
+        const MAX_SELECTION_HISTORY: usize = 100;
+        if self.selection_undo.len() == MAX_SELECTION_HISTORY {
+            self.selection_undo.remove(0);
+        }
+        self.selection_undo.push(previous);
+        self.selection_redo.clear();
+    }
+
+    fn clear_selection_history(&mut self) {
+        self.selection_undo.clear();
+        self.selection_redo.clear();
+    }
+
+    fn map_inactive_group_selections(&mut self, edits: &[Edit]) {
+        for selections in self.inactive_group_selections.values_mut() {
+            for edit in edits.iter().rev() {
+                selections.map_through(edit.range, edit.replacement.len());
+            }
+        }
+    }
+
+    fn clamp_selection_set(&self, selections: &SelectionSet) -> SelectionSet {
+        let snapshot = self.buffer.snapshot();
+        let primary = selections.primary_index();
+        let normalized = selections
+            .selections()
+            .iter()
+            .map(|selection| {
+                let anchor =
+                    snapshot.position_to_byte(snapshot.byte_to_position(selection.anchor.offset()));
+                let head =
+                    snapshot.position_to_byte(snapshot.byte_to_position(selection.head.offset()));
+                Selection {
+                    anchor: Anchor::new(anchor, selection.anchor.affinity()),
+                    head: Anchor::new(head, selection.head.affinity()),
+                }
+            })
+            .collect();
+        SelectionSet::from_selections(normalized, primary)
     }
 
     fn begin_or_extend(&mut self, extend: bool) {
@@ -358,7 +636,7 @@ impl Document {
         source: EditSource,
         label: Option<String>,
     ) -> bool {
-        if edits.is_empty() || !self.lifecycle.can_edit() {
+        if edits.is_empty() || !self.can_edit() {
             return false;
         }
         let selection_before = self.selection_set();
@@ -377,7 +655,12 @@ impl Document {
             Ok(applied) => applied,
             Err(_) => return false,
         };
+        self.map_inactive_group_selections(transaction.edits());
+        if let Some(snippet) = self.active_snippet.as_mut() {
+            snippet.map_through_edits(transaction.edits());
+        }
         self.history.record(transaction, applied.inverse);
+        self.clear_selection_history();
         self.restore_selection(&selection_after);
         let _ = self.lifecycle.sync_buffer(&self.buffer.text());
         self.goal_column = None;
@@ -394,6 +677,99 @@ impl Document {
         label: Option<String>,
     ) -> bool {
         self.apply_edit(edits, selection_after, source, label)
+    }
+
+    /// Replace `range` with parsed snippet text and select its first tabstop.
+    /// The session follows subsequent edits through the same transaction path
+    /// as document selections.
+    pub fn apply_snippet(&mut self, range: TextRange, session: SnippetSession) -> bool {
+        if range.end > self.snapshot().byte_len() {
+            return false;
+        }
+        let base_offset = range.start;
+        let inserted_len = session.text.len();
+        let selection_after = session
+            .active_placeholder()
+            .map(|placeholder| {
+                selection_set_from_offsets(
+                    Some(base_offset.saturating_add(placeholder.start)),
+                    base_offset.saturating_add(placeholder.end),
+                )
+            })
+            .unwrap_or_else(|| selection_set_from_offsets(None, base_offset + inserted_len));
+        let extent = TextRange::new(base_offset, base_offset.saturating_add(inserted_len));
+        if !self.apply_edit(
+            vec![Edit::new(range, session.text.clone())],
+            selection_after,
+            EditSource::Completion,
+            Some("Insert snippet".to_owned()),
+        ) {
+            return false;
+        }
+        self.active_snippet = session.has_placeholders().then_some(ActiveSnippet {
+            session,
+            base_offset,
+            extent,
+        });
+        true
+    }
+
+    pub fn has_next_snippet_tabstop(&self) -> bool {
+        self.active_snippet.as_ref().is_some_and(|snippet| {
+            snippet.session.has_next_tabstop() && self.selection_within_snippet(snippet.extent)
+        })
+    }
+
+    pub fn has_previous_snippet_tabstop(&self) -> bool {
+        self.active_snippet.as_ref().is_some_and(|snippet| {
+            snippet.session.has_previous_tabstop() && self.selection_within_snippet(snippet.extent)
+        })
+    }
+
+    pub fn next_snippet_tabstop(&mut self) -> bool {
+        if !self.has_next_snippet_tabstop() {
+            return false;
+        }
+        let Some((base, range)) = self.active_snippet.as_mut().and_then(|snippet| {
+            snippet
+                .session
+                .advance()
+                .map(|range| (snippet.base_offset, range))
+        }) else {
+            return false;
+        };
+        self.set_selection_set(selection_set_from_offsets(
+            Some(base.saturating_add(range.start)),
+            base.saturating_add(range.end),
+        ));
+        true
+    }
+
+    pub fn previous_snippet_tabstop(&mut self) -> bool {
+        if !self.has_previous_snippet_tabstop() {
+            return false;
+        }
+        let Some((base, range)) = self.active_snippet.as_mut().and_then(|snippet| {
+            snippet
+                .session
+                .retreat()
+                .map(|range| (snippet.base_offset, range))
+        }) else {
+            return false;
+        };
+        self.set_selection_set(selection_set_from_offsets(
+            Some(base.saturating_add(range.start)),
+            base.saturating_add(range.end),
+        ));
+        true
+    }
+
+    fn selection_within_snippet(&self, extent: TextRange) -> bool {
+        let snapshot = self.snapshot();
+        self.selection_set()
+            .ranges(&snapshot)
+            .iter()
+            .all(|range| range.start >= extent.start && range.end <= extent.end)
     }
 
     /// Insert text at the caret, replacing any selection.
@@ -458,14 +834,27 @@ impl Document {
     }
 
     pub fn undo(&mut self) {
+        if !self.can_edit() {
+            return;
+        }
         let Some(transactions) = self.history.undo() else {
             return;
         };
+        self.clear_selection_history();
         let mut final_selection = None;
         for transaction in transactions {
+            let source = transaction.source();
             let rebased = transaction.with_base_revision(self.buffer.revision(), EditSource::Undo);
             match self.buffer.apply_transaction(&rebased) {
-                Ok(_) => final_selection = Some(rebased.selection_after().clone()),
+                Ok(_) => {
+                    self.map_inactive_group_selections(rebased.edits());
+                    if source == EditSource::Completion {
+                        self.active_snippet = None;
+                    } else if let Some(snippet) = self.active_snippet.as_mut() {
+                        snippet.map_through_edits(rebased.edits());
+                    }
+                    final_selection = Some(rebased.selection_after().clone());
+                }
                 Err(_) => return,
             }
         }
@@ -476,15 +865,52 @@ impl Document {
         let _ = self.lifecycle.sync_buffer(&self.buffer.text());
     }
 
+    /// Undo only the latest transaction when it belongs to a typing group.
+    /// Earlier characters remain grouped for a regular Undo command.
+    pub fn undo_latest_typing_edit(&mut self) -> bool {
+        if !self.can_edit() {
+            return false;
+        }
+        let Some(transaction) = self.history.undo_latest_typing_step() else {
+            return false;
+        };
+        self.clear_selection_history();
+        let source = transaction.source();
+        let rebased = transaction.with_base_revision(self.buffer.revision(), EditSource::Undo);
+        if self.buffer.apply_transaction(&rebased).is_err() {
+            return false;
+        }
+        self.map_inactive_group_selections(rebased.edits());
+        if source == EditSource::Completion {
+            self.active_snippet = None;
+        } else if let Some(snippet) = self.active_snippet.as_mut() {
+            snippet.map_through_edits(rebased.edits());
+        }
+        self.restore_selection(rebased.selection_after());
+        self.goal_column = None;
+        let _ = self.lifecycle.sync_buffer(&self.buffer.text());
+        true
+    }
+
     pub fn redo(&mut self) {
+        if !self.can_edit() {
+            return;
+        }
         let Some(transactions) = self.history.redo() else {
             return;
         };
+        self.clear_selection_history();
         let mut final_selection = None;
         for transaction in transactions {
             let rebased = transaction.with_base_revision(self.buffer.revision(), EditSource::Redo);
             match self.buffer.apply_transaction(&rebased) {
-                Ok(_) => final_selection = Some(rebased.selection_after().clone()),
+                Ok(_) => {
+                    self.map_inactive_group_selections(rebased.edits());
+                    if let Some(snippet) = self.active_snippet.as_mut() {
+                        snippet.map_through_edits(rebased.edits());
+                    }
+                    final_selection = Some(rebased.selection_after().clone());
+                }
                 Err(_) => return,
             }
         }
@@ -522,6 +948,35 @@ impl Document {
             after,
             EditSource::Replace,
             Some("Replace all".to_string()),
+        ) {
+            Ok(edit_count)
+        } else {
+            Ok(0)
+        }
+    }
+
+    /// Replace every match of a project query in this buffer as one undoable
+    /// transaction. Workspace applies this to open buffers found by the
+    /// Editor-owned project search; disk files use the same Editor matcher.
+    pub fn replace_project_all_checked(
+        &mut self,
+        query: &ProjectSearchQuery,
+        replacement: &str,
+    ) -> Result<usize, SearchError> {
+        let snapshot = self.buffer.snapshot();
+        let edits = search::replace_project_all_checked(&snapshot, query, replacement)?;
+        if edits.is_empty() {
+            return Ok(0);
+        }
+        let edit_count = edits.len();
+        let cursor = self.buffer.position_to_byte(self.cursor);
+        let after_cursor = map_offset_through_edits(cursor, &edits, AnchorAffinity::After);
+        let after = selection_set_from_offsets(None, after_cursor);
+        if self.apply_edit(
+            edits,
+            after,
+            EditSource::Replace,
+            Some("Replace project matches".to_string()),
         ) {
             Ok(edit_count)
         } else {
@@ -606,6 +1061,7 @@ impl Document {
     }
 
     pub fn move_caret(&mut self, motion: Motion, extend: bool) {
+        let previous_selection = self.selection_set();
         self.history.break_coalescing();
         self.begin_or_extend(extend);
         let vertical = matches!(
@@ -657,10 +1113,13 @@ impl Document {
             self.anchor = None;
         }
         self.selections = self.compatibility_selection_set();
+        let next_selection = self.selection_set();
+        self.record_selection_change(previous_selection, &next_selection);
     }
 
     /// Place the caret at `pos` (mouse click). `extend` keeps the anchor.
     pub fn set_caret(&mut self, pos: Position, extend: bool) {
+        let previous_selection = self.selection_set();
         self.history.break_coalescing();
         self.begin_or_extend(extend);
         self.cursor = self.buffer.clamp(pos);
@@ -669,6 +1128,8 @@ impl Document {
             self.anchor = None;
         }
         self.selections = self.compatibility_selection_set();
+        let next_selection = self.selection_set();
+        self.record_selection_change(previous_selection, &next_selection);
     }
 }
 
@@ -725,6 +1186,80 @@ mod tests {
     }
 
     #[test]
+    fn snippet_tabstops_follow_replacements_and_navigate_in_both_directions() {
+        let mut document = Document::from_file("snippet.rs".into(), "", 0);
+        let snippet = SnippetSession::parse("fn ${1:name}(${2:arg}) {$0}");
+        assert!(document.apply_snippet(TextRange::new(0, 0), snippet));
+        assert_eq!(document.text(), "fn name(arg) {}");
+        assert_eq!(document.selected_text().as_deref(), Some("name"));
+
+        document.insert("builder");
+        assert!(document.has_next_snippet_tabstop());
+        assert!(document.next_snippet_tabstop());
+        assert_eq!(document.selected_text().as_deref(), Some("arg"));
+
+        document.insert("value");
+        assert!(document.next_snippet_tabstop());
+        assert!(!document.has_next_snippet_tabstop());
+        assert!(document.has_previous_snippet_tabstop());
+        assert!(document.previous_snippet_tabstop());
+        assert_eq!(document.selected_text().as_deref(), Some("value"));
+        assert_eq!(document.text(), "fn builder(value) {}");
+    }
+
+    #[test]
+    fn temporary_read_only_blocks_edits_and_text_undo_until_unlocked() {
+        let mut document = Document::from_file(PathBuf::from("/tmp/read-only.txt"), "abc", 0);
+        document.insert("X");
+        assert_eq!(document.text(), "Xabc");
+        assert_eq!(document.editability(), Some(EditorEditability::Editable));
+
+        assert!(document.toggle_temporary_read_only());
+        assert!(document.temporary_read_only());
+        assert_eq!(
+            document.editability(),
+            Some(EditorEditability::TemporarilyReadOnly)
+        );
+        assert!(!document.can_edit());
+        document.insert("Y");
+        document.undo();
+        assert_eq!(document.text(), "Xabc");
+
+        assert!(document.toggle_temporary_read_only());
+        assert!(!document.temporary_read_only());
+        assert!(document.can_edit());
+        document.undo();
+        assert_eq!(document.text(), "abc");
+    }
+
+    #[test]
+    fn temporary_read_only_cannot_unlock_a_lifecycle_read_only_file() {
+        let identity = FileIdentity::from_bytes("/tmp/source.bin", 0, b"data");
+        let document = Document::from_uneditable(
+            PathBuf::from("/tmp/source.bin"),
+            FileState::Binary,
+            Some(identity),
+            FileCapabilities::read_only(),
+        );
+        let mut document = document;
+
+        assert!(!document.toggle_temporary_read_only());
+        assert!(!document.can_edit());
+        assert_eq!(document.editability(), None);
+
+        let read_only_identity = FileIdentity::from_bytes("/tmp/read-only.txt", 0, b"data");
+        let read_only = Document::from_file_snapshot(FileSnapshot::new(
+            read_only_identity,
+            "data".to_string(),
+            LineEnding::Lf,
+            crate::lifecycle::Encoding::Utf8,
+            crate::lifecycle::Bom::None,
+            FileCapabilities::read_only(),
+        ));
+        assert_eq!(read_only.editability(), Some(EditorEditability::ReadOnly));
+    }
+
+    #[test]
     fn snapshot_boundary_is_read_only_and_revision_consistent() {
         let mut d = Document::from_file("f".into(), "before", 0);
         let before = d.snapshot();
@@ -778,6 +1313,54 @@ mod tests {
     }
 
     #[test]
+    fn transient_pointer_selection_is_one_undoable_step() {
+        let mut d = Document::from_file("f".into(), "abcdef", 0);
+        let previous = d.selection_set();
+        let anchor = Anchor::new(1, AnchorAffinity::Before);
+
+        for offset in [2, 4, 5] {
+            d.set_selection_set_transient(SelectionSet::single(Selection {
+                anchor,
+                head: Anchor::new(offset, AnchorAffinity::After),
+            }));
+        }
+        d.commit_selection_change(previous);
+
+        assert_eq!(d.selected_text().as_deref(), Some("bcde"));
+        assert!(d.undo_selection());
+        assert_eq!(d.selected_text(), None);
+        assert_eq!(d.cursor, Position::default());
+        assert!(
+            !d.undo_selection(),
+            "the drag creates only one history step"
+        );
+        assert!(d.redo_selection());
+        assert_eq!(d.selected_text().as_deref(), Some("bcde"));
+    }
+
+    #[test]
+    fn split_group_selections_are_independent_and_rebased_through_edits() {
+        let mut document = Document::from_file("f.rs".into(), "one two", 0);
+        let first = EditorGroupId::new(1);
+        let second = EditorGroupId::new(2);
+        document.set_caret(Position::new(0, 3), false);
+        document.create_editor_group_view(second);
+        document.activate_editor_group_view(second);
+        document.set_caret(Position::new(0, 7), false);
+        document.activate_editor_group_view(first);
+        document.set_caret(Position::new(0, 0), false);
+
+        document.insert("x");
+        assert_eq!(document.text(), "xone two");
+        document.undo();
+        assert_eq!(document.text(), "one two");
+
+        document.activate_editor_group_view(second);
+        assert_eq!(document.cursor, Position::new(0, 7));
+        assert_eq!(document.active_editor_group(), second);
+    }
+
+    #[test]
     fn backspace_merges_lines_and_undoes() {
         let mut d = Document::from_file("f".into(), "ab\ncd", 0);
         d.set_caret(Position::new(1, 0), false);
@@ -810,6 +1393,27 @@ mod tests {
         assert_eq!(d.text(), "one one");
         d.redo();
         assert_eq!(d.text(), "two two");
+    }
+
+    #[test]
+    fn project_replace_all_is_one_undoable_document_transaction() {
+        let mut document = Document::from_file("main.rs".into(), "cat12 scat34 CAT5", 0);
+        let query = ProjectSearchQuery::new(
+            r"(cat)(\d+)",
+            crate::search::ProjectSearchOptions {
+                regex: true,
+                whole_word: true,
+                ..Default::default()
+            },
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        );
+
+        assert_eq!(document.replace_project_all_checked(&query, "$2-$1"), Ok(2));
+        assert_eq!(document.text(), "12-cat scat34 5-CAT");
+        document.undo();
+        assert_eq!(document.text(), "cat12 scat34 CAT5");
+        document.redo();
+        assert_eq!(document.text(), "12-cat scat34 5-CAT");
     }
 
     #[test]

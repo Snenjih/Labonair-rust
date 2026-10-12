@@ -4,23 +4,29 @@
 //! [`document::Document`] wrapping it with caret / selection / undo history /
 //! dirty-baseline tracking, literal [`search`] find-replace, and lightweight
 //! [`language`] identification. The GPUI view that renders and drives this
-//! lives in `labonair-ui` (`editor.rs`). Syntax highlighting (T06-002), vim
-//! mode (T06-003) and diff view (T06-004) build on top.
+//! lives in `labonair-ui` (`editor.rs`). Syntax highlighting (T06-002), Vim
+//! mode (T06-003), Helix mode, and diff view (T06-004) build on top.
 
 pub mod breadcrumbs;
 pub mod buffer;
 pub mod command_provider;
+pub mod diagnostics;
 pub mod diff;
 pub mod display;
 pub mod document;
 pub mod editing;
+pub mod emmet;
 pub mod file_finder;
 pub mod git;
+pub mod helix;
 pub mod history;
+pub mod kill_ring;
 pub mod language;
 pub mod language_services;
 pub mod lifecycle;
 pub mod lsp_process;
+pub mod multibuffer;
+pub mod navigation;
 pub mod policy;
 pub mod runtime;
 pub mod search;
@@ -40,32 +46,40 @@ pub use buffer::{
     TextRange, Transaction,
 };
 pub use command_provider::{EditorLanguageCommand, GitEditorCommand};
+pub use diagnostics::{ProjectDiagnosticLocation, ProjectDiagnosticRegistry};
 pub use diff::{side_by_side, ChangeTag, Diff, DiffLine, Hunk, RowKind, SideCell, SideRow};
 pub use display::{
-    DisplayConfig, DisplayDiagnostic, DisplayMap, DisplayRow, DisplayRowKind, DisplaySemanticToken,
-    DisplaySnapshot, FoldRange, Viewport, WhitespaceMode, WhitespaceToken,
+    DisplayConfig, DisplayDiagnostic, DisplayDocumentColor, DisplayInlineHint, DisplayMap,
+    DisplayRow, DisplayRowKind, DisplaySemanticToken, DisplaySnapshot, DisplayTextProjection,
+    FoldRange, Viewport, WhitespaceMode, WhitespaceToken,
 };
-pub use document::{Document, Motion};
+pub use document::{Document, EditorEditability, Motion};
 pub use editing::{
     auto_indent, matching_bracket, EditIntent, EditorCommand, EditorCommandResult,
     EditorCommandSink, EditorSnapshotStream, EditorState, EditorViewEvent, EditorViewSnapshot,
     MultiSelection, SnippetSession, SplitIntent,
 };
+pub use emmet::{expand_emmet_abbreviation, EmmetError};
 pub use file_finder::{
     FileFinderCandidate, FileFinderQuery, FileFinderResult, FileFinderSession, FileFinderSnapshot,
     FileFinderStatus, DEFAULT_FILE_FINDER_MAX_RESULTS, MAX_FILE_FINDER_RESULTS,
 };
 pub use git::{
-    DisplayGitDecoration, GitDecorationProvider, GitDecorationRequest, GitDiscardPreview,
-    GitGutterError, GitGutterSnapshot, GitGutterState, GitHunk, GitHunkAction, GitHunkActionKind,
-    GitHunkStatus, GitHunkTarget, GitLineDecoration, GitProviderFuture, HunkActionSink,
+    DisplayGitDecoration, GitBlameRequest, GitBlameSnapshot, GitDecorationProvider,
+    GitDecorationRequest, GitDiscardPreview, GitGutterError, GitGutterSnapshot, GitGutterState,
+    GitHunk, GitHunkAction, GitHunkActionKind, GitHunkStatus, GitHunkTarget, GitLineDecoration,
+    GitProviderFuture, HunkActionSink,
 };
+pub use helix::{Helix, HelixKey, HelixMode};
+pub use kill_ring::{KillRing, KILL_RING_CAPACITY};
 pub use language::Language;
 pub use language_services::{
-    default_registry, BackgroundRequest, CancellationToken, CodeAction, CompletionItem,
-    CompletionKind, CompletionList, Diagnostic, DiagnosticSeverity, DocumentVersion, FoldingRange,
-    HoverContent, LanguageId, LanguageServerId, LanguageServiceCapabilities,
-    LanguageServiceCapability, LanguageServiceEditCapabilities, LanguageServiceEditCapability,
+    default_registry, BackgroundRequest, CallHierarchyCall, CallHierarchyItem, CancellationToken,
+    CodeAction, CodeLens, CompletionItem, CompletionKind, CompletionList, CompletionTextFormat,
+    Diagnostic, DiagnosticSeverity, DocumentColor, DocumentColorValue, DocumentLink,
+    DocumentVersion, FoldingRange, HoverContent, InlayHint, InlayHintKind, LanguageId,
+    LanguageServerId, LanguageServiceCapabilities, LanguageServiceCapability,
+    LanguageServiceCommand, LanguageServiceEditCapabilities, LanguageServiceEditCapability,
     LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceError,
     LanguageServiceRegistry, LanguageServiceRequest, LanguageServiceResponse,
     LanguageServiceResult, LanguageServiceSnapshot, LanguageServiceState, LocalLanguageService,
@@ -77,6 +91,12 @@ pub use lsp_process::{
     LocalLanguageServiceProcess, LocalLanguageServiceRequest, ProcessLifecycleState,
     ProcessServerConfig, ProjectRootPolicy,
 };
+pub use multibuffer::{
+    ExcerptId, MultiBuffer, MultiBufferEdit, MultiBufferError, MultiBufferExcerptSnapshot,
+    MultiBufferFileContent, MultiBufferFileSnapshot, MultiBufferLocation, MultiBufferSaveOutcome,
+    MultiBufferSaveRequest, MultiBufferSavedFile, MultiBufferSnapshot, MultiBufferSource,
+};
+pub use navigation::{NavigationHistory, NavigationLocation};
 pub use policy::{apply_text_policies, SavePolicy};
 pub use runtime::{
     BackgroundEditRequest, LanguageServiceEditResult, LanguageServiceRuntime,
@@ -84,11 +104,13 @@ pub use runtime::{
     LanguageServiceRuntimeStatus,
 };
 pub use search::{
-    find, find_all, next_match, next_match_with_wrap, replace_all, replace_all_checked,
-    replace_one, Match, ProjectSearchHit, ProjectSearchOptions, ProjectSearchQuery,
-    ProjectSearchRequest, ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot,
-    ProjectSearchStatus, SearchCaseMode, SearchError, SearchOptions, SearchQuery, SearchResult,
-    SearchScope,
+    find, find_all, map_range_through_edits, next_match, next_match_with_wrap,
+    plan_project_replace, replace_all, replace_all_checked, replace_one,
+    replace_project_all_checked, word_at_cursor, Match, ProjectBufferCandidate, ProjectReplacePlan,
+    ProjectReplaceRequest, ProjectReplaceResult, ProjectReplaceStatus, ProjectReplaceTarget,
+    ProjectSearchHit, ProjectSearchOptions, ProjectSearchQuery, ProjectSearchRequest,
+    ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot, ProjectSearchStatus,
+    SearchCaseMode, SearchError, SearchOptions, SearchQuery, SearchResult, SearchScope,
 };
 pub use session::{
     decode_session, encode_session, EditorPersistenceEvent, EditorSessionId, EditorSessionSnapshot,
@@ -96,7 +118,7 @@ pub use session::{
     EDITOR_SESSION_SCHEMA_VERSION,
 };
 pub use splits::{EditorGroupId, EditorSplitTree, SplitError, SplitNode, SplitOrientation};
-pub use symbols::{document_symbols, DocumentSymbol, SymbolKind};
+pub use symbols::{document_symbols, document_syntax, DocumentSymbol, DocumentSyntax, SymbolKind};
 pub use syntax::{HighlightKind, HighlightSpan, StyledRun, SyntaxHighlighter};
 pub use unified::{
     build_hunk_patch, is_whole_file_single_hunk, parse_diff_hunks, DiffHunk, FileDiff,

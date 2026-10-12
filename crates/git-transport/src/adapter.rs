@@ -1,6 +1,6 @@
 //! Backend adapter for the UI-free Git graph contract.
 
-use labonair_git::{GitFuture, GitGraphService, GitService};
+use labonair_git::{GitBlameLine, GitFuture, GitGraphService, GitService};
 
 use labonair_events::EventBus;
 use labonair_ssh_transport::SshState;
@@ -72,10 +72,40 @@ impl GitGraphService for GitGraphTransportService {
         Box::pin(async move {
             super::git_get_log(
                 path,
-                limit,
-                all_branches,
-                session_id,
-                skip,
+                super::GitLogRequest {
+                    limit,
+                    all_branches,
+                    session_id,
+                    skip,
+                    file: None,
+                },
+                &ssh_state,
+                events.clone(),
+            )
+            .await
+        })
+    }
+
+    fn file_log(
+        &self,
+        path: String,
+        file: String,
+        limit: Option<u32>,
+        session_id: Option<String>,
+        skip: Option<usize>,
+    ) -> GitFuture<Vec<CommitInfo>> {
+        let ssh_state = self.ssh_state.clone();
+        let events = self.events.clone();
+        Box::pin(async move {
+            super::git_get_log(
+                path,
+                super::GitLogRequest {
+                    limit,
+                    all_branches: false,
+                    session_id,
+                    skip,
+                    file: Some(file),
+                },
                 &ssh_state,
                 events.clone(),
             )
@@ -192,10 +222,13 @@ impl GitService for GitTransportService {
         Box::pin(async move {
             super::git_get_log(
                 path,
-                limit,
-                all_branches,
-                session_id,
-                skip,
+                super::GitLogRequest {
+                    limit,
+                    all_branches,
+                    session_id,
+                    skip,
+                    file: None,
+                },
                 &ssh_state,
                 events.clone(),
             )
@@ -229,6 +262,21 @@ impl GitService for GitTransportService {
         })
     }
 
+    fn blame_line(
+        &self,
+        path: String,
+        file: String,
+        line: u32,
+        session_id: Option<String>,
+    ) -> GitFuture<GitBlameLine> {
+        let ssh_state = self.ssh_state.clone();
+        let events = self.events.clone();
+        Box::pin(async move {
+            super::git_get_blame_line(path, file, line, session_id, &ssh_state, events.clone())
+                .await
+        })
+    }
+
     fn commit_diff(
         &self,
         path: String,
@@ -239,6 +287,34 @@ impl GitService for GitTransportService {
         let events = self.events.clone();
         Box::pin(async move {
             super::git_get_commit_diff(path, hash, session_id, &ssh_state, events.clone()).await
+        })
+    }
+
+    fn stash_diff(
+        &self,
+        path: String,
+        hash: String,
+        session_id: Option<String>,
+    ) -> GitFuture<String> {
+        let ssh_state = self.ssh_state.clone();
+        let events = self.events.clone();
+        Box::pin(async move {
+            super::git_get_stash_diff(path, hash, session_id, &ssh_state, events.clone()).await
+        })
+    }
+
+    fn branch_diff(
+        &self,
+        path: String,
+        base: String,
+        head: String,
+        session_id: Option<String>,
+    ) -> GitFuture<String> {
+        let ssh_state = self.ssh_state.clone();
+        let events = self.events.clone();
+        Box::pin(async move {
+            super::git_get_branch_diff(path, base, head, session_id, &ssh_state, events.clone())
+                .await
         })
     }
 
@@ -288,6 +364,30 @@ impl GitService for GitTransportService {
         let events = self.events.clone();
         Box::pin(async move {
             super::git_unstage_hunk(path, file, patch, session_id, &ssh_state, events.clone()).await
+        })
+    }
+
+    fn discard_hunk(
+        &self,
+        path: String,
+        file: String,
+        patch: String,
+        staged: bool,
+        session_id: Option<String>,
+    ) -> GitFuture<()> {
+        let ssh_state = self.ssh_state.clone();
+        let events = self.events.clone();
+        Box::pin(async move {
+            super::git_discard_hunk(
+                path,
+                file,
+                patch,
+                staged,
+                session_id,
+                &ssh_state,
+                events.clone(),
+            )
+            .await
         })
     }
 

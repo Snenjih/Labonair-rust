@@ -27,6 +27,17 @@ pub struct GrepResponse {
     pub files_scanned: usize,
 }
 
+/// Path and ignore rules applied by [`fs_grep_with_options`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct GrepOptions {
+    pub include_globs: Vec<String>,
+    pub exclude_globs: Vec<String>,
+    /// Exact root-relative file paths. `Some(vec![])` intentionally matches
+    /// nothing, which represents an empty open-file set.
+    pub only_paths: Option<Vec<String>>,
+    pub include_ignored: bool,
+}
+
 fn build_globset(patterns: &[String]) -> Result<Option<GlobSet>, String> {
     if patterns.is_empty() {
         return Ok(None);
@@ -47,6 +58,75 @@ pub fn fs_grep(
     case_insensitive: Option<bool>,
     max_results: Option<usize>,
 ) -> Result<GrepResponse, String> {
+    fs_grep_with_options(
+        pattern,
+        root,
+        case_insensitive,
+        max_results,
+        GrepOptions {
+            include_globs: glob.unwrap_or_default(),
+            ..GrepOptions::default()
+        },
+    )
+}
+
+/// Search files while optionally traversing paths excluded by ignore rules.
+/// Hidden-file handling remains unchanged; this switch only controls ignore files.
+pub fn fs_grep_with_ignored(
+    pattern: String,
+    root: String,
+    glob: Option<Vec<String>>,
+    case_insensitive: Option<bool>,
+    max_results: Option<usize>,
+    include_ignored: bool,
+) -> Result<GrepResponse, String> {
+    fs_grep_with_options(
+        pattern,
+        root,
+        case_insensitive,
+        max_results,
+        GrepOptions {
+            include_globs: glob.unwrap_or_default(),
+            include_ignored,
+            ..GrepOptions::default()
+        },
+    )
+}
+
+/// Search files with explicit path include/exclude globs and ignore handling.
+/// Hidden-file handling remains unchanged; `include_ignored` only controls
+/// ignore files.
+pub fn fs_grep_with_filters(
+    pattern: String,
+    root: String,
+    include_glob: Option<Vec<String>>,
+    exclude_glob: Option<Vec<String>>,
+    case_insensitive: Option<bool>,
+    max_results: Option<usize>,
+    include_ignored: bool,
+) -> Result<GrepResponse, String> {
+    fs_grep_with_options(
+        pattern,
+        root,
+        case_insensitive,
+        max_results,
+        GrepOptions {
+            include_globs: include_glob.unwrap_or_default(),
+            exclude_globs: exclude_glob.unwrap_or_default(),
+            include_ignored,
+            ..GrepOptions::default()
+        },
+    )
+}
+
+/// Search files with typed path, open-file, and ignore rules.
+pub fn fs_grep_with_options(
+    pattern: String,
+    root: String,
+    case_insensitive: Option<bool>,
+    max_results: Option<usize>,
+    options: GrepOptions,
+) -> Result<GrepResponse, String> {
     if pattern.is_empty() {
         return Err("empty pattern".into());
     }
@@ -57,6 +137,13 @@ pub fn fs_grep(
     let cap = max_results
         .unwrap_or(DEFAULT_MAX_RESULTS)
         .clamp(1, HARD_MAX_RESULTS);
+    if options.only_paths.as_ref().is_some_and(Vec::is_empty) {
+        return Ok(GrepResponse {
+            hits: Vec::new(),
+            truncated: false,
+            files_scanned: 0,
+        });
+    }
 
     let matcher = RegexMatcherBuilder::new()
         .case_insensitive(case_insensitive.unwrap_or(false))
@@ -64,14 +151,18 @@ pub fn fs_grep(
         .build(&pattern)
         .map_err(|e| format!("bad regex: {e}"))?;
 
-    let globs = build_globset(glob.as_deref().unwrap_or(&[]))?;
+    let include_globs = build_globset(&options.include_globs)?;
+    let exclude_globs = build_globset(&options.exclude_globs)?;
+    let only_paths = options
+        .only_paths
+        .map(|paths| paths.into_iter().collect::<std::collections::HashSet<_>>());
 
     let walker = WalkBuilder::new(&root_path)
         .hidden(true)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
-        .ignore(true)
+        .git_ignore(!options.include_ignored)
+        .git_global(!options.include_ignored)
+        .git_exclude(!options.include_ignored)
+        .ignore(!options.include_ignored)
         .parents(true)
         .follow_links(false)
         .build_parallel();
@@ -85,7 +176,9 @@ pub fn fs_grep(
         let scanned = scanned.clone();
         let truncated = truncated.clone();
         let matcher = matcher.clone();
-        let globs = globs.clone();
+        let include_globs = include_globs.clone();
+        let exclude_globs = exclude_globs.clone();
+        let only_paths = only_paths.clone();
         let root_path = root_path.clone();
         Box::new(move |entry| {
             if truncated.load(Ordering::Relaxed) {
@@ -102,10 +195,19 @@ pub fn fs_grep(
                 Ok(r) => r.to_string_lossy().into_owned(),
                 Err(_) => return WalkState::Continue,
             };
-            if let Some(set) = globs.as_ref() {
+            if only_paths
+                .as_ref()
+                .is_some_and(|paths| !paths.contains(&rel))
+            {
+                return WalkState::Continue;
+            }
+            if let Some(set) = include_globs.as_ref() {
                 if !set.is_match(&rel) {
                     return WalkState::Continue;
                 }
+            }
+            if exclude_globs.as_ref().is_some_and(|set| set.is_match(&rel)) {
+                return WalkState::Continue;
             }
             if let Ok(meta) = std::fs::metadata(path) {
                 if meta.len() > FILE_SIZE_CAP {
@@ -156,6 +258,104 @@ pub fn fs_grep(
         truncated: truncated.load(Ordering::Relaxed),
         files_scanned: scanned.load(Ordering::Relaxed),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ignored_files_are_included_only_when_requested() {
+        let root =
+            std::env::temp_dir().join(format!("labonair-grep-ignored-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create test root");
+        std::fs::create_dir(root.join(".git")).expect("create test git directory");
+        std::fs::write(root.join(".gitignore"), "ignored.txt\n").expect("write gitignore");
+        std::fs::write(root.join("ignored.txt"), "needle\n").expect("write ignored file");
+
+        let run = |include_ignored| {
+            fs_grep_with_ignored(
+                "needle".into(),
+                root.to_string_lossy().into_owned(),
+                None,
+                None,
+                None,
+                include_ignored,
+            )
+            .expect("grep succeeds")
+        };
+        assert!(run(false).hits.is_empty());
+        assert!(run(true).hits.iter().any(|hit| hit.rel == "ignored.txt"));
+
+        std::fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn path_globs_apply_include_and_exclude_filters() {
+        let root = std::env::temp_dir().join(format!("labonair-grep-globs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("src")).expect("create source directory");
+        std::fs::create_dir_all(root.join("docs")).expect("create docs directory");
+        std::fs::write(root.join("src/keep.rs"), "needle\n").expect("write included file");
+        std::fs::write(root.join("src/skip.rs"), "needle\n").expect("write excluded file");
+        std::fs::write(root.join("docs/readme.md"), "needle\n").expect("write other file");
+
+        let result = fs_grep_with_filters(
+            "needle".into(),
+            root.to_string_lossy().into_owned(),
+            Some(vec!["src/*.rs".into()]),
+            Some(vec!["**/skip.rs".into()]),
+            None,
+            None,
+            false,
+        )
+        .expect("filtered grep succeeds");
+
+        assert_eq!(result.hits.len(), 1);
+        assert_eq!(result.hits[0].rel, "src/keep.rs");
+        std::fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn only_paths_matches_exact_root_relative_open_files() {
+        let root =
+            std::env::temp_dir().join(format!("labonair-grep-open-files-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("src")).expect("create source directory");
+        std::fs::write(root.join("src/open[1].rs"), "needle\n").expect("write open file");
+        std::fs::write(root.join("src/closed.rs"), "needle\n").expect("write closed file");
+
+        let result = fs_grep_with_options(
+            "needle".into(),
+            root.to_string_lossy().into_owned(),
+            None,
+            None,
+            GrepOptions {
+                only_paths: Some(vec!["src/open[1].rs".into()]),
+                ..GrepOptions::default()
+            },
+        )
+        .expect("open-file grep succeeds");
+        assert_eq!(result.hits.len(), 1);
+        assert_eq!(result.hits[0].rel, "src/open[1].rs");
+
+        let empty = fs_grep_with_options(
+            "needle".into(),
+            root.to_string_lossy().into_owned(),
+            None,
+            None,
+            GrepOptions {
+                only_paths: Some(Vec::new()),
+                ..GrepOptions::default()
+            },
+        )
+        .expect("empty open-file grep succeeds");
+        assert!(empty.hits.is_empty());
+        assert_eq!(empty.files_scanned, 0);
+
+        std::fs::remove_dir_all(root).expect("remove test root");
+    }
 }
 
 #[derive(Serialize)]

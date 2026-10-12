@@ -113,6 +113,17 @@ pub struct FileDiffStat {
     pub staged: bool,
 }
 
+/// Commit attribution for one source line. The timestamp is Unix seconds in
+/// UTC, matching Git's `author-time` field.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitBlameLine {
+    pub commit: String,
+    pub author: String,
+    pub summary: String,
+    pub author_time: i64,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceGitState {
@@ -153,6 +164,13 @@ pub trait GitService: Send + Sync {
         is_untracked: Option<bool>,
         session_id: Option<String>,
     ) -> GitFuture<String>;
+    fn blame_line(
+        &self,
+        path: String,
+        file: String,
+        line: u32,
+        session_id: Option<String>,
+    ) -> GitFuture<GitBlameLine>;
     /// Full unified patch for one commit (`git show --format= --patch <hash>`),
     /// covering every file the commit touched. Used by the workspace Diff item
     /// to render a committed change read-only.
@@ -160,6 +178,22 @@ pub trait GitService: Send + Sync {
         &self,
         path: String,
         hash: String,
+        session_id: Option<String>,
+    ) -> GitFuture<String>;
+    /// Unified patch for one stash, including files recorded as untracked.
+    fn stash_diff(
+        &self,
+        path: String,
+        hash: String,
+        session_id: Option<String>,
+    ) -> GitFuture<String>;
+    /// Unified patch for changes reachable from `head` since the merge base
+    /// with `base`.
+    fn branch_diff(
+        &self,
+        path: String,
+        base: String,
+        head: String,
         session_id: Option<String>,
     ) -> GitFuture<String>;
     fn stage_file(&self, path: String, file: String, session_id: Option<String>) -> GitFuture<()>;
@@ -177,6 +211,17 @@ pub trait GitService: Send + Sync {
         path: String,
         file: String,
         patch: String,
+        session_id: Option<String>,
+    ) -> GitFuture<()>;
+    /// Revert one reviewed diff hunk from the worktree. When `staged` is true,
+    /// the patch compares the index to HEAD and must update both index and
+    /// worktree together.
+    fn discard_hunk(
+        &self,
+        path: String,
+        file: String,
+        patch: String,
+        staged: bool,
         session_id: Option<String>,
     ) -> GitFuture<()>;
     fn discard_file(&self, path: String, file: String, session_id: Option<String>)
@@ -284,6 +329,15 @@ pub trait GitGraphService: Send + Sync {
         path: String,
         limit: Option<u32>,
         all_branches: bool,
+        session_id: Option<String>,
+        skip: Option<usize>,
+    ) -> GitFuture<Vec<CommitInfo>>;
+    /// History of one file, following renames when Git can identify them.
+    fn file_log(
+        &self,
+        path: String,
+        file: String,
+        limit: Option<u32>,
         session_id: Option<String>,
         skip: Option<usize>,
     ) -> GitFuture<Vec<CommitInfo>>;

@@ -930,6 +930,30 @@ mod tests {
     }
 
     #[test]
+    fn shipped_workspace_keymap_binds_left_and_up_pane_splits() {
+        let file = parse_keymap_jsonc(default_asset()).expect("default keymap parses");
+        let terminal = file
+            .0
+            .iter()
+            .find(|block| block.context.as_deref() == Some("Terminal"))
+            .expect("terminal keymap block");
+        let chord_prefix = if cfg!(target_os = "macos") {
+            "cmd-k"
+        } else {
+            "ctrl-k"
+        };
+        for (keystrokes, action) in [
+            (format!("{chord_prefix} left"), "pane::SplitLeft"),
+            (format!("{chord_prefix} up"), "pane::SplitUp"),
+        ] {
+            assert!(terminal
+                .bindings
+                .iter()
+                .any(|(key, value)| { key == &keystrokes && value.as_deref() == Some(action) }));
+        }
+    }
+
+    #[test]
     fn append_user_binding_override_preserves_source_and_writes_unbind_then_replacement() {
         let source = "// Keep this comment.\n[{\"bindings\": {\"cmd-f\": \"search::Toggle\"}}]\n";
         let updated = append_user_binding_override(

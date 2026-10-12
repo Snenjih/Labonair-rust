@@ -38,7 +38,7 @@ pub use composition::AppComposition;
 #[cfg(any(debug_assertions, feature = "gallery"))]
 pub use gallery::{open_gallery_window, Gallery};
 pub use labonair_updater_ui::{UpdaterStatus, UpdaterView};
-pub use menu::{apply_keymap, init as init_menus};
+pub use menu::init as init_menus;
 pub use titlebar::Titlebar;
 
 // --- Convenience re-exports for the `crates/app` bootstrap -----------------

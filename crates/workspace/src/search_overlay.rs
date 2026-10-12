@@ -15,18 +15,22 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, AppContext, ClickEvent, Context, DismissEvent, Entity, EventEmitter, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render,
+    Focusable, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use labonair_editor::{
-    ProjectSearchOptions, ProjectSearchQuery, ProjectSearchStatus, SearchCaseMode, SearchError,
-    SearchOptions, SearchQuery, SearchScope,
+    MultiBuffer, ProjectReplaceStatus, ProjectSearchHit, ProjectSearchOptions, ProjectSearchQuery,
+    ProjectSearchStatus, SearchCaseMode, SearchError, SearchOptions, SearchQuery, SearchScope,
+    TextRange,
 };
+use labonair_editor_ui::{MultiBufferEvent, MultiBufferView};
+use labonair_settings::{EditorSettings, Settings as _};
 use labonair_ui_kit::{
     button, button_disabled, search_field, search_input, text_field, text_field_surface,
     text_input, ButtonSize, ButtonVariant, InputEvent, InputState, ListItem, Palette,
     TextFieldState,
 };
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Mutex;
 
 use crate::modal_layer::ModalView;
@@ -36,6 +40,8 @@ use crate::{SearchTarget, Workspace};
 /// The last query typed into any search overlay, pre-filled (and replacing an
 /// editor-selection seed when none exists) the next time one opens.
 static LAST_QUERY: Mutex<String> = Mutex::new(String::new());
+static QUERY_HISTORY: Mutex<Vec<String>> = Mutex::new(Vec::new());
+const MAX_QUERY_HISTORY: usize = 50;
 
 fn last_query() -> String {
     LAST_QUERY.lock().map(|q| q.clone()).unwrap_or_default()
@@ -45,6 +51,113 @@ fn save_last_query(query: &str) {
     if let Ok(mut slot) = LAST_QUERY.lock() {
         *slot = query.to_string();
     }
+}
+
+fn query_history() -> Vec<String> {
+    QUERY_HISTORY
+        .lock()
+        .map(|queries| queries.clone())
+        .unwrap_or_default()
+}
+
+fn remember_query(query: &str) {
+    if query.trim().is_empty() {
+        return;
+    }
+    if let Ok(mut queries) = QUERY_HISTORY.lock() {
+        if queries.last().is_some_and(|previous| previous == query) {
+            return;
+        }
+        queries.retain(|previous| previous != query);
+        queries.push(query.to_string());
+        if queries.len() > MAX_QUERY_HISTORY {
+            let excess = queries.len() - MAX_QUERY_HISTORY;
+            queries.drain(..excess);
+        }
+    }
+}
+
+#[derive(Default)]
+struct SearchQueryHistory {
+    entries: Vec<String>,
+    index: Option<usize>,
+    draft: String,
+    programmatic_value: Option<String>,
+}
+
+impl SearchQueryHistory {
+    fn new(entries: Vec<String>) -> Self {
+        Self {
+            entries,
+            ..Self::default()
+        }
+    }
+
+    fn previous(&mut self, current: &str) -> Option<String> {
+        if self.entries.is_empty() {
+            return None;
+        }
+        let index = match self.index {
+            Some(index) => index.saturating_sub(1),
+            None => {
+                self.draft = current.to_string();
+                self.entries.len() - 1
+            }
+        };
+        self.index = Some(index);
+        self.entries.get(index).cloned()
+    }
+
+    fn next(&mut self) -> Option<String> {
+        let index = self.index?;
+        if index + 1 < self.entries.len() {
+            self.index = Some(index + 1);
+            self.entries.get(index + 1).cloned()
+        } else {
+            self.index = None;
+            Some(self.draft.clone())
+        }
+    }
+
+    fn consume_programmatic_value(&mut self, value: &str) -> bool {
+        if self.programmatic_value.as_deref() == Some(value) {
+            self.programmatic_value = None;
+            true
+        } else {
+            self.programmatic_value = None;
+            false
+        }
+    }
+
+    fn reset(&mut self) {
+        self.index = None;
+        self.draft.clear();
+        self.programmatic_value = None;
+    }
+}
+
+fn grouped_project_hit_indices(hits: &[ProjectSearchHit]) -> Vec<(String, Vec<usize>)> {
+    let mut groups = BTreeMap::<&str, Vec<usize>>::new();
+    for (index, hit) in hits.iter().enumerate() {
+        groups
+            .entry(hit.relative_path.as_str())
+            .or_default()
+            .push(index);
+    }
+    groups
+        .into_iter()
+        .map(|(path, indices)| (path.to_string(), indices))
+        .collect()
+}
+
+fn parse_path_globs(value: &str) -> Vec<String> {
+    value
+        .lines()
+        .flat_map(|line| line.split(','))
+        .map(str::trim)
+        .filter(|pattern| !pattern.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 fn next_case_mode(mode: SearchCaseMode) -> SearchCaseMode {
@@ -74,13 +187,32 @@ pub struct SearchOverlay {
     theme: Entity<ThemeStore>,
     input: Entity<InputState>,
     replace_input: Option<Entity<InputState>>,
+    include_glob_input: Option<Entity<InputState>>,
+    exclude_glob_input: Option<Entity<InputState>>,
     target: SearchTarget,
     scope: SearchScope,
     options: SearchOptions,
+    selection_range: Option<TextRange>,
+    collapsed_project_files: HashSet<String>,
+    multi_buffer_model: Option<MultiBuffer>,
+    multi_buffer_view: Option<Entity<MultiBufferView>>,
+    multi_buffer_loading: bool,
+    multi_buffer_error: Option<String>,
+    multi_buffer_generation: u64,
+    show_multi_buffer: bool,
+    _multi_buffer_sub: Option<Subscription>,
+    query_history: SearchQueryHistory,
+    search_on_type: bool,
+    include_ignored: bool,
+    only_open_files: bool,
+    show_path_filters: bool,
+    project_query_confirmed: bool,
     count: (usize, usize),
     error: Option<SearchError>,
     _input_sub: Subscription,
     _replace_sub: Option<Subscription>,
+    _include_glob_sub: Option<Subscription>,
+    _exclude_glob_sub: Option<Subscription>,
 }
 
 impl SearchOverlay {
@@ -90,11 +222,37 @@ impl SearchOverlay {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let search_settings = EditorSettings::try_get(cx).cloned();
         let target = workspace.read(cx).active_search_target(cx);
+        let selection_range = (target == SearchTarget::Editor)
+            .then(|| workspace.read(cx).search_selection_range(cx))
+            .flatten();
         let seed = workspace
             .read(cx)
             .search_seed(cx)
             .unwrap_or_else(last_query);
+        let options = search_settings
+            .as_ref()
+            .map(|settings| SearchOptions {
+                case_sensitive: settings.search_case_sensitive(),
+                smart_case: settings.search_smart_case(),
+                whole_word: settings.search_whole_word(),
+                regex: settings.search_regex(),
+                wrap: settings.search_wrap(),
+                ..SearchOptions::default()
+            })
+            .unwrap_or_else(|| SearchOptions {
+                smart_case: false,
+                ..SearchOptions::default()
+            });
+        let search_on_type = search_settings
+            .as_ref()
+            .map(EditorSettings::search_on_type)
+            .unwrap_or(true);
+        let include_ignored = search_settings
+            .as_ref()
+            .map(EditorSettings::search_include_ignored)
+            .unwrap_or(false);
 
         let input = cx.new(|cx| {
             text_field(window, cx)
@@ -103,14 +261,45 @@ impl SearchOverlay {
         });
         let input_sub = cx.subscribe(
             &input,
-            |this: &mut Self, _input, ev: &InputEvent, cx| match ev {
-                InputEvent::Change => this.run_search(cx),
+            |this: &mut Self, input, ev: &InputEvent, cx| match ev {
+                InputEvent::Change => {
+                    let value = input.read(cx).value().to_string();
+                    if !this.query_history.consume_programmatic_value(&value) {
+                        this.query_history.reset();
+                        this.run_search(cx);
+                    }
+                }
                 InputEvent::PressEnter { secondary } if this.scope == SearchScope::CurrentFile => {
                     this.step(!secondary, cx)
                 }
                 _ => {}
             },
         );
+
+        let (include_glob_input, include_glob_sub) = if target == SearchTarget::Editor {
+            let input =
+                cx.new(|cx| text_field(window, cx).placeholder("Include globs (comma-separated)…"));
+            let sub = cx.subscribe(&input, |this: &mut Self, _input, ev: &InputEvent, cx| {
+                if matches!(ev, InputEvent::Change) {
+                    this.run_search(cx);
+                }
+            });
+            (Some(input), Some(sub))
+        } else {
+            (None, None)
+        };
+        let (exclude_glob_input, exclude_glob_sub) = if target == SearchTarget::Editor {
+            let input =
+                cx.new(|cx| text_field(window, cx).placeholder("Exclude globs (comma-separated)…"));
+            let sub = cx.subscribe(&input, |this: &mut Self, _input, ev: &InputEvent, cx| {
+                if matches!(ev, InputEvent::Change) {
+                    this.run_search(cx);
+                }
+            });
+            (Some(input), Some(sub))
+        } else {
+            (None, None)
+        };
 
         let (replace_input, replace_sub) = if target == SearchTarget::Editor {
             let replace_input = cx.new(|cx| text_field(window, cx).placeholder("Replace…"));
@@ -136,13 +325,32 @@ impl SearchOverlay {
             theme,
             input,
             replace_input,
+            include_glob_input,
+            exclude_glob_input,
             target,
             scope: SearchScope::CurrentFile,
-            options: SearchOptions::default(),
+            options,
+            selection_range,
+            collapsed_project_files: HashSet::new(),
+            multi_buffer_model: None,
+            multi_buffer_view: None,
+            multi_buffer_loading: false,
+            multi_buffer_error: None,
+            multi_buffer_generation: 0,
+            show_multi_buffer: false,
+            _multi_buffer_sub: None,
+            query_history: SearchQueryHistory::new(query_history()),
+            search_on_type,
+            include_ignored,
+            only_open_files: false,
+            show_path_filters: false,
+            project_query_confirmed: false,
             count: (0, 0),
             error: None,
             _input_sub: input_sub,
             _replace_sub: replace_sub,
+            _include_glob_sub: include_glob_sub,
+            _exclude_glob_sub: exclude_glob_sub,
         };
         if !seed.is_empty() && target != SearchTarget::Unavailable {
             this.run_search(cx);
@@ -154,10 +362,15 @@ impl SearchOverlay {
         let text = self.input.read(cx).value().to_string();
         save_last_query(&text);
         if self.target == SearchTarget::Editor && self.scope == SearchScope::Project {
-            self.run_project_search(text, cx);
+            if self.search_on_type {
+                self.run_project_search(text, cx);
+            } else {
+                self.clear_project_search(cx);
+            }
             return;
         }
-        let query = SearchQuery::new(text, self.options);
+        let selection_range = self.workspace.read(cx).search_selection_scope(cx);
+        let query = SearchQuery::new(text, self.options).with_selection_range(selection_range);
         let result = self.workspace.update(cx, |w, cx| w.search_set(query, cx));
         match result {
             Some(Ok(count)) => {
@@ -177,13 +390,136 @@ impl SearchOverlay {
     }
 
     fn run_project_search(&mut self, text: String, cx: &mut Context<Self>) {
-        let options = ProjectSearchOptions::from_search_options(self.options);
-        let query = ProjectSearchQuery::new(text, options, ProjectSearchQuery::DEFAULT_MAX_RESULTS);
+        self.reset_multi_buffer_preview();
+        let mut options = ProjectSearchOptions::from_search_options(self.options);
+        options.include_ignored = self.include_ignored;
+        options.only_open_files = self.only_open_files;
+        let include_globs = self
+            .include_glob_input
+            .as_ref()
+            .map(|input| parse_path_globs(&input.read(cx).value()))
+            .unwrap_or_default();
+        let exclude_globs = self
+            .exclude_glob_input
+            .as_ref()
+            .map(|input| parse_path_globs(&input.read(cx).value()))
+            .unwrap_or_default();
+        let query = ProjectSearchQuery::new(text, options, ProjectSearchQuery::DEFAULT_MAX_RESULTS)
+            .with_path_filters(include_globs, exclude_globs);
         let _ = self
             .workspace
             .update(cx, |workspace, cx| workspace.project_search_set(query, cx));
+        self.project_query_confirmed = !self.input.read(cx).value().is_empty();
+        self.count = (0, 0);
         self.error = None;
         cx.notify();
+    }
+
+    fn clear_project_search(&mut self, cx: &mut Context<Self>) {
+        self.reset_multi_buffer_preview();
+        let mut options = ProjectSearchOptions::from_search_options(self.options);
+        options.include_ignored = self.include_ignored;
+        options.only_open_files = self.only_open_files;
+        let query = ProjectSearchQuery::new("", options, ProjectSearchQuery::DEFAULT_MAX_RESULTS);
+        let _ = self
+            .workspace
+            .update(cx, |workspace, cx| workspace.project_search_set(query, cx));
+        self.project_query_confirmed = false;
+        self.count = (0, 0);
+        self.error = None;
+        cx.notify();
+    }
+
+    fn reset_multi_buffer_preview(&mut self) {
+        self.multi_buffer_generation = self.multi_buffer_generation.saturating_add(1);
+        self.multi_buffer_model = None;
+        self.multi_buffer_view = None;
+        self._multi_buffer_sub = None;
+        self.multi_buffer_loading = false;
+        self.multi_buffer_error = None;
+        self.show_multi_buffer = false;
+    }
+
+    fn open_project_multi_buffer(&mut self, cx: &mut Context<Self>) {
+        let Some(snapshot) = self.workspace.read(cx).project_search_snapshot(cx) else {
+            return;
+        };
+        if snapshot.status != ProjectSearchStatus::Ready || snapshot.hits.is_empty() {
+            return;
+        }
+        self.multi_buffer_generation = self.multi_buffer_generation.saturating_add(1);
+        let generation = self.multi_buffer_generation;
+        self.multi_buffer_model = None;
+        self.multi_buffer_view = None;
+        self._multi_buffer_sub = None;
+        self.multi_buffer_loading = true;
+        self.multi_buffer_error = None;
+        self.show_multi_buffer = false;
+        let view = cx.entity().downgrade();
+        self.workspace.update(cx, |workspace, cx| {
+            workspace.load_project_multibuffer(
+                snapshot.hits,
+                move |result, cx| {
+                    let _ = view.update(cx, |this, cx| {
+                        if this.multi_buffer_generation != generation {
+                            return;
+                        }
+                        this.multi_buffer_loading = false;
+                        match result {
+                            Ok(buffer) => {
+                                this.multi_buffer_model = Some(buffer);
+                                this.show_multi_buffer = true;
+                                this.multi_buffer_error = None;
+                            }
+                            Err(error) => {
+                                this.multi_buffer_model = None;
+                                this.multi_buffer_error = Some(error);
+                            }
+                        }
+                        cx.notify();
+                    });
+                },
+                cx,
+            );
+        });
+        cx.notify();
+    }
+
+    fn ensure_multi_buffer_view(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.multi_buffer_view.is_some() {
+            return;
+        }
+        let Some(buffer) = self.multi_buffer_model.take() else {
+            return;
+        };
+        let theme = self.theme.clone();
+        let view = cx.new(|cx| MultiBufferView::new(buffer, theme, window, cx));
+        let subscription =
+            cx.subscribe(
+                &view,
+                |this, view, event: &MultiBufferEvent, cx| match event {
+                    MultiBufferEvent::SaveRequested(requests) => {
+                        let view = view.downgrade();
+                        this.workspace.update(cx, |workspace, cx| {
+                            workspace.save_project_multibuffer(
+                                requests.clone(),
+                                move |result, cx| {
+                                    let _ = view
+                                        .update(cx, |view, cx| view.accept_save_result(result, cx));
+                                },
+                                cx,
+                            );
+                        });
+                    }
+                },
+            );
+        self.multi_buffer_view = Some(view);
+        self._multi_buffer_sub = Some(subscription);
+    }
+
+    fn confirm_project_search(&mut self, cx: &mut Context<Self>) {
+        let text = self.input.read(cx).value().to_string();
+        self.run_project_search(text, cx);
     }
 
     fn set_scope(&mut self, scope: SearchScope, cx: &mut Context<Self>) {
@@ -197,10 +533,7 @@ impl SearchOverlay {
 
     fn step(&mut self, forward: bool, cx: &mut Context<Self>) {
         if self.scope == SearchScope::Project && self.target == SearchTarget::Editor {
-            let _ = self.workspace.update(cx, |workspace, cx| {
-                workspace.project_search_move(if forward { 1 } else { -1 }, cx)
-            });
-            cx.notify();
+            self.move_project_search(if forward { 1 } else { -1 }, cx);
             return;
         }
         match self
@@ -217,6 +550,37 @@ impl SearchOverlay {
         cx.notify();
     }
 
+    fn move_project_search(&mut self, delta: isize, cx: &mut Context<Self>) {
+        let hit = self
+            .workspace
+            .update(cx, |workspace, cx| workspace.project_search_move(delta, cx));
+        if let Some(hit) = hit {
+            self.collapsed_project_files.remove(&hit.relative_path);
+        }
+        cx.notify();
+    }
+
+    fn navigate_query_history(
+        &mut self,
+        previous: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let current = self.input.read(cx).value().to_string();
+        let value = if previous {
+            self.query_history.previous(&current)
+        } else {
+            self.query_history.next()
+        };
+        let Some(value) = value else {
+            return;
+        };
+        self.query_history.programmatic_value = Some(value.clone());
+        self.input
+            .update(cx, |input, cx| input.set_value(value, window, cx));
+        self.run_search(cx);
+    }
+
     fn toggle_case(&mut self, cx: &mut Context<Self>) {
         let mode = next_case_mode(self.options.case_mode());
         self.options = self.options.with_case_mode(mode);
@@ -228,7 +592,61 @@ impl SearchOverlay {
         self.run_search(cx);
     }
 
+    fn toggle_selection_scope(&mut self, cx: &mut Context<Self>) {
+        let toggled = self.workspace.update(cx, |workspace, cx| {
+            workspace.toggle_search_selection_scope(cx)
+        });
+        if toggled {
+            self.run_search(cx);
+        }
+    }
+
+    fn toggle_include_ignored(&mut self, cx: &mut Context<Self>) {
+        self.include_ignored = !self.include_ignored;
+        self.run_search(cx);
+    }
+
+    fn toggle_only_open_files(&mut self, cx: &mut Context<Self>) {
+        self.only_open_files = !self.only_open_files;
+        self.run_search(cx);
+    }
+
+    fn toggle_path_filters(&mut self, cx: &mut Context<Self>) {
+        self.show_path_filters = !self.show_path_filters;
+        cx.notify();
+    }
+
+    fn toggle_project_file(&mut self, path: String, cx: &mut Context<Self>) {
+        if !self.collapsed_project_files.remove(&path) {
+            self.collapsed_project_files.insert(path);
+        }
+        cx.notify();
+    }
+
+    fn collapse_all_project_files(&mut self, cx: &mut Context<Self>) {
+        self.collapsed_project_files = self
+            .workspace
+            .read(cx)
+            .project_search_snapshot(cx)
+            .map(|snapshot| {
+                grouped_project_hit_indices(&snapshot.hits)
+                    .into_iter()
+                    .map(|(path, _)| path)
+                    .collect()
+            })
+            .unwrap_or_default();
+        cx.notify();
+    }
+
+    fn expand_all_project_files(&mut self, cx: &mut Context<Self>) {
+        self.collapsed_project_files.clear();
+        cx.notify();
+    }
+
     fn replace_one(&mut self, cx: &mut Context<Self>) {
+        if self.scope == SearchScope::Project {
+            return;
+        }
         let Some(replace_input) = &self.replace_input else {
             return;
         };
@@ -251,6 +669,29 @@ impl SearchOverlay {
             return;
         };
         let replacement = replace_input.read(cx).value().to_string();
+        if self.target == SearchTarget::Editor && self.scope == SearchScope::Project {
+            let query = self
+                .workspace
+                .read(cx)
+                .project_search_snapshot(cx)
+                .and_then(|snapshot| snapshot.query);
+            let Some(query) = query else {
+                return;
+            };
+            let Some(buffer) = self.multi_buffer_view.clone() else {
+                return;
+            };
+            match buffer.update(cx, |buffer, cx| {
+                buffer.replace_project_search_all(&query, &replacement, cx)
+            }) {
+                Ok(_) => {
+                    self.multi_buffer_error = None;
+                }
+                Err(error) => self.multi_buffer_error = Some(error.to_string()),
+            }
+            cx.notify();
+            return;
+        }
         match self
             .workspace
             .update(cx, |w, cx| w.search_replace_all(&replacement, cx))
@@ -290,6 +731,8 @@ impl Focusable for SearchOverlay {
 
 impl ModalView for SearchOverlay {
     fn on_dismiss(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let query = self.input.read(cx).value().to_string();
+        remember_query(&query);
         self.workspace.update(cx, |w, cx| w.search_end(cx));
     }
 
@@ -302,12 +745,20 @@ impl ModalView for SearchOverlay {
 
 impl Render for SearchOverlay {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.show_multi_buffer {
+            self.ensure_multi_buffer_view(window, cx);
+        }
         let theme = self.theme.read(cx);
         let palette = Palette::from_theme(theme);
         let unavailable = self.target == SearchTarget::Unavailable;
         let editor = self.target == SearchTarget::Editor;
         let project_snapshot = (editor && self.scope == SearchScope::Project)
             .then(|| self.workspace.read(cx).project_search_snapshot(cx))
+            .flatten();
+        let selection_scoped =
+            editor && self.workspace.read(cx).search_selection_scope(cx).is_some();
+        let buffer_count = (editor && self.scope == SearchScope::CurrentFile)
+            .then(|| self.workspace.read(cx).buffer_search_count(cx))
             .flatten();
         let project_error = project_snapshot.as_ref().and_then(|snapshot| {
             if let ProjectSearchStatus::Error(message) = &snapshot.status {
@@ -322,16 +773,32 @@ impl Render for SearchOverlay {
                 snapshot.hits.len(),
             )
         });
-        let count = project_count.unwrap_or(self.count);
+        let count = project_count.or(buffer_count).unwrap_or(self.count);
         let has_error = self.error.is_some() || project_error.is_some();
         let has_matches = count.1 > 0 && !has_error;
-        let can_replace = replacement_actions_enabled(
+        let can_replace_file = replacement_actions_enabled(
             self.target,
             self.scope,
             has_matches,
             has_error,
             self.workspace.read(cx).search_can_replace(cx),
         );
+        let can_replace_project = project_snapshot.as_ref().is_some_and(|snapshot| {
+            snapshot.status == ProjectSearchStatus::Ready
+                && !snapshot.truncated
+                && !snapshot.hits.is_empty()
+                && !matches!(&snapshot.replacement_status, ProjectReplaceStatus::Applying)
+                && !has_error
+                && self
+                    .multi_buffer_view
+                    .as_ref()
+                    .is_some_and(|view| view.read(cx).can_replace_all())
+        });
+        let can_replace_one = can_replace_file;
+        let can_replace_all = match self.scope {
+            SearchScope::CurrentFile => can_replace_file,
+            SearchScope::Project => can_replace_project,
+        };
         let (cur, total) = count;
         let count_label = if has_error {
             "Invalid pattern".to_string()
@@ -353,55 +820,149 @@ impl Render for SearchOverlay {
         let project_loading = project_snapshot
             .as_ref()
             .is_some_and(|snapshot| snapshot.status == ProjectSearchStatus::Loading);
+        let project_query_pending = editor
+            && self.scope == SearchScope::Project
+            && !self.search_on_type
+            && !self.project_query_confirmed
+            && !self.input.read(cx).value().is_empty();
         let project_truncated = project_snapshot
             .as_ref()
             .is_some_and(|snapshot| snapshot.truncated);
+        let project_replace_message = project_snapshot.as_ref().and_then(|snapshot| {
+            match &snapshot.replacement_status {
+                ProjectReplaceStatus::Idle => None,
+                ProjectReplaceStatus::Applying => Some("Replacing open files…".to_string()),
+                ProjectReplaceStatus::Complete {
+                    files_changed: 0, ..
+                } => Some("No matching open files to replace; closed files were unchanged.".to_string()),
+                ProjectReplaceStatus::Complete {
+                    files_changed,
+                    replacements,
+                } => Some(format!(
+                    "Updated {replacements} matches in {files_changed} open files. Changes are unsaved and undoable; closed files were unchanged."
+                )),
+                ProjectReplaceStatus::Error(message) => Some(message.clone()),
+            }
+        });
         let project_rows = project_snapshot.as_ref().map(|snapshot| {
-            snapshot
-                .hits
-                .iter()
-                .enumerate()
-                .map(|(index, hit)| {
-                    let label = format!("{}:{}", hit.relative_path, hit.line);
-                    let detail = hit.text.clone();
-                    ListItem::new(
-                        ("project-search-result", index),
-                        palette.fg,
-                        palette.muted,
-                        palette.selected_fill,
-                    )
-                    .selected(snapshot.selected == Some(index))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        let _ = this.workspace.update(cx, |workspace, cx| {
-                            workspace.project_search_move(
-                                index as isize
-                                    - workspace
-                                        .project_search_snapshot(cx)
-                                        .and_then(|s| s.selected)
-                                        .unwrap_or(0)
-                                        as isize,
-                                cx,
-                            )
-                        });
-                    }))
-                    .child(
-                        div().flex().flex_col().child(label).child(
+            let mut rows = Vec::new();
+            for (path, indices) in grouped_project_hit_indices(&snapshot.hits) {
+                let collapsed = self.collapsed_project_files.contains(&path);
+                let toggle_path = path.clone();
+                rows.push(
+                    div()
+                        .id(SharedString::from(format!("project-search-file-{path}")))
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .px_1()
+                        .py_1()
+                        .cursor_pointer()
+                        .hover(|style| style.bg(palette.accent))
+                        .child(if collapsed { "▸" } else { "▾" })
+                        .child(div().flex_1().text_xs().text_color(palette.fg).child(path))
+                        .child(
                             div()
                                 .text_xs()
                                 .text_color(palette.muted)
-                                .overflow_hidden()
-                                .child(detail),
-                        ),
-                    )
-                    .into_any_element()
-                })
-                .collect::<Vec<_>>()
+                                .child(format!("{}", indices.len())),
+                        )
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                            this.toggle_project_file(toggle_path.clone(), cx)
+                        }))
+                        .into_any_element(),
+                );
+                if collapsed {
+                    continue;
+                }
+                for index in indices {
+                    let hit = &snapshot.hits[index];
+                    let label = format!("{}:{}", hit.relative_path, hit.line);
+                    let detail = hit.text.clone();
+                    rows.push(
+                        ListItem::new(
+                            ("project-search-result", index),
+                            palette.fg,
+                            palette.muted,
+                            palette.selected_fill,
+                        )
+                        .selected(snapshot.selected == Some(index))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                            let _ = this.workspace.update(cx, |workspace, cx| {
+                                workspace.project_search_move(
+                                    index as isize
+                                        - workspace
+                                            .project_search_snapshot(cx)
+                                            .and_then(|s| s.selected)
+                                            .unwrap_or(0)
+                                            as isize,
+                                    cx,
+                                )
+                            });
+                        }))
+                        .child(
+                            div().flex().flex_col().child(label).child(
+                                div()
+                                    .text_xs()
+                                    .text_color(palette.muted)
+                                    .overflow_hidden()
+                                    .child(detail),
+                            ),
+                        )
+                        .into_any_element(),
+                    );
+                }
+            }
+            rows
         });
+        let can_open_multi_buffer = project_snapshot.as_ref().is_some_and(|snapshot| {
+            snapshot.status == ProjectSearchStatus::Ready
+                && !snapshot.hits.is_empty()
+                && self.multi_buffer_view.is_none()
+                && self.multi_buffer_model.is_none()
+        });
+        let multi_buffer_view = self.multi_buffer_view.clone();
         let replace_input = self.replace_input.clone();
+        let include_glob_input = self.include_glob_input.clone();
+        let exclude_glob_input = self.exclude_glob_input.clone();
         let search_focused = self.input.read(cx).focus_handle(cx).is_focused(window);
         let replace_focused = replace_input
             .as_ref()
             .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
+        let include_glob_focused = include_glob_input
+            .as_ref()
+            .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
+        let exclude_glob_focused = exclude_glob_input
+            .as_ref()
+            .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
+        let include_glob_field = include_glob_input
+            .as_ref()
+            .map(|input| {
+                search_field(
+                    "search-include-globs",
+                    palette,
+                    include_glob_focused,
+                    search_input(input, palette),
+                    None,
+                )
+                .w(px(260.0))
+                .into_any_element()
+            })
+            .unwrap_or_else(|| div().into_any_element());
+        let exclude_glob_field = exclude_glob_input
+            .as_ref()
+            .map(|input| {
+                search_field(
+                    "search-exclude-globs",
+                    palette,
+                    exclude_glob_focused,
+                    search_input(input, palette),
+                    None,
+                )
+                .w(px(260.0))
+                .into_any_element()
+            })
+            .unwrap_or_else(|| div().into_any_element());
         let previous_button = if has_matches {
             button(
                 "search-prev",
@@ -446,7 +1007,7 @@ impl Render for SearchOverlay {
             )
             .child("↓")
         };
-        let replace_one_button = if can_replace {
+        let replace_one_button = if can_replace_one {
             button(
                 "search-replace-one",
                 palette,
@@ -468,16 +1029,21 @@ impl Render for SearchOverlay {
             )
             .child("Replace")
         };
-        let replace_all_button = if can_replace {
+        let replace_all_button = if can_replace_all {
             button(
                 "search-replace-all",
                 palette,
                 ButtonVariant::OutlinedGhost,
                 ButtonSize::Xs,
             )
-            .child("All")
+            .child(if self.scope == SearchScope::Project {
+                "Replace all"
+            } else {
+                "All"
+            })
             .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                if this.count.1 > 0 && this.error.is_none() {
+                let has_actionable_matches = this.scope == SearchScope::Project || this.count.1 > 0;
+                if has_actionable_matches && this.error.is_none() {
                     this.replace_all(cx)
                 }
             }))
@@ -488,7 +1054,55 @@ impl Render for SearchOverlay {
                 ButtonVariant::OutlinedGhost,
                 ButtonSize::Xs,
             )
-            .child("All")
+            .child(if self.scope == SearchScope::Project {
+                "Replace all"
+            } else {
+                "All"
+            })
+        };
+        let multi_buffer_button = if self.multi_buffer_loading {
+            button_disabled(
+                "project-search-multibuffer",
+                palette,
+                ButtonVariant::Subtle,
+                ButtonSize::Xs,
+            )
+            .child("Loading excerpts…")
+        } else if self.multi_buffer_view.is_some() || self.multi_buffer_model.is_some() {
+            button(
+                "project-search-multibuffer",
+                palette,
+                ButtonVariant::Subtle,
+                ButtonSize::Xs,
+            )
+            .child(if self.show_multi_buffer {
+                "Hide Multi-Buffer"
+            } else {
+                "Show Multi-Buffer"
+            })
+            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                this.show_multi_buffer = !this.show_multi_buffer;
+                cx.notify();
+            }))
+        } else if can_open_multi_buffer {
+            button(
+                "project-search-multibuffer",
+                palette,
+                ButtonVariant::Subtle,
+                ButtonSize::Xs,
+            )
+            .child("Open Multi-Buffer")
+            .on_click(
+                cx.listener(|this, _: &ClickEvent, _window, cx| this.open_project_multi_buffer(cx)),
+            )
+        } else {
+            button_disabled(
+                "project-search-multibuffer",
+                palette,
+                ButtonVariant::Subtle,
+                ButtonSize::Xs,
+            )
+            .child("Open Multi-Buffer")
         };
         div()
             .id("search-overlay")
@@ -581,52 +1195,144 @@ impl Render for SearchOverlay {
                                     },
                                 )),
                             )
-                            .when(self.scope == SearchScope::CurrentFile, |d| {
+                            .when(self.scope == SearchScope::Project, |d| {
                                 d.child(
                                     button(
-                                        "search-regex",
+                                        "search-include-ignored",
                                         palette,
                                         ButtonVariant::Subtle,
                                         ButtonSize::Xs,
                                     )
-                                    .child(".*")
-                                    .when(self.options.regex, |d| {
+                                    .child("Ignored")
+                                    .when(self.include_ignored, |d| {
                                         d.bg(palette.selected_fill)
                                             .text_color(palette.selected_accent)
                                     })
                                     .on_click(cx.listener(
                                         |this, _: &ClickEvent, _w, cx| {
-                                            this.toggle_option(
-                                                |options| options.regex = !options.regex,
-                                                cx,
-                                            )
+                                            this.toggle_include_ignored(cx)
                                         },
                                     )),
                                 )
-                            })
-                            .when(self.scope == SearchScope::CurrentFile, |d| {
-                                d.child(
+                                .child(
                                     button(
-                                        "search-word",
+                                        "search-only-open-files",
                                         palette,
                                         ButtonVariant::Subtle,
                                         ButtonSize::Xs,
                                     )
-                                    .child("Word")
-                                    .when(self.options.whole_word, |d| {
+                                    .child("Open files")
+                                    .when(self.only_open_files, |d| {
                                         d.bg(palette.selected_fill)
                                             .text_color(palette.selected_accent)
                                     })
                                     .on_click(cx.listener(
                                         |this, _: &ClickEvent, _w, cx| {
-                                            this.toggle_option(
-                                                |options| options.whole_word = !options.whole_word,
-                                                cx,
-                                            )
+                                            this.toggle_only_open_files(cx)
                                         },
                                     )),
                                 )
+                                .child(
+                                    button(
+                                        "search-path-filters-toggle",
+                                        palette,
+                                        ButtonVariant::Subtle,
+                                        ButtonSize::Xs,
+                                    )
+                                    .child("Filters")
+                                    .when(self.show_path_filters, |d| {
+                                        d.bg(palette.selected_fill)
+                                            .text_color(palette.selected_accent)
+                                    })
+                                    .on_click(cx.listener(
+                                        |this, _: &ClickEvent, _w, cx| this.toggle_path_filters(cx),
+                                    )),
+                                )
                             })
+                            .when(
+                                self.scope == SearchScope::CurrentFile
+                                    && self.selection_range.is_some(),
+                                |d| {
+                                    d.child(
+                                        button(
+                                            "search-selection-scope",
+                                            palette,
+                                            ButtonVariant::Subtle,
+                                            ButtonSize::Xs,
+                                        )
+                                        .child("Selection")
+                                        .when(selection_scoped, |d| {
+                                            d.bg(palette.selected_fill)
+                                                .text_color(palette.selected_accent)
+                                        })
+                                        .on_click(
+                                            cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                                this.toggle_selection_scope(cx)
+                                            }),
+                                        ),
+                                    )
+                                },
+                            )
+                            .when(
+                                matches!(
+                                    self.scope,
+                                    SearchScope::CurrentFile | SearchScope::Project
+                                ),
+                                |d| {
+                                    d.child(
+                                        button(
+                                            "search-regex",
+                                            palette,
+                                            ButtonVariant::Subtle,
+                                            ButtonSize::Xs,
+                                        )
+                                        .child(".*")
+                                        .when(self.options.regex, |d| {
+                                            d.bg(palette.selected_fill)
+                                                .text_color(palette.selected_accent)
+                                        })
+                                        .on_click(
+                                            cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                                this.toggle_option(
+                                                    |options| options.regex = !options.regex,
+                                                    cx,
+                                                )
+                                            }),
+                                        ),
+                                    )
+                                },
+                            )
+                            .when(
+                                matches!(
+                                    self.scope,
+                                    SearchScope::CurrentFile | SearchScope::Project
+                                ),
+                                |d| {
+                                    d.child(
+                                        button(
+                                            "search-word",
+                                            palette,
+                                            ButtonVariant::Subtle,
+                                            ButtonSize::Xs,
+                                        )
+                                        .child("Word")
+                                        .when(self.options.whole_word, |d| {
+                                            d.bg(palette.selected_fill)
+                                                .text_color(palette.selected_accent)
+                                        })
+                                        .on_click(
+                                            cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                                this.toggle_option(
+                                                    |options| {
+                                                        options.whole_word = !options.whole_word
+                                                    },
+                                                    cx,
+                                                )
+                                            }),
+                                        ),
+                                    )
+                                },
+                            )
                             .when(self.scope == SearchScope::CurrentFile, |d| {
                                 d.child(
                                     button(
@@ -722,7 +1428,50 @@ impl Render for SearchOverlay {
                 )
             })
             .when(self.scope == SearchScope::Project, |d| {
-                d.child(
+                d.when(self.show_path_filters, |d| {
+                    d.child(
+                        div()
+                            .flex()
+                            .gap_1()
+                            .child(include_glob_field)
+                            .child(exclude_glob_field),
+                    )
+                })
+                .child(
+                    div()
+                        .flex()
+                        .gap_1()
+                        .child(
+                            button(
+                                "project-search-collapse-all",
+                                palette,
+                                ButtonVariant::Subtle,
+                                ButtonSize::Xs,
+                            )
+                            .child("Collapse all")
+                            .on_click(cx.listener(
+                                |this, _: &ClickEvent, _window, cx| {
+                                    this.collapse_all_project_files(cx)
+                                },
+                            )),
+                        )
+                        .child(
+                            button(
+                                "project-search-expand-all",
+                                palette,
+                                ButtonVariant::Subtle,
+                                ButtonSize::Xs,
+                            )
+                            .child("Expand all")
+                            .on_click(cx.listener(
+                                |this, _: &ClickEvent, _window, cx| {
+                                    this.expand_all_project_files(cx)
+                                },
+                            )),
+                        )
+                        .child(multi_buffer_button),
+                )
+                .child(
                     div()
                         .id("project-search-results")
                         .max_h(px(260.0))
@@ -735,22 +1484,71 @@ impl Render for SearchOverlay {
                                     .child("Searching project…"),
                             )
                         })
-                        .when(!project_loading && total == 0 && error.is_none(), |d| {
+                        .when(project_query_pending, |d| {
                             d.child(
                                 div()
                                     .text_xs()
                                     .text_color(palette.muted)
-                                    .child("No project results"),
+                                    .child("Press Enter to search"),
                             )
                         })
+                        .when(
+                            !project_query_pending
+                                && !project_loading
+                                && total == 0
+                                && error.is_none(),
+                            |d| {
+                                d.child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(palette.muted)
+                                        .child("No project results"),
+                                )
+                            },
+                        )
                         .when_some(project_rows, |d, rows| d.children(rows)),
                 )
+                .when(self.multi_buffer_loading, |d| {
+                    d.child(
+                        div()
+                            .text_xs()
+                            .text_color(palette.muted)
+                            .child("Loading source files into Multi-Buffer…"),
+                    )
+                })
+                .when_some(self.multi_buffer_error.clone(), |d, error| {
+                    d.child(div().text_xs().text_color(palette.error).child(error))
+                })
+                .when(self.show_multi_buffer, |d| {
+                    d.when_some(multi_buffer_view, |d, view| {
+                        d.child(view.into_any_element())
+                    })
+                })
                 .when(project_truncated, |d| {
                     d.child(
                         div()
                             .text_xs()
                             .text_color(palette.muted)
                             .child("Results truncated; refine the query."),
+                    )
+                })
+                .when_some(project_replace_message, |d, message| {
+                    d.child(
+                        div()
+                            .text_xs()
+                            .text_color(
+                                if matches!(
+                                    project_snapshot
+                                        .as_ref()
+                                        .map(|snapshot| &snapshot.replacement_status),
+                                    Some(ProjectReplaceStatus::Error(_))
+                                ) {
+                                    palette.error
+                                } else {
+                                    palette.muted
+                                },
+                            )
+                            .child(message),
                     )
                 })
             })
@@ -773,30 +1571,58 @@ impl Render for SearchOverlay {
                 .on_click(cx.listener(|_this, _: &ClickEvent, _w, cx| cx.emit(DismissEvent))),
             )
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                let query_focused = this.input.read(cx).focus_handle(cx).is_focused(window);
+                let include_focused = this
+                    .include_glob_input
+                    .as_ref()
+                    .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
+                let exclude_focused = this
+                    .exclude_glob_input
+                    .as_ref()
+                    .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
+                let replace_focused = this
+                    .replace_input
+                    .as_ref()
+                    .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
+                let multi_buffer_focused = this
+                    .multi_buffer_view
+                    .as_ref()
+                    .is_some_and(|view| view.read(cx).has_focused_input(window, cx));
+                let search_query_focused = query_focused || include_focused || exclude_focused;
+                let search_controls_focused =
+                    search_query_focused || replace_focused || multi_buffer_focused;
                 if ev.keystroke.key == "escape" {
                     cx.emit(DismissEvent);
+                    cx.stop_propagation();
+                } else if query_focused && ev.keystroke.key == "up" {
+                    this.navigate_query_history(true, window, cx);
+                    cx.stop_propagation();
+                } else if query_focused && ev.keystroke.key == "down" {
+                    this.navigate_query_history(false, window, cx);
                     cx.stop_propagation();
                 } else if this.scope == SearchScope::Project
                     && this.target == SearchTarget::Editor
                     && ev.keystroke.key == "up"
+                    && !search_controls_focused
                 {
-                    let _ = this
-                        .workspace
-                        .update(cx, |workspace, cx| workspace.project_search_move(-1, cx));
+                    this.move_project_search(-1, cx);
                     cx.stop_propagation();
                 } else if this.scope == SearchScope::Project
                     && this.target == SearchTarget::Editor
                     && ev.keystroke.key == "down"
+                    && !search_controls_focused
                 {
-                    let _ = this
-                        .workspace
-                        .update(cx, |workspace, cx| workspace.project_search_move(1, cx));
+                    this.move_project_search(1, cx);
                     cx.stop_propagation();
                 } else if this.scope == SearchScope::Project
                     && this.target == SearchTarget::Editor
                     && ev.keystroke.key == "enter"
                 {
-                    this.open_selected_project_result(window, cx);
+                    if search_query_focused && !this.search_on_type {
+                        this.confirm_project_search(cx);
+                    } else if !search_controls_focused {
+                        this.open_selected_project_result(window, cx);
+                    }
                     cx.stop_propagation();
                 } else if ev.keystroke.key == "enter" && ev.keystroke.modifiers.platform {
                     if ev.keystroke.modifiers.shift {
@@ -827,6 +1653,53 @@ mod tests {
         assert_eq!(
             next_case_mode(SearchCaseMode::Insensitive),
             SearchCaseMode::Smart
+        );
+    }
+
+    #[test]
+    fn query_history_navigation_keeps_the_draft_and_clamps_at_oldest_entry() {
+        let mut history = SearchQueryHistory::new(vec!["alpha".into(), "beta".into()]);
+
+        assert_eq!(history.previous("draft"), Some("beta".into()));
+        assert_eq!(history.previous("beta"), Some("alpha".into()));
+        assert_eq!(history.previous("alpha"), Some("alpha".into()));
+        assert_eq!(history.next(), Some("beta".into()));
+        assert_eq!(history.next(), Some("draft".into()));
+        assert_eq!(history.next(), None);
+    }
+
+    #[test]
+    fn query_history_distinguishes_programmatic_updates_from_user_edits() {
+        let mut history = SearchQueryHistory::new(vec!["saved".into()]);
+        history.programmatic_value = Some("saved".into());
+
+        assert!(history.consume_programmatic_value("saved"));
+        assert!(!history.consume_programmatic_value("edited"));
+    }
+
+    #[test]
+    fn path_glob_fields_accept_comma_or_line_separated_patterns() {
+        assert_eq!(
+            parse_path_globs(" src/**/*.rs, *.toml\n  Cargo.lock  \n\n"),
+            ["src/**/*.rs", "*.toml", "Cargo.lock"]
+        );
+        assert!(parse_path_globs(" , \n  ").is_empty());
+    }
+
+    #[test]
+    fn project_hits_group_by_relative_path_without_losing_flat_selection_indices() {
+        let hits = [
+            ProjectSearchHit::with_relative_path("/root/z.rs", "src/z.rs", 2, "hit", 0, 3),
+            ProjectSearchHit::with_relative_path("/root/a.rs", "src/a.rs", 4, "hit", 0, 3),
+            ProjectSearchHit::with_relative_path("/root/z.rs", "src/z.rs", 8, "hit", 0, 3),
+        ];
+
+        assert_eq!(
+            grouped_project_hit_indices(&hits),
+            vec![
+                ("src/a.rs".to_string(), vec![1]),
+                ("src/z.rs".to_string(), vec![0, 2]),
+            ]
         );
     }
 

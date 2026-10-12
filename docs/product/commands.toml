@@ -209,6 +209,7 @@ ids = [
   "EditorCloseOtherGroups", "EditorTriggerCompletion", "EditorGoToDefinition",
   "EditorGoToDeclaration", "EditorGoToReferences", "EditorGoToImplementation",
   "EditorPeekDefinition", "EditorRenameSymbol", "EditorCodeAction",
+  "EditorOpenMarkdownPreview",
   "EditorFormatDocument", "EditorFormatSelection", "EditorOrganizeImports",
   "EditorRestartLanguageServer", "EditorStopLanguageServer", "EditorShowDiagnostics",
   "EditorNextDiagnostic", "EditorPreviousDiagnostic",

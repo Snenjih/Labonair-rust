@@ -21,9 +21,11 @@ use tokio::time;
 
 use crate::buffer::{BufferSnapshot, Edit};
 use crate::language_services::{
-    CancellationToken, CodeAction, CompletionItem, CompletionKind, CompletionList, Diagnostic,
-    DiagnosticSeverity, DocumentVersion, FoldingRange, HoverContent, LanguageId, LanguageServerId,
-    LanguageServiceCapabilities, LanguageServiceEditCapabilities, LanguageServiceEditRequest,
+    CallHierarchyCall, CallHierarchyItem, CancellationToken, CodeAction, CodeLens, CompletionItem,
+    CompletionKind, CompletionList, CompletionTextFormat, Diagnostic, DiagnosticSeverity,
+    DocumentColor, DocumentColorValue, DocumentLink, DocumentVersion, FoldingRange, HoverContent,
+    InlayHint, InlayHintKind, LanguageId, LanguageServerId, LanguageServiceCapabilities,
+    LanguageServiceCommand, LanguageServiceEditCapabilities, LanguageServiceEditRequest,
     LanguageServiceEditResponse, LanguageServiceError, LanguageServiceRequest,
     LanguageServiceResponse, LanguageServiceResult, LspPosition, LspRange, NavigationTarget,
     SemanticToken, SignatureHelp,
@@ -345,6 +347,7 @@ struct DocumentState {
     generation: u64,
     text: String,
     diagnostics: Vec<Diagnostic>,
+    diagnostic_result_id: Option<String>,
 }
 
 struct ProcessState {
@@ -356,6 +359,7 @@ struct ProcessState {
     pending: HashMap<u64, PendingRequest>,
     capabilities: LanguageServiceCapabilities,
     edit_capabilities: LanguageServiceEditCapabilities,
+    pull_diagnostics: bool,
     semantic_token_types: Vec<String>,
     documents: HashMap<String, DocumentState>,
     stopping: bool,
@@ -396,15 +400,28 @@ impl LocalLanguageServiceProcess {
                         signature_help: false,
                         hover: false,
                         definition: false,
+                        declaration: false,
+                        implementation: false,
+                        type_definition: false,
                         references: false,
+                        call_hierarchy: false,
+                        code_lens: false,
+                        code_lens_resolve: false,
+                        execute_command: false,
+                        document_links: false,
+                        document_link_resolve: false,
                         rename: false,
                         code_actions: false,
                         semantic_tokens: false,
+                        inlay_hints: false,
+                        document_colors: false,
                         document_symbols: false,
+                        workspace_symbols: false,
                         folding_ranges: false,
                         formatting: false,
                     },
                     edit_capabilities: LanguageServiceEditCapabilities::NONE,
+                    pull_diagnostics: false,
                     semantic_token_types: Vec::new(),
                     documents: HashMap::new(),
                     stopping: false,
@@ -482,6 +499,7 @@ impl LocalLanguageServiceProcess {
                     generation,
                     text: text.clone(),
                     diagnostics: Vec::new(),
+                    diagnostic_result_id: None,
                 },
             );
         }
@@ -509,6 +527,7 @@ impl LocalLanguageServiceProcess {
     ) -> Result<(), LanguageServiceError> {
         {
             let mut state = self.inner.state.lock().await;
+            let pull_diagnostics = state.pull_diagnostics;
             let document = state.documents.get_mut(uri).ok_or_else(|| {
                 LanguageServiceError::ProviderFailed("document was not opened".into())
             })?;
@@ -521,7 +540,10 @@ impl LocalLanguageServiceProcess {
             document.version = version;
             document.generation = generation;
             document.text = text.clone();
-            document.diagnostics.clear();
+            if !pull_diagnostics {
+                document.diagnostics.clear();
+                document.diagnostic_result_id = None;
+            }
         }
         self.send_notification(
             "textDocument/didChange",
@@ -592,23 +614,35 @@ impl LocalLanguageServiceProcess {
                 Err(LanguageServiceError::Cancelled),
             );
         }
-        if matches!(input.request, LanguageServiceRequest::Diagnostics) {
-            let diagnostics = self
-                .inner
-                .state
-                .lock()
-                .await
-                .documents
-                .get(&input.uri)
-                .map(|document| document.diagnostics.clone())
-                .unwrap_or_default();
+        let (pull_diagnostics, cached_diagnostics, previous_diagnostic_result_id) = {
+            let state = self.inner.state.lock().await;
+            let document = state.documents.get(&input.uri);
+            (
+                state.pull_diagnostics,
+                document
+                    .map(|document| document.diagnostics.clone())
+                    .unwrap_or_default(),
+                document.and_then(|document| document.diagnostic_result_id.clone()),
+            )
+        };
+        if matches!(input.request, LanguageServiceRequest::Diagnostics) && !pull_diagnostics {
             return self.result(
                 input.version,
                 input.generation,
-                Ok(LanguageServiceResponse::Diagnostics(diagnostics)),
+                Ok(LanguageServiceResponse::Diagnostics(cached_diagnostics)),
             );
         }
-        let (method, params) = request_parts(&input.uri, &input.request);
+        let (method, params) = if matches!(input.request, LanguageServiceRequest::Diagnostics) {
+            (
+                "textDocument/diagnostic",
+                json!({
+                    "textDocument": { "uri": input.uri },
+                    "previousResultId": previous_diagnostic_result_id,
+                }),
+            )
+        } else {
+            request_parts(&input.uri, &input.request)
+        };
         let response = match self
             .request_value(
                 method,
@@ -633,8 +667,14 @@ impl LocalLanguageServiceProcess {
                         received: input.version,
                     })
                 } else {
-                    self.convert_response(&input.uri, &input.snapshot, &input.request, value)
-                        .await
+                    self.convert_response(
+                        &input.uri,
+                        &input.snapshot,
+                        &input.request,
+                        value,
+                        &input.cancellation,
+                    )
+                    .await
                 }
             }
             Err(error) => Err(error),
@@ -758,15 +798,28 @@ impl LocalLanguageServiceProcess {
                 signature_help: false,
                 hover: false,
                 definition: false,
+                declaration: false,
+                implementation: false,
+                type_definition: false,
                 references: false,
+                call_hierarchy: false,
+                code_lens: false,
+                code_lens_resolve: false,
+                execute_command: false,
+                document_links: false,
+                document_link_resolve: false,
                 rename: false,
                 code_actions: false,
                 semantic_tokens: false,
+                inlay_hints: false,
+                document_colors: false,
                 document_symbols: false,
+                workspace_symbols: false,
                 folding_ranges: false,
                 formatting: false,
             };
             state.edit_capabilities = LanguageServiceEditCapabilities::NONE;
+            state.pull_diagnostics = false;
             state.semantic_token_types.clear();
             state.stopping = false;
             stop_rx
@@ -795,6 +848,15 @@ impl LocalLanguageServiceProcess {
                         "textDocument": {
                             "completion": { "completionItem": { "snippetSupport": true } },
                             "hover": {},
+                            "declaration": { "dynamicRegistration": false },
+                            "implementation": { "dynamicRegistration": false },
+                            "callHierarchy": { "dynamicRegistration": false },
+                            "codeLens": { "dynamicRegistration": false },
+                            "documentLink": { "dynamicRegistration": false },
+                            "diagnostic": {
+                                "dynamicRegistration": false,
+                                "relatedDocumentSupport": false
+                            },
                             "publishDiagnostics": {},
                             "synchronization": { "dynamicRegistration": false },
                         },
@@ -808,10 +870,12 @@ impl LocalLanguageServiceProcess {
             .await?;
         let (capabilities, token_types) = parse_server_capabilities(&initialized);
         let edit_capabilities = parse_server_edit_capabilities(&initialized);
+        let pull_diagnostics = server_supports_pull_diagnostics(&initialized);
         {
             let mut state = self.inner.state.lock().await;
             state.capabilities = capabilities;
             state.edit_capabilities = edit_capabilities;
+            state.pull_diagnostics = pull_diagnostics;
             state.semantic_token_types = token_types;
             state.lifecycle = ProcessLifecycleState::Running;
         }
@@ -1029,6 +1093,7 @@ impl LocalLanguageServiceProcess {
         snapshot: &BufferSnapshot,
         request: &LanguageServiceRequest,
         value: Value,
+        cancellation: &CancellationToken,
     ) -> Result<LanguageServiceResponse, LanguageServiceError> {
         let response = match request {
             LanguageServiceRequest::Completion { .. } => {
@@ -1043,8 +1108,107 @@ impl LocalLanguageServiceProcess {
             LanguageServiceRequest::Definition { .. } => {
                 LanguageServiceResponse::Definition(parse_locations(&value))
             }
+            LanguageServiceRequest::Declaration { .. } => {
+                LanguageServiceResponse::Definition(parse_locations(&value))
+            }
+            LanguageServiceRequest::Implementation { .. } => {
+                LanguageServiceResponse::Definition(parse_locations(&value))
+            }
+            LanguageServiceRequest::TypeDefinition { .. } => {
+                LanguageServiceResponse::TypeDefinition(parse_locations(&value))
+            }
             LanguageServiceRequest::References { .. } => {
                 LanguageServiceResponse::References(parse_locations(&value))
+            }
+            LanguageServiceRequest::WorkspaceSymbols { .. } => {
+                LanguageServiceResponse::WorkspaceSymbols(parse_workspace_symbols(&value))
+            }
+            LanguageServiceRequest::PrepareCallHierarchy { .. } => {
+                LanguageServiceResponse::CallHierarchyItems(parse_call_hierarchy_items(&value))
+            }
+            LanguageServiceRequest::IncomingCalls { .. } => {
+                LanguageServiceResponse::CallHierarchyCalls(parse_call_hierarchy_calls(
+                    &value, "from",
+                ))
+            }
+            LanguageServiceRequest::OutgoingCalls { .. } => {
+                LanguageServiceResponse::CallHierarchyCalls(parse_call_hierarchy_calls(
+                    &value, "to",
+                ))
+            }
+            LanguageServiceRequest::CodeLenses => {
+                let mut lenses = parse_code_lenses(&value);
+                let resolve_supported =
+                    self.inner.state.lock().await.capabilities.code_lens_resolve;
+                if resolve_supported {
+                    for lens in &mut lenses {
+                        if lens.command.is_some() {
+                            continue;
+                        }
+                        if cancellation.is_cancelled() {
+                            return Err(LanguageServiceError::Cancelled);
+                        }
+                        let Ok(resolved) = self
+                            .request_value(
+                                "codeLens/resolve",
+                                code_lens_value(lens),
+                                cancellation,
+                                self.inner.config.timeouts.request,
+                            )
+                            .await
+                        else {
+                            continue;
+                        };
+                        if let Some(resolved_lens) = parse_code_lens(&resolved) {
+                            *lens = resolved_lens;
+                        }
+                    }
+                }
+                LanguageServiceResponse::CodeLenses(lenses)
+            }
+            LanguageServiceRequest::ResolveCodeLens { .. } => {
+                LanguageServiceResponse::CodeLens(parse_code_lens(&value))
+            }
+            LanguageServiceRequest::ExecuteCommand { .. } => {
+                LanguageServiceResponse::CommandResult((!value.is_null()).then_some(value))
+            }
+            LanguageServiceRequest::DocumentLinks => {
+                let mut links = parse_document_links(&value);
+                let resolve_supported = self
+                    .inner
+                    .state
+                    .lock()
+                    .await
+                    .capabilities
+                    .document_link_resolve;
+                if resolve_supported {
+                    for link in &mut links {
+                        if link.target.is_some() {
+                            continue;
+                        }
+                        if cancellation.is_cancelled() {
+                            return Err(LanguageServiceError::Cancelled);
+                        }
+                        let Ok(resolved) = self
+                            .request_value(
+                                "documentLink/resolve",
+                                document_link_value(link),
+                                cancellation,
+                                self.inner.config.timeouts.request,
+                            )
+                            .await
+                        else {
+                            continue;
+                        };
+                        if let Some(resolved_link) = parse_document_link(&resolved) {
+                            *link = resolved_link;
+                        }
+                    }
+                }
+                LanguageServiceResponse::DocumentLinks(links)
+            }
+            LanguageServiceRequest::ResolveDocumentLink { .. } => {
+                LanguageServiceResponse::DocumentLink(parse_document_link(&value))
             }
             LanguageServiceRequest::Rename { .. } => {
                 LanguageServiceResponse::Rename(parse_workspace_edits(uri, snapshot, &value))
@@ -1058,6 +1222,12 @@ impl LocalLanguageServiceProcess {
                     snapshot, &value, &types,
                 ))
             }
+            LanguageServiceRequest::InlayHints { .. } => {
+                LanguageServiceResponse::InlayHints(parse_inlay_hints(snapshot, &value))
+            }
+            LanguageServiceRequest::DocumentColors => {
+                LanguageServiceResponse::DocumentColors(parse_document_colors(snapshot, &value))
+            }
             LanguageServiceRequest::DocumentSymbols => {
                 LanguageServiceResponse::DocumentSymbols(parse_document_symbols(snapshot, &value))
             }
@@ -1067,7 +1237,47 @@ impl LocalLanguageServiceProcess {
             LanguageServiceRequest::Formatting => {
                 LanguageServiceResponse::Formatting(parse_text_edits(uri, snapshot, &value))
             }
-            LanguageServiceRequest::Diagnostics => LanguageServiceResponse::Diagnostics(Vec::new()),
+            LanguageServiceRequest::Diagnostics => {
+                let report_kind = value.get("kind").and_then(Value::as_str);
+                let diagnostics = match report_kind {
+                    Some("unchanged") => {
+                        let mut state = self.inner.state.lock().await;
+                        if let Some(document) = state.documents.get_mut(uri) {
+                            if let Some(result_id) = value
+                                .get("resultId")
+                                .and_then(Value::as_str)
+                                .map(str::to_string)
+                            {
+                                document.diagnostic_result_id = Some(result_id);
+                            }
+                            document.diagnostics.clone()
+                        } else {
+                            Vec::new()
+                        }
+                    }
+                    Some("full") => {
+                        let diagnostics = parse_diagnostics(
+                            &self.inner,
+                            value.get("items").unwrap_or(&Value::Null),
+                        );
+                        let mut state = self.inner.state.lock().await;
+                        if let Some(document) = state.documents.get_mut(uri) {
+                            document.diagnostics = diagnostics.clone();
+                            document.diagnostic_result_id = value
+                                .get("resultId")
+                                .and_then(Value::as_str)
+                                .map(str::to_string);
+                        }
+                        diagnostics
+                    }
+                    _ => {
+                        return Err(LanguageServiceError::ProviderFailed(
+                            "language server returned an invalid diagnostic report".into(),
+                        ));
+                    }
+                };
+                LanguageServiceResponse::Diagnostics(diagnostics)
+            }
         };
         Ok(response)
     }
@@ -1331,16 +1541,43 @@ fn parse_server_capabilities(value: &Value) -> (LanguageServiceCapabilities, Vec
             signature_help: advertised(capabilities.get("signatureHelpProvider")),
             hover: advertised(capabilities.get("hoverProvider")),
             definition: advertised(capabilities.get("definitionProvider")),
+            declaration: advertised(capabilities.get("declarationProvider")),
+            implementation: advertised(capabilities.get("implementationProvider")),
+            type_definition: advertised(capabilities.get("typeDefinitionProvider")),
             references: advertised(capabilities.get("referencesProvider")),
+            call_hierarchy: advertised(capabilities.get("callHierarchyProvider")),
+            code_lens: advertised(capabilities.get("codeLensProvider")),
+            code_lens_resolve: capabilities
+                .get("codeLensProvider")
+                .and_then(|provider| provider.get("resolveProvider"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            execute_command: advertised(capabilities.get("executeCommandProvider")),
+            document_links: advertised(capabilities.get("documentLinkProvider")),
+            document_link_resolve: capabilities
+                .get("documentLinkProvider")
+                .and_then(|provider| provider.get("resolveProvider"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
             rename: advertised(capabilities.get("renameProvider")),
             code_actions: advertised(capabilities.get("codeActionProvider")),
             semantic_tokens: semantic.is_some_and(|value| !value.is_null()),
+            inlay_hints: advertised(capabilities.get("inlayHintProvider")),
+            document_colors: advertised(capabilities.get("colorProvider")),
             document_symbols: advertised(capabilities.get("documentSymbolProvider")),
+            workspace_symbols: advertised(capabilities.get("workspaceSymbolProvider")),
             folding_ranges: advertised(capabilities.get("foldingRangeProvider")),
             formatting: advertised(capabilities.get("documentFormattingProvider")),
         },
         token_types,
     )
+}
+
+fn server_supports_pull_diagnostics(value: &Value) -> bool {
+    value
+        .get("capabilities")
+        .and_then(|capabilities| capabilities.get("diagnosticProvider"))
+        .is_some_and(|provider| provider.is_object() && !provider.is_null())
 }
 
 fn parse_server_edit_capabilities(value: &Value) -> LanguageServiceEditCapabilities {
@@ -1389,10 +1626,55 @@ fn request_parts(uri: &str, request: &LanguageServiceRequest) -> (&'static str, 
             "textDocument/definition",
             json!({ "textDocument": text_document, "position": position_value(*position) }),
         ),
+        LanguageServiceRequest::Declaration { position } => (
+            "textDocument/declaration",
+            json!({ "textDocument": text_document, "position": position_value(*position) }),
+        ),
+        LanguageServiceRequest::Implementation { position } => (
+            "textDocument/implementation",
+            json!({ "textDocument": text_document, "position": position_value(*position) }),
+        ),
+        LanguageServiceRequest::TypeDefinition { position } => (
+            "textDocument/typeDefinition",
+            json!({ "textDocument": text_document, "position": position_value(*position) }),
+        ),
         LanguageServiceRequest::References { position } => (
             "textDocument/references",
             json!({ "textDocument": text_document, "position": position_value(*position), "context": { "includeDeclaration": true } }),
         ),
+        LanguageServiceRequest::WorkspaceSymbols { query } => {
+            ("workspace/symbol", json!({ "query": query }))
+        }
+        LanguageServiceRequest::PrepareCallHierarchy { position } => (
+            "textDocument/prepareCallHierarchy",
+            json!({ "textDocument": text_document, "position": position_value(*position) }),
+        ),
+        LanguageServiceRequest::IncomingCalls { item } => (
+            "callHierarchy/incomingCalls",
+            json!({ "item": call_hierarchy_item_value(item) }),
+        ),
+        LanguageServiceRequest::OutgoingCalls { item } => (
+            "callHierarchy/outgoingCalls",
+            json!({ "item": call_hierarchy_item_value(item) }),
+        ),
+        LanguageServiceRequest::CodeLenses => (
+            "textDocument/codeLens",
+            json!({ "textDocument": text_document }),
+        ),
+        LanguageServiceRequest::ResolveCodeLens { lens } => {
+            ("codeLens/resolve", code_lens_value(lens))
+        }
+        LanguageServiceRequest::ExecuteCommand { command, arguments } => (
+            "workspace/executeCommand",
+            json!({ "command": command, "arguments": arguments }),
+        ),
+        LanguageServiceRequest::DocumentLinks => (
+            "textDocument/documentLink",
+            json!({ "textDocument": text_document }),
+        ),
+        LanguageServiceRequest::ResolveDocumentLink { link } => {
+            ("documentLink/resolve", document_link_value(link))
+        }
         LanguageServiceRequest::Rename { position, new_name } => (
             "textDocument/rename",
             json!({ "textDocument": text_document, "position": position_value(*position), "newName": new_name }),
@@ -1403,6 +1685,14 @@ fn request_parts(uri: &str, request: &LanguageServiceRequest) -> (&'static str, 
         ),
         LanguageServiceRequest::SemanticTokens => (
             "textDocument/semanticTokens/full",
+            json!({ "textDocument": text_document }),
+        ),
+        LanguageServiceRequest::InlayHints { range } => (
+            "textDocument/inlayHint",
+            json!({ "textDocument": text_document, "range": range_value(*range) }),
+        ),
+        LanguageServiceRequest::DocumentColors => (
+            "textDocument/documentColor",
             json!({ "textDocument": text_document }),
         ),
         LanguageServiceRequest::DocumentSymbols => (
@@ -1543,9 +1833,9 @@ fn parse_completion(value: &Value) -> CompletionList {
 
 fn parse_completion_item(value: &Value) -> CompletionItem {
     let label = value_string(value.get("label").unwrap_or(&Value::Null));
+    let text_edit = value.get("textEdit");
     CompletionItem {
-        insert_text: value
-            .get("textEdit")
+        insert_text: text_edit
             .and_then(|edit| edit.get("newText"))
             .and_then(Value::as_str)
             .unwrap_or_else(|| {
@@ -1564,11 +1854,20 @@ fn parse_completion_item(value: &Value) -> CompletionItem {
             15 => CompletionKind::Snippet,
             _ => CompletionKind::Text,
         },
+        text_format: match value.get("insertTextFormat").and_then(Value::as_u64) {
+            Some(2) => CompletionTextFormat::Snippet,
+            _ => CompletionTextFormat::PlainText,
+        },
         label,
         detail: value
             .get("detail")
             .and_then(Value::as_str)
             .map(str::to_string),
+        text_edit_range: text_edit.and_then(|edit| {
+            edit.get("replace")
+                .and_then(parse_range)
+                .or_else(|| edit.get("range").and_then(parse_range))
+        }),
         filter_text: value
             .get("filterText")
             .and_then(Value::as_str)
@@ -1630,9 +1929,15 @@ fn parse_locations(value: &Value) -> Vec<NavigationTarget> {
     values
         .iter()
         .filter_map(|item| {
+            let uri = item
+                .get("uri")
+                .or_else(|| item.get("targetUri"))
+                .and_then(Value::as_str)
+                .map(str::to_string)?;
             let range = item
                 .get("range")
                 .and_then(parse_range)
+                .or_else(|| item.get("targetRange").and_then(parse_range))
                 .or_else(|| item.get("targetSelectionRange").and_then(parse_range))?;
             let selection_range = item
                 .get("selectionRange")
@@ -1645,11 +1950,211 @@ fn parse_locations(value: &Value) -> Vec<NavigationTarget> {
                     .and_then(Value::as_str)
                     .unwrap_or("location")
                     .to_string(),
+                uri: Some(uri),
                 range,
                 selection_range,
             })
         })
         .collect()
+}
+
+fn parse_workspace_symbols(value: &Value) -> Vec<NavigationTarget> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let location = item.get("location")?;
+            let uri = location
+                .as_str()
+                .or_else(|| location.get("uri").and_then(Value::as_str))?
+                .to_string();
+            let range = location
+                .get("range")
+                .and_then(parse_range)
+                .or_else(|| item.get("range").and_then(parse_range))
+                .unwrap_or(LspRange {
+                    start: LspPosition {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: LspPosition {
+                        line: 0,
+                        character: 0,
+                    },
+                });
+            let name = item.get("name").and_then(Value::as_str).unwrap_or("symbol");
+            let name = item
+                .get("containerName")
+                .and_then(Value::as_str)
+                .filter(|container| !container.is_empty())
+                .map(|container| format!("{container}::{name}"))
+                .unwrap_or_else(|| name.to_string());
+            Some(NavigationTarget {
+                name,
+                uri: Some(uri),
+                range,
+                selection_range: range,
+            })
+        })
+        .collect()
+}
+
+fn parse_call_hierarchy_items(value: &Value) -> Vec<CallHierarchyItem> {
+    let values = value.as_array().cloned().unwrap_or_else(|| {
+        if value.is_object() {
+            vec![value.clone()]
+        } else {
+            Vec::new()
+        }
+    });
+    values
+        .iter()
+        .filter_map(parse_call_hierarchy_item)
+        .collect()
+}
+
+fn parse_call_hierarchy_calls(value: &Value, item_field: &str) -> Vec<CallHierarchyCall> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|call| {
+            let item = parse_call_hierarchy_item(call.get(item_field)?)?;
+            let ranges = call
+                .get("fromRanges")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(parse_range)
+                .collect();
+            Some(CallHierarchyCall { item, ranges })
+        })
+        .collect()
+}
+
+fn parse_call_hierarchy_item(value: &Value) -> Option<CallHierarchyItem> {
+    Some(CallHierarchyItem {
+        name: value.get("name")?.as_str()?.to_string(),
+        kind: u32::try_from(value.get("kind")?.as_u64()?).ok()?,
+        uri: value.get("uri")?.as_str()?.to_string(),
+        range: parse_range(value.get("range")?)?,
+        selection_range: parse_range(value.get("selectionRange")?)?,
+        detail: value
+            .get("detail")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        tags: value
+            .get("tags")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_u64)
+            .filter_map(|tag| u32::try_from(tag).ok())
+            .collect(),
+        data: value.get("data").filter(|data| !data.is_null()).cloned(),
+    })
+}
+
+fn call_hierarchy_item_value(item: &CallHierarchyItem) -> Value {
+    let mut value = json!({
+        "name": item.name,
+        "kind": item.kind,
+        "uri": item.uri,
+        "range": range_value(item.range),
+        "selectionRange": range_value(item.selection_range),
+    });
+    if let Some(detail) = &item.detail {
+        value["detail"] = json!(detail);
+    }
+    if !item.tags.is_empty() {
+        value["tags"] = json!(item.tags);
+    }
+    if let Some(data) = &item.data {
+        value["data"] = data.clone();
+    }
+    value
+}
+
+fn parse_code_lenses(value: &Value) -> Vec<CodeLens> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(parse_code_lens)
+        .collect()
+}
+
+fn parse_code_lens(value: &Value) -> Option<CodeLens> {
+    let command = value.get("command").and_then(|command| {
+        Some(LanguageServiceCommand {
+            title: command.get("title")?.as_str()?.to_string(),
+            command: command.get("command")?.as_str()?.to_string(),
+            arguments: command
+                .get("arguments")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+        })
+    });
+    Some(CodeLens {
+        range: parse_range(value.get("range")?)?,
+        command,
+        data: value.get("data").filter(|data| !data.is_null()).cloned(),
+    })
+}
+
+fn code_lens_value(lens: &CodeLens) -> Value {
+    let mut value = json!({ "range": range_value(lens.range) });
+    if let Some(command) = &lens.command {
+        value["command"] = json!({
+            "title": command.title,
+            "command": command.command,
+            "arguments": command.arguments,
+        });
+    }
+    if let Some(data) = &lens.data {
+        value["data"] = data.clone();
+    }
+    value
+}
+
+fn parse_document_links(value: &Value) -> Vec<DocumentLink> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(parse_document_link)
+        .collect()
+}
+
+fn parse_document_link(value: &Value) -> Option<DocumentLink> {
+    Some(DocumentLink {
+        range: parse_range(value.get("range")?)?,
+        target: value
+            .get("target")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        tooltip: value
+            .get("tooltip")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        data: value.get("data").filter(|data| !data.is_null()).cloned(),
+    })
+}
+
+fn document_link_value(link: &DocumentLink) -> Value {
+    let mut value = json!({ "range": range_value(link.range) });
+    if let Some(target) = &link.target {
+        value["target"] = json!(target);
+    }
+    if let Some(tooltip) = &link.tooltip {
+        value["tooltip"] = json!(tooltip);
+    }
+    if let Some(data) = &link.data {
+        value["data"] = data.clone();
+    }
+    value
 }
 
 fn parse_workspace_edits(uri: &str, snapshot: &BufferSnapshot, value: &Value) -> Vec<Edit> {
@@ -1790,6 +2295,100 @@ fn parse_semantic_tokens(
         .collect()
 }
 
+fn parse_inlay_hints(snapshot: &BufferSnapshot, value: &Value) -> Vec<InlayHint> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let position = parse_position(item.get("position")?)?;
+            if position.line >= snapshot.line_count()
+                || position.character > snapshot.line(position.line).encode_utf16().count()
+            {
+                return None;
+            }
+            let label_value = item.get("label")?;
+            let label = label_value.as_str().map(str::to_string).or_else(|| {
+                label_value.as_array().map(|parts| {
+                    parts
+                        .iter()
+                        .filter_map(|part| part.get("value").and_then(Value::as_str))
+                        .collect::<String>()
+                })
+            })?;
+            let position_range = LspRange {
+                start: position,
+                end: position,
+            }
+            .to_text_range(snapshot);
+            if position_range.start > snapshot.byte_len() {
+                return None;
+            }
+            let tooltip = item.get("tooltip").and_then(|tooltip| {
+                tooltip.as_str().map(str::to_string).or_else(|| {
+                    tooltip
+                        .get("value")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+            });
+            Some(InlayHint {
+                position,
+                label,
+                kind: match item.get("kind").and_then(Value::as_u64) {
+                    Some(1) => InlayHintKind::Type,
+                    Some(2) => InlayHintKind::Parameter,
+                    _ => InlayHintKind::Other,
+                },
+                tooltip,
+                padding_left: item
+                    .get("paddingLeft")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                padding_right: item
+                    .get("paddingRight")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            })
+        })
+        .collect()
+}
+
+fn parse_document_colors(snapshot: &BufferSnapshot, value: &Value) -> Vec<DocumentColor> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let range = parse_range(item.get("range")?)?;
+            if range.start.line >= snapshot.line_count() || range.end.line >= snapshot.line_count()
+            {
+                return None;
+            }
+            if range.start.character > snapshot.line(range.start.line).encode_utf16().count()
+                || range.end.character > snapshot.line(range.end.line).encode_utf16().count()
+            {
+                return None;
+            }
+
+            let value = item.get("color")?;
+            let component = |name: &str| -> Option<u8> {
+                let value = value.get(name)?.as_f64()?;
+                (value.is_finite() && (0.0..=1.0).contains(&value))
+                    .then(|| (value * 255.0).round() as u8)
+            };
+            let color = DocumentColorValue {
+                red: component("red")?,
+                green: component("green")?,
+                blue: component("blue")?,
+                alpha: component("alpha")?,
+            };
+            let source_range = range.to_text_range(snapshot);
+            (source_range.start < source_range.end).then_some(DocumentColor { range, color })
+        })
+        .collect()
+}
+
 fn semantic_modifiers(mask: u64) -> Vec<String> {
     if mask == 0 {
         Vec::new()
@@ -1896,23 +2495,400 @@ mod tests {
     #[test]
     fn lsp_mapping_covers_common_values() {
         let snap = snapshot("fn main() {}\n");
-        let completion = parse_completion(&json!([{ "label": "main", "kind": 3 }]));
+        let completion = parse_completion(&json!([
+            { "label": "main", "kind": 3 },
+            {
+                "label": "function snippet",
+                "kind": 15,
+                "insertTextFormat": 2,
+                "textEdit": {
+                    "range": {
+                        "start": { "line": 0, "character": 0 },
+                        "end": { "line": 0, "character": 2 }
+                    },
+                    "newText": "fn ${1:name}"
+                }
+            }
+        ]));
         assert_eq!(completion.items[0].kind, CompletionKind::Function);
+        assert_eq!(
+            completion.items[1].text_format,
+            CompletionTextFormat::Snippet
+        );
+        assert_eq!(
+            completion.items[1].text_edit_range,
+            Some(LspRange {
+                start: LspPosition {
+                    line: 0,
+                    character: 0,
+                },
+                end: LspPosition {
+                    line: 0,
+                    character: 2,
+                },
+            })
+        );
+        assert_eq!(completion.items[1].insert_text, "fn ${1:name}");
         let edits = parse_text_edits(
             "file:///x",
             &snap,
             &json!([{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } }, "newText": "pub" }]),
         );
         assert_eq!(edits[0].replacement, "pub");
-        assert_eq!(parse_locations(&json!({ "uri": "file:///x", "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } } }))[0].range.start.line, 0);
+        let locations = parse_locations(&json!([
+            { "uri": "file:///x", "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } } },
+            { "targetUri": "file:///y", "targetRange": { "start": { "line": 3, "character": 0 }, "end": { "line": 3, "character": 5 } }, "targetSelectionRange": { "start": { "line": 3, "character": 1 }, "end": { "line": 3, "character": 4 } } }
+        ]));
+        assert_eq!(locations.len(), 2);
+        assert_eq!(locations[0].uri.as_deref(), Some("file:///x"));
+        assert_eq!(locations[0].range.start.line, 0);
+        assert_eq!(locations[1].uri.as_deref(), Some("file:///y"));
+        assert_eq!(locations[1].range.start.line, 3);
+        assert_eq!(locations[1].selection_range.start.character, 1);
+    }
+
+    #[test]
+    fn type_definition_uses_its_lsp_method_and_position() {
+        let position = LspPosition {
+            line: 2,
+            character: 4,
+        };
+        let (method, params) = request_parts(
+            "file:///fixture.rs",
+            &LanguageServiceRequest::TypeDefinition { position },
+        );
+        assert_eq!(method, "textDocument/typeDefinition");
+        assert_eq!(params["textDocument"]["uri"], "file:///fixture.rs");
+        assert_eq!(params["position"], json!({ "line": 2, "character": 4 }));
+    }
+
+    #[test]
+    fn workspace_symbol_request_uses_query_without_document_params() {
+        let request = LanguageServiceRequest::WorkspaceSymbols {
+            query: "Widget".into(),
+        };
+        let (method, params) = request_parts("file:///ignored.rs", &request);
+        assert_eq!(method, "workspace/symbol");
+        assert_eq!(params, json!({ "query": "Widget" }));
+        assert_eq!(
+            request.capability(),
+            crate::LanguageServiceCapability::WorkspaceSymbols
+        );
+    }
+
+    #[test]
+    fn workspace_symbol_responses_keep_file_and_selection_ranges() {
+        let symbols = parse_workspace_symbols(&json!([
+            {
+                "name": "render",
+                "containerName": "Widget",
+                "kind": 12,
+                "location": {
+                    "uri": "file:///src/widget.rs",
+                    "range": {
+                        "start": { "line": 8, "character": 4 },
+                        "end": { "line": 8, "character": 10 }
+                    }
+                }
+            },
+            { "name": "Widget", "location": "file:///src/lib.rs" },
+            { "name": "invalid", "location": { "range": {} } }
+        ]));
+        assert_eq!(symbols.len(), 2);
+        assert_eq!(symbols[0].name, "Widget::render");
+        assert_eq!(symbols[0].uri.as_deref(), Some("file:///src/widget.rs"));
+        assert_eq!(symbols[0].selection_range.start.line, 8);
+        assert_eq!(symbols[0].selection_range.start.character, 4);
+        assert_eq!(symbols[1].uri.as_deref(), Some("file:///src/lib.rs"));
+        assert_eq!(symbols[1].selection_range.start.line, 0);
+    }
+
+    #[test]
+    fn declaration_and_implementation_use_distinct_lsp_methods() {
+        let position = LspPosition {
+            line: 4,
+            character: 2,
+        };
+        for (request, expected_method) in [
+            (
+                LanguageServiceRequest::Declaration { position },
+                "textDocument/declaration",
+            ),
+            (
+                LanguageServiceRequest::Implementation { position },
+                "textDocument/implementation",
+            ),
+        ] {
+            let (method, params) = request_parts("file:///fixture.rs", &request);
+            assert_eq!(method, expected_method);
+            assert_eq!(params["textDocument"]["uri"], "file:///fixture.rs");
+            assert_eq!(params["position"], json!({ "line": 4, "character": 2 }));
+        }
+    }
+
+    #[test]
+    fn call_hierarchy_requests_keep_the_typed_item_payload() {
+        let position = LspPosition {
+            line: 3,
+            character: 8,
+        };
+        let (method, params) = request_parts(
+            "file:///fixture.rs",
+            &LanguageServiceRequest::PrepareCallHierarchy { position },
+        );
+        assert_eq!(method, "textDocument/prepareCallHierarchy");
+        assert_eq!(params["textDocument"]["uri"], "file:///fixture.rs");
+        assert_eq!(params["position"], json!({ "line": 3, "character": 8 }));
+
+        let item = CallHierarchyItem {
+            name: "caller".into(),
+            kind: 12,
+            uri: "file:///fixture.rs".into(),
+            range: LspRange {
+                start: position,
+                end: position,
+            },
+            selection_range: LspRange {
+                start: position,
+                end: position,
+            },
+            detail: Some("module::caller".into()),
+            tags: vec![1],
+            data: Some(json!({ "serverToken": "keep-me" })),
+        };
+        let (method, params) = request_parts(
+            "file:///fixture.rs",
+            &LanguageServiceRequest::IncomingCalls { item: item.clone() },
+        );
+        assert_eq!(method, "callHierarchy/incomingCalls");
+        assert_eq!(params["item"]["data"]["serverToken"], "keep-me");
+        assert_eq!(params["item"]["detail"], "module::caller");
+
+        let (method, params) = request_parts(
+            "file:///fixture.rs",
+            &LanguageServiceRequest::OutgoingCalls { item },
+        );
+        assert_eq!(method, "callHierarchy/outgoingCalls");
+        assert_eq!(params["item"]["kind"], 12);
+    }
+
+    #[test]
+    fn call_hierarchy_results_parse_items_and_call_ranges() {
+        let item = json!({
+            "name": "caller",
+            "kind": 12,
+            "uri": "file:///repo/src/lib.rs",
+            "range": { "start": { "line": 2, "character": 0 }, "end": { "line": 4, "character": 1 } },
+            "selectionRange": { "start": { "line": 2, "character": 4 }, "end": { "line": 2, "character": 10 } },
+            "detail": "module::caller",
+            "tags": [1],
+            "data": { "id": 7 }
+        });
+        let prepared = parse_call_hierarchy_items(&json!([item.clone()]));
+        assert_eq!(prepared.len(), 1);
+        assert_eq!(prepared[0].name, "caller");
+        assert_eq!(prepared[0].detail.as_deref(), Some("module::caller"));
+        assert_eq!(prepared[0].tags, vec![1]);
+        assert_eq!(prepared[0].data, Some(json!({ "id": 7 })));
+
+        let calls = parse_call_hierarchy_calls(
+            &json!([{
+                "from": item,
+                "fromRanges": [{
+                    "start": { "line": 3, "character": 6 },
+                    "end": { "line": 3, "character": 12 }
+                }]
+            }]),
+            "from",
+        );
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].item.uri, "file:///repo/src/lib.rs");
+        assert_eq!(
+            calls[0].ranges[0].start,
+            LspPosition {
+                line: 3,
+                character: 6
+            }
+        );
+        assert!(parse_call_hierarchy_calls(&json!([{}]), "to").is_empty());
+    }
+
+    #[test]
+    fn code_lens_requests_preserve_server_data_and_commands() {
+        let range = LspRange {
+            start: LspPosition {
+                line: 1,
+                character: 0,
+            },
+            end: LspPosition {
+                line: 1,
+                character: 10,
+            },
+        };
+        let (method, params) =
+            request_parts("file:///fixture.rs", &LanguageServiceRequest::CodeLenses);
+        assert_eq!(method, "textDocument/codeLens");
+        assert_eq!(params["textDocument"]["uri"], "file:///fixture.rs");
+        assert!(params.get("range").is_none());
+
+        let lenses = parse_code_lenses(&json!([{
+            "range": range_value(range),
+            "data": { "resolve": 7 }
+        }]));
+        assert_eq!(lenses.len(), 1);
+        assert!(lenses[0].command.is_none());
+        assert_eq!(lenses[0].data, Some(json!({ "resolve": 7 })));
+        let resolved = CodeLens {
+            range,
+            command: Some(LanguageServiceCommand {
+                title: "Run tests".into(),
+                command: "fixture.run".into(),
+                arguments: vec![json!({ "target": "main" })],
+            }),
+            data: Some(json!({ "resolve": 7 })),
+        };
+        let (method, params) = request_parts(
+            "file:///fixture.rs",
+            &LanguageServiceRequest::ResolveCodeLens {
+                lens: resolved.clone(),
+            },
+        );
+        assert_eq!(method, "codeLens/resolve");
+        assert_eq!(params, code_lens_value(&resolved));
+
+        let (method, params) = request_parts(
+            "file:///fixture.rs",
+            &LanguageServiceRequest::ExecuteCommand {
+                command: "fixture.run".into(),
+                arguments: vec![json!({ "target": "main" })],
+            },
+        );
+        assert_eq!(method, "workspace/executeCommand");
+        assert_eq!(params["command"], "fixture.run");
+        assert_eq!(params["arguments"][0]["target"], "main");
+    }
+
+    #[test]
+    fn document_link_requests_resolve_targets_and_preserve_data() {
+        let range = LspRange {
+            start: LspPosition {
+                line: 2,
+                character: 4,
+            },
+            end: LspPosition {
+                line: 2,
+                character: 8,
+            },
+        };
+        let (method, params) =
+            request_parts("file:///fixture.rs", &LanguageServiceRequest::DocumentLinks);
+        assert_eq!(method, "textDocument/documentLink");
+        assert_eq!(params["textDocument"]["uri"], "file:///fixture.rs");
+        assert!(params.get("range").is_none());
+
+        let links = parse_document_links(&json!([{
+            "range": range_value(range),
+            "data": { "resolve": 7 }
+        }]));
+        assert_eq!(links.len(), 1);
+        assert!(links[0].target.is_none());
+        assert_eq!(links[0].data, Some(json!({ "resolve": 7 })));
+
+        let resolved = DocumentLink {
+            range,
+            target: Some("https://example.com/docs".into()),
+            tooltip: Some("Open documentation".into()),
+            data: Some(json!({ "resolve": 7 })),
+        };
+        let (method, params) = request_parts(
+            "file:///fixture.rs",
+            &LanguageServiceRequest::ResolveDocumentLink {
+                link: resolved.clone(),
+            },
+        );
+        assert_eq!(method, "documentLink/resolve");
+        assert_eq!(params, document_link_value(&resolved));
+        assert_eq!(parse_document_link(&params), Some(resolved));
+    }
+
+    #[test]
+    fn inlay_hints_use_the_lsp_range_and_parse_labels_without_editing_text() {
+        let range = LspRange {
+            start: LspPosition {
+                line: 0,
+                character: 0,
+            },
+            end: LspPosition {
+                line: 0,
+                character: 10,
+            },
+        };
+        let (method, params) = request_parts(
+            "file:///fixture.rs",
+            &LanguageServiceRequest::InlayHints { range },
+        );
+        assert_eq!(method, "textDocument/inlayHint");
+        assert_eq!(params["range"], range_value(range));
+
+        let snap = snapshot("let value = 1;");
+        let hints = parse_inlay_hints(
+            &snap,
+            &json!([
+                { "position": { "line": 0, "character": 9 }, "label": [{ "value": "value" }, { "value": ": i32" }], "kind": 1, "paddingLeft": true },
+                { "position": { "line": 2, "character": 0 }, "label": "stale" }
+            ]),
+        );
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hints[0].label, "value: i32");
+        assert_eq!(hints[0].kind, InlayHintKind::Type);
+        assert!(hints[0].padding_left);
+        assert_eq!(snap.text(), "let value = 1;");
+    }
+
+    #[test]
+    fn document_colors_use_lsp_method_and_ignore_invalid_values() {
+        let (method, params) = request_parts(
+            "file:///colors.css",
+            &LanguageServiceRequest::DocumentColors,
+        );
+        assert_eq!(method, "textDocument/documentColor");
+        assert_eq!(params["textDocument"]["uri"], "file:///colors.css");
+
+        let snap = snapshot("color: #ff00aa;");
+        let colors = parse_document_colors(
+            &snap,
+            &json!([
+                { "range": { "start": { "line": 0, "character": 7 }, "end": { "line": 0, "character": 14 } }, "color": { "red": 1.0, "green": 0.0, "blue": 170.0 / 255.0, "alpha": 0.5 } },
+                { "range": { "start": { "line": 4, "character": 0 }, "end": { "line": 4, "character": 1 } }, "color": { "red": 1.0, "green": 0.0, "blue": 0.0, "alpha": 1.0 } },
+                { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } }, "color": { "red": 1.5, "green": 0.0, "blue": 0.0, "alpha": 1.0 } }
+            ]),
+        );
+        assert_eq!(colors.len(), 1);
+        assert_eq!(colors[0].color.red, 255);
+        assert_eq!(colors[0].color.green, 0);
+        assert_eq!(colors[0].color.blue, 170);
+        assert_eq!(colors[0].color.alpha, 128);
+        assert_eq!(colors[0].range.start.character, 7);
     }
 
     #[test]
     fn advertised_capabilities_are_explicit() {
         let (capabilities, types) = parse_server_capabilities(
-            &json!({ "capabilities": { "hoverProvider": true, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
+            &json!({ "capabilities": { "hoverProvider": true, "declarationProvider": true, "implementationProvider": true, "typeDefinitionProvider": true, "workspaceSymbolProvider": true, "callHierarchyProvider": true, "codeLensProvider": { "resolveProvider": true }, "executeCommandProvider": { "commands": ["fixture.run"] }, "documentLinkProvider": { "resolveProvider": true }, "inlayHintProvider": { "resolveProvider": true }, "colorProvider": true, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
         );
         assert!(capabilities.hover);
+        assert!(capabilities.document_colors);
+        assert!(capabilities.declaration);
+        assert!(capabilities.implementation);
+        assert!(capabilities.type_definition);
+        assert!(capabilities.workspace_symbols);
+        assert!(capabilities.call_hierarchy);
+        assert!(capabilities.code_lens);
+        assert!(capabilities.code_lens_resolve);
+        assert!(capabilities.execute_command);
+        assert!(capabilities.document_links);
+        assert!(capabilities.document_link_resolve);
+        assert!(capabilities.inlay_hints);
         assert!(!capabilities.completion);
         assert_eq!(types, vec!["type"]);
     }

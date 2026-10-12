@@ -33,6 +33,70 @@ pub enum Language {
 }
 
 impl Language {
+    /// Every editor language exposed by the manual language-mode selector.
+    pub const ALL: [Self; 22] = [
+        Self::PlainText,
+        Self::Rust,
+        Self::Toml,
+        Self::Json,
+        Self::Yaml,
+        Self::Markdown,
+        Self::Html,
+        Self::Css,
+        Self::JavaScript,
+        Self::TypeScript,
+        Self::Python,
+        Self::Go,
+        Self::C,
+        Self::Cpp,
+        Self::Shell,
+        Self::Sql,
+        Self::Java,
+        Self::Php,
+        Self::Xml,
+        Self::Ruby,
+        Self::Swift,
+        Self::Kotlin,
+    ];
+
+    /// Stable token used when a typed UI control crosses a string boundary.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::PlainText => "plain-text",
+            Self::Rust => "rust",
+            Self::Toml => "toml",
+            Self::Json => "json",
+            Self::Yaml => "yaml",
+            Self::Markdown => "markdown",
+            Self::Html => "html",
+            Self::Css => "css",
+            Self::JavaScript => "javascript",
+            Self::TypeScript => "typescript",
+            Self::Python => "python",
+            Self::Go => "go",
+            Self::C => "c",
+            Self::Cpp => "cpp",
+            Self::Shell => "shell",
+            Self::Sql => "sql",
+            Self::Java => "java",
+            Self::Php => "php",
+            Self::Xml => "xml",
+            Self::Ruby => "ruby",
+            Self::Swift => "swift",
+            Self::Kotlin => "kotlin",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|language| language.id() == id)
+    }
+
+    pub fn from_label(label: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|language| language.label() == label)
+    }
+
     pub fn from_path(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref();
         let name = path
@@ -156,5 +220,17 @@ mod tests {
         assert!(Language::TypeScript.has_grammar());
         assert!(!Language::PlainText.has_grammar());
         assert!(!Language::Sql.has_grammar());
+    }
+
+    #[test]
+    fn all_languages_have_unique_stable_ids_and_labels() {
+        assert_eq!(Language::ALL.len(), 22);
+        for (index, language) in Language::ALL.iter().enumerate() {
+            assert_eq!(Language::from_id(language.id()), Some(*language));
+            assert_eq!(Language::from_label(language.label()), Some(*language));
+            assert!(!Language::ALL[..index]
+                .iter()
+                .any(|previous| previous.id() == language.id()));
+        }
     }
 }

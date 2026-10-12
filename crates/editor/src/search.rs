@@ -7,7 +7,7 @@
 use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
 
-use crate::buffer::{BufferSnapshot, Edit, Position, TextRange};
+use crate::buffer::{Anchor, AnchorAffinity, BufferSnapshot, Edit, Position, TextRange};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SearchOptions {
@@ -63,6 +63,36 @@ impl SearchOptions {
     }
 }
 
+/// Return the identifier-style word at or immediately before a Unicode
+/// scalar column. Letters, numbers, and underscores form words.
+pub fn word_at_cursor(line: &str, column: usize) -> Option<String> {
+    let characters = line.chars().collect::<Vec<_>>();
+    let column = column.min(characters.len());
+    let is_word = |character: char| character.is_alphanumeric() || character == '_';
+    let index = if characters
+        .get(column)
+        .is_some_and(|character| is_word(*character))
+    {
+        column
+    } else {
+        column.checked_sub(1).filter(|index| {
+            characters
+                .get(*index)
+                .is_some_and(|character| is_word(*character))
+        })?
+    };
+
+    let mut start = index;
+    while start > 0 && is_word(characters[start - 1]) {
+        start -= 1;
+    }
+    let mut end = index + 1;
+    while end < characters.len() && is_word(characters[end]) {
+        end += 1;
+    }
+    Some(characters[start..end].iter().collect())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SearchQuery {
     pub text: String,
@@ -76,6 +106,10 @@ pub struct SearchQuery {
     pub multiline: bool,
     pub preserve_case: bool,
     pub wrap: bool,
+    /// Optional byte range that limits buffer matches to one selection.
+    /// This is transient UI state and is deliberately omitted from sessions.
+    #[serde(default, skip_serializing)]
+    pub selection_range: Option<TextRange>,
 }
 
 impl Default for SearchQuery {
@@ -95,7 +129,22 @@ impl SearchQuery {
             multiline: options.multiline,
             preserve_case: options.preserve_case,
             wrap: options.wrap,
+            selection_range: None,
         }
+    }
+
+    /// Limit matches to those fully contained in the selected byte range.
+    pub fn with_selection_range(mut self, range: Option<TextRange>) -> Self {
+        self.selection_range = range.filter(|range| range.start <= range.end);
+        self
+    }
+
+    /// Keep the selection scope attached to its text after replacement edits.
+    pub fn map_selection_range_through_edits(&mut self, edits: &[Edit]) {
+        let Some(range) = self.selection_range else {
+            return;
+        };
+        self.selection_range = Some(map_range_through_edits(range, edits));
     }
 
     pub fn options(&self) -> SearchOptions {
@@ -119,6 +168,26 @@ impl SearchQuery {
     }
 }
 
+/// Map a byte range through ordered, non-overlapping edit coordinates.
+pub fn map_range_through_edits(range: TextRange, edits: &[Edit]) -> TextRange {
+    let mut start = Anchor::new(range.start, AnchorAffinity::Before);
+    let mut end = Anchor::new(range.end, AnchorAffinity::After);
+    let mut delta = 0isize;
+    for edit in edits {
+        let edit_start = if delta.is_negative() {
+            edit.range.start.saturating_sub(delta.unsigned_abs())
+        } else {
+            edit.range.start.saturating_add(delta as usize)
+        };
+        let edit_end = edit_start.saturating_add(edit.range.len());
+        let edit_range = TextRange::new(edit_start, edit_end);
+        start.map_through(edit_range, edit.replacement.len());
+        end.map_through(edit_range, edit.replacement.len());
+        delta = delta.saturating_add(edit.replacement.len() as isize - edit.range.len() as isize);
+    }
+    TextRange::new(start.offset(), end.offset())
+}
+
 /// Options that the filesystem-backed project search can apply safely.
 ///
 /// Multiline matching is intentionally not part of this contract: the
@@ -130,6 +199,8 @@ pub struct ProjectSearchOptions {
     pub smart_case: bool,
     pub whole_word: bool,
     pub regex: bool,
+    pub include_ignored: bool,
+    pub only_open_files: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,6 +216,8 @@ impl Default for ProjectSearchOptions {
             smart_case: true,
             whole_word: false,
             regex: false,
+            include_ignored: false,
+            only_open_files: false,
         }
     }
 }
@@ -156,6 +229,8 @@ impl ProjectSearchOptions {
             smart_case: options.smart_case,
             whole_word: options.whole_word,
             regex: options.regex,
+            include_ignored: false,
+            only_open_files: false,
         }
     }
 
@@ -171,6 +246,8 @@ pub struct ProjectSearchQuery {
     pub text: String,
     pub options: ProjectSearchOptions,
     pub max_results: usize,
+    pub include_globs: Vec<String>,
+    pub exclude_globs: Vec<String>,
 }
 
 impl ProjectSearchQuery {
@@ -182,7 +259,21 @@ impl ProjectSearchQuery {
             text: text.into(),
             options,
             max_results: max_results.clamp(1, Self::MAX_RESULTS),
+            include_globs: Vec::new(),
+            exclude_globs: Vec::new(),
         }
+    }
+
+    /// Restrict results to paths matching an include glob and remove paths
+    /// matching any exclude glob. Empty lists leave that side unfiltered.
+    pub fn with_path_filters(
+        mut self,
+        include_globs: Vec<String>,
+        exclude_globs: Vec<String>,
+    ) -> Self {
+        self.include_globs = include_globs;
+        self.exclude_globs = exclude_globs;
+        self
     }
 
     /// Translate the Editor query to the regex accepted by the existing
@@ -233,6 +324,36 @@ impl ProjectSearchQuery {
             )
         }))
     }
+}
+
+/// Build ascending source edits for a project query against one open buffer.
+/// The document owner applies the edits together as one undoable transaction.
+pub fn replace_project_all_checked(
+    snapshot: &BufferSnapshot,
+    query: &ProjectSearchQuery,
+    replacement: &str,
+) -> Result<Vec<Edit>, SearchError> {
+    let pattern = query.backend_pattern()?;
+    let regex = RegexBuilder::new(&pattern)
+        .case_insensitive(!query.options.case_sensitive_for_matching(&query.text))
+        .multi_line(false)
+        .build()
+        .map_err(|error| SearchError {
+            message: format!("invalid project search pattern: {error}"),
+        })?;
+    let text = snapshot.text();
+    Ok(regex
+        .captures_iter(&text)
+        .filter_map(|captures| {
+            let matched = captures.get(0)?;
+            let mut expanded = String::new();
+            captures.expand(replacement, &mut expanded);
+            Some(Edit::new(
+                TextRange::new(matched.start(), matched.end()),
+                expanded,
+            ))
+        })
+        .collect())
 }
 
 /// One line returned by a project search provider.
@@ -329,6 +450,102 @@ pub struct ProjectSearchSnapshot {
     pub selected: Option<usize>,
     pub truncated: bool,
     pub files_scanned: usize,
+    pub replacement_status: ProjectReplaceStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ProjectReplaceStatus {
+    #[default]
+    Idle,
+    Applying,
+    Complete {
+        files_changed: usize,
+        replacements: usize,
+    },
+    Error(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectReplaceRequest {
+    pub generation: u64,
+    pub query: ProjectSearchQuery,
+    pub replacement: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectReplaceResult {
+    pub generation: u64,
+    pub matched_paths: Vec<String>,
+    pub files_changed: usize,
+    pub replacements: usize,
+}
+
+/// Read-only Editor snapshot supplied by the Workspace composition adapter
+/// when planning a project replacement across currently open buffers.
+#[derive(Debug, Clone)]
+pub struct ProjectBufferCandidate {
+    pub path: String,
+    pub snapshot: BufferSnapshot,
+    pub can_edit: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectReplaceTarget {
+    pub path: String,
+    pub revision: crate::Revision,
+    pub replacements: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectReplacePlan {
+    pub generation: u64,
+    pub matched_paths: Vec<String>,
+    pub targets: Vec<ProjectReplaceTarget>,
+    pub replacements: usize,
+}
+
+/// Build a revision-bound plan for open Editor buffers. Matching, editability
+/// checks, and replacement counts remain inside the Editor capability; the
+/// Workspace only maps typed targets back to their live GPUI entities.
+pub fn plan_project_replace(
+    request: &ProjectReplaceRequest,
+    hits: &[ProjectSearchHit],
+    buffers: &[ProjectBufferCandidate],
+) -> Result<ProjectReplacePlan, SearchError> {
+    let matched_paths = hits
+        .iter()
+        .map(|hit| hit.path.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut targets = Vec::new();
+    let mut replacement_count = 0;
+    for buffer in buffers {
+        if !matched_paths.contains(&buffer.path) {
+            continue;
+        }
+        let edits =
+            replace_project_all_checked(&buffer.snapshot, &request.query, &request.replacement)?;
+        if edits.is_empty() {
+            continue;
+        }
+        if !buffer.can_edit {
+            return Err(SearchError {
+                message: format!("{} is read-only", buffer.path),
+            });
+        }
+        replacement_count += edits.len();
+        targets.push(ProjectReplaceTarget {
+            path: buffer.path.clone(),
+            revision: buffer.snapshot.revision(),
+            replacements: edits.len(),
+        });
+    }
+    targets.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(ProjectReplacePlan {
+        generation: request.generation,
+        matched_paths: matched_paths.into_iter().collect(),
+        targets,
+        replacements: replacement_count,
+    })
 }
 
 /// Editor-owned lifecycle for asynchronous project search.
@@ -345,6 +562,7 @@ pub struct ProjectSearchSession {
     selected: Option<usize>,
     truncated: bool,
     files_scanned: usize,
+    replacement_status: ProjectReplaceStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -361,6 +579,7 @@ impl ProjectSearchSession {
         self.selected = None;
         self.truncated = false;
         self.files_scanned = 0;
+        self.replacement_status = ProjectReplaceStatus::Idle;
         self.status = if query.text.is_empty() {
             ProjectSearchStatus::Empty
         } else {
@@ -379,6 +598,7 @@ impl ProjectSearchSession {
         self.selected = None;
         self.truncated = false;
         self.files_scanned = 0;
+        self.replacement_status = ProjectReplaceStatus::Idle;
         self.status = ProjectSearchStatus::Idle;
     }
 
@@ -431,6 +651,57 @@ impl ProjectSearchSession {
         self.selected.and_then(|index| self.hits.get(index))
     }
 
+    pub fn begin_replace(
+        &mut self,
+        replacement: impl Into<String>,
+    ) -> Result<ProjectReplaceRequest, SearchError> {
+        let Some(query) = self.query.clone() else {
+            return Err(SearchError {
+                message: "there is no active project search to replace".to_string(),
+            });
+        };
+        if self.truncated {
+            return Err(SearchError {
+                message: "project results are truncated; refine the query before replacing"
+                    .to_string(),
+            });
+        }
+        if self.status != ProjectSearchStatus::Ready {
+            return Err(SearchError {
+                message: "wait for project search results before replacing".to_string(),
+            });
+        }
+        self.replacement_status = ProjectReplaceStatus::Applying;
+        Ok(ProjectReplaceRequest {
+            generation: self.generation,
+            query,
+            replacement: replacement.into(),
+        })
+    }
+
+    pub fn accept_replace(&mut self, result: ProjectReplaceResult) -> bool {
+        if result.generation != self.generation
+            || self.replacement_status != ProjectReplaceStatus::Applying
+        {
+            return false;
+        }
+        self.replacement_status = ProjectReplaceStatus::Complete {
+            files_changed: result.files_changed,
+            replacements: result.replacements,
+        };
+        true
+    }
+
+    pub fn fail_replace(&mut self, generation: u64, message: impl Into<String>) -> bool {
+        if generation != self.generation
+            || self.replacement_status != ProjectReplaceStatus::Applying
+        {
+            return false;
+        }
+        self.replacement_status = ProjectReplaceStatus::Error(message.into());
+        true
+    }
+
     pub fn snapshot(&self) -> ProjectSearchSnapshot {
         ProjectSearchSnapshot {
             query: self.query.clone(),
@@ -440,6 +711,7 @@ impl ProjectSearchSession {
             selected: self.selected,
             truncated: self.truncated,
             files_scanned: self.files_scanned,
+            replacement_status: self.replacement_status.clone(),
         }
     }
 }
@@ -540,6 +812,12 @@ fn search_hits(
         .captures_iter(text)
         .filter_map(|captures| {
             let matched = captures.get(0)?;
+            if query
+                .selection_range
+                .is_some_and(|range| matched.start() < range.start || matched.end() > range.end)
+            {
+                return None;
+            }
             if !query.multiline
                 && (matched.as_str().contains('\n') || matched.as_str().contains('\r'))
             {
@@ -707,6 +985,43 @@ mod tests {
     }
 
     #[test]
+    fn word_at_cursor_uses_unicode_scalar_columns_and_identifier_characters() {
+        assert_eq!(word_at_cursor("alpha beta", 2).as_deref(), Some("alpha"));
+        assert_eq!(word_at_cursor("alpha beta", 5).as_deref(), Some("alpha"));
+        assert_eq!(word_at_cursor("alpha beta", 6).as_deref(), Some("beta"));
+        assert_eq!(word_at_cursor("café_2 λ", 3).as_deref(), Some("café_2"));
+        assert_eq!(word_at_cursor("...", 2), None);
+        assert_eq!(word_at_cursor("", 0), None);
+    }
+
+    #[test]
+    fn selection_scope_limits_find_and_replacement_to_fully_contained_matches() {
+        let source = snapshot("one hit\ntwo hit\nthree hit");
+        let scope = TextRange::new(4, 15);
+        let query =
+            SearchQuery::new("hit", SearchOptions::default()).with_selection_range(Some(scope));
+
+        let result = find(&source, &query).expect("valid search");
+        assert_eq!(result.matches.len(), 2);
+        let edits = replace_all_checked(&source, &query, "found").expect("valid replacement");
+        assert_eq!(edits.len(), 2);
+    }
+
+    #[test]
+    fn selection_scope_maps_through_replacement_edits_and_is_not_serialized() {
+        let source = snapshot("hit elsewhere hit");
+        let query = SearchQuery::new("hit", SearchOptions::default())
+            .with_selection_range(Some(TextRange::new(0, 3)));
+        let edits = replace_all_checked(&source, &query, "longer").expect("valid replacement");
+        let mut query = query;
+        query.map_selection_range_through_edits(&edits);
+
+        assert_eq!(query.selection_range, Some(TextRange::new(0, 6)));
+        let encoded = serde_json::to_value(&query).expect("serializes");
+        assert!(encoded.get("selection_range").is_none());
+    }
+
+    #[test]
     fn regex_multiline_and_invalid_input_are_typed() {
         let source = snapshot("one\ntwo\nthree");
         let query = SearchQuery::new(
@@ -859,6 +1174,136 @@ mod tests {
     }
 
     #[test]
+    fn project_query_keeps_typed_path_filters() {
+        let query = ProjectSearchQuery::new(
+            "needle",
+            ProjectSearchOptions::default(),
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        )
+        .with_path_filters(vec!["src/**/*.rs".into()], vec!["**/generated/**".into()]);
+        assert_eq!(query.include_globs, ["src/**/*.rs"]);
+        assert_eq!(query.exclude_globs, ["**/generated/**"]);
+    }
+
+    #[test]
+    fn project_edit_builder_uses_query_options_and_expands_regex_captures() {
+        let query = ProjectSearchQuery::new(
+            r"(cat)(\d+)",
+            ProjectSearchOptions {
+                regex: true,
+                whole_word: true,
+                ..Default::default()
+            },
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        );
+        let edits =
+            replace_project_all_checked(&snapshot("cat12 scat34 CAT5"), &query, "$2-$1").unwrap();
+        assert_eq!(
+            edits
+                .iter()
+                .map(|edit| edit.replacement.as_str())
+                .collect::<Vec<_>>(),
+            ["12-cat", "5-CAT"]
+        );
+        let invalid = ProjectSearchQuery::new(
+            "[",
+            ProjectSearchOptions {
+                regex: true,
+                ..Default::default()
+            },
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        );
+        assert!(replace_project_all_checked(&snapshot("text"), &invalid, "x").is_err());
+    }
+
+    #[test]
+    fn project_replace_planning_is_open_buffer_scoped_and_preflights_read_only_targets() {
+        let query = ProjectSearchQuery::new(
+            "needle",
+            ProjectSearchOptions::default(),
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        );
+        let request = ProjectReplaceRequest {
+            generation: 9,
+            query,
+            replacement: "updated".to_string(),
+        };
+        let hits = [
+            ProjectSearchHit::new("src/open.rs", 1, "needle", 0, 6),
+            ProjectSearchHit::new("src/closed.rs", 1, "needle", 0, 6),
+        ];
+        let buffers = [ProjectBufferCandidate {
+            path: "src/open.rs".to_string(),
+            snapshot: snapshot("needle needle"),
+            can_edit: true,
+        }];
+
+        let plan = plan_project_replace(&request, &hits, &buffers).unwrap();
+        assert_eq!(plan.generation, 9);
+        assert_eq!(plan.matched_paths, ["src/closed.rs", "src/open.rs"]);
+        assert_eq!(plan.targets.len(), 1);
+        assert_eq!(plan.targets[0].path, "src/open.rs");
+        assert_eq!(plan.targets[0].replacements, 2);
+        assert_eq!(plan.replacements, 2);
+
+        let read_only = [ProjectBufferCandidate {
+            path: "src/open.rs".to_string(),
+            snapshot: snapshot("needle"),
+            can_edit: false,
+        }];
+        assert!(plan_project_replace(&request, &hits, &read_only)
+            .unwrap_err()
+            .message
+            .contains("read-only"));
+    }
+
+    #[test]
+    fn project_replace_session_is_generation_checked_and_resets_with_new_search() {
+        let mut session = ProjectSearchSession::default();
+        let query = ProjectSearchQuery::new(
+            "needle",
+            ProjectSearchOptions::default(),
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        );
+        let search = session.begin(query);
+        assert!(session.accept(ProjectSearchResult::new(
+            search.generation,
+            vec![ProjectSearchHit::new("src/main.rs", 1, "needle", 0, 6)],
+            false,
+            1,
+        )));
+        let replace = session.begin_replace("replacement").unwrap();
+        assert_eq!(replace.generation, search.generation);
+        assert_eq!(
+            session.snapshot().replacement_status,
+            ProjectReplaceStatus::Applying
+        );
+        assert!(session.accept_replace(ProjectReplaceResult {
+            generation: replace.generation,
+            matched_paths: vec!["src/main.rs".to_string()],
+            files_changed: 1,
+            replacements: 1,
+        }));
+        assert_eq!(
+            session.snapshot().replacement_status,
+            ProjectReplaceStatus::Complete {
+                files_changed: 1,
+                replacements: 1,
+            }
+        );
+
+        session.begin(ProjectSearchQuery::new(
+            "next",
+            ProjectSearchOptions::default(),
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        ));
+        assert_eq!(
+            session.snapshot().replacement_status,
+            ProjectReplaceStatus::Idle
+        );
+    }
+
+    #[test]
     fn project_session_rejects_stale_results_and_cancellation() {
         let mut session = ProjectSearchSession::default();
         let first = session.begin(ProjectSearchQuery::new(
@@ -885,6 +1330,7 @@ mod tests {
         )));
         assert_eq!(session.snapshot().selected, Some(0));
         assert!(session.snapshot().truncated);
+        assert!(session.begin_replace("x").is_err());
         session.cancel();
         assert!(!session.fail(second.generation, "late failure"));
         assert_eq!(session.snapshot().status, ProjectSearchStatus::Idle);

@@ -235,19 +235,14 @@ impl AppShell {
         register_snapshot(&mut submenus, git_branches);
 
         let symbols = labonair_editor::command_provider::outline_submenu(
-            self.workspace
-                .read(cx)
-                .active_editor_symbols(cx)
-                .into_iter()
-                .map(|s| {
-                    (
-                        s.line,
-                        s.name,
-                        format!("{}  ·  line {}", s.kind.label(), s.line + 1),
-                    )
-                }),
+            self.workspace.read(cx).editor_symbol_picker_rows(cx),
         );
         register_snapshot(&mut submenus, symbols);
+
+        let diagnostics = labonair_editor::command_provider::diagnostics_submenu(
+            self.workspace.read(cx).editor_diagnostic_picker_rows(cx),
+        );
+        register_snapshot(&mut submenus, diagnostics);
 
         let app_themes = labonair_theme::command_provider::app_themes_submenu(
             labonair_theme::command_provider::app_theme_choices()

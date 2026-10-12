@@ -154,25 +154,6 @@ macro_rules! field {
 /// saved hosts and keymap migration data) deliberately has no row here.
 /// Order is declaration order within each Settings area; page layout
 /// (`pages.rs`) decides on-screen placement, not this list.
-/// Compatibility-only model fields that are intentionally not exposed by the
-/// native Settings UI. Their values remain readable by the Settings owner for
-/// migration/unknown-key compatibility, but a visible control would falsely
-/// advertise a runtime consumer that the inventory explicitly removed.
-const UI_REMOVED_FIELDS: &[&str] = &[
-    "editor.editorIndentationGuides",
-    "editor.editorBracketMatching",
-    "editor.editorFormatOnSave",
-    "editor.editorTrimTrailingWhitespace",
-    "editor.editorInsertFinalNewline",
-    "editor.editorShowCursorPosition",
-    "editor.editorShowSelectionStats",
-    "editor.editorShowOutline",
-    "editor.editorAutocompleteDebounceMs",
-    "editor.editorMaxFileSizeMb",
-    "editor.editorAutoSave",
-    "editor.editorAutoSaveDelay",
-];
-
 pub fn all_fields() -> Vec<AnyField> {
     use FieldControl::{Float, FontFamily, Int, Select, SftpColumns, Switch, Text};
     let fields = vec![
@@ -511,6 +492,15 @@ pub fn all_fields() -> Vec<AnyField> {
             "pt",
             "Applies to open and newly opened documents."
         ),
+        field_with_details!(
+            editor.editor_font_weight,
+            "editorFontWeight",
+            Int { min: 100, max: 900, step: 50 },
+            "Font weight",
+            "Editor font weight from thin to black.",
+            "",
+            "Only applies to the buffer text and line-number gutter."
+        ),
         field!(
             editor.editor_line_height,
             "editorLineHeight",
@@ -554,6 +544,72 @@ pub fn all_fields() -> Vec<AnyField> {
             "Use tab characters instead of spaces."
         ),
         field!(
+            editor.editor_auto_close_brackets,
+            "editorAutoCloseBrackets",
+            Switch,
+            "Auto-close brackets",
+            "Insert and skip over matching brackets and quotes while typing."
+        ),
+        field!(
+            editor.editor_auto_surround,
+            "editorAutoSurround",
+            Switch,
+            "Surround selections",
+            "Wrap selected text when typing an opening bracket or quote."
+        ),
+        field!(
+            editor.editor_drag_and_drop_selection,
+            "editorDragAndDropSelection",
+            Switch,
+            "Drag selected text",
+            "Move a selected range by dragging it to another place in the editor."
+        ),
+        field!(
+            editor.editor_multi_cursor_modifier,
+            "editorMultiCursorModifier",
+            Select(&[
+                ("alt", "Alt"),
+                ("control", "Control"),
+                ("platform", "Platform key (Command / Super)")
+            ]),
+            "Multi-cursor modifier",
+            "Hold this modifier while clicking or dragging to add cursors or select a rectangle."
+        ),
+        field!(
+            editor.editor_mouse_wheel_zoom,
+            "editorMouseWheelZoom",
+            Switch,
+            "Modifier + mouse wheel zoom",
+            "Zoom the editor font with the platform modifier and mouse wheel."
+        ),
+        field_with_details!(
+            editor.editor_scroll_sensitivity,
+            "editorScrollSensitivity",
+            Float { min_centi: 25, max_centi: 500, step_centi: 25 },
+            "Scroll sensitivity",
+            "Scale normal mouse-wheel scrolling in the editor.",
+            "×",
+            "Applies while scrolling without Alt."
+        ),
+        field_with_details!(
+            editor.editor_fast_scroll_sensitivity,
+            "editorFastScrollSensitivity",
+            Float { min_centi: 100, max_centi: 2000, step_centi: 100 },
+            "Fast scroll sensitivity",
+            "Scale editor scrolling while holding Alt.",
+            "×",
+            "Applies while scrolling with Alt held."
+        ),
+        field_with_details!(
+            editor.editor_vertical_scroll_margin,
+            "editorVerticalScrollMargin",
+            Int { min: 0, max: 20, step: 1 },
+            "Vertical scroll margin",
+            "Keep this many rows around the cursor when it scrolls into view.",
+            "lines",
+            "The margin shrinks automatically for short editor viewports."
+        ),
+        field!(
             editor.editor_indentation_guides,
             "editorIndentationGuides",
             Switch,
@@ -563,16 +619,164 @@ pub fn all_fields() -> Vec<AnyField> {
         field!(
             editor.editor_whitespace,
             "editorWhitespace",
-            Select(&[("none", "None"), ("boundary", "Boundary"), ("all", "All")]),
+            Select(&[
+                ("none", "None"),
+                ("selection", "Selection"),
+                ("boundary", "Boundary"),
+                ("all", "All")
+            ]),
             "Whitespace",
             "Show spaces, tabs, and line endings in the editor."
         ),
         field!(
+            editor.editor_whitespace_space,
+            "editorWhitespaceSpace",
+            Text,
+            "Space marker",
+            "Single character used to display spaces when whitespace is visible."
+        ),
+        field!(
+            editor.editor_whitespace_tab,
+            "editorWhitespaceTab",
+            Text,
+            "Tab marker",
+            "Single character used to display tabs when whitespace is visible."
+        ),
+        field!(
             editor.editor_minimap,
             "editorMinimap",
+            Select(&[
+                ("never", "Never"),
+                ("auto", "When the document overflows"),
+                ("always", "Always")
+            ]),
+            "Minimap visibility",
+            "Choose when a compact code overview appears at the editor edge."
+        ),
+        field!(
+            editor.editor_minimap_display_in,
+            "editorMinimapDisplayIn",
+            Select(&[("active_editor", "Active editor"), ("all", "All editors")]),
+            "Minimap in",
+            "Choose whether the minimap appears only in the active editor or in every editor."
+        ),
+        field!(
+            editor.image_viewer_unit,
+            "imageViewerUnit",
+            Select(&[("binary", "Binary (KiB, MiB)"), ("decimal", "Decimal (kB, MB)")]),
+            "Image file size units",
+            "Choose binary or decimal units for image metadata."
+        ),
+        field!(
+            editor.editor_minimap_thumb,
+            "editorMinimapThumb",
+            Select(&[("always", "Always"), ("hover", "On hover")]),
+            "Minimap viewport thumb",
+            "Choose when the minimap viewport indicator is visible."
+        ),
+        field!(
+            editor.editor_minimap_thumb_border,
+            "editorMinimapThumbBorder",
+            Select(&[
+                ("left_open", "Left open"),
+                ("all", "All sides"),
+                ("none", "No border")
+            ]),
+            "Minimap thumb border",
+            "Choose which border sides are drawn around the minimap viewport."
+        ),
+        field!(
+            editor.editor_minimap_current_line_highlight,
+            "editorMinimapCurrentLineHighlight",
+            Select(&[
+                ("inherit", "Use editor setting"),
+                ("always", "Always"),
+                ("never", "Never")
+            ]),
+            "Minimap current line",
+            "Control the current-line background in the minimap."
+        ),
+        field_with_details!(
+            editor.editor_minimap_max_width_columns,
+            "editorMinimapMaxWidthColumns",
+            Int { min: 20, max: 160, step: 1 },
+            "Minimap maximum width",
+            "Limit the minimap width in compact text columns.",
+            "columns",
+            "The minimap uses the smaller of this limit and the available editor width."
+        ),
+        field!(
+            editor.editor_scrollbar_show,
+            "editorScrollbarShow",
+            Select(&[
+                ("auto", "When needed"),
+                ("system", "System default"),
+                ("always", "Always"),
+                ("never", "Never")
+            ]),
+            "Scrollbar visibility",
+            "Choose when editor scrollbars are visible."
+        ),
+        field!(
+            editor.editor_scrollbar_cursors,
+            "editorScrollbarCursors",
             Switch,
-            "Minimap",
-            "Show a compact code overview at the editor edge."
+            "Cursor markers",
+            "Show each editor cursor in the vertical scrollbar."
+        ),
+        field!(
+            editor.editor_scrollbar_git_diff,
+            "editorScrollbarGitDiff",
+            Switch,
+            "Git change markers",
+            "Show added, modified, and deleted lines in the vertical scrollbar."
+        ),
+        field!(
+            editor.editor_scrollbar_search_results,
+            "editorScrollbarSearchResults",
+            Switch,
+            "Search result markers",
+            "Show in-buffer search matches in the vertical scrollbar."
+        ),
+        field!(
+            editor.editor_scrollbar_selected_text,
+            "editorScrollbarSelectedText",
+            Switch,
+            "Selected text markers",
+            "Show occurrences of selected text in the vertical scrollbar."
+        ),
+        field!(
+            editor.editor_scrollbar_selected_symbol,
+            "editorScrollbarSelectedSymbol",
+            Switch,
+            "Selected symbol markers",
+            "Show occurrences of the symbol at the cursor in the vertical scrollbar."
+        ),
+        field!(
+            editor.editor_scrollbar_diagnostics,
+            "editorScrollbarDiagnostics",
+            Select(&[
+                ("all", "All severities"),
+                ("information", "Information and above"),
+                ("warning", "Warnings and errors"),
+                ("error", "Errors only")
+            ]),
+            "Diagnostic markers",
+            "Set the highest diagnostic severity shown in the vertical scrollbar."
+        ),
+        field!(
+            editor.editor_scrollbar_horizontal,
+            "editorScrollbarHorizontal",
+            Switch,
+            "Horizontal scrollbar",
+            "Show a horizontal scrollbar when unwrapped lines overflow."
+        ),
+        field!(
+            editor.editor_scrollbar_vertical,
+            "editorScrollbarVertical",
+            Switch,
+            "Vertical scrollbar",
+            "Show a vertical scrollbar when the document overflows."
         ),
         field!(
             editor.editor_bracket_matching,
@@ -610,11 +814,79 @@ pub fn all_fields() -> Vec<AnyField> {
             "Show syntax and language-service diagnostics."
         ),
         field!(
+            editor.editor_diagnostics_max_severity,
+            "editorDiagnosticsMaxSeverity",
+            Select(&[
+                ("all", "All severities"),
+                ("information", "Information and above"),
+                ("warning", "Warnings and errors"),
+                ("error", "Errors only")
+            ]),
+            "Diagnostic severity",
+            "Set the highest severity shown in the editor and Error Lens."
+        ),
+        field!(
+            editor.editor_lsp_document_colors,
+            "editorLspDocumentColors",
+            Select(&[("off", "Off"), ("inlay", "Inlay preview"), ("inline", "Inline tint")]),
+            "Document colors",
+            "Choose how colors reported by a language server appear in source files."
+        ),
+        field!(
+            editor.editor_error_lens,
+            "editorErrorLens",
+            Switch,
+            "Error Lens",
+            "Show the highest-severity diagnostic message after its source line."
+        ),
+        field!(
             editor.editor_semantic_tokens,
             "editorSemanticTokens",
             Switch,
             "Semantic tokens",
             "Show semantic token colours when a local provider supports them."
+        ),
+        field!(
+            editor.editor_code_lens,
+            "editorCodeLens",
+            Switch,
+            "Code Lens",
+            "Show language-server actions and metadata above declarations when supported."
+        ),
+        field!(
+            editor.editor_inlay_hints,
+            "editorInlayHints",
+            Switch,
+            "Inlay hints",
+            "Show inline parameter and type hints when a language server supports them."
+        ),
+        field!(
+            editor.editor_inlay_type_hints,
+            "editorInlayTypeHints",
+            Switch,
+            "Type hints",
+            "Show type annotations supplied as inlay hints."
+        ),
+        field!(
+            editor.editor_inlay_parameter_hints,
+            "editorInlayParameterHints",
+            Switch,
+            "Parameter hints",
+            "Show parameter labels supplied as inlay hints."
+        ),
+        field!(
+            editor.editor_inlay_other_hints,
+            "editorInlayOtherHints",
+            Switch,
+            "Other hints",
+            "Show inlay hints without a type or parameter classification."
+        ),
+        field!(
+            editor.editor_inlay_show_background,
+            "editorInlayShowBackground",
+            Switch,
+            "Hint background",
+            "Draw a subtle background behind inline hints."
         ),
         field!(
             editor.editor_git_gutter,
@@ -629,6 +901,13 @@ pub fn all_fields() -> Vec<AnyField> {
             Switch,
             "Git word diff",
             "Show intra-line Git change decorations without changing gutter markers."
+        ),
+        field!(
+            editor.editor_git_blame_status,
+            "editorGitBlameStatus",
+            Switch,
+            "Git blame in status bar",
+            "Show author and commit information for the current line in the editor status bar."
         ),
         field!(
             editor.editor_completion,
@@ -702,6 +981,34 @@ pub fn all_fields() -> Vec<AnyField> {
             "Code outline",
             "Expose the document symbol outline affordance."
         ),
+        field!(
+            editor.editor_selections_menu,
+            "editorSelectionsMenu",
+            Switch,
+            "Selections menu",
+            "Show selection and multi-cursor actions in the editor toolbar."
+        ),
+        field!(
+            editor.editor_toolbar_breadcrumbs,
+            "editorToolbarBreadcrumbs",
+            Switch,
+            "Breadcrumbs",
+            "Show the file path and current symbol in the editor toolbar."
+        ),
+        field!(
+            editor.editor_toolbar_quick_actions,
+            "editorToolbarQuickActions",
+            Switch,
+            "Quick actions",
+            "Show editor quick actions, including buffer search."
+        ),
+        field!(
+            editor.editor_toolbar_code_actions,
+            "editorToolbarCodeActions",
+            Switch,
+            "Code actions",
+            "Show the code actions button when the active language service supports it."
+        ),
         field_with_details!(
             editor.editor_autocomplete_debounce_ms,
             "editorAutocompleteDebounceMs",
@@ -710,6 +1017,51 @@ pub fn all_fields() -> Vec<AnyField> {
             "Debounce local completion requests.",
             "ms",
             "Only affects local completion providers."
+        ),
+        field_with_details!(
+            editor.editor_inlay_edit_debounce_ms,
+            "editorInlayEditDebounceMs",
+            Int { min: 0, max: 10000, step: 50 },
+            "Inlay edit delay",
+            "Wait after an edit before requesting inlay hints.",
+            "ms",
+            "Applies to the active editor buffer."
+        ),
+        field_with_details!(
+            editor.editor_inlay_scroll_debounce_ms,
+            "editorInlayScrollDebounceMs",
+            Int { min: 0, max: 2000, step: 10 },
+            "Inlay scroll delay",
+            "Wait after scrolling before requesting inlay hints for the viewport.",
+            "ms",
+            "Applies to the active editor buffer."
+        ),
+        field_with_details!(
+            editor.editor_error_lens_delay_ms,
+            "editorErrorLensDelayMs",
+            Int { min: 0, max: 5000, step: 50 },
+            "Error Lens delay",
+            "Wait before updating inline diagnostic messages.",
+            "ms",
+            "Applies after diagnostics change."
+        ),
+        field_with_details!(
+            editor.editor_error_lens_spacing,
+            "editorErrorLensSpacing",
+            Int { min: 0, max: 32, step: 1 },
+            "Error Lens spacing",
+            "Set the gap between source text and inline diagnostic messages.",
+            "em",
+            "Applies to the active editor buffer."
+        ),
+        field_with_details!(
+            editor.editor_error_lens_minimum_column,
+            "editorErrorLensMinimumColumn",
+            Int { min: 0, max: 2000, step: 10 },
+            "Error Lens minimum column",
+            "Set the earliest display column for inline diagnostic messages.",
+            "columns",
+            "Applies to the active editor buffer."
         ),
         field_with_details!(
             editor.editor_max_file_size_mb,
@@ -721,11 +1073,11 @@ pub fn all_fields() -> Vec<AnyField> {
             "Files above the limit remain unopened in the editor."
         ),
         field!(
-            editor.editor_vim_mode,
-            "vimMode",
-            Switch,
-            "Vim mode",
-            "Enable the modal Vim keybinding layer."
+            editor.editor_modal_mode,
+            "editorMode",
+            Select(&[("normal", "Normal"), ("vim", "Vim"), ("helix", "Helix")]),
+            "Editor mode",
+            "Choose normal, Vim, or selection-first Helix editing."
         ),
         field!(
             editor.editor_theme,
@@ -774,15 +1126,78 @@ pub fn all_fields() -> Vec<AnyField> {
             "Tint the line the caret is on."
         ),
         field!(
+            editor.editor_selection_highlight,
+            "editorSelectionHighlight",
+            Switch,
+            "Highlight selected text",
+            "Highlight other exact occurrences of the selected text in this buffer."
+        ),
+        field!(
+            editor.editor_rounded_selection,
+            "editorRoundedSelection",
+            Switch,
+            "Rounded selection corners",
+            "Round the corners of text-selection backgrounds."
+        ),
+        field!(
             editor.editor_cursor_style,
             "editorCursorStyle",
             Select(&[
                 ("block", "Block"),
                 ("underline", "Underline"),
+                ("hollow", "Hollow"),
                 ("bar", "Bar")
             ]),
             "Cursor style",
             "Shape of the editor caret."
+        ),
+        field!(
+            editor.vim_cursor_shape_normal,
+            "vimCursorShapeNormal",
+            Select(&[
+                ("inherit", "Inherit editor style"),
+                ("block", "Block"),
+                ("underline", "Underline"),
+                ("bar", "Bar")
+            ]),
+            "Vim: normal cursor shape",
+            "Caret shape while Vim is in Normal mode."
+        ),
+        field!(
+            editor.vim_cursor_shape_insert,
+            "vimCursorShapeInsert",
+            Select(&[
+                ("inherit", "Inherit editor style"),
+                ("block", "Block"),
+                ("underline", "Underline"),
+                ("bar", "Bar")
+            ]),
+            "Vim: insert cursor shape",
+            "Caret shape while Vim is in Insert mode."
+        ),
+        field!(
+            editor.vim_cursor_shape_replace,
+            "vimCursorShapeReplace",
+            Select(&[
+                ("inherit", "Inherit editor style"),
+                ("block", "Block"),
+                ("underline", "Underline"),
+                ("bar", "Bar")
+            ]),
+            "Vim: replace cursor shape",
+            "Caret shape while Vim is in Replace mode."
+        ),
+        field!(
+            editor.vim_cursor_shape_visual,
+            "vimCursorShapeVisual",
+            Select(&[
+                ("inherit", "Inherit editor style"),
+                ("block", "Block"),
+                ("underline", "Underline"),
+                ("bar", "Bar")
+            ]),
+            "Vim: visual cursor shape",
+            "Caret shape while Vim is in Visual or Visual Line mode."
         ),
         field!(
             editor.editor_cursor_blink,
@@ -799,6 +1214,73 @@ pub fn all_fields() -> Vec<AnyField> {
             "Time between caret blink phases.",
             "ms",
             "Only applies while the editor is focused."
+        ),
+        field!(
+            editor.search_case_sensitive,
+            "searchCaseSensitive",
+            Switch,
+            "Search: case sensitive",
+            "Use case-sensitive matching for new searches."
+        ),
+        field!(
+            editor.search_smart_case,
+            "searchSmartCase",
+            Switch,
+            "Search: smart case",
+            "Match case when the query contains uppercase letters."
+        ),
+        field!(
+            editor.search_whole_word,
+            "searchWholeWord",
+            Switch,
+            "Search: whole word",
+            "Match complete words for new searches."
+        ),
+        field!(
+            editor.search_regex,
+            "searchRegex",
+            Switch,
+            "Search: regular expressions",
+            "Treat new search queries as regular expressions."
+        ),
+        field!(
+            editor.search_wrap,
+            "searchWrap",
+            Switch,
+            "Search: wrap around",
+            "Continue from the opposite end after reaching the last match."
+        ),
+        field!(
+            editor.search_center_on_match,
+            "searchCenterOnMatch",
+            Switch,
+            "Search: center current match",
+            "Keep the active search result near the middle of the editor viewport."
+        ),
+        field!(
+            editor.search_include_ignored,
+            "searchIncludeIgnored",
+            Switch,
+            "Project search: include ignored files",
+            "Include files excluded by Git and ignore rules in project results."
+        ),
+        field!(
+            editor.search_on_type,
+            "searchOnType",
+            Switch,
+            "Project search: search as you type",
+            "Update project results while typing; turn off to search with Enter."
+        ),
+        field!(
+            editor.search_seed_from_cursor,
+            "searchSeedFromCursor",
+            Select(&[
+                ("always", "Always"),
+                ("selection", "Selection"),
+                ("never", "Never")
+            ]),
+            "Search: seed from buffer",
+            "Choose whether a new search uses the selected text or word under the cursor."
         ),
         // ── file_manager ────────────────────────────────────────────────
         field!(
@@ -937,6 +1419,34 @@ pub fn all_fields() -> Vec<AnyField> {
             "Dismiss the palette when clicking outside the card."
         ),
         field!(
+            workspace.show_nav_history_buttons,
+            "showNavHistoryButtons",
+            Switch,
+            "Show navigation history buttons",
+            "Show Back and Forward controls before the tab strip."
+        ),
+        field!(
+            workspace.show_tab_bar_buttons,
+            "showTabBarButtons",
+            Switch,
+            "Show tab bar buttons",
+            "Show the Spaces and new-tab controls in the titlebar."
+        ),
+        field!(
+            workspace.show_editor_tab_git_status,
+            "showEditorTabGitStatus",
+            Switch,
+            "Show Git status in editor tabs",
+            "Show a colored marker when an open editor file has Git changes."
+        ),
+        field!(
+            workspace.show_editor_tab_diagnostics,
+            "showEditorTabDiagnostics",
+            Switch,
+            "Show diagnostics in editor tabs",
+            "Show an error or warning marker when an open editor file has diagnostics."
+        ),
+        field!(
             workspace.confirm_quit_with_active_sessions,
             "confirmQuitWithActiveSessions",
             Switch,
@@ -971,9 +1481,6 @@ pub fn all_fields() -> Vec<AnyField> {
         ),
     ];
     fields
-        .into_iter()
-        .filter(|field| !UI_REMOVED_FIELDS.contains(&field.json_path))
-        .collect()
 }
 
 #[cfg(test)]
@@ -1009,6 +1516,407 @@ mod tests {
                 "duplicate json_path `{}`",
                 f.json_path
             );
+        }
+    }
+
+    #[test]
+    fn editor_selections_menu_is_an_exposed_switch() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorSelectionsMenu")
+            .expect("editor selections-menu setting");
+        assert!(matches!(field.control, FieldControl::Switch));
+
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::Bool(false)));
+        assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn image_viewer_unit_is_an_exposed_select() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.imageViewerUnit")
+            .expect("image viewer unit setting");
+        match field.control {
+            FieldControl::Select(options) => {
+                assert!(options.contains(&("binary", "Binary (KiB, MiB)")));
+                assert!(options.contains(&("decimal", "Decimal (kB, MB)")));
+            }
+            _ => panic!("image viewer unit should use a select control"),
+        }
+
+        let mut content = SettingsContent::defaults();
+        assert!((field.set)(&mut content, Value::String("decimal".into())));
+        assert_eq!((field.get)(&content), Some(Value::String("decimal".into())));
+    }
+
+    #[test]
+    fn tab_bar_visibility_settings_are_exposed_switches() {
+        let fields = all_fields();
+        for path in [
+            "workspace.showNavHistoryButtons",
+            "workspace.showTabBarButtons",
+            "workspace.showEditorTabGitStatus",
+            "workspace.showEditorTabDiagnostics",
+        ] {
+            let field = fields
+                .iter()
+                .find(|field| field.json_path == path)
+                .expect("tab-bar visibility setting");
+            assert!(matches!(field.control, FieldControl::Switch));
+
+            let mut content = SettingsContent::defaults();
+            assert!((field.set)(&mut content, Value::Bool(false)));
+            assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+        }
+    }
+
+    #[test]
+    fn search_center_on_match_is_an_exposed_switch() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.searchCenterOnMatch")
+            .expect("search center-on-match setting");
+        assert!(matches!(field.control, FieldControl::Switch));
+
+        let mut content = SettingsContent::defaults();
+        assert!((field.set)(&mut content, Value::Bool(true)));
+        assert_eq!((field.get)(&content), Some(Value::Bool(true)));
+    }
+
+    #[test]
+    fn editor_inlay_hint_controls_are_registered_and_editable() {
+        let mut content = SettingsContent::default();
+        for path in [
+            "editor.editorInlayHints",
+            "editor.editorInlayTypeHints",
+            "editor.editorInlayParameterHints",
+            "editor.editorInlayOtherHints",
+            "editor.editorInlayShowBackground",
+        ] {
+            let field = all_fields()
+                .into_iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing inlay setting {path}"));
+            assert!(matches!(field.control, FieldControl::Switch));
+            assert!((field.set)(&mut content, Value::Bool(false)));
+            assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+        }
+        for path in [
+            "editor.editorInlayEditDebounceMs",
+            "editor.editorInlayScrollDebounceMs",
+        ] {
+            let field = all_fields()
+                .into_iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing inlay setting {path}"));
+            assert!(matches!(field.control, FieldControl::Int { .. }));
+            assert!((field.set)(&mut content, Value::from(450)));
+            assert_eq!((field.get)(&content), Some(Value::from(450)));
+        }
+    }
+
+    #[test]
+    fn editor_error_lens_controls_are_registered_and_editable() {
+        let mut content = SettingsContent::default();
+        let fields = all_fields();
+        let severity = fields
+            .iter()
+            .find(|field| field.json_path == "editor.editorDiagnosticsMaxSeverity")
+            .expect("diagnostic severity setting");
+        assert!(matches!(severity.control, FieldControl::Select(_)));
+        assert!((severity.set)(
+            &mut content,
+            Value::String("warning".into())
+        ));
+        assert_eq!(
+            (severity.get)(&content),
+            Some(Value::String("warning".into()))
+        );
+
+        let enabled = fields
+            .iter()
+            .find(|field| field.json_path == "editor.editorErrorLens")
+            .expect("Error Lens setting");
+        assert!(matches!(enabled.control, FieldControl::Switch));
+        assert!((enabled.set)(&mut content, Value::Bool(true)));
+        assert_eq!((enabled.get)(&content), Some(Value::Bool(true)));
+
+        for path in [
+            "editor.editorErrorLensDelayMs",
+            "editor.editorErrorLensSpacing",
+            "editor.editorErrorLensMinimumColumn",
+        ] {
+            let field = fields
+                .iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing Error Lens setting {path}"));
+            assert!(matches!(field.control, FieldControl::Int { .. }));
+            assert!((field.set)(&mut content, Value::from(250)));
+            assert_eq!((field.get)(&content), Some(Value::from(250)));
+        }
+    }
+
+    #[test]
+    fn editor_document_color_mode_is_registered_and_editable() {
+        let mut content = SettingsContent::default();
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorLspDocumentColors")
+            .expect("document colors setting");
+        assert!(matches!(field.control, FieldControl::Select(_)));
+        assert!((field.set)(&mut content, Value::String("inline".into())));
+        assert_eq!((field.get)(&content), Some(Value::String("inline".into())));
+    }
+
+    #[test]
+    fn editor_toolbar_contributions_are_exposed_as_switches() {
+        let paths = [
+            "editor.editorToolbarBreadcrumbs",
+            "editor.editorToolbarQuickActions",
+            "editor.editorSelectionsMenu",
+            "editor.editorToolbarCodeActions",
+        ];
+        for path in paths {
+            let field = all_fields()
+                .into_iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing toolbar setting {path}"));
+            assert!(matches!(field.control, FieldControl::Switch));
+            let mut content = SettingsContent::default();
+            assert!((field.set)(&mut content, Value::Bool(false)));
+            assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+        }
+    }
+
+    #[test]
+    fn editor_indentation_guides_is_an_exposed_switch() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorIndentationGuides")
+            .expect("editor indentation-guides setting");
+        assert!(matches!(field.control, FieldControl::Switch));
+    }
+
+    #[test]
+    fn editor_bracket_matching_is_an_exposed_switch() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorBracketMatching")
+            .expect("editor bracket-matching setting");
+        assert!(matches!(field.control, FieldControl::Switch));
+
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::Bool(false)));
+        assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn editor_bracket_input_preferences_are_exposed_switches() {
+        for path in [
+            "editor.editorAutoCloseBrackets",
+            "editor.editorAutoSurround",
+        ] {
+            let field = all_fields()
+                .into_iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing settings field {path}"));
+            assert!(matches!(field.control, FieldControl::Switch));
+        }
+    }
+
+    #[test]
+    fn vim_cursor_shape_settings_are_exposed_as_typed_selects() {
+        let fields = all_fields();
+        for path in [
+            "editor.vimCursorShapeNormal",
+            "editor.vimCursorShapeInsert",
+            "editor.vimCursorShapeReplace",
+            "editor.vimCursorShapeVisual",
+        ] {
+            let field = fields
+                .iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing settings field {path}"));
+            match field.control {
+                FieldControl::Select(options) => {
+                    assert!(options.iter().any(|(value, _)| *value == "inherit"));
+                    assert!(options.iter().any(|(value, _)| *value == "block"));
+                    assert!(options.iter().any(|(value, _)| *value == "underline"));
+                    assert!(options.iter().any(|(value, _)| *value == "bar"));
+                }
+                _ => panic!("{path} should use a select control"),
+            }
+        }
+
+        let field = fields
+            .into_iter()
+            .find(|field| field.json_path == "editor.vimCursorShapeInsert")
+            .expect("insert cursor shape setting");
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::String("underline".into())));
+        assert_eq!(
+            (field.get)(&content),
+            Some(Value::String("underline".into()))
+        );
+    }
+
+    #[test]
+    fn editor_cursor_style_exposes_hollow() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorCursorStyle")
+            .expect("editor cursor style setting");
+        match field.control {
+            FieldControl::Select(options) => {
+                assert!(options.iter().any(|(value, _)| *value == "hollow"));
+            }
+            _ => panic!("editor cursor style should use a select control"),
+        }
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::String("hollow".into())));
+        assert_eq!((field.get)(&content), Some(Value::String("hollow".into())));
+    }
+
+    #[test]
+    fn editor_font_weight_is_a_bounded_numeric_setting() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorFontWeight")
+            .expect("editor font-weight setting");
+        assert!(matches!(
+            field.control,
+            FieldControl::Int {
+                min: 100,
+                max: 900,
+                step: 50
+            }
+        ));
+
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::Number(650.into())));
+        assert_eq!((field.get)(&content), Some(Value::Number(650.into())));
+    }
+
+    #[test]
+    fn editor_selection_highlight_is_an_exposed_switch() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorSelectionHighlight")
+            .expect("editor selection-highlight setting");
+        assert!(matches!(field.control, FieldControl::Switch));
+
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::Bool(false)));
+        assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn editor_rounded_selection_is_an_exposed_switch() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorRoundedSelection")
+            .expect("editor rounded-selection setting");
+        assert!(matches!(field.control, FieldControl::Switch));
+
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::Bool(false)));
+        assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn editor_save_and_status_preferences_are_exposed_with_typed_controls() {
+        let fields = all_fields();
+        for path in [
+            "editor.editorAutoSave",
+            "editor.editorTrimTrailingWhitespace",
+            "editor.editorInsertFinalNewline",
+            "editor.editorShowCursorPosition",
+            "editor.editorShowSelectionStats",
+            "editor.editorShowOutline",
+        ] {
+            let field = fields
+                .iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing settings field {path}"));
+            assert!(matches!(field.control, FieldControl::Switch), "{path}");
+        }
+
+        for path in [
+            "editor.editorAutoSaveDelay",
+            "editor.editorAutocompleteDebounceMs",
+            "editor.editorMaxFileSizeMb",
+        ] {
+            let field = fields
+                .iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing settings field {path}"));
+            assert!(matches!(field.control, FieldControl::Int { .. }), "{path}");
+        }
+    }
+
+    #[test]
+    fn editor_drag_and_drop_selection_is_an_exposed_switch() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorDragAndDropSelection")
+            .expect("editor drag-and-drop setting");
+        assert!(matches!(field.control, FieldControl::Switch));
+
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::Bool(false)));
+        assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn editor_multi_cursor_modifier_is_an_exposed_select() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorMultiCursorModifier")
+            .expect("editor multi-cursor modifier setting");
+        match field.control {
+            FieldControl::Select(options) => {
+                assert!(options.iter().any(|(value, _)| *value == "alt"));
+                assert!(options.iter().any(|(value, _)| *value == "control"));
+                assert!(options.iter().any(|(value, _)| *value == "platform"));
+            }
+            _ => panic!("multi-cursor modifier should use a select control"),
+        }
+
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::String("control".into())));
+        assert_eq!((field.get)(&content), Some(Value::String("control".into())));
+    }
+
+    #[test]
+    fn editor_mouse_wheel_zoom_is_an_exposed_switch() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorMouseWheelZoom")
+            .expect("editor mouse-wheel zoom setting");
+        assert!(matches!(field.control, FieldControl::Switch));
+
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::Bool(true)));
+        assert_eq!((field.get)(&content), Some(Value::Bool(true)));
+    }
+
+    #[test]
+    fn editor_scroll_sensitivity_fields_are_bounded_float_settings() {
+        for path in [
+            "editor.editorScrollSensitivity",
+            "editor.editorFastScrollSensitivity",
+        ] {
+            let field = all_fields()
+                .into_iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing editor scroll setting {path}"));
+            assert!(matches!(field.control, FieldControl::Float { .. }));
+
+            let mut content = SettingsContent::default();
+            assert!((field.set)(&mut content, Value::from(1.5)));
+            assert_eq!((field.get)(&content), Some(Value::from(1.5)));
         }
     }
 
@@ -1094,5 +2002,18 @@ mod tests {
         let mut content = SettingsContent::defaults();
         assert!((field.set)(&mut content, Value::Bool(false)));
         assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn editor_git_blame_status_is_a_canonical_switch_field() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorGitBlameStatus")
+            .expect("editorGitBlameStatus must be registered");
+        assert!(matches!(field.control, FieldControl::Switch));
+
+        let mut content = SettingsContent::defaults();
+        assert!((field.set)(&mut content, Value::Bool(true)));
+        assert_eq!((field.get)(&content), Some(Value::Bool(true)));
     }
 }

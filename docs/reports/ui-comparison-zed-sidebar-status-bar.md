@@ -69,7 +69,7 @@ The highest-value Labonair sources are:
 - [`crates/ui-kit/src/toggle.rs`](../../crates/ui-kit/src/toggle.rs): 20 px status-bar toggle primitive.
 - [`crates/panel-explorer/src/panel_explorer.rs`](../../crates/panel-explorer/src/panel_explorer.rs): Explorer model, toolbar, search, tree rows, selection, drag/drop, and context menu.
 - [`crates/panel-scm/src/panel_scm.rs`](../../crates/panel-scm/src/panel_scm.rs): Source Control toolbar, sections, file rows, diff, branch controls, stashes, and commit form.
-- [`reference-src/src/modules/statusbar/StatusBar.tsx`](../../reference-src/src/modules/statusbar/StatusBar.tsx), [`renderBarItem.tsx`](../../reference-src/src/modules/statusbar/lib/renderBarItem.tsx), [`FileExplorer.tsx`](../../reference-src/src/modules/explorer/FileExplorer.tsx), [`FileTreeNode.tsx`](../../reference-src/src/modules/explorer/FileTreeNode.tsx), and [`VirtualizedTreeList.tsx`](../../reference-src/src/modules/explorer/components/VirtualizedTreeList.tsx): the frozen web UI that explains many current presentation choices.
+- ``reference-src/src/modules/statusbar/StatusBar.tsx`` (`../../reference-src/src/modules/statusbar/StatusBar.tsx`), ``renderBarItem.tsx`` (`../../reference-src/src/modules/statusbar/lib/renderBarItem.tsx`), ``FileExplorer.tsx`` (`../../reference-src/src/modules/explorer/FileExplorer.tsx`), ``FileTreeNode.tsx`` (`../../reference-src/src/modules/explorer/FileTreeNode.tsx`), and ``VirtualizedTreeList.tsx`` (`../../reference-src/src/modules/explorer/components/VirtualizedTreeList.tsx`): the frozen web UI that explains many current presentation choices.
 
 ### 3.2 Zed
 

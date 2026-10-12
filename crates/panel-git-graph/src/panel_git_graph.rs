@@ -28,6 +28,7 @@ pub(crate) mod theme {
     pub use labonair_theme::store::*;
 }
 
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -106,6 +107,23 @@ pub fn initials(name: &str) -> String {
             format!("{f}{l}")
         }
     }
+}
+
+fn file_history_query(path: &str) -> Result<(String, String), String> {
+    let file = Path::new(path);
+    if !file.is_absolute() {
+        return Err("file history requires an absolute file path".to_string());
+    }
+    let Some(parent) = file.parent() else {
+        return Err("file history path has no parent directory".to_string());
+    };
+    let Some(name) = file.file_name() else {
+        return Err("file history path does not name a file".to_string());
+    };
+    Ok((
+        parent.to_string_lossy().into_owned(),
+        name.to_string_lossy().into_owned(),
+    ))
 }
 
 // ── graph layout ───────────────────────────────────────────────────────────
@@ -460,6 +478,8 @@ pub struct GitGraphView {
 
     /// The active terminal's cwd (fed from the app shell).
     root: Option<String>,
+    /// Absolute file path when the graph is filtered to one file's history.
+    file_history_path: Option<String>,
     /// Remote SSH session backing `root`, if any.
     session_id: Option<String>,
     /// Resolved repository root (`git rev-parse --show-toplevel`).
@@ -525,6 +545,7 @@ impl GitGraphView {
             theme,
             focus: cx.focus_handle(),
             root: None,
+            file_history_path: None,
             session_id: None,
             repo_path: None,
             state: GraphState::Idle,
@@ -548,11 +569,30 @@ impl GitGraphView {
 
     /// Point the graph at a new working directory (app-shell driven).
     pub fn set_root(&mut self, root: Option<String>, cx: &mut Context<Self>) {
+        if self.file_history_path.is_some() {
+            return;
+        }
         if self.root == root {
             return;
         }
         self.root = root;
         self.reset_and_load(cx);
+    }
+
+    /// Show the commit history that touched `path`, following file renames.
+    pub fn set_file_history(&mut self, path: String, cx: &mut Context<Self>) -> Result<(), String> {
+        let (root, _) = file_history_query(&path)?;
+        self.file_history_path = Some(path);
+        self.root = Some(root);
+        self.reset_and_load(cx);
+        Ok(())
+    }
+
+    /// Return to the repository-wide graph when the tab is opened normally.
+    pub fn clear_file_history(&mut self, cx: &mut Context<Self>) {
+        if self.file_history_path.take().is_some() {
+            self.reset_and_load(cx);
+        }
     }
 
     /// Point the graph at a remote SSH session (or back to local with `None`).
@@ -616,6 +656,7 @@ impl GitGraphView {
         let generation = self.gen;
         let session = self.session_id.clone();
         let git = self.git.clone();
+        let file_history_path = self.file_history_path.clone();
         let skip = Some(if append {
             self.total_loaded as usize
         } else {
@@ -635,9 +676,14 @@ impl GitGraphView {
                 .current_branch(repo_root.clone(), session.clone())
                 .await
                 .ok();
-            let page = git
-                .log(repo_root.clone(), Some(fetch), true, session.clone(), skip)
-                .await?;
+            let page = if let Some(file_path) = file_history_path {
+                let (file_root, file_name) = file_history_query(&file_path)?;
+                git.file_log(file_root, file_name, Some(fetch), session.clone(), skip)
+                    .await?
+            } else {
+                git.log(repo_root.clone(), Some(fetch), true, session.clone(), skip)
+                    .await?
+            };
             Ok(Some((repo_root, head, page)))
         });
 
@@ -837,6 +883,19 @@ impl GitGraphView {
                             .child(SharedString::from(if remote { "Remote" } else { "Local" })),
                     ),
             )
+            .when_some(self.file_history_path.as_deref(), |toolbar, path| {
+                let name = Path::new(path)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or(path);
+                toolbar.child(
+                    div()
+                        .flex_shrink_0()
+                        .text_size(px(10.0))
+                        .text_color(c.accent)
+                        .child(SharedString::from(format!("File History · {name}"))),
+                )
+            })
             .child(
                 div()
                     .flex()
@@ -1242,7 +1301,11 @@ impl GitGraphView {
             GraphState::Error(_) => center_message("Git history unavailable", "", c),
             GraphState::Loading | GraphState::Loaded => {
                 if self.commits.is_empty() {
-                    center_message("No commits found", "", c)
+                    if self.file_history_path.is_some() {
+                        center_message("No file history found", "No commits changed this file.", c)
+                    } else {
+                        center_message("No commits found", "", c)
+                    }
                 } else {
                     self.render_rows(c, cx)
                 }
@@ -1983,6 +2046,15 @@ mod tests {
     fn initial_page_size_matches_reference() {
         assert_eq!(initial_graph_page_size(None), 500);
         assert_eq!(initial_graph_page_size(Some("explorer:host-1")), 200);
+    }
+
+    #[test]
+    fn file_history_uses_the_file_parent_as_git_working_directory() {
+        assert_eq!(
+            file_history_query("/repo/src/lib.rs"),
+            Ok(("/repo/src".to_string(), "lib.rs".to_string()))
+        );
+        assert!(file_history_query("src/lib.rs").is_err());
     }
 
     #[test]

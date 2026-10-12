@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder, px, AnyElement, App, Div, InteractiveElement, IntoElement,
+    div, prelude::FluentBuilder, px, AnyElement, App, Div, Hsla, InteractiveElement, IntoElement,
     ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
 };
 
@@ -38,8 +38,10 @@ pub struct TabItemBuilder {
     selected: bool,
     disabled: bool,
     dirty: bool,
+    status_colors: Vec<Hsla>,
     busy: bool,
     peek: bool,
+    pinned: bool,
     activate: Option<TabAction>,
     double_click: Option<TabAction>,
     navigate: Option<TabNavigation>,
@@ -63,8 +65,10 @@ pub fn tab_item(
         selected: false,
         disabled: false,
         dirty: false,
+        status_colors: Vec::new(),
         busy: false,
         peek: false,
+        pinned: false,
         activate: None,
         double_click: None,
         navigate: None,
@@ -98,6 +102,22 @@ impl TabItemBuilder {
         self
     }
 
+    /// Append a small owner-colored state marker after the tab title.
+    pub fn status_color(mut self, color: Option<Hsla>) -> Self {
+        if let Some(color) = color {
+            self.status_colors.push(color);
+        }
+        self
+    }
+
+    /// Append another small owner-colored state marker after existing markers.
+    pub fn status_marker(mut self, color: Option<Hsla>) -> Self {
+        if let Some(color) = color {
+            self.status_colors.push(color);
+        }
+        self
+    }
+
     pub fn busy(mut self, busy: bool) -> Self {
         self.busy = busy;
         self
@@ -105,6 +125,12 @@ impl TabItemBuilder {
 
     pub fn peek(mut self, peek: bool) -> Self {
         self.peek = peek;
+        self
+    }
+
+    /// Show a pin in place of the close control for a pinned tab.
+    pub fn pinned(mut self, pinned: bool) -> Self {
+        self.pinned = pinned;
         self
     }
 
@@ -151,8 +177,10 @@ impl TabItemBuilder {
             selected,
             disabled,
             dirty,
+            status_colors,
             busy,
             peek,
+            pinned,
             activate,
             double_click,
             navigate,
@@ -235,11 +263,22 @@ impl TabItemBuilder {
         if dirty {
             row = row.child(indicator(IndicatorSize::Xs, palette.fg.opacity(0.7)));
         }
+        for color in status_colors {
+            row = row.child(indicator(IndicatorSize::Xs, color));
+        }
         if busy {
             row = row.child(indicator(IndicatorSize::Xs, palette.info));
         }
 
-        if let Some(close) = close.filter(|_| !disabled) {
+        if pinned {
+            row = row.child(
+                div().flex_shrink_0().child(
+                    IconName::Pin
+                        .svg(if selected { palette.fg } else { palette.muted })
+                        .size(palette.control_space(14.0)),
+                ),
+            );
+        } else if let Some(close) = close.filter(|_| !disabled) {
             let click_close = close.clone();
             let close_button = icon_button_builder(
                 SharedString::from(format!("{id}-close")),

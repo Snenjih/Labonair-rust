@@ -25,6 +25,21 @@ use labonair_ui_kit::IconName;
 
 use crate::spaces::{SpaceId, DEFAULT_SPACE_ID};
 
+/// Git state projected from an editor's current gutter snapshot for tab chrome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabGitStatus {
+    Added,
+    Modified,
+    Deleted,
+}
+
+/// Highest visible diagnostic severity for an editor tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabDiagnosticStatus {
+    Error,
+    Warning,
+}
+
 /// The category of a tab. Content views for most kinds arrive in later phases;
 /// the model already covers them so the tab bar and store are stable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -142,6 +157,12 @@ pub struct Tab {
     pub dirty: bool,
     /// "Peek" preview tab, rendered italic (`Editor`).
     pub peek: bool,
+    /// Kept in the pinned group and protected from tab-strip close gestures.
+    pub pinned: bool,
+    /// Current editor file Git status, when its gutter snapshot is current.
+    pub git_status: Option<TabGitStatus>,
+    /// Highest error/warning severity reported for this editor file.
+    pub diagnostic_status: Option<TabDiagnosticStatus>,
     pub data: TabData,
     /// The Space this tab belongs to (T20-008 Spaces). Set once, from
     /// [`TabStore::current_space`], at creation time — there is no such thing
@@ -285,6 +306,9 @@ impl TabStore {
             custom_title: None,
             dirty: false,
             peek: false,
+            pinned: false,
+            git_status: None,
+            diagnostic_status: None,
             data,
             space_id: self.current_space,
         });
@@ -439,6 +463,11 @@ impl TabStore {
         if from == to {
             return;
         }
+        if self.tabs[from].space_id == self.tabs[to].space_id
+            && self.tabs[from].pinned != self.tabs[to].pinned
+        {
+            return;
+        }
         let tab = self.tabs.remove(from);
         self.tabs.insert(to, tab);
         cx.notify();
@@ -472,6 +501,14 @@ impl TabStore {
         });
     }
 
+    pub fn set_url(&mut self, id: u64, url: Option<String>, cx: &mut Context<Self>) {
+        self.with_tab(id, cx, |t| {
+            let changed = t.data.url != url;
+            t.data.url = url;
+            changed
+        });
+    }
+
     pub fn set_dirty(&mut self, id: u64, dirty: bool, cx: &mut Context<Self>) {
         self.with_tab(id, cx, |t| {
             let changed = t.dirty != dirty;
@@ -482,10 +519,90 @@ impl TabStore {
 
     pub fn set_peek(&mut self, id: u64, peek: bool, cx: &mut Context<Self>) {
         self.with_tab(id, cx, |t| {
+            let peek = peek && !t.pinned;
             let changed = t.peek != peek;
             t.peek = peek;
             changed
         });
+    }
+
+    /// Update the Git status marker for a file-backed tab.
+    pub fn set_git_status(
+        &mut self,
+        id: u64,
+        status: Option<TabGitStatus>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+            return;
+        };
+        if tab.git_status == status {
+            return;
+        }
+        tab.git_status = status;
+        cx.notify();
+    }
+
+    /// Update the diagnostic marker for an editor tab.
+    pub fn set_diagnostic_status(
+        &mut self,
+        id: u64,
+        status: Option<TabDiagnosticStatus>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+            return;
+        };
+        if tab.diagnostic_status == status {
+            return;
+        }
+        tab.diagnostic_status = status;
+        cx.notify();
+    }
+
+    /// Pin a tab into the front group in its Space. Pinning promotes a peek
+    /// tab; unpinning keeps it permanent rather than restoring preview state.
+    pub fn set_pinned(&mut self, id: u64, pinned: bool, cx: &mut Context<Self>) {
+        let Some(space_id) = self
+            .tabs
+            .iter()
+            .find(|tab| tab.id == id)
+            .map(|tab| tab.space_id)
+        else {
+            return;
+        };
+        let changed = self
+            .tabs
+            .iter_mut()
+            .find(|tab| tab.id == id)
+            .is_some_and(|tab| {
+                let changed = tab.pinned != pinned || (pinned && tab.peek);
+                tab.pinned = pinned;
+                if pinned {
+                    tab.peek = false;
+                }
+                changed
+            });
+        if !changed {
+            return;
+        }
+
+        // Keep stored order consistent with the visible pin group so tab
+        // cycling, close-to-side, and drag operations use the same order.
+        let mut space_tabs: Vec<Tab> = self
+            .tabs
+            .iter()
+            .filter(|tab| tab.space_id == space_id)
+            .cloned()
+            .collect();
+        space_tabs.sort_by_key(|tab| !tab.pinned);
+        let mut ordered = space_tabs.into_iter();
+        for tab in self.tabs.iter_mut().filter(|tab| tab.space_id == space_id) {
+            if let Some(next) = ordered.next() {
+                *tab = next;
+            }
+        }
+        cx.notify();
     }
 
     pub fn set_path(&mut self, id: u64, path: Option<String>, cx: &mut Context<Self>) {
@@ -668,6 +785,66 @@ mod tests {
                 assert_eq!(s.adjacent_in_space(third, true), Some(fourth));
                 assert_eq!(s.adjacent_in_space(fourth, true), Some(third));
                 assert_eq!(s.adjacent_in_space(u64::MAX, true), None);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn pinning_promotes_peek_and_groups_tabs_first(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                let first = s.open(TabKind::Editor, TabData::default(), cx);
+                let preview = s.open(TabKind::Editor, TabData::default(), cx);
+                let last = s.open(TabKind::Workspace, ws(1), cx);
+                s.set_peek(preview, true, cx);
+
+                s.set_pinned(preview, true, cx);
+
+                let pinned = s.get(preview).expect("pinned tab exists");
+                assert!(pinned.pinned);
+                assert!(!pinned.peek, "pinning promotes a preview tab");
+                let order: Vec<u64> = s
+                    .tabs_in_space(DEFAULT_SPACE_ID)
+                    .iter()
+                    .map(|tab| tab.id)
+                    .collect();
+                assert_eq!(order, vec![preview, first, last]);
+                assert_eq!(s.adjacent_in_space(preview, true), Some(first));
+
+                s.set_pinned(preview, false, cx);
+                assert!(!s.get(preview).expect("tab remains open").pinned);
+                assert!(!s.get(preview).expect("tab remains open").peek);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn tabs_cannot_be_dragged_across_the_pin_boundary(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                let first = s.open(TabKind::Editor, TabData::default(), cx);
+                let second = s.open(TabKind::Editor, TabData::default(), cx);
+                let pinned = s.open(TabKind::Editor, TabData::default(), cx);
+                s.set_pinned(pinned, true, cx);
+
+                s.reorder(first, pinned, cx);
+                s.reorder(pinned, first, cx);
+                let order: Vec<u64> = s
+                    .tabs_in_space(DEFAULT_SPACE_ID)
+                    .iter()
+                    .map(|tab| tab.id)
+                    .collect();
+                assert_eq!(order, vec![pinned, first, second]);
+
+                s.reorder(second, first, cx);
+                let order: Vec<u64> = s
+                    .tabs_in_space(DEFAULT_SPACE_ID)
+                    .iter()
+                    .map(|tab| tab.id)
+                    .collect();
+                assert_eq!(order, vec![pinned, second, first]);
             });
         });
     }

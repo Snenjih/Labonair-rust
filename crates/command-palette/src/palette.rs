@@ -123,6 +123,9 @@ fn palette_toggle_state(key: &str, cx: &App) -> bool {
         "vimMode" => EditorSettings::try_get(cx)
             .map(|s| s.vim_mode())
             .unwrap_or(false),
+        "helixMode" => EditorSettings::try_get(cx)
+            .map(|s| s.helix_mode())
+            .unwrap_or(false),
         _ => false,
     }
 }
@@ -138,6 +141,7 @@ fn palette_toggle_state(key: &str, cx: &App) -> bool {
 pub enum PaletteTabKind {
     Workspace,
     Editor,
+    Preview,
     Sftp,
     Home,
     /// Any other tab kind — maps to no context.
@@ -167,7 +171,7 @@ pub trait PaletteWorkspace {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sub-pages (port of the reference `CommandPage` registry — 11 named pages)
+// Sub-pages (port of the reference `CommandPage` registry — 12 named pages)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Every palette page. `Root` is the command list; the rest are the
@@ -183,6 +187,7 @@ pub enum Page {
     Hosts,
     Snippets,
     Outline,
+    Diagnostics,
     GitBranches,
     StatusBarHidden,
 }
@@ -200,6 +205,7 @@ impl Page {
             Page::Hosts => "Search hosts\u{2026}",
             Page::Snippets => "Search snippets\u{2026}",
             Page::Outline => "Search symbols\u{2026}",
+            Page::Diagnostics => "Search diagnostics\u{2026}",
             Page::GitBranches => "Search branches\u{2026}",
             Page::StatusBarHidden => "Search hidden items\u{2026}",
         }
@@ -217,6 +223,7 @@ impl Page {
             Page::Hosts => "Hosts",
             Page::Snippets => "Snippets",
             Page::Outline => "Symbols",
+            Page::Diagnostics => "Diagnostics",
             Page::GitBranches => "Branches",
             Page::StatusBarHidden => "Hidden Status Bar Items",
         }
@@ -306,6 +313,7 @@ fn page_for(page: CommandSubmenu) -> Page {
         CommandSubmenu::Hosts => Page::Hosts,
         CommandSubmenu::Snippets => Page::Snippets,
         CommandSubmenu::Outline => Page::Outline,
+        CommandSubmenu::Diagnostics => Page::Diagnostics,
         CommandSubmenu::GitBranches => Page::GitBranches,
         CommandSubmenu::StatusBarHidden => Page::StatusBarHidden,
     }
@@ -360,6 +368,7 @@ pub fn context_of(kind: PaletteTabKind, is_ssh: bool) -> Option<CommandContext> 
         PaletteTabKind::Workspace if is_ssh => CommandContext::SshTerminal,
         PaletteTabKind::Workspace => CommandContext::Terminal,
         PaletteTabKind::Editor => CommandContext::Editor,
+        PaletteTabKind::Preview => CommandContext::Preview,
         PaletteTabKind::Sftp => CommandContext::Sftp,
         PaletteTabKind::Home => CommandContext::Home,
         PaletteTabKind::Other => return None,
@@ -454,8 +463,11 @@ enum RowKey {
     RunSnippet(String),
     /// Check out a git branch by name.
     SwitchBranch(String),
-    /// Jump the active editor's caret to a 0-based line (Go to Symbol).
-    GoToLine(usize),
+    /// Activate an editor tab and jump to a 0-based symbol line.
+    GoToEditorLine {
+        tab_id: u64,
+        line: usize,
+    },
     /// Un-hide a status-bar item by id.
     ShowStatusBarItem(String),
     /// Non-actionable (empty-state placeholder line).
@@ -504,7 +516,10 @@ fn row_key_for_action(action: &SubmenuAction) -> RowKey {
         SubmenuAction::SetIconTheme(id) => RowKey::SetIconTheme(id.clone()),
         SubmenuAction::RunSnippet(id) => RowKey::RunSnippet(id.clone()),
         SubmenuAction::SwitchBranch(name) => RowKey::SwitchBranch(name.clone()),
-        SubmenuAction::GoToLine(line) => RowKey::GoToLine(*line),
+        SubmenuAction::GoToEditorLine { tab_id, line } => RowKey::GoToEditorLine {
+            tab_id: *tab_id,
+            line: *line,
+        },
         SubmenuAction::ShowStatusBarItem(id) => RowKey::ShowStatusBarItem(id.clone()),
     }
 }
@@ -896,6 +911,13 @@ where
                 mode,
                 "No symbols found",
             ),
+            Page::Diagnostics => self.submenu_rows(
+                CommandSubmenu::Diagnostics,
+                "Diagnostics",
+                IconName::FileCode,
+                mode,
+                "No diagnostics",
+            ),
             Page::GitBranches => self.submenu_rows(
                 CommandSubmenu::GitBranches,
                 "Branches",
@@ -994,10 +1016,10 @@ where
                     SubmenuAction::SwitchBranch(name),
                 )));
             }
-            RowKey::GoToLine(line) => {
+            RowKey::GoToEditorLine { tab_id, line } => {
                 self.close(cx);
                 cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
-                    SubmenuAction::GoToLine(line),
+                    SubmenuAction::GoToEditorLine { tab_id, line },
                 )));
             }
             RowKey::ShowStatusBarItem(id) => {
@@ -1528,6 +1550,10 @@ mod tests {
             context_of(PaletteTabKind::Editor, false),
             Some(CommandContext::Editor)
         );
+        assert_eq!(
+            context_of(PaletteTabKind::Preview, false),
+            Some(CommandContext::Preview)
+        );
         assert_eq!(context_of(PaletteTabKind::Other, false), None);
     }
 
@@ -1562,6 +1588,10 @@ mod tests {
     #[test]
     fn toggle_commands_map_to_pref_keys() {
         assert_eq!(toggle_pref_key(CommandId::ToggleVimMode), Some("vimMode"));
+        assert_eq!(
+            toggle_pref_key(CommandId::ToggleHelixMode),
+            Some("helixMode")
+        );
         assert_eq!(
             toggle_pref_key(CommandId::ToggleEditorWordWrap),
             Some("editorWordWrap")

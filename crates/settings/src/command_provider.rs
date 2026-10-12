@@ -8,9 +8,18 @@ use labonair_command_palette_core::{
 use labonair_command_palette_runtime::CommandHandlerRegistry;
 
 use crate::{Settings as _, SettingsStore, ThemeSettings};
+use labonair_settings_content::editor::EditorModalMode;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SettingsCommandProvider;
+
+fn toggle_editor_mode(current: EditorModalMode, target: EditorModalMode) -> EditorModalMode {
+    if current == target {
+        EditorModalMode::Normal
+    } else {
+        target
+    }
+}
 
 fn toggle_setting_bool(key: &str, cx: &mut App) {
     if !cx.has_global::<SettingsStore>() {
@@ -37,8 +46,20 @@ fn toggle_setting_bool(key: &str, cx: &mut App) {
                 c.terminal.terminal_cursor_blink =
                     Some(!c.terminal.terminal_cursor_blink.unwrap_or(true));
             }
-            "vimMode" => {
-                c.editor.editor_vim_mode = Some(!c.editor.editor_vim_mode.unwrap_or(false));
+            "vimMode" | "helixMode" => {
+                let current = c.editor.editor_modal_mode.unwrap_or_else(|| {
+                    if c.editor.editor_vim_mode.unwrap_or(false) {
+                        EditorModalMode::Vim
+                    } else {
+                        EditorModalMode::Normal
+                    }
+                });
+                let target = if key == "vimMode" {
+                    EditorModalMode::Vim
+                } else {
+                    EditorModalMode::Helix
+                };
+                c.editor.editor_modal_mode = Some(toggle_editor_mode(current, target));
             }
             _ => {}
         });
@@ -75,6 +96,7 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry) {
         (CommandId::ToggleLineNumbers, "editorLineNumbers"),
         (CommandId::ToggleCursorBlink, "terminalCursorBlink"),
         (CommandId::ToggleVimMode, "vimMode"),
+        (CommandId::ToggleHelixMode, "helixMode"),
     ] {
         registry
             .register(id, move |_window, cx| toggle_setting_bool(key, cx))
@@ -137,8 +159,31 @@ impl CommandProvider for SettingsCommandProvider {
             .with_icon(CommandIcon::Eye),
             CommandDescriptor::new(CommandId::ToggleVimMode, "Toggle: Vim Mode", "Settings")
                 .with_icon(CommandIcon::Check),
+            CommandDescriptor::new(CommandId::ToggleHelixMode, "Toggle: Helix Mode", "Settings")
+                .with_icon(CommandIcon::Check),
         ];
 
         commands
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vim_and_helix_mode_toggles_are_mutually_exclusive() {
+        assert_eq!(
+            toggle_editor_mode(EditorModalMode::Normal, EditorModalMode::Vim),
+            EditorModalMode::Vim
+        );
+        assert_eq!(
+            toggle_editor_mode(EditorModalMode::Vim, EditorModalMode::Helix),
+            EditorModalMode::Helix
+        );
+        assert_eq!(
+            toggle_editor_mode(EditorModalMode::Helix, EditorModalMode::Helix),
+            EditorModalMode::Normal
+        );
     }
 }

@@ -816,6 +816,13 @@ fn chord_chips(chord: &str) -> Vec<String> {
 fn context_from_label(label: &str) -> Option<CommandContext> {
     match label {
         "Editor" => Some(CommandContext::Editor),
+        "EditorVim" | "Vim Editor" => Some(CommandContext::EditorVim),
+        "EditorHelix" | "Helix Editor" => Some(CommandContext::EditorHelix),
+        "EditorSnippetNext" | "Snippet Next Tabstop" => Some(CommandContext::EditorSnippetNext),
+        "EditorSnippetPrevious" | "Snippet Previous Tabstop" => {
+            Some(CommandContext::EditorSnippetPrevious)
+        }
+        "Preview" => Some(CommandContext::Preview),
         "Terminal" => Some(CommandContext::Terminal),
         "Sftp" | "SFTP" => Some(CommandContext::Sftp),
         "Home" => Some(CommandContext::Home),
@@ -1642,6 +1649,11 @@ mod tests {
     fn context_labels_round_trip() {
         for context in [
             CommandContext::Editor,
+            CommandContext::EditorVim,
+            CommandContext::EditorHelix,
+            CommandContext::EditorSnippetNext,
+            CommandContext::EditorSnippetPrevious,
+            CommandContext::Preview,
             CommandContext::Terminal,
             CommandContext::Sftp,
             CommandContext::Home,

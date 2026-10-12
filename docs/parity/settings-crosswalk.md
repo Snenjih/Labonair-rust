@@ -10,17 +10,23 @@ implementation status only; it contains no reference source paths or copied
 implementation details. `Partial` means the owner or some matching values
 exist, not that the page is accepted.
 
+The field-level register [`settings-requirements.md`](settings-requirements.md)
+assigns stable IDs to 384 static field/value rows, including JSON-only values,
+43 typed per-language options, 44 packaged language profiles, 10 dynamic setup
+pages, and 7 shared Settings flows. IDs identify scope only: each field's exact owner, runtime
+effect, validation, persistence, and acceptance evidence remain open.
+
 ## Page and owner crosswalk
 
 | Order | Settings page | Canonical Labonair owner(s) | Current values or surface | Status and dependency |
 |---:|---|---|---|---|
-| 1 | General | Settings, Workspace, Updater | Startup choice, session restore, window restore, update checks, quit behavior | Partial; complete field/default/effect crosswalk and match remaining runtime behavior |
+| 1 | General | Settings, Workspace, Updater | Startup choice, session restore, window restore, update checks, quit behavior | Partial; the JSON-only `confirm_quit` value defaults false; distinguish it from Labonair's active-shell window-close guard and complete remaining behavior |
 | 2 | Appearance | Settings, Themes, Backgrounds | App typography, density, motion, corner scale, tab placement, theme selection, background image presentation | Partial; Settings links to Theme and Background owner surfaces; finish typography coverage and visual acceptance |
 | 3 | Keymap | Keymap | Key binding editor and keymap selection | Partial; the Settings page now opens the canonical Workspace Keymap tab; editor state and persistence remain Keymap-owned |
-| 4 | Editor | Editor | Typography, wrapping, line numbers, indentation, Vim, caret and current-line behavior | Partial; implement remaining editor behavior before exposing its values |
+| 4 | Editor | Editor | Typography, wrapping, line numbers, indentation, Vim, caret and current-line behavior, and format-on-save | Partial; the consumer-backed global format-on-save switch is available under Formatting & Save. The [Workspace save packet](action-classification-workspace-save.md) maps it to the pinned per-language `format_on_save` setting and records missing language modes and one-shot bypass; implement and verify remaining behavior before exposing other values |
 | 5 | Languages & Tools | Editor, Snippets, planned Extensions | Language services, toolchains, formatters, language-specific support | Missing; language-service lifecycle and extension owner are dependencies |
-| 6 | Search & Files | File Finder, Filesystem, Explorer, SFTP | File search, Explorer behavior, SFTP browser presentation | Partial; map search and Explorer settings, retain SFTP values with their owning workflow |
-| 7 | Window & Layout | Workspace | Startup/session choices, tab placement, zen presentation; runtime layout is Workspace-owned | Partial; define the universal tab/split/layout setting boundary and persistence |
+| 6 | Search & Files | File Finder, Filesystem, Explorer, SFTP | File search, Explorer behavior, SFTP browser presentation | Partial; the [TextFinder action packet](action-classification-text-finder-unbound.md) records that TextFinder explicitly overrides the generic cursor-seed setting with selection-only seeding, so it is not an additional consumer. Map remaining search and Explorer settings, and retain SFTP values with their owning workflow |
+| 7 | Window & Layout | Workspace | Startup/session choices, tab placement, zen presentation, fullscreen mode, and the JSON-only dock resize policy | Partial; the [app/window lifecycle packet](action-classification-app-window-lifecycle.md) records native/simple fullscreen modes; define the universal tab/split/layout setting boundary, dock policy scope, and persistence |
 | 8 | Panels | Workspace and panel owners | Panel visibility, docking, and panel presentation | Missing as a Settings page; depends on the accepted dock and owner-contribution contract |
 | 9 | Debugger | Planned Debugger | No current debugger settings owner | Missing; debugger capability, protocol, lifecycle, and settings contract come first |
 | 10 | Terminal | Terminal, Workspace | Shell, typography, cursor, scrollback, input, environment, and close behavior | Partial; finish terminal value/effect coverage and visual states |

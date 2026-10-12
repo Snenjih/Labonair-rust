@@ -505,6 +505,13 @@ impl SettingsStore {
         for content in self.raw.values() {
             merged.merge_from(content);
         }
+        let explicit_editor_mode = self.raw.iter().any(|(layer, content)| {
+            !matches!(layer, SettingsLayer::Default) && content.editor.editor_modal_mode.is_some()
+        });
+        if !explicit_editor_mode && merged.editor.editor_vim_mode == Some(true) {
+            merged.editor.editor_modal_mode =
+                Some(labonair_settings_content::editor::EditorModalMode::Vim);
+        }
         self.merged = merged;
         self.layer_values = self
             .raw
@@ -1427,6 +1434,25 @@ mod tests {
         user.terminal.terminal_font_size = Some(21);
         store.set_layer(SettingsLayer::User, user);
         assert_eq!(store.get::<FakeFontSize>(), &FakeFontSize(21));
+    }
+
+    #[test]
+    fn legacy_vim_mode_setting_is_resolved_when_editor_mode_is_unspecified() {
+        let mut store = SettingsStore::new(tmp_path());
+        store.register_setting::<crate::EditorSettings>();
+        let mut user = SettingsContent::default();
+        user.editor.editor_vim_mode = Some(true);
+        store.set_layer(SettingsLayer::User, user);
+        assert!(store.get::<crate::EditorSettings>().vim_mode());
+
+        let mut user = SettingsContent::default();
+        user.editor.editor_modal_mode =
+            Some(labonair_settings_content::editor::EditorModalMode::Helix);
+        user.editor.editor_vim_mode = Some(true);
+        store.set_layer(SettingsLayer::User, user);
+        let editor = store.get::<crate::EditorSettings>();
+        assert!(!editor.vim_mode());
+        assert!(editor.helix_mode());
     }
 
     #[test]

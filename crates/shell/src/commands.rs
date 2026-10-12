@@ -116,6 +116,14 @@ impl CommandDispatcher {
         self.owner_handlers.handler(id)
     }
 
+    /// Whether a registered command has executable behavior at the
+    /// composition boundary. The keymap adapter uses this before converting a
+    /// feature-owned command into the generic GPUI action.
+    pub(crate) fn has_execution_handler(&self, id: CommandId) -> bool {
+        self.owner_handlers.handler(id).is_some()
+            || self.commands.iter().any(|command| command.id == id)
+    }
+
     /// Mutable assembly boundary for dynamic palette action contributions.
     pub(crate) fn palette_action_handlers_mut(&mut self) -> &mut PaletteActionHandlerRegistry {
         &mut self.palette_actions
@@ -215,6 +223,12 @@ pub(crate) fn attach_action_handlers(
         };
     }
 
+    el = el.on_action(
+        cx.listener(|this, action: &menu::RunRegisteredCommand, window, cx| {
+            this.dispatch_command(action.command, window, cx);
+        }),
+    );
+
     on!(menu::NewTerminalTab => CommandId::NewTerminalTab);
     on!(menu::OpenProject => CommandId::OpenProject);
     on!(menu::ReturnToStandalone => CommandId::ReturnToStandalone);
@@ -259,7 +273,9 @@ pub(crate) fn attach_action_handlers(
     // so the matching menu item greys out on its own (parity with the former
     // `.when(can_split)` / `.when(has_split)` guards).
     if can_split {
+        on!(menu::SplitPaneLeft => CommandId::SplitLeft);
         on!(menu::SplitPaneRight => CommandId::SplitRight);
+        on!(menu::SplitPaneUp => CommandId::SplitUp);
         on!(menu::SplitPaneDown => CommandId::SplitDown);
     }
     if has_split {
@@ -450,10 +466,14 @@ mod tests {
         let always = r.visible_in(None);
         assert!(always.iter().any(|c| c.id == CommandId::NewTerminalTab));
         assert!(!always.iter().any(|c| c.id == CommandId::SplitRight));
+        assert!(!always.iter().any(|c| c.id == CommandId::SplitLeft));
+        assert!(!always.iter().any(|c| c.id == CommandId::SplitUp));
         assert!(!always.iter().any(|c| c.id == CommandId::ClosePane));
 
         let term = r.visible_in(Some(CommandContext::Terminal));
         assert!(term.iter().any(|c| c.id == CommandId::SplitRight));
+        assert!(term.iter().any(|c| c.id == CommandId::SplitLeft));
+        assert!(term.iter().any(|c| c.id == CommandId::SplitUp));
         assert!(term.iter().any(|c| c.id == CommandId::ClosePane));
     }
 
