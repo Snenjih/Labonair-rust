@@ -1113,6 +1113,9 @@ pub struct EditorView {
     split_drag_last: Option<f32>,
     /// Cached glyph metrics `(char_width, line_height)` in px.
     metrics: (f32, f32),
+    /// Optional per-view font-size adjustment from modifier-wheel zoom.
+    font_size_override: Option<u32>,
+    font_zoom_remainder: f32,
     gutter_width: f32,
     /// Document-wide display coordinates are reused across paints until the
     /// buffer revision, display settings, or folds change.
@@ -1416,6 +1419,8 @@ impl EditorView {
             editor_group_views: HashMap::new(),
             split_drag_last: None,
             metrics: (8.0, 18.0),
+            font_size_override: None,
+            font_zoom_remainder: 0.0,
             gutter_width: 48.0,
             display_layout_cache: None,
             symbol_cache: None,
@@ -3448,6 +3453,10 @@ impl EditorView {
         if p == self.prefs {
             return;
         }
+        if p.font_size() != self.prefs.font_size() {
+            self.font_size_override = None;
+            self.font_zoom_remainder = 0.0;
+        }
         let inlay_hints_were_enabled = self.inlay_hints_enabled();
         let inlay_hints_setting_changed = p.inlay_hints() != self.prefs.inlay_hints();
         let code_lens_setting_changed = p.code_lens() != self.prefs.code_lens();
@@ -3778,6 +3787,24 @@ impl EditorView {
 
     fn file_limit_bytes(&self) -> u64 {
         u64::from(self.prefs.max_file_size_mb()) * 1024 * 1024
+    }
+
+    fn effective_font_size(&self) -> u32 {
+        self.font_size_override
+            .unwrap_or_else(|| self.prefs.font_size())
+            .clamp(6, 96)
+    }
+
+    fn adjust_font_size(&mut self, steps: i32, cx: &mut Context<Self>) {
+        if steps == 0 {
+            return;
+        }
+        let current = self.effective_font_size() as i32;
+        let next = (current + steps).clamp(6, 96) as u32;
+        if next != current as u32 {
+            self.font_size_override = Some(next);
+            cx.notify();
+        }
     }
 
     /// One indentation step for a Tab press outside Vim mode.
@@ -7755,7 +7782,7 @@ impl EditorView {
         palette: Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let font_px = self.prefs.font_size() as f32;
+        let font_px = self.effective_font_size() as f32;
         let line_h = self.metrics.1;
         let border = palette.border;
         let muted = palette.muted;
@@ -10087,7 +10114,7 @@ impl Render for EditorView {
         let accent = theme.accent();
         let gutter_bg = theme.card();
         let font = theme.buffer_font();
-        let font_px = self.prefs.font_size() as f32;
+        let font_px = self.effective_font_size() as f32;
         let line_h = (font_px * self.prefs.line_height()).ceil().max(1.0);
         let editor_font_family = self.prefs.font_family().to_string();
 
@@ -11086,7 +11113,14 @@ impl Render for EditorView {
                     gpui::ScrollDelta::Lines(p) => p.y,
                     gpui::ScrollDelta::Pixels(p) => f32::from(p.y) / this.metrics.1,
                 };
-                let _ = window;
+                if ev.modifiers.platform || ev.modifiers.control {
+                    let steps = font_zoom_steps(&mut this.font_zoom_remainder, dy);
+                    this.adjust_font_size(steps, cx);
+                    cx.stop_propagation();
+                    let _ = window;
+                    return;
+                }
+                this.font_zoom_remainder = 0.0;
                 if dy.abs() >= 0.01 {
                     this.scroll_by(-(dy.round() as isize).clamp(-8, 8), cx);
                 }
@@ -11101,6 +11135,25 @@ fn printable(ks: &gpui::Keystroke) -> Option<String> {
         return None;
     }
     Some(text)
+}
+
+fn font_zoom_steps(remainder: &mut f32, delta: f32) -> i32 {
+    if !delta.is_finite() || delta == 0.0 {
+        return 0;
+    }
+    let accumulated = if *remainder * delta < 0.0 {
+        delta
+    } else {
+        *remainder + delta
+    };
+    let whole = accumulated.trunc();
+    let steps = (whole as i32).clamp(-8, 8);
+    *remainder = if steps == whole as i32 {
+        accumulated - whole
+    } else {
+        0.0
+    };
+    steps
 }
 
 fn notify(cx: &mut App, title: &str, body: &str) {
@@ -11171,6 +11224,21 @@ mod tests {
         for path in ["notes.md", "main.rs", "data.parquet", "Makefile"] {
             assert!(!is_tabular_preview_path(&PathBuf::from(path)));
         }
+    }
+
+    #[test]
+    fn font_zoom_accumulates_trackpad_deltas_and_resets_on_direction_change() {
+        let mut remainder = 0.0;
+        assert_eq!(font_zoom_steps(&mut remainder, 0.4), 0);
+        assert_eq!(font_zoom_steps(&mut remainder, 0.7), 1);
+        assert!((remainder - 0.1).abs() < f32::EPSILON * 4.0);
+
+        assert_eq!(font_zoom_steps(&mut remainder, -0.8), 0);
+        assert_eq!(font_zoom_steps(&mut remainder, -0.4), -1);
+        assert!((remainder + 0.2).abs() < f32::EPSILON * 4.0);
+        assert_eq!(font_zoom_steps(&mut remainder, f32::NAN), 0);
+        assert_eq!(font_zoom_steps(&mut remainder, 12.0), 8);
+        assert_eq!(remainder, 0.0);
     }
 
     #[gpui::test]
