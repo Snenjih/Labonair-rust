@@ -2501,6 +2501,11 @@ impl Workspace {
     /// Open `target` (a local path or URL) in a preview tab, reusing the active
     /// preview tab if one is already open.
     pub fn open_preview(&mut self, target: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.activate_preview_target(target, cx);
+        self.focus_active(window, cx);
+    }
+
+    fn activate_preview_target(&mut self, target: String, cx: &mut Context<Self>) {
         let title = std::path::Path::new(&target)
             .file_name()
             .and_then(|s| s.to_str())
@@ -2545,7 +2550,6 @@ impl Workspace {
         if let Some(view) = self.previews.get(&tab_id).cloned() {
             view.update(cx, |p, cx| p.set_url(target, cx));
         }
-        self.focus_active(window, cx);
     }
 
     /// Apply a registry-backed image-viewer command to the active preview tab.
@@ -2822,6 +2826,11 @@ impl Workspace {
             match ev {
                 EditorEvent::MarkdownPreviewRequested(source) => {
                     this.open_markdown_preview_for_editor(tab_id, source.clone(), cx);
+                }
+                EditorEvent::SvgPreviewRequested(path) => {
+                    this.activate_preview_target(path.to_string_lossy().into_owned(), cx);
+                    this.pending_preview_focus = true;
+                    cx.notify();
                 }
                 EditorEvent::BufferChanged(source) => {
                     this.update_markdown_preview_for_editor(tab_id, source.clone(), cx);

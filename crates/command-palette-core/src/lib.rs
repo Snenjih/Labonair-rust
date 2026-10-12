@@ -121,6 +121,7 @@ pub enum CommandId {
     EditorToggleSearchSelection,
     EditorToggleReadOnly,
     EditorOpenMarkdownPreview,
+    EditorOpenSvgPreview,
     EditorToggleBreadcrumb,
     EditorToggleInlayHints,
     EditorDeleteLine,
@@ -633,6 +634,7 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
         CommandId::EditorOpenMarkdownPreview,
         "markdown::OpenPreview"
     ),
+    (CommandId::EditorOpenSvgPreview, "svg::OpenPreview"),
     (CommandId::EditorToggleBreadcrumb, "editor.toggle-breadcrumb"),
     (CommandId::EditorToggleInlayHints, "editor.toggle-inlay-hints"),
     (CommandId::EditorDeleteLine, "editor.delete-line"),

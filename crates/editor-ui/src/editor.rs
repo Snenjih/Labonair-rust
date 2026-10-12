@@ -90,6 +90,8 @@ pub enum EditorEvent {
     Edited,
     /// A Markdown preview should open for this exact immutable source revision.
     MarkdownPreviewRequested(EditorBufferSnapshot),
+    /// An SVG preview should open for this file path in the Workspace preview host.
+    SvgPreviewRequested(PathBuf),
     /// The content or file identity of an editor buffer changed.
     BufferChanged(EditorBufferSnapshot),
     /// Vim `:q` / `:wq` — the hosting workspace should close this editor's tab.
@@ -1342,6 +1344,22 @@ impl EditorView {
                         cx,
                         "Markdown Preview",
                         "Open a Markdown file before opening its preview.",
+                    );
+                }
+            }
+            EditorCommandRoute::Ui(EditorUiCommand::OpenSvgPreview) => {
+                let svg_path = self.doc.path.clone().filter(|path| {
+                    path.extension()
+                        .and_then(|extension| extension.to_str())
+                        .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
+                });
+                if let Some(path) = svg_path {
+                    cx.emit(EditorEvent::SvgPreviewRequested(path));
+                } else {
+                    notify_info(
+                        cx,
+                        "SVG Preview",
+                        "Open an SVG file before opening its preview.",
                     );
                 }
             }
@@ -6984,13 +7002,18 @@ impl EditorView {
         let code_actions = self.prefs.toolbar_code_actions()
             && self.language_service_snapshot.capabilities.code_actions;
         let markdown_preview = self.doc.language == Language::Markdown;
+        let svg_preview = self.doc.path.as_ref().is_some_and(|path| {
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
+        });
         let temporary_read_only = self.doc.temporary_read_only();
         if !editor_toolbar_has_contribution(
             breadcrumbs,
             quick_actions,
             selections_menu,
             code_actions,
-            markdown_preview,
+            markdown_preview || svg_preview,
         ) && !temporary_read_only
         {
             return None;
@@ -7030,6 +7053,17 @@ impl EditorView {
                         let _ = this
                             .dispatch_registered_command(CommandId::EditorOpenMarkdownPreview, cx);
                     }));
+            actions = actions.child(preview);
+        }
+        if svg_preview {
+            let preview = icon_button_builder("editor-svg-preview-toggle", palette, IconName::Eye)
+                .size(ButtonSize::IconSm)
+                .shape(IconButtonShape::Square)
+                .tooltip("Open SVG Preview")
+                .render()
+                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                    let _ = this.dispatch_registered_command(CommandId::EditorOpenSvgPreview, cx);
+                }));
             actions = actions.child(preview);
         }
         if temporary_read_only {

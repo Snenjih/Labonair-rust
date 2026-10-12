@@ -53,6 +53,7 @@ pub enum EditorUiCommand {
     NextSnippetTabstop,
     PreviousSnippetTabstop,
     OpenMarkdownPreview,
+    OpenSvgPreview,
     ToggleBreadcrumb,
     ToggleInlayHints,
     Rewrap,
@@ -134,6 +135,7 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         CommandId::EditorOpenMarkdownPreview => {
             EditorCommandRoute::Ui(EditorUiCommand::OpenMarkdownPreview)
         }
+        CommandId::EditorOpenSvgPreview => EditorCommandRoute::Ui(EditorUiCommand::OpenSvgPreview),
         CommandId::EditorToggleBreadcrumb => {
             EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb)
         }
@@ -295,6 +297,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorToggleSearchSelection,
     CommandId::EditorToggleReadOnly,
     CommandId::EditorOpenMarkdownPreview,
+    CommandId::EditorOpenSvgPreview,
     CommandId::EditorToggleBreadcrumb,
     CommandId::EditorToggleInlayHints,
     CommandId::EditorDeleteLine,
@@ -460,6 +463,12 @@ impl CommandProvider for EditorCommandProvider {
             )
             .with_contexts(&[CommandContext::Editor])
             .with_default_binding("cmd-shift-v", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
+                CommandId::EditorOpenSvgPreview,
+                "Open SVG Preview",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(CommandId::GoToSymbol, "Go to Symbol…", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_icon(CommandIcon::FileCode)
@@ -1030,6 +1039,23 @@ mod tests {
         assert_eq!(
             route_for_command(CommandId::EditorOpenMarkdownPreview),
             Some(EditorCommandRoute::Ui(EditorUiCommand::OpenMarkdownPreview))
+        );
+    }
+
+    #[test]
+    fn svg_preview_is_an_editor_owned_command() {
+        let command = EditorCommandProvider
+            .commands()
+            .into_iter()
+            .find(|command| command.id == CommandId::EditorOpenSvgPreview)
+            .expect("SVG Preview descriptor");
+
+        assert_eq!(command.title, "Open SVG Preview");
+        assert_eq!(command.id.action_name(), "svg::OpenPreview");
+        assert!(command.default_bindings.is_empty());
+        assert_eq!(
+            route_for_command(CommandId::EditorOpenSvgPreview),
+            Some(EditorCommandRoute::Ui(EditorUiCommand::OpenSvgPreview))
         );
     }
 
