@@ -469,6 +469,8 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_indent_with_tabs: Some(p.editor_indent_with_tabs),
         editor_indentation_guides: Some(p.editor_indentation_guides),
         editor_whitespace: Some("none".to_string()),
+        editor_whitespace_space: Some("•".to_string()),
+        editor_whitespace_tab: Some("→".to_string()),
         editor_minimap: Some(EditorMinimapSetting::Visibility(
             EditorMinimapVisibility::Never,
         )),

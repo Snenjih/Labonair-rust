@@ -92,6 +92,8 @@
     "editorIndentWithTabs": false,
     "editorIndentationGuides": true,
     "editorWhitespace": "none",
+    "editorWhitespaceSpace": "•",
+    "editorWhitespaceTab": "→",
     "editorMinimap": "never",
     "editorMinimapDisplayIn": "active_editor",
     "editorMinimapThumb": "always",

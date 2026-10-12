@@ -315,6 +315,17 @@ impl TerminalSettings {
     }
 }
 
+fn single_character_setting(value: Option<&str>, fallback: char) -> char {
+    let Some(value) = value else {
+        return fallback;
+    };
+    let mut characters = value.chars();
+    match (characters.next(), characters.next()) {
+        (Some(character), None) => character,
+        _ => fallback,
+    }
+}
+
 /// `editor` area.
 #[derive(Clone, Debug, PartialEq, RegisterSetting)]
 pub struct EditorSettings(EditorContent);
@@ -440,6 +451,16 @@ impl EditorSettings {
 
     pub fn whitespace(&self) -> &str {
         self.0.editor_whitespace.as_deref().unwrap_or("none")
+    }
+
+    /// Marker used when rendering a space in the editor whitespace map.
+    pub fn whitespace_space_marker(&self) -> char {
+        single_character_setting(self.0.editor_whitespace_space.as_deref(), '•')
+    }
+
+    /// Marker used when rendering a tab in the editor whitespace map.
+    pub fn whitespace_tab_marker(&self) -> char {
+        single_character_setting(self.0.editor_whitespace_tab.as_deref(), '→')
     }
 
     pub fn minimap(&self) -> bool {
@@ -991,6 +1012,20 @@ mod tests {
         content.editor.editor_git_word_diff = Some(false);
         let settings = EditorSettings::from_settings(&content);
         assert!(!settings.git_word_diff());
+    }
+
+    #[test]
+    fn editor_whitespace_map_accepts_one_character_and_falls_back_on_invalid_values() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(defaults.whitespace_space_marker(), '•');
+        assert_eq!(defaults.whitespace_tab_marker(), '→');
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_whitespace_space = Some("∙".to_string());
+        content.editor.editor_whitespace_tab = Some("tab".to_string());
+        let settings = EditorSettings::from_settings(&content);
+        assert_eq!(settings.whitespace_space_marker(), '∙');
+        assert_eq!(settings.whitespace_tab_marker(), '→');
     }
 
     #[test]

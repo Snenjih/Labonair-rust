@@ -571,6 +571,20 @@ pub fn all_fields() -> Vec<AnyField> {
             "Show spaces, tabs, and line endings in the editor."
         ),
         field!(
+            editor.editor_whitespace_space,
+            "editorWhitespaceSpace",
+            Text,
+            "Space marker",
+            "Single character used to display spaces when whitespace is visible."
+        ),
+        field!(
+            editor.editor_whitespace_tab,
+            "editorWhitespaceTab",
+            Text,
+            "Tab marker",
+            "Single character used to display tabs when whitespace is visible."
+        ),
+        field!(
             editor.editor_minimap,
             "editorMinimap",
             Select(&[

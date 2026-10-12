@@ -107,6 +107,8 @@ pub struct DisplayConfig {
     pub relative_line_numbers: bool,
     pub indentation_guides: bool,
     pub whitespace: WhitespaceMode,
+    pub whitespace_space_marker: char,
+    pub whitespace_tab_marker: char,
     pub scroll_beyond_last_line: bool,
 }
 
@@ -118,6 +120,8 @@ impl Default for DisplayConfig {
             relative_line_numbers: false,
             indentation_guides: true,
             whitespace: WhitespaceMode::None,
+            whitespace_space_marker: '•',
+            whitespace_tab_marker: '→',
             scroll_beyond_last_line: true,
         }
     }
@@ -575,7 +579,11 @@ impl DisplaySnapshot {
             }
             tokens.push(WhitespaceToken {
                 range: TextRange::new(byte, end),
-                marker: if ch == '\t' { '→' } else { '·' },
+                marker: if ch == '\t' {
+                    self.config.whitespace_tab_marker
+                } else {
+                    self.config.whitespace_space_marker
+                },
             });
         }
         tokens
@@ -1103,7 +1111,31 @@ mod tests {
         let tokens = display.whitespace_tokens(&source, &display.rows[0], &selections);
         assert_eq!(tokens.len(), 3);
         assert_eq!(source.text_range(tokens[0].range), " ");
+        assert_eq!(tokens[0].marker, '•');
         assert_eq!(tokens[2].marker, '→');
+    }
+
+    #[test]
+    fn whitespace_tokens_use_configured_markers() {
+        let source = snapshot(" \t");
+        let display = DisplayMap::build(
+            &source,
+            Viewport::default(),
+            DisplayConfig {
+                whitespace: WhitespaceMode::All,
+                whitespace_space_marker: '∙',
+                whitespace_tab_marker: '⇥',
+                ..Default::default()
+            },
+            &[],
+        );
+        let tokens =
+            display.whitespace_tokens(&source, &display.rows[0], &crate::SelectionSet::default());
+
+        assert_eq!(
+            tokens.iter().map(|token| token.marker).collect::<Vec<_>>(),
+            vec!['∙', '⇥']
+        );
     }
 
     #[test]

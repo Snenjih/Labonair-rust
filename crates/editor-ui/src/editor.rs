@@ -2733,6 +2733,8 @@ impl EditorView {
                 .unwrap_or_else(|| self.prefs.relative_line_numbers()),
             indentation_guides: self.prefs.indentation_guides(),
             whitespace,
+            whitespace_space_marker: self.prefs.whitespace_space_marker(),
+            whitespace_tab_marker: self.prefs.whitespace_tab_marker(),
             scroll_beyond_last_line: self.prefs.scroll_beyond_last_line(),
         }
     }
