@@ -11,7 +11,7 @@
 //! Workspace to mirror the dirty flag and peek state onto its tab.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -97,6 +97,8 @@ pub enum EditorEvent {
     MarkdownFollowingPreviewRequested(EditorBufferSnapshot),
     /// An SVG preview should open for this file path in the Workspace preview host.
     SvgPreviewRequested(PathBuf),
+    /// A delimited text preview should open for this file in the Workspace preview host.
+    TabularPreviewRequested(PathBuf),
     /// The content or file identity of an editor buffer changed.
     BufferChanged(EditorBufferSnapshot),
     /// Vim `:q` / `:wq` — the hosting workspace should close this editor's tab.
@@ -542,6 +544,17 @@ fn minimap_policy_visible(
 
 fn minimap_width_pixels(max_width_columns: u32) -> f32 {
     (max_width_columns.clamp(20, 160) as f32 * 3.0).clamp(76.0, 320.0)
+}
+
+fn is_tabular_preview_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "csv" | "tsv" | "ssv" | "psv"
+            )
+        })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1789,6 +1802,22 @@ impl EditorView {
                         cx,
                         "SVG Preview",
                         "Open an SVG file before opening its preview.",
+                    );
+                }
+            }
+            EditorCommandRoute::Ui(EditorUiCommand::OpenTabularPreview) => {
+                if let Some(path) = self
+                    .doc
+                    .path
+                    .clone()
+                    .filter(|path| is_tabular_preview_path(path))
+                {
+                    cx.emit(EditorEvent::TabularPreviewRequested(path));
+                } else {
+                    notify_info(
+                        cx,
+                        "Table Preview",
+                        "Open a CSV, TSV, SSV, or PSV file before opening its preview.",
                     );
                 }
             }
@@ -8197,13 +8226,18 @@ impl EditorView {
                 .and_then(|extension| extension.to_str())
                 .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
         });
+        let tabular_preview = self
+            .doc
+            .path
+            .as_ref()
+            .is_some_and(|path| is_tabular_preview_path(path));
         let temporary_read_only = self.doc.temporary_read_only();
         if !editor_toolbar_has_contribution(
             breadcrumbs,
             quick_actions,
             selections_menu,
             code_actions,
-            markdown_preview || svg_preview,
+            markdown_preview || svg_preview || tabular_preview,
         ) && !temporary_read_only
         {
             return None;
@@ -8254,6 +8288,19 @@ impl EditorView {
                 .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                     let _ = this.dispatch_registered_command(CommandId::EditorOpenSvgPreview, cx);
                 }));
+            actions = actions.child(preview);
+        }
+        if tabular_preview {
+            let preview =
+                icon_button_builder("editor-tabular-preview-toggle", palette, IconName::Eye)
+                    .size(ButtonSize::IconSm)
+                    .shape(IconButtonShape::Square)
+                    .tooltip("Open Table Preview")
+                    .render()
+                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                        let _ = this
+                            .dispatch_registered_command(CommandId::EditorOpenTabularPreview, cx);
+                    }));
             actions = actions.child(preview);
         }
         if temporary_read_only {
@@ -10811,6 +10858,16 @@ mod tests {
         assert_eq!(parse_line_column("1:2:3"), None);
     }
 
+    #[test]
+    fn tabular_preview_file_types_match_native_preview_resolver() {
+        for path in ["data.csv", "data.tsv", "data.ssv", "data.psv", "DATA.CSV"] {
+            assert!(is_tabular_preview_path(&PathBuf::from(path)));
+        }
+        for path in ["notes.md", "main.rs", "data.parquet", "Makefile"] {
+            assert!(!is_tabular_preview_path(&PathBuf::from(path)));
+        }
+    }
+
     #[gpui::test]
     fn go_to_line_column_command_opens_the_editor_input(cx: &mut TestAppContext) {
         let view = setup(cx);
@@ -10859,6 +10916,34 @@ mod tests {
         );
         assert_eq!(source.language, Language::Markdown);
         assert_eq!(source.snapshot.text(), "# Guide");
+    }
+
+    #[gpui::test]
+    fn tabular_preview_command_emits_the_current_file_path(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        let captured = Arc::new(std::sync::Mutex::new(None));
+        let captured_event = captured.clone();
+        let _subscription = cx.update(|cx| {
+            cx.subscribe(&view, move |_, event: &EditorEvent, _| {
+                if let EditorEvent::TabularPreviewRequested(path) = event {
+                    if let Ok(mut captured) = captured_event.lock() {
+                        *captured = Some(path.clone());
+                    }
+                }
+            })
+        });
+
+        cx.update(|cx| {
+            view.update(cx, |view, cx| {
+                view.doc = Document::from_file("report.tsv".into(), "name\tvalue", 1);
+                assert!(view.dispatch_registered_command(CommandId::EditorOpenTabularPreview, cx));
+            });
+        });
+
+        assert_eq!(
+            captured.lock().expect("event capture lock").as_deref(),
+            Some(std::path::Path::new("report.tsv"))
+        );
     }
 
     /// Build an [`EditorSettings`] with `f` applied to a default `editor` area.

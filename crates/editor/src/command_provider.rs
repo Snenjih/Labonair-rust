@@ -57,6 +57,7 @@ pub enum EditorUiCommand {
     OpenMarkdownPreview,
     OpenFollowingMarkdownPreview,
     OpenSvgPreview,
+    OpenTabularPreview,
     ToggleBreadcrumb,
     ToggleInlayHints,
     Rewrap,
@@ -142,6 +143,9 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
             EditorCommandRoute::Ui(EditorUiCommand::OpenFollowingMarkdownPreview)
         }
         CommandId::EditorOpenSvgPreview => EditorCommandRoute::Ui(EditorUiCommand::OpenSvgPreview),
+        CommandId::EditorOpenTabularPreview => {
+            EditorCommandRoute::Ui(EditorUiCommand::OpenTabularPreview)
+        }
         CommandId::EditorToggleBreadcrumb => {
             EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb)
         }
@@ -314,6 +318,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorOpenMarkdownPreview,
     CommandId::EditorOpenFollowingMarkdownPreview,
     CommandId::EditorOpenSvgPreview,
+    CommandId::EditorOpenTabularPreview,
     CommandId::EditorToggleBreadcrumb,
     CommandId::EditorToggleInlayHints,
     CommandId::EditorDeleteLine,
@@ -493,6 +498,12 @@ impl CommandProvider for EditorCommandProvider {
             CommandDescriptor::new(
                 CommandId::EditorOpenSvgPreview,
                 "Open SVG Preview",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(
+                CommandId::EditorOpenTabularPreview,
+                "Open Table Preview",
                 "Editor",
             )
             .with_contexts(&[CommandContext::Editor]),
@@ -1177,6 +1188,23 @@ mod tests {
         assert_eq!(
             route_for_command(CommandId::EditorOpenSvgPreview),
             Some(EditorCommandRoute::Ui(EditorUiCommand::OpenSvgPreview))
+        );
+    }
+
+    #[test]
+    fn tabular_preview_is_an_editor_owned_command() {
+        let command = EditorCommandProvider
+            .commands()
+            .into_iter()
+            .find(|command| command.id == CommandId::EditorOpenTabularPreview)
+            .expect("table Preview descriptor");
+
+        assert_eq!(command.title, "Open Table Preview");
+        assert_eq!(command.id.action_name(), "tabular::OpenPreview");
+        assert!(command.default_bindings.is_empty());
+        assert_eq!(
+            route_for_command(CommandId::EditorOpenTabularPreview),
+            Some(EditorCommandRoute::Ui(EditorUiCommand::OpenTabularPreview))
         );
     }
 
