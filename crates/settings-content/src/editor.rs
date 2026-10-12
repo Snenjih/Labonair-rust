@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 pub enum EditorCursorStyle {
     Block,
     Underline,
+    Hollow,
     #[default]
     Bar,
 }
@@ -634,6 +635,17 @@ mod tests {
         );
         let value = serde_json::to_value(parsed).expect("serialize multi-cursor modifier");
         assert_eq!(value["editorMultiCursorModifier"], "control");
+    }
+
+    #[test]
+    fn editor_cursor_style_parses_and_serializes_hollow() {
+        let parsed: EditorContent = serde_json::from_value(serde_json::json!({
+            "editorCursorStyle": "hollow"
+        }))
+        .expect("parse hollow editor cursor style");
+        assert_eq!(parsed.editor_cursor_style, Some(EditorCursorStyle::Hollow));
+        let value = serde_json::to_value(parsed).expect("serialize hollow editor cursor style");
+        assert_eq!(value["editorCursorStyle"], "hollow");
     }
 
     #[test]

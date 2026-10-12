@@ -11902,25 +11902,31 @@ impl Render for EditorView {
             .then_some(caret_point)
             .flatten()
             .map(|(visual_row, column)| {
-                let (top, width, height, bg_color) =
-                    match effective_cursor_style(&self.prefs, self.vim.as_ref().map(Vim::mode)) {
-                        EditorCursorStyle::Bar => (0.0, 2.0, line_h, accent),
-                        EditorCursorStyle::Underline => {
-                            ((line_h - 2.0).max(0.0), char_w.max(2.0), 2.0, accent)
-                        }
-                        EditorCursorStyle::Block => {
-                            (0.0, char_w.max(2.0), line_h, accent.opacity(0.6))
-                        }
-                    };
-                div()
+                let cursor_style =
+                    effective_cursor_style(&self.prefs, self.vim.as_ref().map(Vim::mode));
+                let (top, width, height, bg_color) = match cursor_style {
+                    EditorCursorStyle::Bar => (0.0, 2.0, line_h, accent),
+                    EditorCursorStyle::Underline => {
+                        ((line_h - 2.0).max(0.0), char_w.max(2.0), 2.0, accent)
+                    }
+                    EditorCursorStyle::Block => (0.0, char_w.max(2.0), line_h, accent.opacity(0.6)),
+                    EditorCursorStyle::Hollow => {
+                        (0.0, char_w.max(2.0), line_h, accent.opacity(0.0))
+                    }
+                };
+                let caret = div()
                     .absolute()
                     .top(px((visual_row.saturating_sub(first_visual) as f32)
                         * line_h
                         + top))
                     .left(px(column as f32 * char_w))
                     .w(px(width))
-                    .h(px(height))
-                    .bg(bg_color)
+                    .h(px(height));
+                if cursor_style == EditorCursorStyle::Hollow {
+                    caret.border_1().border_color(accent)
+                } else {
+                    caret.bg(bg_color)
+                }
             });
 
         let current_line = self
@@ -12513,6 +12519,23 @@ mod tests {
         assert_eq!(
             effective_cursor_style(&prefs, Some(VimMode::Replace)),
             EditorCursorStyle::Underline
+        );
+    }
+
+    #[test]
+    fn hollow_cursor_style_is_used_by_non_vim_and_inherited_vim_modes() {
+        let prefs = editor_prefs(|editor| {
+            editor.editor_cursor_style = Some(EditorCursorStyle::Hollow);
+            editor.vim_cursor_shape_insert = Some(VimCursorShape::Inherit);
+        });
+
+        assert_eq!(
+            effective_cursor_style(&prefs, None),
+            EditorCursorStyle::Hollow
+        );
+        assert_eq!(
+            effective_cursor_style(&prefs, Some(VimMode::Insert)),
+            EditorCursorStyle::Hollow
         );
     }
 

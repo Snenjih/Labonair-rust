@@ -1122,6 +1122,7 @@ pub fn all_fields() -> Vec<AnyField> {
             Select(&[
                 ("block", "Block"),
                 ("underline", "Underline"),
+                ("hollow", "Hollow"),
                 ("bar", "Bar")
             ]),
             "Cursor style",
@@ -1736,6 +1737,23 @@ mod tests {
             (field.get)(&content),
             Some(Value::String("underline".into()))
         );
+    }
+
+    #[test]
+    fn editor_cursor_style_exposes_hollow() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorCursorStyle")
+            .expect("editor cursor style setting");
+        match field.control {
+            FieldControl::Select(options) => {
+                assert!(options.iter().any(|(value, _)| *value == "hollow"));
+            }
+            _ => panic!("editor cursor style should use a select control"),
+        }
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::String("hollow".into())));
+        assert_eq!((field.get)(&content), Some(Value::String("hollow".into())));
     }
 
     #[test]
