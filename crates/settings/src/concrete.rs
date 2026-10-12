@@ -478,6 +478,10 @@ impl EditorSettings {
         self.0.editor_highlight_current_line.unwrap_or(true)
     }
 
+    pub fn selection_highlight(&self) -> bool {
+        self.0.editor_selection_highlight.unwrap_or(true)
+    }
+
     pub fn line_height(&self) -> f32 {
         self.0.editor_line_height.unwrap_or(1.55).clamp(1.0, 2.5)
     }
@@ -1241,6 +1245,16 @@ mod tests {
         let settings = EditorSettings::from_settings(&content);
         assert!(!settings.auto_close_brackets());
         assert!(!settings.auto_surround());
+    }
+
+    #[test]
+    fn editor_selection_highlight_defaults_on_and_can_be_disabled() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(defaults.selection_highlight());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_selection_highlight = Some(false);
+        assert!(!EditorSettings::from_settings(&content).selection_highlight());
     }
 
     #[test]

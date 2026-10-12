@@ -47,7 +47,7 @@ use labonair_editor::{
     document::Motion,
     document_syntax,
     editing::{EditIntent, EditorCommand, EditorCommandResult, SplitIntent},
-    expand_emmet_abbreviation, find,
+    expand_emmet_abbreviation, find, find_all,
     lifecycle::{
         FileCapabilities, FileLifecycleEvent, FileState, LineEnding, ReloadDecision, SaveIntent,
     },
@@ -321,6 +321,30 @@ struct MinimapOccurrenceCache {
     symbol: Option<String>,
     selected_text_slots: Vec<usize>,
     symbol_slots: Vec<usize>,
+}
+
+#[derive(Clone, Debug)]
+struct SelectionHighlightCache {
+    revision: Revision,
+    file_identity: Option<labonair_editor::lifecycle::FileIdentity>,
+    selected_text: String,
+    matches: Vec<Match>,
+}
+
+fn find_selection_highlights(snapshot: &BufferSnapshot, selected_text: &str) -> Vec<Match> {
+    if selected_text.is_empty() {
+        return Vec::new();
+    }
+    let query = SearchQuery::new(
+        selected_text,
+        SearchOptions {
+            case_sensitive: true,
+            smart_case: false,
+            multiline: true,
+            ..SearchOptions::default()
+        },
+    );
+    find_all(snapshot, &query)
 }
 
 /// Calculate a compact scrollbar thumb without allowing a zero-sized or
@@ -1215,6 +1239,7 @@ pub struct EditorView {
     symbol_cache: Option<SymbolCache>,
     scrollbar_occurrence_cache: Option<ScrollbarOccurrenceCache>,
     minimap_occurrence_cache: Option<MinimapOccurrenceCache>,
+    selection_highlight_cache: Option<SelectionHighlightCache>,
     search: Option<EditorSearch>,
     kill_ring: KillRing,
     buffer_search_open: bool,
@@ -1528,6 +1553,7 @@ impl EditorView {
             symbol_cache: None,
             scrollbar_occurrence_cache: None,
             minimap_occurrence_cache: None,
+            selection_highlight_cache: None,
             search: None,
             kill_ring: KillRing::default(),
             buffer_search_open: false,
@@ -7184,6 +7210,37 @@ impl EditorView {
             .unwrap_or_default()
     }
 
+    fn selection_highlights(
+        &mut self,
+        snapshot: &BufferSnapshot,
+        selected_text: &str,
+    ) -> Vec<Match> {
+        let file_identity = self
+            .doc
+            .file_snapshot()
+            .map(|snapshot| snapshot.identity.clone());
+        let cached = self
+            .selection_highlight_cache
+            .as_ref()
+            .is_some_and(|cache| {
+                cache.revision == snapshot.revision()
+                    && cache.file_identity == file_identity
+                    && cache.selected_text == selected_text
+            });
+        if !cached {
+            self.selection_highlight_cache = Some(SelectionHighlightCache {
+                revision: snapshot.revision(),
+                file_identity,
+                selected_text: selected_text.to_string(),
+                matches: find_selection_highlights(snapshot, selected_text),
+            });
+        }
+        self.selection_highlight_cache
+            .as_ref()
+            .map(|cache| cache.matches.clone())
+            .unwrap_or_default()
+    }
+
     fn render_scrollbar_markers(
         &mut self,
         snapshot: &labonair_editor::BufferSnapshot,
@@ -11286,6 +11343,14 @@ impl Render for EditorView {
             .saturating_add(1)
             .min(snapshot.byte_len());
         self.syntax.update(&snapshot, visible_start..visible_end);
+        let selection_highlights = if self.prefs.selection_highlight() {
+            self.doc
+                .selected_text()
+                .map(|text| self.selection_highlights(&snapshot, &text))
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
         // Gutter rows. Line-number visibility follows the editor preferences
         // (T13-003); Vim's `:set number` overrides them while Vim mode is on.
@@ -11469,6 +11534,45 @@ impl Render for EditorView {
                             .h(px(line_h))
                             .bg(muted.opacity(0.25)),
                     );
+                }
+                for matched in &selection_highlights {
+                    if line < matched.start.line || line > matched.end.line {
+                        continue;
+                    }
+                    let match_start = if line == matched.start.line {
+                        matched.start.column
+                    } else {
+                        0
+                    };
+                    let match_end = if line == matched.end.line {
+                        matched.end.column
+                    } else {
+                        snapshot.line_len(line)
+                    };
+                    let lo = match_start.max(start_column);
+                    let hi = match_end.min(end_column);
+                    if hi > lo {
+                        let display_start = display_row
+                            .display_column_for_source_position(Position::new(line, lo))
+                            .unwrap_or_else(|| lo.saturating_sub(start_column))
+                            .saturating_sub(display.viewport.left_column);
+                        let display_end = display_row
+                            .display_column_for_source_position(Position::new(line, hi))
+                            .unwrap_or_else(|| hi.saturating_sub(start_column))
+                            .saturating_sub(display.viewport.left_column);
+                        row = row.child(
+                            div()
+                                .absolute()
+                                .left(px(display_start as f32 * char_w))
+                                .top_0()
+                                .w(px(
+                                    ((display_end.saturating_sub(display_start)) as f32 * char_w)
+                                        .max(2.0),
+                                ))
+                                .h(px(line_h))
+                                .bg(accent.opacity(0.12)),
+                        );
+                    }
                 }
                 if let Some((s, e)) = sel {
                     let start = if line == s.line { s.column } else { 0 };
@@ -15206,6 +15310,22 @@ mod tests {
             Some("λfoo")
         );
         assert_eq!(symbol_at_position(&snapshot, Position::new(1, 0)), None);
+    }
+
+    #[test]
+    fn selection_highlights_use_exact_case_and_support_multiline_text() {
+        let document = Document::from_file("test.rs".into(), "Foo\nbar\nfoo", 1);
+        let snapshot = document.snapshot();
+
+        assert_eq!(
+            find_selection_highlights(&snapshot, "Foo\nbar"),
+            vec![Match {
+                start: Position::new(0, 0),
+                end: Position::new(1, 3),
+            }]
+        );
+        assert_eq!(find_selection_highlights(&snapshot, "Foo").len(), 1);
+        assert!(find_selection_highlights(&snapshot, "").is_empty());
     }
 
     #[test]

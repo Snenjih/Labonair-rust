@@ -1117,6 +1117,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Tint the line the caret is on."
         ),
         field!(
+            editor.editor_selection_highlight,
+            "editorSelectionHighlight",
+            Switch,
+            "Highlight selected text",
+            "Highlight other exact occurrences of the selected text in this buffer."
+        ),
+        field!(
             editor.editor_cursor_style,
             "editorCursorStyle",
             Select(&[
@@ -1754,6 +1761,19 @@ mod tests {
         let mut content = SettingsContent::default();
         assert!((field.set)(&mut content, Value::String("hollow".into())));
         assert_eq!((field.get)(&content), Some(Value::String("hollow".into())));
+    }
+
+    #[test]
+    fn editor_selection_highlight_is_an_exposed_switch() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorSelectionHighlight")
+            .expect("editor selection-highlight setting");
+        assert!(matches!(field.control, FieldControl::Switch));
+
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::Bool(false)));
+        assert_eq!((field.get)(&content), Some(Value::Bool(false)));
     }
 
     #[test]

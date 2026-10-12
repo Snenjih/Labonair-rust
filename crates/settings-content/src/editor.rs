@@ -416,6 +416,8 @@ pub struct EditorContent {
     pub vim_smartcase: Option<bool>,
     /// Tint the line the caret is on.
     pub editor_highlight_current_line: Option<bool>,
+    /// Highlight other occurrences of the selected text in this buffer.
+    pub editor_selection_highlight: Option<bool>,
     /// Blink the caret while the editor is focused.
     pub editor_cursor_blink: Option<bool>,
     /// Caret blink half-period, in milliseconds.
@@ -527,6 +529,7 @@ impl EditorContent {
             vim_incsearch: Some(true),
             vim_smartcase: Some(true),
             editor_highlight_current_line: Some(true),
+            editor_selection_highlight: Some(true),
             editor_cursor_blink: Some(true),
             editor_cursor_blink_interval_ms: Some(530),
             editor_cursor_style: Some(EditorCursorStyle::Bar),
