@@ -7,7 +7,7 @@
 
 use tree_sitter::{Language as TsLanguage, Parser, Query, QueryCursor, StreamingIterator};
 
-use crate::{BufferSnapshot, Language, TextRange};
+use crate::{BufferSnapshot, FoldRange, Language, TextRange};
 
 /// A coarse LSP-ish symbol classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +50,13 @@ pub struct DocumentSymbol {
     pub name_range: TextRange,
 }
 
+/// Cached structure extracted from one immutable document revision.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DocumentSyntax {
+    pub symbols: Vec<DocumentSymbol>,
+    pub folding_ranges: Vec<FoldRange>,
+}
+
 fn tree_sitter_language(lang: Language) -> Option<TsLanguage> {
     Some(match lang {
         Language::Rust => tree_sitter_rust::LANGUAGE.into(),
@@ -82,10 +89,6 @@ fn tags_query(lang: Language) -> Option<&'static str> {
         Language::Java => tree_sitter_java::TAGS_QUERY,
         _ => return None,
     })
-}
-
-fn grammar(lang: Language) -> Option<(TsLanguage, &'static str)> {
-    Some((tree_sitter_language(lang)?, tags_query(lang)?))
 }
 
 /// Return the next larger named syntax node for each selection range.
@@ -232,23 +235,37 @@ fn classify(def_capture: &str) -> SymbolKind {
 /// independent of later edits because the snapshot owns that immutable
 /// revision. Tree-sitter receives one temporary contiguous view of the
 /// snapshot; this module does not retain a second text source.
-pub fn document_symbols(lang: Language, snapshot: &BufferSnapshot) -> Vec<DocumentSymbol> {
-    let Some((ts_lang, tags)) = grammar(lang) else {
-        return Vec::new();
+pub fn document_syntax(lang: Language, snapshot: &BufferSnapshot) -> DocumentSyntax {
+    let Some(ts_lang) = tree_sitter_language(lang) else {
+        return DocumentSyntax::default();
     };
     if snapshot.byte_len() == 0 {
-        return Vec::new();
+        return DocumentSyntax::default();
     }
     let text = snapshot.text();
     let mut parser = Parser::new();
     if parser.set_language(&ts_lang).is_err() {
-        return Vec::new();
+        return DocumentSyntax::default();
     }
     let Some(tree) = parser.parse(&text, None) else {
-        return Vec::new();
+        return DocumentSyntax::default();
+    };
+    let mut folding_ranges = Vec::new();
+    collect_syntax_folding_ranges(tree.root_node(), &mut folding_ranges);
+    folding_ranges.sort_by_key(|range| (range.start_line, range.end_line));
+    folding_ranges.dedup();
+
+    let Some(tags) = tags_query(lang) else {
+        return DocumentSyntax {
+            symbols: Vec::new(),
+            folding_ranges,
+        };
     };
     let Ok(query) = Query::new(&ts_lang, tags) else {
-        return Vec::new();
+        return DocumentSyntax {
+            symbols: Vec::new(),
+            folding_ranges,
+        };
     };
     let names = query.capture_names();
     let bytes = text.as_bytes();
@@ -293,7 +310,33 @@ pub fn document_symbols(lang: Language, snapshot: &BufferSnapshot) -> Vec<Docume
             .then_with(|| a.name.cmp(&b.name))
     });
     out.dedup_by(|a, b| a.range == b.range && a.name == b.name);
-    out
+    DocumentSyntax {
+        symbols: out,
+        folding_ranges,
+    }
+}
+
+/// Extract document symbols using the bundled Tree-sitter grammar.
+pub fn document_symbols(lang: Language, snapshot: &BufferSnapshot) -> Vec<DocumentSymbol> {
+    document_syntax(lang, snapshot).symbols
+}
+
+fn collect_syntax_folding_ranges(node: tree_sitter::Node<'_>, ranges: &mut Vec<FoldRange>) {
+    for index in 0..node.named_child_count() {
+        let Some(child) = node.named_child(index) else {
+            continue;
+        };
+        let start_line = child.start_position().row;
+        let end_position = child.end_position();
+        let mut end_line = end_position.row;
+        if end_position.column == 0 && end_line > start_line {
+            end_line -= 1;
+        }
+        if let Some(range) = FoldRange::new(start_line, end_line) {
+            ranges.push(range);
+        }
+        collect_syntax_folding_ranges(child, ranges);
+    }
 }
 
 #[cfg(test)]
@@ -376,5 +419,38 @@ mod tests {
             vec![Some(TextRange::new(1, source.len() - 1))]
         );
         assert!(document_symbols(Language::Json, &snapshot).is_empty());
+    }
+
+    #[test]
+    fn rust_syntax_folding_includes_nested_multiline_blocks() {
+        let source = "fn outer() {\n    if ready {\n        work();\n    }\n}\n";
+        let buffer = crate::EditorBuffer::from_text(source);
+        let syntax = document_syntax(Language::Rust, &buffer.snapshot());
+
+        assert!(syntax.folding_ranges.contains(&FoldRange {
+            start_line: 0,
+            end_line: 4,
+        }));
+        assert!(syntax.folding_ranges.contains(&FoldRange {
+            start_line: 1,
+            end_line: 3,
+        }));
+    }
+
+    #[test]
+    fn json_syntax_folding_works_without_a_symbol_query() {
+        let source = "{\n  \"nested\": {\n    \"value\": 1\n  }\n}\n";
+        let buffer = crate::EditorBuffer::from_text(source);
+        let syntax = document_syntax(Language::Json, &buffer.snapshot());
+
+        assert!(syntax.symbols.is_empty());
+        assert!(syntax.folding_ranges.contains(&FoldRange {
+            start_line: 0,
+            end_line: 4,
+        }));
+        assert!(syntax.folding_ranges.contains(&FoldRange {
+            start_line: 1,
+            end_line: 3,
+        }));
     }
 }

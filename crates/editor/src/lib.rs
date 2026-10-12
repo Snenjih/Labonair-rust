@@ -106,7 +106,7 @@ pub use session::{
     EDITOR_SESSION_SCHEMA_VERSION,
 };
 pub use splits::{EditorGroupId, EditorSplitTree, SplitError, SplitNode, SplitOrientation};
-pub use symbols::{document_symbols, DocumentSymbol, SymbolKind};
+pub use symbols::{document_symbols, document_syntax, DocumentSymbol, DocumentSyntax, SymbolKind};
 pub use syntax::{HighlightKind, HighlightSpan, StyledRun, SyntaxHighlighter};
 pub use unified::{
     build_hunk_patch, is_whole_file_single_hunk, parse_diff_hunks, DiffHunk, FileDiff,

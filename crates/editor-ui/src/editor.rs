@@ -38,13 +38,13 @@ use labonair_settings::content::editor::{
 };
 use labonair_settings::{EditorSettings, Settings as _, SettingsStore};
 
-use labonair_editor::document_symbols;
 use labonair_editor::{
     apply_text_policies,
     command_provider::{
         route_for_command, EditorCommandRoute, EditorLanguageCommand, EditorUiCommand,
     },
     document::Motion,
+    document_syntax,
     editing::{EditIntent, EditorCommand, EditorCommandResult, SplitIntent},
     find,
     lifecycle::{
@@ -583,10 +583,15 @@ fn fold_ranges_from_lsp(
 fn fold_candidates(
     server_ranges: &[FoldRange],
     symbols: &[labonair_editor::DocumentSymbol],
+    syntax_ranges: &[FoldRange],
     snapshot: &labonair_editor::BufferSnapshot,
 ) -> Vec<FoldRange> {
     if server_ranges.is_empty() {
-        fold_ranges_from_symbols(symbols, snapshot)
+        let mut ranges = fold_ranges_from_symbols(symbols, snapshot);
+        ranges.extend_from_slice(syntax_ranges);
+        ranges.sort_by_key(|range| (range.start_line, range.end_line));
+        ranges.dedup();
+        ranges
     } else {
         server_ranges.to_vec()
     }
@@ -676,6 +681,7 @@ struct SymbolCache {
     revision: Revision,
     language: Language,
     symbols: Arc<[labonair_editor::DocumentSymbol]>,
+    folding_ranges: Arc<[FoldRange]>,
 }
 
 #[derive(Clone)]
@@ -4392,7 +4398,13 @@ impl EditorView {
     fn execute_fold_command(&mut self, command: EditorUiCommand, cx: &mut Context<Self>) {
         let snapshot = self.doc.snapshot();
         let symbols = self.symbols_for_snapshot(&snapshot);
-        let candidates = fold_candidates(&self.server_fold_ranges, &symbols, &snapshot);
+        let syntax_ranges = self.syntax_folding_ranges_for_snapshot(&snapshot);
+        let candidates = fold_candidates(
+            &self.server_fold_ranges,
+            &symbols,
+            &syntax_ranges,
+            &snapshot,
+        );
         let before = self.folds.clone();
         match command {
             EditorUiCommand::Fold => {
@@ -8537,10 +8549,12 @@ impl EditorView {
             cache.revision != snapshot.revision() || cache.language != language
         });
         if needs_rebuild {
+            let syntax = document_syntax(language, snapshot);
             self.symbol_cache = Some(SymbolCache {
                 revision: snapshot.revision(),
                 language,
-                symbols: Arc::from(document_symbols(language, snapshot)),
+                symbols: Arc::from(syntax.symbols),
+                folding_ranges: Arc::from(syntax.folding_ranges),
             });
         }
         Arc::clone(
@@ -8549,6 +8563,20 @@ impl EditorView {
                 .as_ref()
                 .expect("symbol cache is populated")
                 .symbols,
+        )
+    }
+
+    fn syntax_folding_ranges_for_snapshot(
+        &mut self,
+        snapshot: &labonair_editor::BufferSnapshot,
+    ) -> Arc<[FoldRange]> {
+        let _ = self.symbols_for_snapshot(snapshot);
+        Arc::clone(
+            &self
+                .symbol_cache
+                .as_ref()
+                .expect("syntax cache is populated")
+                .folding_ranges,
         )
     }
 
@@ -8670,7 +8698,13 @@ impl Render for EditorView {
         let rename_input = self.rename_input.clone();
         let go_to_line_input = self.go_to_line_input.clone();
         let symbols = self.symbols_for_snapshot(&snapshot);
-        let fold_candidates = fold_candidates(&self.server_fold_ranges, &symbols, &snapshot);
+        let syntax_ranges = self.syntax_folding_ranges_for_snapshot(&snapshot);
+        let fold_candidates = fold_candidates(
+            &self.server_fold_ranges,
+            &symbols,
+            &syntax_ranges,
+            &snapshot,
+        );
         let breadcrumb_state = build_breadcrumb_state(
             self.doc.file_state(),
             self.doc.path.as_deref(),
@@ -11375,12 +11409,13 @@ mod tests {
             range: TextRange::new(0, 8),
             name_range: TextRange::new(0, 3),
         }];
+        let syntax_range = FoldRange::new(1, 2).expect("valid syntax range");
         assert_eq!(
-            fold_candidates(&[], &symbols, &snapshot),
-            vec![symbol_range]
+            fold_candidates(&[], &symbols, &[syntax_range], &snapshot),
+            vec![symbol_range, syntax_range]
         );
         assert_eq!(
-            fold_candidates(&server_ranges, &symbols, &snapshot),
+            fold_candidates(&server_ranges, &symbols, &[syntax_range], &snapshot),
             vec![server_range]
         );
     }
