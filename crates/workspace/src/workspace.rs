@@ -5896,8 +5896,9 @@ impl Workspace {
                         if this.tabs.read(cx).get(id).is_some_and(|tab| tab.peek) {
                             this.tabs
                                 .update(cx, |store, cx| store.set_peek(id, false, cx));
+                        } else {
+                            this.begin_tab_rename(id, window, cx);
                         }
-                        this.begin_tab_rename(id, window, cx);
                     });
                 }
             });
