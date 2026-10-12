@@ -4642,7 +4642,13 @@ impl EditorView {
         let Some(character) = characters.next() else {
             return;
         };
-        if characters.next().is_none()
+        let single_character = characters.next().is_none();
+        if single_character
+            && character == '>'
+            && matches!(self.doc.language, Language::Html | Language::Xml)
+        {
+            self.execute_command(EditorCommand::Edit(EditIntent::TypeTagClose), cx);
+        } else if single_character
             && matches!(character, '(' | '[' | '{' | ')' | ']' | '}' | '\'' | '"')
         {
             self.execute_command(EditorCommand::Edit(EditIntent::TypeBracket(character)), cx);
@@ -9176,6 +9182,22 @@ mod tests {
         };
         let contexts = std::slice::from_ref(context);
         predicate.eval_inner(contexts, contexts)
+    }
+
+    #[gpui::test]
+    fn html_greater_than_input_routes_through_editor_tag_completion(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("index.html".into(), "<section", 1);
+                this.doc.set_caret(Position::new(0, 8), false);
+
+                this.insert_printable(">", cx);
+
+                assert_eq!(this.doc.text(), "<section></section>");
+                assert_eq!(this.doc.cursor, Position::new(0, 9));
+            });
+        });
     }
 
     #[gpui::test]

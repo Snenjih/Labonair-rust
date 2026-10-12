@@ -20,6 +20,8 @@ use std::collections::HashMap;
 
 use crate::buffer::{BufferSnapshot, Position, TextRange};
 use crate::document::Document;
+use crate::editing::EditIntent;
+use crate::language::Language;
 use crate::search::{find_all, SearchQuery};
 
 fn snapshot(doc: &Document) -> BufferSnapshot {
@@ -267,7 +269,11 @@ impl Vim {
                 VimResponse::ok()
             }
             VimKey::Char(c) => {
-                doc.insert(&c.to_string());
+                if c == '>' && matches!(doc.language, Language::Html | Language::Xml) {
+                    doc.execute_edit(EditIntent::TypeTagClose);
+                } else {
+                    doc.insert(&c.to_string());
+                }
                 VimResponse::ok()
             }
             VimKey::Redo => VimResponse::ok(),
@@ -1673,6 +1679,20 @@ mod tests {
         keys(&mut v, &mut d, "X\u{1b}");
         assert_eq!(v.mode(), VimMode::Normal);
         assert_eq!(d.text(), "Xhello");
+    }
+
+    #[test]
+    fn insert_mode_completes_html_tags_on_greater_than() {
+        let mut document = Document::from_file("index.html".into(), "<main", 0);
+        document.set_caret(Position::new(0, 5), false);
+        let mut vim = Vim::default();
+
+        vim.on_key(&mut document, VimKey::Char('i'));
+        vim.on_key(&mut document, VimKey::Char('>'));
+
+        assert_eq!(document.text(), "<main></main>");
+        assert_eq!(document.cursor, Position::new(0, 6));
+        assert_eq!(vim.mode(), VimMode::Insert);
     }
 
     #[test]

@@ -9,6 +9,7 @@ use crate::buffer::{
     TextRange,
 };
 use crate::document::{Document, Motion};
+use crate::language::Language;
 use crate::search::{find_all, SearchQuery};
 use crate::splits::{EditorGroupId, EditorSplitTree, SplitError};
 
@@ -62,6 +63,7 @@ pub enum EditIntent {
         unit: String,
     },
     TypeBracket(char),
+    TypeTagClose,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -262,6 +264,7 @@ impl Document {
             EditIntent::Outdent { unit } => self.indent_lines(&unit, true),
             EditIntent::AutoIndent { unit } => self.insert_auto_indent(&unit),
             EditIntent::TypeBracket(ch) => self.type_bracket(ch),
+            EditIntent::TypeTagClose => self.type_tag_close(),
         }
     }
 
@@ -1258,6 +1261,60 @@ impl Document {
         result
     }
 
+    fn type_tag_close(&mut self) -> EditorCommandResult {
+        if !matches!(self.language, Language::Html | Language::Xml) {
+            return self.multi_insert(">");
+        }
+        let snapshot = self.snapshot();
+        let selections = self.selection_set();
+        let mut targets = Vec::with_capacity(selections.len());
+        for selection in selections.selections() {
+            let range = selection.range().resolve(&snapshot);
+            let closing_tag = range
+                .is_empty()
+                .then(|| opening_tag_name_before(&snapshot, range.start, self.language))
+                .flatten();
+            let replacement = closing_tag
+                .map(|name| format!("></{name}>"))
+                .unwrap_or_else(|| ">".to_string());
+            targets.push((range, replacement));
+        }
+        targets.sort_by_key(|(range, _)| (range.start, range.end));
+        targets.dedup_by(|left, right| left.0 == right.0);
+        let edits = targets
+            .iter()
+            .map(|(range, replacement)| Edit::new(*range, replacement.clone()))
+            .collect::<Vec<_>>();
+        if edits.is_empty() {
+            return EditorCommandResult::unchanged();
+        }
+        let after = targets
+            .iter()
+            .map(|(range, _)| {
+                Selection::collapsed(Anchor::new(
+                    map_offset(range.start, &edits, AnchorAffinity::Before).saturating_add(1),
+                    AnchorAffinity::After,
+                ))
+            })
+            .collect::<Vec<_>>();
+        let edit_count = edits.len();
+        if !self.apply_edits(
+            edits,
+            SelectionSet::from_selections(after, selections.primary_index()),
+            EditSource::Typing,
+            Some("Auto close tag".into()),
+        ) {
+            return EditorCommandResult::unchanged();
+        }
+        EditorCommandResult {
+            changed: true,
+            events: vec![EditorViewEvent::EditApplied {
+                source: EditSource::Typing,
+                edit_count,
+            }],
+        }
+    }
+
     fn apply_targets(
         &mut self,
         mut targets: Vec<(TextRange, String)>,
@@ -1697,6 +1754,85 @@ fn closing_bracket(ch: char) -> Option<char> {
     matches!(ch, ')' | ']' | '}' | '\'' | '"').then_some(ch)
 }
 
+fn opening_tag_name_before(
+    snapshot: &BufferSnapshot,
+    offset: usize,
+    language: Language,
+) -> Option<String> {
+    let text = snapshot.text();
+    let offset = offset.min(text.len());
+    let prefix = &text[..offset];
+    let open = prefix.rfind('<')?;
+    let tag = &prefix[open + 1..];
+    if tag.contains('>')
+        || tag
+            .trim_start()
+            .chars()
+            .next()
+            .is_some_and(|character| matches!(character, '/' | '!' | '?'))
+    {
+        return None;
+    }
+    let name_end = tag
+        .char_indices()
+        .find_map(|(index, character)| {
+            (!character.is_ascii_alphanumeric() && !matches!(character, '-' | '_' | ':' | '.'))
+                .then_some(index)
+        })
+        .unwrap_or(tag.len());
+    let name = &tag[..name_end];
+    if name.is_empty() || !name.as_bytes()[0].is_ascii_alphabetic() {
+        return None;
+    }
+    let attributes = &tag[name_end..];
+    if attributes.trim_end().ends_with('/') || has_unclosed_attribute_quote(attributes) {
+        return None;
+    }
+    if language == Language::Html && is_void_html_tag(name) {
+        return None;
+    }
+    Some(name.to_string())
+}
+
+fn has_unclosed_attribute_quote(attributes: &str) -> bool {
+    let mut quote = None;
+    let mut escaped = false;
+    for character in attributes.chars() {
+        if escaped {
+            escaped = false;
+        } else if character == '\\' {
+            escaped = true;
+        } else if matches!(character, '\'' | '"') {
+            if quote == Some(character) {
+                quote = None;
+            } else if quote.is_none() {
+                quote = Some(character);
+            }
+        }
+    }
+    quote.is_some()
+}
+
+fn is_void_html_tag(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "area"
+            | "base"
+            | "br"
+            | "col"
+            | "embed"
+            | "hr"
+            | "img"
+            | "input"
+            | "link"
+            | "meta"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
+    )
+}
+
 /// A small typed snippet session. Placeholders are `${1:default}` or `${1}`;
 /// the editor can advance through ranges without embedding snippet state in
 /// the buffer or history.
@@ -1928,6 +2064,67 @@ mod tests {
         document.undo();
         assert_eq!(document.text(), "one two");
         assert_eq!(document.selected_text().as_deref(), Some("one"));
+    }
+
+    #[test]
+    fn typing_tag_close_completes_html_and_xml_opening_tags() {
+        let mut html = Document::from_file("index.html".into(), "<div", 0);
+        html.set_caret(Position::new(0, 4), false);
+        assert!(html.execute_edit(EditIntent::TypeTagClose).changed);
+        assert_eq!(html.text(), "<div></div>");
+        assert_eq!(html.cursor, Position::new(0, 5));
+        html.undo();
+        assert_eq!(html.text(), "<div");
+
+        let mut xml = Document::from_file("node.xml".into(), "<Node", 0);
+        xml.set_caret(Position::new(0, 5), false);
+        xml.execute_edit(EditIntent::TypeTagClose);
+        assert_eq!(xml.text(), "<Node></Node>");
+        assert_eq!(xml.cursor, Position::new(0, 6));
+    }
+
+    #[test]
+    fn typing_tag_close_skips_void_closing_self_closing_and_quoted_tags() {
+        let mut void = Document::from_file("index.html".into(), "<img", 0);
+        void.set_caret(Position::new(0, 4), false);
+        void.execute_edit(EditIntent::TypeTagClose);
+        assert_eq!(void.text(), "<img>");
+
+        let mut self_closing = Document::from_file("index.html".into(), "<img/", 0);
+        self_closing.set_caret(Position::new(0, 5), false);
+        self_closing.execute_edit(EditIntent::TypeTagClose);
+        assert_eq!(self_closing.text(), "<img/>");
+
+        let mut closing = Document::from_file("index.html".into(), "</div", 0);
+        closing.set_caret(Position::new(0, 5), false);
+        closing.execute_edit(EditIntent::TypeTagClose);
+        assert_eq!(closing.text(), "</div>");
+
+        let mut quoted = Document::from_file("index.html".into(), "<div title=\"x", 0);
+        quoted.set_caret(Position::new(0, 13), false);
+        quoted.execute_edit(EditIntent::TypeTagClose);
+        assert_eq!(quoted.text(), "<div title=\"x>");
+    }
+
+    #[test]
+    fn typing_tag_close_uses_each_html_cursor_in_one_transaction() {
+        let mut document = Document::from_file("index.html".into(), "<div\n<span", 0);
+        document.set_caret(Position::new(0, 4), false);
+        document.execute_edit(EditIntent::AddCursor(Position::new(1, 5)));
+
+        document.execute_edit(EditIntent::TypeTagClose);
+
+        assert_eq!(document.text(), "<div></div>\n<span></span>");
+        let snapshot = document.snapshot();
+        let cursors = document
+            .selection_set()
+            .selections()
+            .iter()
+            .map(|selection| selection.head.resolve(&snapshot))
+            .collect::<Vec<_>>();
+        assert_eq!(cursors, [Position::new(0, 5), Position::new(1, 6)]);
+        document.undo();
+        assert_eq!(document.text(), "<div\n<span");
     }
 
     #[test]
