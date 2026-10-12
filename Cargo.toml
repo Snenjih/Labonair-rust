@@ -117,6 +117,8 @@ thiserror = "2"
 
 # Image decoding (terminal / app background images)
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp"] }
+# GPUI's image path is raster-only; native SVG previews need a vector renderer.
+resvg = { version = "0.45.1", default-features = false, features = ["text", "system-fonts", "raster-images"] }
 
 # Utilities
 dirs = "6"

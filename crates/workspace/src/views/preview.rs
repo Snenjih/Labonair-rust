@@ -18,6 +18,7 @@
 //! This is the single documented deviation from 1:1 parity (see `ROADMAP.md`).
 
 use std::collections::{HashMap, HashSet};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -294,6 +295,8 @@ struct ImagePan {
 
 const MIN_IMAGE_ZOOM: f32 = 0.05;
 const MAX_IMAGE_ZOOM: f32 = 8.0;
+const MAX_SVG_EDGE_PIXELS: f32 = 2_048.0;
+const MAX_SVG_SOURCE_BYTES: u64 = 16 * 1024 * 1024;
 
 fn fit_image_scale(image_width: u32, image_height: u32, width: f32, height: f32) -> f32 {
     if image_width == 0 || image_height == 0 || width <= 0.0 || height <= 0.0 {
@@ -812,8 +815,9 @@ fn resolve(url: &str) -> Content {
         "pdf" => Content::External {
             why: "PDF files open in your system PDF viewer.".into(),
         },
-        "svg" => Content::External {
-            why: "SVG documents open in your default browser.".into(),
+        "svg" => match load_svg(url) {
+            Ok(image) => Content::Image(image),
+            Err(e) => Content::Error(format!("Could not render SVG: {e}").into()),
         },
         _ => Content::External {
             why: "This file type opens in your default application.".into(),
@@ -920,6 +924,58 @@ fn load_image(path: &str) -> Result<PreviewImage, String> {
         format,
         bits_per_pixel,
         byte_len,
+    })
+}
+
+fn load_svg(path: &str) -> Result<PreviewImage, String> {
+    let file = std::fs::File::open(path).map_err(|error| error.to_string())?;
+    let metadata = file.metadata().map_err(|error| error.to_string())?;
+    if metadata.len() > MAX_SVG_SOURCE_BYTES {
+        return Err(format!(
+            "SVG exceeds the {} MiB preview limit",
+            MAX_SVG_SOURCE_BYTES / (1024 * 1024)
+        ));
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_SVG_SOURCE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    if bytes.len() as u64 > MAX_SVG_SOURCE_BYTES {
+        return Err(format!(
+            "SVG exceeds the {} MiB preview limit",
+            MAX_SVG_SOURCE_BYTES / (1024 * 1024)
+        ));
+    }
+    render_svg(&bytes)
+}
+
+fn render_svg(bytes: &[u8]) -> Result<PreviewImage, String> {
+    let mut options = resvg::usvg::Options::default();
+    // Do not let a document read local or remote files through <image href>.
+    // Embedded data URLs remain supported by the default data resolver.
+    options.image_href_resolver.resolve_string = Box::new(|_, _| None);
+    let tree = resvg::usvg::Tree::from_data(bytes, &options).map_err(|error| error.to_string())?;
+    let size = tree.size();
+    let scale = (MAX_SVG_EDGE_PIXELS / size.width())
+        .min(MAX_SVG_EDGE_PIXELS / size.height())
+        .min(1.0);
+    let width = (size.width() * scale).round().max(1.0) as u32;
+    let height = (size.height() * scale).round().max(1.0) as u32;
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
+        .ok_or_else(|| "SVG has invalid or unsupported dimensions".to_string())?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::default(),
+        &mut pixmap.as_mut(),
+    );
+    let png = pixmap.encode_png().map_err(|error| error.to_string())?;
+    Ok(PreviewImage {
+        image: Arc::new(Image::from_bytes(ImageFormat::Png, png)),
+        width,
+        height,
+        format: "SVG".to_string(),
+        bits_per_pixel: 32,
+        byte_len: bytes.len(),
     })
 }
 
@@ -1688,6 +1744,50 @@ mod tests {
         }
 
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn svg_preview_renders_a_bounded_native_image() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="8192" height="4096"><rect width="100%" height="100%" fill="#d33"/></svg>"##;
+
+        let image = render_svg(svg).expect("valid SVG should render");
+
+        assert_eq!(image.format, "SVG");
+        assert_eq!(image.width, 2_048);
+        assert_eq!(image.height, 1_024);
+        assert_eq!(image.byte_len, svg.len());
+    }
+
+    #[test]
+    fn svg_file_resolves_to_a_native_preview_image() {
+        let path = std::env::temp_dir().join(format!(
+            "labonair-preview-svg-{}-{}.svg",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::write(
+            &path,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="16"><circle cx="8" cy="8" r="6" fill="blue"/></svg>"#,
+        )
+        .expect("write SVG fixture");
+
+        match resolve(path.to_str().expect("UTF-8 temp path")) {
+            Content::Image(image) => {
+                assert_eq!(image.format, "SVG");
+                assert_eq!((image.width, image.height), (24, 16));
+            }
+            _ => panic!("SVG should resolve to a native image preview"),
+        }
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn svg_preview_rejects_malformed_documents() {
+        assert!(render_svg(b"<svg><rect></svg>").is_err());
     }
 
     #[test]
