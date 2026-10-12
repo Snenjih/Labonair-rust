@@ -41,6 +41,8 @@
     // split/close are only offered while the active tab is a terminal.
     "context": "Terminal",
     "bindings": {
+      "cmd-k left": "pane::SplitLeft",
+      "cmd-k up": "pane::SplitUp",
       "cmd-d": "pane::SplitRight",
       "cmd-shift-d": "pane::SplitDown",
       "cmd-shift-w": "pane::Close"

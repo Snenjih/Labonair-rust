@@ -273,7 +273,9 @@ pub(crate) fn attach_action_handlers(
     // so the matching menu item greys out on its own (parity with the former
     // `.when(can_split)` / `.when(has_split)` guards).
     if can_split {
+        on!(menu::SplitPaneLeft => CommandId::SplitLeft);
         on!(menu::SplitPaneRight => CommandId::SplitRight);
+        on!(menu::SplitPaneUp => CommandId::SplitUp);
         on!(menu::SplitPaneDown => CommandId::SplitDown);
     }
     if has_split {
@@ -464,10 +466,14 @@ mod tests {
         let always = r.visible_in(None);
         assert!(always.iter().any(|c| c.id == CommandId::NewTerminalTab));
         assert!(!always.iter().any(|c| c.id == CommandId::SplitRight));
+        assert!(!always.iter().any(|c| c.id == CommandId::SplitLeft));
+        assert!(!always.iter().any(|c| c.id == CommandId::SplitUp));
         assert!(!always.iter().any(|c| c.id == CommandId::ClosePane));
 
         let term = r.visible_in(Some(CommandContext::Terminal));
         assert!(term.iter().any(|c| c.id == CommandId::SplitRight));
+        assert!(term.iter().any(|c| c.id == CommandId::SplitLeft));
+        assert!(term.iter().any(|c| c.id == CommandId::SplitUp));
         assert!(term.iter().any(|c| c.id == CommandId::ClosePane));
     }
 

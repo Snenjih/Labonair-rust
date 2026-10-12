@@ -212,9 +212,23 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
     }
 
     let workspace_handle = workspace.clone();
+    register!(CommandId::SplitLeft, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.split(crate::pane::SplitDirection::Left, window, cx)
+        });
+    });
+
+    let workspace_handle = workspace.clone();
     register!(CommandId::SplitRight, move |window, cx| {
         workspace_handle.update(cx, |workspace, cx| {
             workspace.split(crate::pane::SplitDirection::Right, window, cx)
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::SplitUp, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.split(crate::pane::SplitDirection::Up, window, cx)
         });
     });
 
@@ -550,10 +564,16 @@ impl CommandProvider for WorkspaceCommandProvider {
         }
 
         commands.extend([
+            CommandDescriptor::new(CommandId::SplitLeft, "Split Pane Left", "Layout")
+                .with_contexts(&[CommandContext::Terminal])
+                .with_default_binding("cmd-k left", Some(CommandContext::Terminal)),
             CommandDescriptor::new(CommandId::SplitRight, "Split Pane Right", "Layout")
                 .with_contexts(&[CommandContext::Terminal])
                 .with_default_binding("cmd-d", Some(CommandContext::Terminal))
                 .with_icon(CommandIcon::ChevronRight),
+            CommandDescriptor::new(CommandId::SplitUp, "Split Pane Up", "Layout")
+                .with_contexts(&[CommandContext::Terminal])
+                .with_default_binding("cmd-k up", Some(CommandContext::Terminal)),
             CommandDescriptor::new(CommandId::SplitDown, "Split Pane Down", "Layout")
                 .with_contexts(&[CommandContext::Terminal])
                 .with_default_binding("cmd-shift-d", Some(CommandContext::Terminal))
@@ -587,6 +607,34 @@ mod tests {
         assert!(commands
             .iter()
             .any(|command| command.id == CommandId::SplitRight));
+        assert!(commands
+            .iter()
+            .any(|command| command.id == CommandId::SplitLeft));
+        assert!(commands
+            .iter()
+            .any(|command| command.id == CommandId::SplitUp));
+    }
+
+    #[test]
+    fn workspace_split_commands_expose_all_four_directions() {
+        let commands = WorkspaceCommandProvider.commands();
+        for (id, title, binding) in [
+            (CommandId::SplitLeft, "Split Pane Left", "cmd-k left"),
+            (CommandId::SplitRight, "Split Pane Right", "cmd-d"),
+            (CommandId::SplitUp, "Split Pane Up", "cmd-k up"),
+            (CommandId::SplitDown, "Split Pane Down", "cmd-shift-d"),
+        ] {
+            let command = commands
+                .iter()
+                .find(|command| command.id == id)
+                .expect("workspace split descriptor");
+            assert_eq!(command.title, title);
+            assert_eq!(command.contexts, vec![CommandContext::Terminal]);
+            assert!(command.default_bindings.iter().any(|candidate| {
+                candidate.keystrokes == binding
+                    && candidate.context == Some(CommandContext::Terminal)
+            }));
+        }
     }
 
     #[test]

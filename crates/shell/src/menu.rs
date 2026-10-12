@@ -82,7 +82,9 @@ actions!(
         SelectTab9,
         FocusNextPane,
         // ── Terminal ──────────────────────────────────────────────────────
+        SplitPaneLeft,
         SplitPaneRight,
+        SplitPaneUp,
         SplitPaneDown,
         Find,
         // ── Connections ───────────────────────────────────────────────────
@@ -205,7 +207,9 @@ fn action_for(
         CommandId::SelectTab7 => Box::new(SelectTab7),
         CommandId::SelectTab8 => Box::new(SelectTab8),
         CommandId::SelectTab9 => Box::new(SelectTab9),
+        CommandId::SplitLeft => Box::new(SplitPaneLeft),
         CommandId::SplitRight => Box::new(SplitPaneRight),
+        CommandId::SplitUp => Box::new(SplitPaneUp),
         CommandId::SplitDown => Box::new(SplitPaneDown),
         CommandId::ClosePane => Box::new(ClosePane),
         CommandId::FocusNextPane => Box::new(FocusNextPane),
@@ -342,7 +346,9 @@ fn app_menus() -> Vec<Menu> {
         Menu {
             name: "Terminal".into(),
             items: vec![
+                MenuItem::action("Split Pane Left", SplitPaneLeft),
                 MenuItem::action("Split Pane Right", SplitPaneRight),
+                MenuItem::action("Split Pane Up", SplitPaneUp),
                 MenuItem::action("Split Pane Down", SplitPaneDown),
                 MenuItem::separator(),
                 MenuItem::action("Find\u{2026}", Find),
