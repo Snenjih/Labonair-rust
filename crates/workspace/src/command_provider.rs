@@ -439,6 +439,7 @@ pub fn status_item_label(id: &str) -> &'static str {
         "notifications" => "Notifications",
         "cwd" => "CWD Breadcrumb",
         "cursor-position" => "Cursor Position",
+        "editor-status" => "Editor Status",
         "preview-url" => "Preview URL",
         "updater" => "Updater",
         "transfers" => "Transfers",

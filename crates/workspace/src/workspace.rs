@@ -1914,14 +1914,15 @@ impl Workspace {
             .map(|p| p.to_string_lossy().into_owned())
     }
 
-    /// 1-based `(line, column)` of the active editor's caret, if an editor tab
-    /// is active.
-    pub fn active_editor_cursor(&self, cx: &App) -> Option<(usize, usize)> {
-        let active = self.tabs.read(cx).active()?.clone();
+    /// The active Editor view, if the current tab is owned by Editor. This is
+    /// the typed statusbar contribution seam; Workspace exposes the view while
+    /// all status controls and behavior stay in the Editor owner.
+    pub fn active_editor_view(&self, cx: &App) -> Option<Entity<EditorView>> {
+        let active = self.tabs.read(cx).active()?;
         if active.kind != TabKind::Editor {
             return None;
         }
-        Some(self.editors.get(&active.id)?.read(cx).cursor_line_col())
+        self.editors.get(&active.id).cloned()
     }
 
     /// Symbols from every editor tab in the active space, for the Editor-owned
@@ -3552,7 +3553,7 @@ impl Workspace {
 
     fn watch_editor(&self, tab_id: u64, view: &Entity<EditorView>, cx: &mut Context<Self>) {
         let tabs = self.tabs.clone();
-        cx.observe(view, move |_, editor, cx| {
+        cx.observe(view, move |_this, editor, cx| {
             let editor = editor.read(cx);
             let path = editor
                 .path()
@@ -3567,6 +3568,7 @@ impl Workspace {
                 tabs.set_git_status(tab_id, status, cx);
                 tabs.set_diagnostic_status(tab_id, diagnostic_status, cx);
             });
+            cx.notify();
         })
         .detach();
 

@@ -72,7 +72,13 @@ impl StatusBar {
         theme: Entity<ThemeStore>,
         cx: &mut Context<Self>,
     ) -> Self {
-        cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
+        cx.observe(&workspace, |this, _, cx| {
+            for (_, _, _, _, item) in &this.items {
+                item.on_workspace_changed(cx);
+            }
+            cx.notify();
+        })
+        .detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
         // Another window persisted a placement change — reload the blob and
         // re-render (T18-005 point 8, "two windows").

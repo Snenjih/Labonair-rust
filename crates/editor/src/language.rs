@@ -212,6 +212,7 @@ mod tests {
         assert_eq!(Language::from_path("m.kt"), Language::Kotlin);
         assert_eq!(Language::from_path("v.swift"), Language::Swift);
         assert_eq!(Language::from_path("data.yaml"), Language::Yaml);
+        assert_eq!(Language::from_path("docs/plan.md"), Language::Markdown);
     }
 
     #[test]

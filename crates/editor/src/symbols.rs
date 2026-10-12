@@ -19,6 +19,8 @@ pub enum SymbolKind {
     Module,
     Interface,
     Constant,
+    /// A Markdown ATX heading, used by the editor outline and breadcrumb.
+    Heading,
     Other,
 }
 
@@ -32,6 +34,7 @@ impl SymbolKind {
             SymbolKind::Module => "module",
             SymbolKind::Interface => "interface",
             SymbolKind::Constant => "constant",
+            SymbolKind::Heading => "heading",
             SymbolKind::Other => "symbol",
         }
     }
@@ -236,6 +239,9 @@ fn classify(def_capture: &str) -> SymbolKind {
 /// revision. Tree-sitter receives one temporary contiguous view of the
 /// snapshot; this module does not retain a second text source.
 pub fn document_syntax(lang: Language, snapshot: &BufferSnapshot) -> DocumentSyntax {
+    if lang == Language::Markdown {
+        return markdown_document_syntax(snapshot);
+    }
     let Some(ts_lang) = tree_sitter_language(lang) else {
         return DocumentSyntax::default();
     };
@@ -316,6 +322,79 @@ pub fn document_syntax(lang: Language, snapshot: &BufferSnapshot) -> DocumentSyn
     }
 }
 
+fn markdown_document_syntax(snapshot: &BufferSnapshot) -> DocumentSyntax {
+    let mut headings = Vec::new();
+    for line in 0..snapshot.line_count() {
+        let text = snapshot.line(line);
+        let leading = text.bytes().take_while(|byte| *byte == b' ').count();
+        if leading > 3 {
+            continue;
+        }
+        let rest = &text[leading..];
+        let level = rest.bytes().take_while(|byte| *byte == b'#').count();
+        if !(1..=6).contains(&level)
+            || rest
+                .as_bytes()
+                .get(level)
+                .is_some_and(|byte| !byte.is_ascii_whitespace())
+        {
+            continue;
+        }
+        let mut name_start = level;
+        while rest
+            .as_bytes()
+            .get(name_start)
+            .is_some_and(u8::is_ascii_whitespace)
+        {
+            name_start += 1;
+        }
+        let mut name_end = rest.trim_end().len();
+        while name_end > name_start && rest.as_bytes()[name_end - 1] == b'#' {
+            name_end -= 1;
+        }
+        while name_end > name_start && rest.as_bytes()[name_end - 1].is_ascii_whitespace() {
+            name_end -= 1;
+        }
+        if name_start >= name_end {
+            continue;
+        }
+        let line_start = snapshot.line_start_byte(line);
+        let range = TextRange::new(line_start, line_start + text.len());
+        headings.push((
+            level,
+            DocumentSymbol {
+                name: rest[name_start..name_end].to_string(),
+                kind: SymbolKind::Heading,
+                line,
+                range,
+                name_range: TextRange::new(
+                    line_start + leading + name_start,
+                    line_start + leading + name_end,
+                ),
+            },
+        ));
+    }
+
+    let mut folding_ranges = Vec::new();
+    for (index, (level, heading)) in headings.iter().enumerate() {
+        let end_line = headings[index + 1..]
+            .iter()
+            .find(|(next_level, _)| next_level <= level)
+            .map_or_else(
+                || snapshot.line_count().saturating_sub(1),
+                |(_, next)| next.line.saturating_sub(1),
+            );
+        if let Some(range) = FoldRange::new(heading.line, end_line) {
+            folding_ranges.push(range);
+        }
+    }
+
+    DocumentSyntax {
+        symbols: headings.into_iter().map(|(_, symbol)| symbol).collect(),
+        folding_ranges,
+    }
+}
+
 /// Extract document symbols using the bundled Tree-sitter grammar.
 pub fn document_symbols(lang: Language, snapshot: &BufferSnapshot) -> Vec<DocumentSymbol> {
     document_syntax(lang, snapshot).symbols
@@ -366,6 +445,33 @@ mod tests {
         let toml = crate::EditorBuffer::from_text("[x]\na = 1");
         assert!(document_symbols(Language::PlainText, &plain.snapshot()).is_empty());
         assert!(document_symbols(Language::Toml, &toml.snapshot()).is_empty());
+    }
+
+    #[test]
+    fn markdown_headings_become_outline_symbols_and_fold_ranges() {
+        let source = "# Intro\ntext\n## Details\nmore\n# Next\n";
+        let buffer = crate::EditorBuffer::from_text(source);
+        let syntax = document_syntax(Language::Markdown, &buffer.snapshot());
+        assert_eq!(
+            syntax
+                .symbols
+                .iter()
+                .map(|symbol| (symbol.name.as_str(), symbol.line, symbol.kind))
+                .collect::<Vec<_>>(),
+            vec![
+                ("Intro", 0, SymbolKind::Heading),
+                ("Details", 2, SymbolKind::Heading),
+                ("Next", 4, SymbolKind::Heading),
+            ]
+        );
+        assert!(syntax.folding_ranges.contains(&FoldRange {
+            start_line: 0,
+            end_line: 3,
+        }));
+        assert!(syntax.folding_ranges.contains(&FoldRange {
+            start_line: 2,
+            end_line: 3,
+        }));
     }
 
     #[test]

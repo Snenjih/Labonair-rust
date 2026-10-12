@@ -13,6 +13,7 @@ labonair-command-palette-core = { path = "../command-palette-core" }
 labonair-editor = { path = "../editor" }
 labonair-filesystem = { path = "../filesystem" }
 labonair-notifications = { path = "../notifications" }
+labonair-panel = { path = "../panel" }
 labonair-settings = { path = "../settings" }
 labonair-settings-json = { path = "../settings-json" }
 labonair-theme = { path = "../theme" }

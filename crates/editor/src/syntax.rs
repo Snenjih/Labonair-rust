@@ -175,9 +175,9 @@ impl SyntaxHighlighter {
         self.language
     }
 
-    /// Whether a Tree-sitter grammar is bundled for the current language.
+    /// Whether local syntax highlighting is available for the current language.
     pub fn has_grammar(&self) -> bool {
-        config(self.language).is_some()
+        self.language == Language::Markdown || config(self.language).is_some()
     }
 
     /// Switch language (e.g. after a file is loaded). Invalidates the cache.
@@ -221,13 +221,19 @@ impl SyntaxHighlighter {
         if text_len == 0 || text_len > MAX_HIGHLIGHT_BYTES {
             return;
         }
-        let Some(cfg) = config(self.language) else {
-            return;
-        };
-
         let text = snapshot.text();
         let win_start = visible.start.saturating_sub(WINDOW_MARGIN);
         let win_end = visible.end.saturating_add(WINDOW_MARGIN).min(text.len());
+
+        if self.language == Language::Markdown {
+            self.spans = markdown_highlights(&text, win_start..win_end);
+            self.covered = win_start..win_end;
+            return;
+        }
+
+        let Some(cfg) = config(self.language) else {
+            return;
+        };
 
         let mut highlighter = Highlighter::new();
         let events = match highlighter.highlight(cfg, text.as_bytes(), None, |_| None) {
@@ -334,6 +340,300 @@ impl SyntaxHighlighter {
             });
         }
         runs
+    }
+}
+
+/// Lightweight Markdown highlighting without an additional grammar crate.
+/// It covers common block and inline constructs while keeping byte ranges
+/// compatible with the editor's existing syntax renderer.
+fn markdown_highlights(text: &str, visible: Range<usize>) -> Vec<HighlightSpan> {
+    use HighlightKind::{Comment, Keyword, Number, Punctuation, String, Type};
+
+    let mut spans = Vec::new();
+    let mut offset = 0usize;
+    let mut fence: Option<(u8, usize)> = None;
+
+    for source_line in text.split_inclusive('\n') {
+        let line = source_line.strip_suffix('\n').unwrap_or(source_line);
+        let line_end = offset + line.len();
+        let leading = line.bytes().take_while(|byte| *byte == b' ').count();
+        let content = &line[leading.min(3)..];
+
+        if let Some((marker, width)) = fence {
+            let closes = markdown_fence_width(content, marker).is_some_and(|count| count >= width)
+                && content[markdown_fence_width(content, marker).unwrap_or(0)..]
+                    .trim()
+                    .is_empty();
+            push_markdown_span(&mut spans, offset..line_end, String, &visible);
+            if closes {
+                fence = None;
+            }
+            offset += source_line.len();
+            continue;
+        }
+
+        if leading <= 3 {
+            if let Some((marker, width)) = markdown_fence(content) {
+                let marker_end = offset + leading + width;
+                push_markdown_span(
+                    &mut spans,
+                    offset + leading..marker_end,
+                    Punctuation,
+                    &visible,
+                );
+                if marker_end < line_end {
+                    push_markdown_span(&mut spans, marker_end..line_end, Type, &visible);
+                }
+                fence = Some((marker, width));
+                offset += source_line.len();
+                continue;
+            }
+        }
+
+        let trimmed = content.trim_start();
+        let content_prefix = content.len() - trimmed.len();
+        let base = offset + leading + content_prefix;
+        let heading_width = trimmed.bytes().take_while(|byte| *byte == b'#').count();
+        if (1..=6).contains(&heading_width)
+            && trimmed
+                .as_bytes()
+                .get(heading_width)
+                .is_none_or(|byte| byte.is_ascii_whitespace())
+        {
+            push_markdown_span(
+                &mut spans,
+                base..base + heading_width,
+                Punctuation,
+                &visible,
+            );
+            let body_start = base
+                + heading_width
+                + usize::from(trimmed.as_bytes().get(heading_width) == Some(&b' '));
+            push_markdown_span(&mut spans, body_start..line_end, Keyword, &visible);
+            offset += source_line.len();
+            continue;
+        }
+
+        if trimmed.starts_with('>') {
+            push_markdown_span(&mut spans, base..line_end, Comment, &visible);
+            offset += source_line.len();
+            continue;
+        }
+
+        if is_markdown_horizontal_rule(trimmed) {
+            push_markdown_span(&mut spans, base..line_end, Punctuation, &visible);
+            offset += source_line.len();
+            continue;
+        }
+
+        let list_marker_end = markdown_list_marker_end(trimmed);
+        if let Some(marker_end) = list_marker_end {
+            push_markdown_span(
+                &mut spans,
+                base..base + marker_end,
+                if trimmed.as_bytes().first().is_some_and(u8::is_ascii_digit) {
+                    Number
+                } else {
+                    Punctuation
+                },
+                &visible,
+            );
+            markdown_inline_highlights(trimmed, marker_end, base, &visible, &mut spans);
+        } else {
+            markdown_inline_highlights(trimmed, 0, base, &visible, &mut spans);
+        }
+        offset += source_line.len();
+    }
+
+    spans.sort_by_key(|span| span.start);
+    spans
+}
+
+fn push_markdown_span(
+    spans: &mut Vec<HighlightSpan>,
+    range: Range<usize>,
+    kind: HighlightKind,
+    visible: &Range<usize>,
+) {
+    let start = range.start.max(visible.start);
+    let end = range.end.min(visible.end);
+    if start < end {
+        spans.push(HighlightSpan { start, end, kind });
+    }
+}
+
+fn markdown_fence(line: &str) -> Option<(u8, usize)> {
+    let marker = *line.as_bytes().first()?;
+    markdown_fence_width(line, marker)
+        .filter(|width| *width >= 3)
+        .map(|width| (marker, width))
+}
+
+fn markdown_fence_width(line: &str, marker: u8) -> Option<usize> {
+    let width = line.bytes().take_while(|byte| *byte == marker).count();
+    (width > 0).then_some(width)
+}
+
+fn is_markdown_horizontal_rule(line: &str) -> bool {
+    let compact = line
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect::<Vec<_>>();
+    compact.len() >= 3
+        && b"-*_"
+            .iter()
+            .copied()
+            .any(|marker| compact.iter().all(|byte| *byte == marker))
+}
+
+fn markdown_list_marker_end(line: &str) -> Option<usize> {
+    let bytes = line.as_bytes();
+    if bytes.len() >= 2 && matches!(bytes[0], b'-' | b'+' | b'*') && bytes[1].is_ascii_whitespace()
+    {
+        return Some(2);
+    }
+    let digits = bytes
+        .iter()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count();
+    (digits > 0
+        && bytes
+            .get(digits..digits + 2)
+            .is_some_and(|suffix| suffix[0] == b'.' && suffix[1].is_ascii_whitespace()))
+    .then_some(digits + 2)
+}
+
+fn markdown_inline_highlights(
+    line: &str,
+    mut cursor: usize,
+    absolute_start: usize,
+    visible: &Range<usize>,
+    spans: &mut Vec<HighlightSpan>,
+) {
+    use HighlightKind::{Function, Operator, Punctuation, String, Type};
+    let bytes = line.as_bytes();
+
+    while cursor < bytes.len() {
+        if bytes[cursor] == b'`' {
+            let width = bytes[cursor..]
+                .iter()
+                .take_while(|byte| **byte == b'`')
+                .count();
+            let marker = vec![b'`'; width];
+            if let Some(relative_end) = line.as_bytes()[cursor + width..]
+                .windows(width)
+                .position(|window| window == marker)
+            {
+                let end = cursor + width + relative_end + width;
+                push_markdown_span(
+                    spans,
+                    absolute_start + cursor..absolute_start + end,
+                    String,
+                    visible,
+                );
+                cursor = end;
+                continue;
+            }
+        }
+
+        if bytes[cursor] == b'[' || (bytes[cursor] == b'!' && bytes.get(cursor + 1) == Some(&b'['))
+        {
+            let label_start = cursor + usize::from(bytes[cursor] == b'!') + 1;
+            if let Some(close_label) = line[label_start..].find("](").map(|i| label_start + i) {
+                if let Some(close_url) = line[close_label + 2..]
+                    .find(')')
+                    .map(|i| close_label + 2 + i)
+                {
+                    push_markdown_span(
+                        spans,
+                        absolute_start + cursor..absolute_start + label_start,
+                        Punctuation,
+                        visible,
+                    );
+                    push_markdown_span(
+                        spans,
+                        absolute_start + label_start..absolute_start + close_label,
+                        Function,
+                        visible,
+                    );
+                    push_markdown_span(
+                        spans,
+                        absolute_start + close_label..absolute_start + close_label + 2,
+                        Punctuation,
+                        visible,
+                    );
+                    push_markdown_span(
+                        spans,
+                        absolute_start + close_label + 2..absolute_start + close_url,
+                        String,
+                        visible,
+                    );
+                    push_markdown_span(
+                        spans,
+                        absolute_start + close_url..absolute_start + close_url + 1,
+                        Punctuation,
+                        visible,
+                    );
+                    cursor = close_url + 1;
+                    continue;
+                }
+            }
+        }
+
+        let marker = if bytes[cursor..].starts_with(b"**")
+            || bytes[cursor..].starts_with(b"__")
+            || bytes[cursor..].starts_with(b"~~")
+        {
+            Some(&line[cursor..cursor + 2])
+        } else if matches!(bytes[cursor], b'*' | b'_') {
+            Some(&line[cursor..cursor + 1])
+        } else {
+            None
+        };
+        if let Some(marker) = marker {
+            if let Some(relative_end) = line[cursor + marker.len()..].find(marker) {
+                let content_start = cursor + marker.len();
+                let content_end = content_start + relative_end;
+                if content_end > content_start {
+                    push_markdown_span(
+                        spans,
+                        absolute_start + cursor..absolute_start + content_start,
+                        Punctuation,
+                        visible,
+                    );
+                    push_markdown_span(
+                        spans,
+                        absolute_start + content_start..absolute_start + content_end,
+                        if marker == "~~" { Operator } else { Type },
+                        visible,
+                    );
+                    push_markdown_span(
+                        spans,
+                        absolute_start + content_end..absolute_start + content_end + marker.len(),
+                        Punctuation,
+                        visible,
+                    );
+                    cursor = content_end + marker.len();
+                    continue;
+                }
+            }
+        }
+
+        if line[cursor..].starts_with("https://") || line[cursor..].starts_with("http://") {
+            let end = line[cursor..]
+                .find(char::is_whitespace)
+                .map_or(line.len(), |len| cursor + len);
+            push_markdown_span(
+                spans,
+                absolute_start + cursor..absolute_start + end,
+                Function,
+                visible,
+            );
+            cursor = end;
+            continue;
+        }
+
+        cursor += line[cursor..].chars().next().map_or(1, char::len_utf8);
     }
 }
 
@@ -529,6 +829,27 @@ mod tests {
     }
 
     #[test]
+    fn markdown_highlights_headings_fences_inline_code_links_and_lists() {
+        let source = "# Overview\n\n- item with `code` and **bold** [link](https://example.test)\n\n```rust\nlet answer = 42;\n```\n";
+        let got = kinds(Language::Markdown, source);
+        assert!(got
+            .iter()
+            .any(|(kind, text)| *kind == HighlightKind::Keyword && text == "Overview"));
+        assert!(got
+            .iter()
+            .any(|(kind, text)| *kind == HighlightKind::String && text == "`code`"));
+        assert!(got
+            .iter()
+            .any(|(kind, text)| *kind == HighlightKind::Function && text == "link"));
+        assert!(got
+            .iter()
+            .any(|(kind, text)| *kind == HighlightKind::String && text == "https://example.test"));
+        assert!(got
+            .iter()
+            .any(|(kind, text)| *kind == HighlightKind::String && text == "let answer = 42;"));
+    }
+
+    #[test]
     fn plain_text_and_unsupported_produce_no_spans() {
         let mut hl = SyntaxHighlighter::new(Language::PlainText);
         let buffer = crate::EditorBuffer::from_text("just words\n");
@@ -537,6 +858,7 @@ mod tests {
         assert!(hl.spans().is_empty());
         assert!(!hl.has_grammar());
         assert!(SyntaxHighlighter::new(Language::Rust).has_grammar());
+        assert!(SyntaxHighlighter::new(Language::Markdown).has_grammar());
     }
 
     #[test]

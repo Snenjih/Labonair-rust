@@ -210,6 +210,13 @@ pub trait StatusItem: Render {
         let _ = cx;
     }
 
+    /// Notification that Workspace state used by this item may have changed.
+    /// Active-editor status items use this to refresh after cursor/selection
+    /// updates as well as tab changes.
+    fn on_workspace_changed(&mut self, cx: &mut Context<Self>) {
+        let _ = cx;
+    }
+
     /// How this item hides itself, or `None` if it is inherently conditional on
     /// another user-visible setting (Zed's rule for returning `None`).
     fn hide(&self, cx: &App) -> Option<StatusItemHide> {
@@ -242,6 +249,8 @@ pub trait StatusItemHandle: Send + Sync {
     fn status_menu_entries(&self, cx: &mut App) -> Vec<StatusMenuEntry>;
     /// See [`StatusItem::on_active_tab_changed`].
     fn on_active_tab_changed(&self, cx: &mut App);
+    /// See [`StatusItem::on_workspace_changed`].
+    fn on_workspace_changed(&self, cx: &mut App);
     /// See [`StatusItem::hide`].
     fn hide(&self, cx: &App) -> Option<StatusItemHide>;
     /// Type-erased view, for rendering inside the status bar.
@@ -283,6 +292,10 @@ impl<T: StatusItem + 'static> StatusItemHandle for Entity<T> {
 
     fn on_active_tab_changed(&self, cx: &mut App) {
         self.update(cx, |item, cx| item.on_active_tab_changed(cx));
+    }
+
+    fn on_workspace_changed(&self, cx: &mut App) {
+        self.update(cx, |item, cx| item.on_workspace_changed(cx));
     }
 
     fn hide(&self, cx: &App) -> Option<StatusItemHide> {

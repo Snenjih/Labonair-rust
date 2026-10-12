@@ -347,6 +347,26 @@ fn find_selection_highlights(snapshot: &BufferSnapshot, selected_text: &str) -> 
     find_all(snapshot, &query)
 }
 
+/// Return only the selected columns that belong to `line`. Lines outside the
+/// selection must not be painted as full-row selections.
+fn selection_columns_on_line(
+    selection: (Position, Position),
+    line: usize,
+    line_length: usize,
+) -> Option<(usize, usize)> {
+    let (start, end) = selection;
+    if line < start.line || line > end.line {
+        return None;
+    }
+    let start_column = if line == start.line { start.column } else { 0 };
+    let end_column = if line == end.line {
+        end.column
+    } else {
+        line_length
+    };
+    (end_column > start_column).then_some((start_column, end_column))
+}
+
 /// Calculate a compact scrollbar thumb without allowing a zero-sized or
 /// out-of-track thumb. The editor uses this for both display rows and columns,
 /// so the math remains deterministic and independent of GPUI layout.
@@ -354,6 +374,15 @@ fn scrollbar_geometry(
     content_extent: usize,
     viewport_extent: usize,
     scroll: usize,
+    track_length: f32,
+) -> Option<ScrollbarGeometry> {
+    scrollbar_geometry_at(content_extent, viewport_extent, scroll as f32, track_length)
+}
+
+fn scrollbar_geometry_at(
+    content_extent: usize,
+    viewport_extent: usize,
+    scroll: f32,
     track_length: f32,
 ) -> Option<ScrollbarGeometry> {
     if content_extent <= viewport_extent || track_length <= 0.0 {
@@ -364,10 +393,15 @@ fn scrollbar_geometry(
         .max(EDITOR_SCROLLBAR_MIN_THUMB)
         .min(track_length);
     let travel = (track_length - thumb_length).max(0.0);
+    let scroll = if scroll.is_finite() {
+        scroll.clamp(0.0, max_scroll as f32)
+    } else {
+        0.0
+    };
     let thumb_offset = if max_scroll == 0 {
         0.0
     } else {
-        travel * scroll.min(max_scroll) as f32 / max_scroll as f32
+        travel * scroll / max_scroll as f32
     };
     Some(ScrollbarGeometry {
         track_length,
@@ -390,7 +424,7 @@ fn scrollbar_scroll_from_pointer(
     (offset / travel * geometry.max_scroll as f32).round() as usize
 }
 
-fn centered_search_scroll_line(
+fn centered_search_scroll_row(
     layout: &DisplaySnapshot,
     position: Position,
     visible_rows: usize,
@@ -398,10 +432,7 @@ fn centered_search_scroll_line(
     let (match_row, _) = layout.position_to_display(position)?;
     let visible_rows = visible_rows.max(1);
     let max_top_row = layout.total_rows.saturating_sub(visible_rows);
-    let top_row = match_row.saturating_sub(visible_rows / 2).min(max_top_row);
-    layout
-        .display_to_position(top_row, 0)
-        .map(|position| position.line)
+    Some(match_row.saturating_sub(visible_rows / 2).min(max_top_row))
 }
 
 fn minimap_slot(line: usize, line_count: usize, slot_count: usize) -> Option<usize> {
@@ -1189,6 +1220,14 @@ pub struct EditorView {
     bounds: Option<Bounds<Pixels>>,
     /// First visible buffer line.
     scroll_top: usize,
+    /// Absolute display-row top when smooth scrolling crosses wrapped lines.
+    scroll_visual_top: Option<usize>,
+    /// Fractional vertical displacement within the first visible line.
+    scroll_offset_y: f32,
+    /// Remaining wheel motion for discrete mouse-wheel events.
+    scroll_animation_remaining_y: f32,
+    /// Short frame-based easing task for discrete wheel motion.
+    scroll_animation_task: Option<Task<()>>,
     /// Horizontal display-column offset for long unwrapped lines.
     scroll_left: usize,
     /// Editor-owned folded logical ranges, persisted through the editor session
@@ -1531,6 +1570,10 @@ impl EditorView {
             focus_handle: cx.focus_handle(),
             bounds: None,
             scroll_top: 0,
+            scroll_visual_top: None,
+            scroll_offset_y: 0.0,
+            scroll_animation_remaining_y: 0.0,
+            scroll_animation_task: None,
             scroll_left: 0,
             folds: Vec::new(),
             server_fold_ranges: Vec::new(),
@@ -1769,6 +1812,8 @@ impl EditorView {
                 selections: self.doc.editor_group_selection(group).unwrap_or_default(),
             });
         self.scroll_top = view.scroll_top;
+        self.scroll_visual_top = None;
+        self.scroll_offset_y = 0.0;
         self.scroll_left = view.scroll_left;
         self.folds = view.folds;
         self.display_layout_cache = None;
@@ -1777,6 +1822,8 @@ impl EditorView {
 
     fn reset_editor_group_views(&mut self) {
         self.scroll_top = 0;
+        self.scroll_visual_top = None;
+        self.scroll_offset_y = 0.0;
         self.scroll_left = 0;
         self.folds.clear();
         self.editor_group_views.clear();
@@ -4467,6 +4514,11 @@ impl EditorView {
                 || cache.inlay_hints != inlay_hints
         });
         if needs_rebuild {
+            // The visual row can move when edits, folds, hints, or wrapping
+            // change. Keep the logical line anchor and start at its first row.
+            if self.scroll_visual_top.take().is_some() {
+                self.scroll_offset_y = 0.0;
+            }
             let hinted_columns = inlay_hints
                 .iter()
                 .map(|hint| {
@@ -4523,10 +4575,13 @@ impl EditorView {
         let config = self.display_config();
         let visible_rows = self.visible_rows().saturating_add(1);
         let width_columns = self.wrap_cols().max(self.content_width_columns()).max(1);
+        self.display_layout(snapshot, config);
         let scroll_left = self.scroll_left;
         let scroll_top = self.scroll_top;
+        let scroll_visual_top = self.scroll_visual_top;
         let layout = self.display_layout(snapshot, config);
-        let top_row = layout.logical_line_to_visual_row(scroll_top);
+        let top_row =
+            scroll_visual_top.unwrap_or_else(|| layout.logical_line_to_visual_row(scroll_top));
         layout.for_viewport(Viewport {
             top_row,
             left_column: scroll_left,
@@ -4827,6 +4882,8 @@ impl EditorView {
         let column = location.position.column.min(snapshot.line_len(line));
         self.doc.set_caret(Position::new(line, column), false);
         self.scroll_top = location.scroll_top;
+        self.scroll_visual_top = None;
+        self.scroll_offset_y = 0.0;
         self.scroll_left = location.scroll_left;
         self.ensure_cursor_visible(cx);
         self.cursor_blink_on = true;
@@ -5355,6 +5412,8 @@ impl EditorView {
         self.git_gutter =
             GitGutterSnapshot::loading(path.to_string_lossy().to_string(), self.editor_revision());
         self.scroll_top = 0;
+        self.scroll_visual_top = None;
+        self.scroll_offset_y = 0.0;
         let path_str = path.to_string_lossy().to_string();
         let max_bytes = self.file_limit_bytes();
         let load = cx.background_executor().spawn(async move {
@@ -5874,9 +5933,37 @@ impl EditorView {
     fn clamp_scroll(&mut self) {
         let snapshot = self.doc.snapshot();
         let config = self.display_config();
-        let max_line_width = self.display_layout(&snapshot, config).max_line_width;
-        let max_scroll_line = self.max_scroll_line_for_snapshot(&snapshot, config);
-        self.scroll_top = self.scroll_top.min(max_scroll_line);
+        self.display_layout(&snapshot, config);
+        let saved_scroll_top = self.scroll_top;
+        let saved_visual_top = self.scroll_visual_top;
+        let visible_rows = self.visible_rows().max(1);
+        let layout = self.display_layout(&snapshot, config);
+        let (max_line_width, max_visual_top, visual_top, top_line) = {
+            let max_visual_top = if config.scroll_beyond_last_line {
+                layout.total_rows.saturating_sub(1)
+            } else {
+                layout.total_rows.saturating_sub(visible_rows)
+            };
+            let visual_top = saved_visual_top
+                .unwrap_or_else(|| layout.logical_line_to_visual_row(saved_scroll_top));
+            let visual_top = visual_top.min(max_visual_top);
+            let top_line = layout.display_to_position(visual_top, 0).map_or_else(
+                || snapshot.line_count().saturating_sub(1),
+                |position| position.line,
+            );
+            (layout.max_line_width, max_visual_top, visual_top, top_line)
+        };
+        let previous_scroll_top = self.scroll_top;
+        let previous_visual_top = self.scroll_visual_top;
+        self.scroll_top = top_line;
+        self.scroll_visual_top = previous_visual_top.map(|_| visual_top);
+        if self.scroll_top != previous_scroll_top
+            || self.scroll_visual_top != previous_visual_top
+            || (visual_top == 0 && self.scroll_offset_y < 0.0)
+            || (visual_top == max_visual_top && self.scroll_offset_y > 0.0)
+        {
+            self.scroll_offset_y = 0.0;
+        }
         let max_left = if config.wrap_columns.is_none() {
             max_line_width.saturating_sub(self.content_width_columns())
         } else {
@@ -5885,65 +5972,180 @@ impl EditorView {
         self.scroll_left = self.scroll_left.min(max_left);
     }
 
-    fn max_scroll_line(&mut self) -> usize {
-        let snapshot = self.doc.snapshot();
-        self.max_scroll_line_for_snapshot(&snapshot, self.display_config())
-    }
-
-    fn max_scroll_line_for_snapshot(
-        &mut self,
-        snapshot: &labonair_editor::BufferSnapshot,
-        config: DisplayConfig,
-    ) -> usize {
-        if config.scroll_beyond_last_line {
-            return snapshot.line_count().saturating_sub(1);
-        }
-        let visible_rows = self.visible_rows().max(1);
-        let layout = self.display_layout(snapshot, config);
-        let max_row = layout.total_rows.saturating_sub(visible_rows);
-        layout
-            .display_to_position(max_row, 0)
-            .map(|position| position.line)
-            .unwrap_or_else(|| snapshot.line_count().saturating_sub(1))
-    }
-
     fn ensure_cursor_visible(&mut self, cx: &mut Context<Self>) {
-        let old_scroll_top = self.scroll_top;
+        let snapshot = self.doc.snapshot();
+        let config = self.display_config();
+        self.display_layout(&snapshot, config);
+        let saved_scroll_top = self.scroll_top;
+        let saved_visual_top = self.scroll_visual_top;
+        let cursor = self.doc.cursor;
         let rows = self.visible_rows();
-        let line = self.doc.cursor.line;
-        self.scroll_top = cursor_scroll_top(
-            self.scroll_top,
-            line,
-            rows,
-            self.prefs.vertical_scroll_margin(),
-        );
+        let margin = self.prefs.vertical_scroll_margin();
+        let layout = self.display_layout(&snapshot, config);
+        let (old_visual_top, next_visual_top, next_line) = {
+            let old_visual_top = saved_visual_top
+                .unwrap_or_else(|| layout.logical_line_to_visual_row(saved_scroll_top));
+            let cursor_row = layout
+                .position_to_display(cursor)
+                .map_or(old_visual_top, |(row, _)| row);
+            let max_visual_top = if config.scroll_beyond_last_line {
+                layout.total_rows.saturating_sub(1)
+            } else {
+                layout.total_rows.saturating_sub(rows.max(1))
+            };
+            let next_visual_top =
+                cursor_scroll_top(old_visual_top, cursor_row, rows, margin).min(max_visual_top);
+            let next_line = layout.display_to_position(next_visual_top, 0).map_or_else(
+                || snapshot.line_count().saturating_sub(1),
+                |position| position.line,
+            );
+            (old_visual_top, next_visual_top, next_line)
+        };
+        let old_scroll_top = self.scroll_top;
+        let changed = old_visual_top != next_visual_top || old_scroll_top != next_line;
+        if changed {
+            self.scroll_visual_top = Some(next_visual_top);
+            self.scroll_top = next_line;
+            self.scroll_offset_y = 0.0;
+        }
         self.clamp_scroll();
-        if self.scroll_top != old_scroll_top {
+        if changed {
             self.schedule_inlay_hints(self.prefs.inlay_scroll_debounce_ms(), cx);
         }
         self.schedule_git_blame(cx);
     }
 
-    fn scroll_by(&mut self, lines: isize, cx: &mut Context<Self>) {
-        let max = self.max_scroll_line() as isize;
-        let next = (self.scroll_top as isize + lines).clamp(0, max);
-        if next as usize != self.scroll_top {
-            self.scroll_top = next as usize;
+    fn scroll_by_pixels(&mut self, delta: f32, cx: &mut Context<Self>) {
+        if !delta.is_finite() || delta == 0.0 {
+            return;
+        }
+        let line_height = self.metrics.1.max(1.0);
+        let snapshot = self.doc.snapshot();
+        let config = self.display_config();
+        self.display_layout(&snapshot, config);
+        let saved_scroll_top = self.scroll_top;
+        let saved_visual_top = self.scroll_visual_top;
+        let visible_rows = self.visible_rows().max(1);
+        let layout = self.display_layout(&snapshot, config);
+        let (previous_visual_top, max_visual_top) = {
+            let max_visual_top = if config.scroll_beyond_last_line {
+                layout.total_rows.saturating_sub(1)
+            } else {
+                layout.total_rows.saturating_sub(visible_rows)
+            };
+            let visual_top = saved_visual_top
+                .unwrap_or_else(|| layout.logical_line_to_visual_row(saved_scroll_top));
+            (visual_top.min(max_visual_top), max_visual_top)
+        };
+        let previous_offset = self.scroll_offset_y;
+        self.scroll_offset_y =
+            (self.scroll_offset_y + delta).clamp(-line_height * 8.0, line_height * 32.0);
+
+        let whole_rows = (self.scroll_offset_y / line_height).trunc() as isize;
+        let next_visual_top =
+            (previous_visual_top as isize + whole_rows).clamp(0, max_visual_top as isize) as usize;
+        let moved_rows = next_visual_top as isize - previous_visual_top as isize;
+        if moved_rows != 0 {
+            let next_line = self
+                .display_layout(&snapshot, config)
+                .display_to_position(next_visual_top, 0)
+                .map_or_else(
+                    || snapshot.line_count().saturating_sub(1),
+                    |position| position.line,
+                );
+            self.scroll_visual_top = Some(next_visual_top);
+            self.scroll_top = next_line;
+            self.scroll_offset_y -= moved_rows as f32 * line_height;
             self.schedule_inlay_hints(self.prefs.inlay_scroll_debounce_ms(), cx);
+        }
+
+        if (next_visual_top == 0 && self.scroll_offset_y < 0.0)
+            || (next_visual_top == max_visual_top && self.scroll_offset_y > 0.0)
+        {
+            self.scroll_offset_y = 0.0;
+        }
+        if moved_rows != 0 || self.scroll_offset_y != previous_offset {
             cx.notify();
         }
+    }
+
+    fn scroll_by_wheel_pixels(&mut self, delta: f32, cx: &mut Context<Self>) {
+        if !delta.is_finite() || delta == 0.0 {
+            return;
+        }
+        let max_pending = self.metrics.1.max(1.0) * 32.0;
+        self.scroll_animation_remaining_y =
+            (self.scroll_animation_remaining_y + delta).clamp(-max_pending, max_pending);
+        if self.scroll_animation_task.is_some() {
+            return;
+        }
+
+        self.scroll_animation_task = Some(cx.spawn(async move |view, cx| loop {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(16))
+                .await;
+            let keep_running = view
+                .update(cx, |this, cx| {
+                    let remaining = this.scroll_animation_remaining_y;
+                    let step = eased_scroll_step(remaining);
+                    let before = (
+                        this.scroll_top,
+                        this.scroll_visual_top,
+                        this.scroll_offset_y,
+                    );
+                    this.scroll_by_pixels(step, cx);
+                    this.scroll_animation_remaining_y -= step;
+                    let moved = before
+                        != (
+                            this.scroll_top,
+                            this.scroll_visual_top,
+                            this.scroll_offset_y,
+                        );
+                    if !moved || this.scroll_animation_remaining_y.abs() < 0.25 {
+                        let residual = this.scroll_animation_remaining_y;
+                        if moved && residual != 0.0 {
+                            this.scroll_by_pixels(residual, cx);
+                        }
+                        this.scroll_animation_remaining_y = 0.0;
+                        this.scroll_animation_task = None;
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .unwrap_or(false);
+            if !keep_running {
+                break;
+            }
+        }));
     }
 
     fn scroll_to_visual_row(&mut self, row: usize, cx: &mut Context<Self>) {
         let snapshot = self.doc.snapshot();
         let config = self.display_config();
+        self.display_layout(&snapshot, config);
+        let saved_scroll_top = self.scroll_top;
+        let saved_visual_top = self.scroll_visual_top;
+        let visible_rows = self.visible_rows().max(1);
+        let previous_offset = self.scroll_offset_y;
         let layout = self.display_layout(&snapshot, config);
+        let max_visual_top = if config.scroll_beyond_last_line {
+            layout.total_rows.saturating_sub(1)
+        } else {
+            layout.total_rows.saturating_sub(visible_rows)
+        };
+        let next_visual_top = row.min(max_visual_top);
         let next = layout
-            .display_to_position(row.min(layout.total_rows.saturating_sub(1)), 0)
+            .display_to_position(next_visual_top, 0)
             .map(|position| position.line)
             .unwrap_or_else(|| snapshot.line_count().saturating_sub(1));
-        if next != self.scroll_top {
-            self.scroll_top = next;
+        let previous_visual_top = saved_visual_top
+            .unwrap_or_else(|| layout.logical_line_to_visual_row(saved_scroll_top))
+            .min(max_visual_top);
+        self.scroll_visual_top = Some(next_visual_top);
+        self.scroll_top = next;
+        self.scroll_offset_y = 0.0;
+        if next_visual_top != previous_visual_top || previous_offset != 0.0 {
             self.clamp_scroll();
             self.schedule_inlay_hints(self.prefs.inlay_scroll_debounce_ms(), cx);
             cx.notify();
@@ -6529,15 +6731,10 @@ impl EditorView {
                 let config = self.display_config();
                 let visible_rows = self.visible_rows();
                 let layout = self.display_layout(&snapshot, config);
-                centered_search_scroll_line(layout, m.start, visible_rows)
+                centered_search_scroll_row(layout, m.start, visible_rows)
             };
-            if let Some(scroll_line) = scroll_line {
-                let old_scroll_top = self.scroll_top;
-                self.scroll_top = scroll_line;
-                self.clamp_scroll();
-                if self.scroll_top != old_scroll_top {
-                    self.schedule_inlay_hints(self.prefs.inlay_scroll_debounce_ms(), cx);
-                }
+            if let Some(scroll_row) = scroll_line {
+                self.scroll_to_visual_row(scroll_row, cx);
             } else {
                 self.ensure_cursor_visible(cx);
             }
@@ -6985,13 +7182,16 @@ impl EditorView {
             return None;
         }
         let x = (f32::from(p.x - origin.x) - self.gutter_width).max(0.0);
-        let y = f32::from(p.y - origin.y).max(0.0);
         let snapshot = self.doc.snapshot();
         let config = self.display_config();
+        self.display_layout(&snapshot, config);
         let scroll_top = self.scroll_top;
         let scroll_left = self.scroll_left;
+        let scroll_visual_top = self.scroll_visual_top;
+        let y = (f32::from(p.y - origin.y) + self.scroll_offset_y).max(0.0);
         let layout = self.display_layout(&snapshot, config);
-        let first_row = layout.logical_line_to_visual_row(scroll_top);
+        let first_row =
+            scroll_visual_top.unwrap_or_else(|| layout.logical_line_to_visual_row(scroll_top));
         let visual_row = first_row.saturating_add((y / lh) as usize);
         let display_column = ((x / cw) + 0.5) as usize + scroll_left;
         Some((visual_row, display_column))
@@ -7446,10 +7646,10 @@ impl EditorView {
             .viewport
             .top_row
             .min(display.total_rows.saturating_sub(vertical_viewport));
-        let vertical = scrollbar_geometry(
+        let vertical = scrollbar_geometry_at(
             display.total_rows,
             vertical_viewport,
-            vertical_scroll,
+            vertical_scroll as f32 + self.scroll_offset_y / self.metrics.1.max(1.0),
             vertical_track_length,
         );
         let horizontal = if !wrap_enabled {
@@ -8115,10 +8315,6 @@ impl EditorView {
                         .unwrap_or_default()
                 ),
             ),
-            (_, LanguageServiceRuntimeStatus::Unsupported) => (
-                Severity::Info,
-                "No language service is registered for this language.".to_string(),
-            ),
             _ => return None,
         };
         Some(
@@ -8433,85 +8629,6 @@ impl EditorView {
                 )
                 .into_any_element(),
         )
-    }
-
-    /// Bottom status line for Vim mode: the mode indicator plus the live
-    /// `:` / `/` command line (T06-003).
-    fn render_vim_status(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme.read(cx);
-        let (card, fg, muted, border, accent) = (
-            theme.card(),
-            theme.foreground(),
-            theme.muted_foreground(),
-            theme.border(),
-            theme.accent(),
-        );
-        let vim = self.vim.as_ref().unwrap();
-        let (label, is_command) = match vim.command_line() {
-            Some((prefix, text)) => (format!("{prefix}{text}"), true),
-            None => {
-                let s = vim.status();
-                (
-                    if s.is_empty() {
-                        "NORMAL".to_string()
-                    } else {
-                        s
-                    },
-                    false,
-                )
-            }
-        };
-        let cursor = self.doc.cursor;
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .w_full()
-            .flex_shrink_0()
-            .px_3()
-            .py_0p5()
-            .bg(card)
-            .border_t_1()
-            .border_color(border)
-            .text_xs()
-            .font(theme.buffer_font())
-            .text_color(if is_command { fg } else { accent })
-            .child(SharedString::from(label))
-            .child(div().text_color(muted).child(SharedString::from(format!(
-                "{}:{}",
-                cursor.line + 1,
-                cursor.column + 1
-            ))))
-    }
-
-    fn render_helix_status(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme.read(cx);
-        let helix_status = self.helix.as_ref().map(Helix::status).unwrap_or("HELIX");
-        let cursor = self.doc.cursor;
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .w_full()
-            .flex_shrink_0()
-            .px_3()
-            .py_0p5()
-            .bg(theme.card())
-            .border_t_1()
-            .border_color(theme.border())
-            .text_xs()
-            .font(theme.buffer_font())
-            .text_color(theme.accent())
-            .child(SharedString::from(helix_status))
-            .child(
-                div()
-                    .text_color(theme.muted_foreground())
-                    .child(SharedString::from(format!(
-                        "{}:{}",
-                        cursor.line + 1,
-                        cursor.column + 1
-                    ))),
-            )
     }
 
     /// The schema or diagnostic hover tooltip — a small floating card
@@ -8908,9 +9025,9 @@ impl EditorView {
         }
     }
 
-    /// Compact editor-owned status row. This keeps cursor and selection
-    /// feedback close to the buffer while respecting the user's visibility
-    /// preferences; the shell statusbar remains a separate global surface.
+    /// Compact editor-owned controls hosted by the registered global statusbar
+    /// item. Cursor, language, file format, diagnostics, and mode state remain
+    /// owned by this editor view.
     fn render_editor_status(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.read(cx);
         let palette = Palette::from_theme(theme);
@@ -8951,6 +9068,23 @@ impl EditorView {
                 if selection_set.len() == 1 { "" } else { "s" },
                 selected_chars
             )));
+        }
+        if let Some(vim) = self.vim.as_ref() {
+            let label = vim.command_line().map_or_else(
+                || {
+                    let status = vim.status();
+                    if status.is_empty() {
+                        "NORMAL".to_string()
+                    } else {
+                        status
+                    }
+                },
+                |(prefix, text)| format!("{prefix}{text}"),
+            );
+            left = left.child(SharedString::from(format!("VIM · {label}")));
+        }
+        if let Some(helix) = self.helix.as_ref() {
+            left = left.child(SharedString::from(format!("HELIX · {}", helix.status())));
         }
         let language = self.doc.language;
         let language_trigger = select_trigger(
@@ -9141,18 +9275,32 @@ impl EditorView {
         div()
             .flex()
             .items_center()
-            .justify_between()
-            .w_full()
-            .flex_shrink_0()
-            .h(px(24.0))
-            .px_3()
-            .bg(palette.bg)
-            .border_t_1()
-            .border_color(palette.border)
+            .gap_2()
             .text_xs()
             .text_color(palette.muted)
             .child(left)
+            .child(div().w(px(1.0)).h(px(14.0)).bg(palette.border))
             .child(right)
+            .into_any_element()
+    }
+
+    /// Render the editor-owned status controls inside the application's
+    /// registered statusbar item. Popup state and actions remain with Editor.
+    pub fn render_statusbar(&self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let palette = Palette::from_theme(self.theme.read(cx));
+        let menus = self
+            .render_language_menu(palette, cx)
+            .into_iter()
+            .chain(self.render_line_ending_menu(palette, cx))
+            .chain(self.render_encoding_menu(palette, cx))
+            .chain(self.render_language_service_menu(palette, cx))
+            .chain(self.render_diagnostics_menu(palette, cx));
+        div()
+            .relative()
+            .flex()
+            .items_center()
+            .child(self.render_editor_status(cx))
+            .children(menus)
             .into_any_element()
     }
 
@@ -9358,10 +9506,10 @@ impl EditorView {
             .id("editor-toolbar")
             .flex()
             .items_center()
-            .gap_1()
+            .gap_2()
             .w_full()
-            .h(px(30.0))
-            .px_2()
+            .h(px(40.0))
+            .px_3()
             .flex_shrink_0()
             .bg(palette.bg)
             .border_b_1()
@@ -9453,32 +9601,23 @@ impl EditorView {
                         this.toggle_buffer_search(window, cx);
                     }));
             actions = actions.child(search);
-            let controls = icon_button_builder("editor-controls-toggle", palette, IconName::Filter)
-                .size(ButtonSize::IconSm)
-                .shape(IconButtonShape::Square)
-                .selected(self.editor_controls_anchor.is_some())
-                .tooltip("Editor Controls")
-                .render()
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, event: &MouseDownEvent, _window, cx| {
-                        this.editor_controls_anchor = if this.editor_controls_anchor.is_some() {
-                            None
-                        } else {
-                            Some(Point {
-                                x: event.position.x,
-                                y: event.position.y + px(4.0),
-                            })
-                        };
-                        cx.stop_propagation();
-                        cx.notify();
-                    }),
-                );
-            actions = actions.child(controls);
+        }
+        if code_actions {
+            let trigger =
+                icon_button_builder("editor-code-actions-toggle", palette, IconName::Sparkle)
+                    .size(ButtonSize::IconSm)
+                    .shape(IconButtonShape::Square)
+                    .selected(self.code_actions.is_some())
+                    .tooltip("Code Actions")
+                    .render()
+                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                        let _ = this.dispatch_registered_command(CommandId::EditorCodeAction, cx);
+                    }));
+            actions = actions.child(trigger);
         }
         if selections_menu {
             let trigger =
-                icon_button_builder("editor-selections-menu", palette, IconName::ListTree)
+                icon_button_builder("editor-selections-menu", palette, IconName::CursorIBeam)
                     .size(ButtonSize::IconSm)
                     .shape(IconButtonShape::Square)
                     .selected(self.selection_menu_anchor.is_some())
@@ -9501,18 +9640,30 @@ impl EditorView {
                     );
             actions = actions.child(trigger);
         }
-        if code_actions {
-            let trigger =
-                icon_button_builder("editor-code-actions-toggle", palette, IconName::Code)
+        if quick_actions {
+            let controls =
+                icon_button_builder("editor-controls-toggle", palette, IconName::Settings)
                     .size(ButtonSize::IconSm)
                     .shape(IconButtonShape::Square)
-                    .selected(self.code_actions.is_some())
-                    .tooltip("Code Actions")
+                    .selected(self.editor_controls_anchor.is_some())
+                    .tooltip("Editor Controls")
                     .render()
-                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                        let _ = this.dispatch_registered_command(CommandId::EditorCodeAction, cx);
-                    }));
-            actions = actions.child(trigger);
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, event: &MouseDownEvent, _window, cx| {
+                            this.editor_controls_anchor = if this.editor_controls_anchor.is_some() {
+                                None
+                            } else {
+                                Some(Point {
+                                    x: event.position.x,
+                                    y: event.position.y + px(4.0),
+                                })
+                            };
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    );
+            actions = actions.child(controls);
         }
 
         row = row.child(actions);
@@ -9743,9 +9894,9 @@ impl EditorView {
             .gap_1()
             .flex_1()
             .min_w_0()
-            .h(px(30.0))
+            .h(px(40.0))
             .overflow_hidden()
-            .text_xs()
+            .text_sm()
             .text_color(palette.muted);
 
         match state {
@@ -9773,11 +9924,16 @@ impl EditorView {
                 if let Some(path) = path {
                     let full_path = path.full_path.clone();
                     let copy_path = full_path.clone();
+                    let file_name = std::path::Path::new(&full_path)
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or(&path.label)
+                        .to_string();
                     row = row.child(
                         div()
                             .id("editor-breadcrumb-path")
-                            .flex_1()
                             .min_w_0()
+                            .max_w(px(320.0))
                             .overflow_hidden()
                             .whitespace_nowrap()
                             .text_color(palette.muted)
@@ -9797,7 +9953,7 @@ impl EditorView {
                                     cx.stop_propagation();
                                 }),
                             )
-                            .child(SharedString::from(path.label)),
+                            .child(SharedString::from(file_name)),
                     );
                 }
 
@@ -9807,14 +9963,22 @@ impl EditorView {
                             div()
                                 .flex_shrink_0()
                                 .text_color(palette.muted)
-                                .child(SharedString::from("/")),
+                                .child(SharedString::from("›")),
                         );
                     }
                     let line = symbol.line;
-                    let label = format!("{}: {}", symbol.kind.label(), symbol.name);
+                    let is_heading = symbol.kind == labonair_editor::symbols::SymbolKind::Heading;
+                    let label = if is_heading {
+                        format!("# {}", symbol.name)
+                    } else {
+                        format!("{}: {}", symbol.kind.label(), symbol.name)
+                    };
                     let tooltip = format!("Go to {} at line {}", symbol.name, line + 1);
-                    let ring = palette.ring;
-                    let hover_fill = palette.accent.opacity(0.5);
+                    let symbol_color = if is_heading {
+                        palette.warning
+                    } else {
+                        palette.fg
+                    };
                     row = row.child(
                         div()
                             .min_w_0()
@@ -9822,35 +9986,23 @@ impl EditorView {
                             .flex_shrink_0()
                             .overflow_hidden()
                             .child(
-                                ListItem::new(
+                                button(
                                     ("editor-breadcrumb-symbol", line),
-                                    palette.fg,
-                                    palette.muted,
-                                    palette.selected_fill,
+                                    palette,
+                                    ButtonVariant::Transparent,
+                                    ButtonSize::Xs,
                                 )
-                                .selected(true)
-                                .hover_style(move |style| style.bg(hover_fill))
-                                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                                    this.focus(window);
-                                    this.goto_line(line, cx);
-                                }))
-                                .extra(move |item| {
-                                    item.tab_index(0)
-                                        .focus(move |style| style.border_1().border_color(ring))
-                                        .tooltip(move |window, cx| {
-                                            Tooltip::new(tooltip.clone()).build(window, cx)
-                                        })
-                                        .on_mouse_down(MouseButton::Left, |_, _, cx| {
-                                            cx.stop_propagation()
-                                        })
+                                .text_color(symbol_color)
+                                .child(SharedString::from(label))
+                                .tooltip(move |window, cx| {
+                                    Tooltip::new(tooltip.clone()).build(window, cx)
                                 })
-                                .child(
-                                    div()
-                                        .min_w_0()
-                                        .overflow_hidden()
-                                        .whitespace_nowrap()
-                                        .child(SharedString::from(label)),
-                                ),
+                                .on_click(cx.listener(
+                                    move |this, _: &ClickEvent, window, cx| {
+                                        this.focus(window);
+                                        this.goto_line(line, cx);
+                                    },
+                                )),
                             ),
                     );
                 }
@@ -10197,10 +10349,11 @@ impl EditorView {
             self.prefs.minimap_thumb() == EditorMinimapThumb::Always || self.minimap_hovered;
         let thumb = show_thumb
             .then(|| {
-                scrollbar_geometry(
+                scrollbar_geometry_at(
                     display.total_rows,
                     display.viewport.height_rows,
-                    display.viewport.top_row,
+                    display.viewport.top_row as f32
+                        + self.scroll_offset_y / self.metrics.1.max(1.0),
                     track_length,
                 )
             })
@@ -11255,6 +11408,7 @@ impl Render for EditorView {
         let display = self.display_snapshot(&snapshot);
         let wrapping = self.display_config().wrap_columns.is_some();
         let first_visual = display.rows.first().map(|row| row.visual_row).unwrap_or(0);
+        let scroll_offset_y = self.scroll_offset_y;
         let content_w = (display.viewport.width_columns as f32 * char_w).max(char_w);
         let display_rows = display.rows.clone();
         let visible_lines = display_rows
@@ -11386,7 +11540,8 @@ impl Render for EditorView {
                     .line_number
                     .map_or_else(String::new, |n| n.to_string())
             };
-            let row_top = (display_row.visual_row.saturating_sub(first_visual) as f32) * line_h;
+            let row_top = (display_row.visual_row.saturating_sub(first_visual) as f32) * line_h
+                - scroll_offset_y;
             let mut row = div()
                 .absolute()
                 .top(px(row_top))
@@ -11474,7 +11629,8 @@ impl Render for EditorView {
         let code_lens_enabled = self.code_lens_enabled();
         let text_rows = display_rows.iter().map(|display_row| {
             let line = display_row.logical_line();
-            let row_top = (display_row.visual_row.saturating_sub(first_visual) as f32) * line_h;
+            let row_top = (display_row.visual_row.saturating_sub(first_visual) as f32) * line_h
+                - scroll_offset_y;
             let projection = display_row.text_projection(&snapshot);
             let source_content = display_row.text(&snapshot);
             let mut row = div()
@@ -11594,9 +11750,10 @@ impl Render for EditorView {
                         );
                     }
                 }
-                if let Some((s, e)) = sel {
-                    let start = if line == s.line { s.column } else { 0 };
-                    let end = if line == e.line { e.column } else { snapshot.line_len(line) };
+                if let Some(selection) = sel {
+                    if let Some((start, end)) =
+                        selection_columns_on_line(selection, line, snapshot.line_len(line))
+                    {
                     let lo = start.max(start_column);
                     let hi = end.min(end_column);
                     if hi > lo {
@@ -11623,6 +11780,7 @@ impl Render for EditorView {
                             selection
                         };
                         row = row.child(selection.bg(accent.opacity(0.3)));
+                    }
                     }
                 }
                 if let Some(search) = &self.search {
@@ -12048,6 +12206,7 @@ impl Render for EditorView {
                     .absolute()
                     .top(px((visual_row.saturating_sub(first_visual) as f32)
                         * line_h
+                        - scroll_offset_y
                         + top))
                     .left(px(column as f32 * char_w))
                     .w(px(width))
@@ -12066,7 +12225,9 @@ impl Render for EditorView {
                 caret_point.map(|(visual_row, _)| {
                     div()
                         .absolute()
-                        .top(px((visual_row.saturating_sub(first_visual) as f32) * line_h))
+                        .top(px((visual_row.saturating_sub(first_visual) as f32)
+                            * line_h
+                            - scroll_offset_y))
                         .left(px(0.0))
                         .right(px(0.0))
                         .h(px(line_h))
@@ -12114,6 +12275,7 @@ impl Render for EditorView {
                     .left(px(gutter_width))
                     .right_0()
                     .overflow_hidden()
+                    .cursor_text()
                     .children(current_line)
                     .children(text_rows)
                     .children(caret),
@@ -12236,19 +12398,9 @@ impl Render for EditorView {
             .children(self.render_recovery_banner(cx))
             .children(file_status)
             .children(self.render_language_service_status(cx))
-            .children(self.render_language_service_menu(ui_palette, cx))
-            .children(self.render_diagnostics_menu(ui_palette, cx))
             .child(buffer_surface)
             .children(self.render_selection_menu(ui_palette, cx))
             .children(self.render_editor_controls_menu(ui_palette, cx))
-            .children(self.render_language_menu(ui_palette, cx))
-            .children(self.render_line_ending_menu(ui_palette, cx))
-            .children(self.render_encoding_menu(ui_palette, cx))
-            .when(self.vim.is_some(), |d| d.child(self.render_vim_status(cx)))
-            .when(self.helix.is_some(), |d| {
-                d.child(self.render_helix_status(cx))
-            })
-            .child(self.render_editor_status(cx))
             .on_key_down(cx.listener(Self::on_key))
             .on_mouse_down(
                 MouseButton::Left,
@@ -12346,9 +12498,11 @@ impl Render for EditorView {
             .children(self.render_character_palette(window, cx))
             .children(self.render_git_discard_confirmation(cx))
             .on_scroll_wheel(cx.listener(|this, ev: &ScrollWheelEvent, window, cx| {
-                let dy = match ev.delta {
-                    gpui::ScrollDelta::Lines(p) => p.y,
-                    gpui::ScrollDelta::Pixels(p) => f32::from(p.y) / this.metrics.1,
+                let (dy, discrete_wheel) = match ev.delta {
+                    gpui::ScrollDelta::Lines(p) => (p.y, true),
+                    gpui::ScrollDelta::Pixels(p) => {
+                        (f32::from(p.y) / this.metrics.1.max(1.0), false)
+                    }
                 };
                 if should_zoom_font_on_scroll(
                     this.prefs.mouse_wheel_zoom(),
@@ -12362,14 +12516,19 @@ impl Render for EditorView {
                     return;
                 }
                 this.font_zoom_remainder = 0.0;
-                let lines = scroll_wheel_line_delta(
+                let delta_pixels = scroll_wheel_pixel_delta(
                     dy,
                     ev.modifiers.alt,
                     this.prefs.scroll_sensitivity(),
                     this.prefs.fast_scroll_sensitivity(),
+                    this.metrics.1,
                 );
-                if lines != 0 {
-                    this.scroll_by(-lines, cx);
+                if delta_pixels != 0.0 {
+                    if discrete_wheel {
+                        this.scroll_by_wheel_pixels(-delta_pixels, cx);
+                    } else {
+                        this.scroll_by_pixels(-delta_pixels, cx);
+                    }
                 }
             }))
     }
@@ -12411,18 +12570,33 @@ fn should_zoom_font_on_scroll(
     enabled && (platform_modifier || control_modifier)
 }
 
-fn scroll_wheel_line_delta(
-    delta: f32,
+fn scroll_wheel_pixel_delta(
+    delta_lines: f32,
     fast: bool,
     sensitivity: f32,
     fast_sensitivity: f32,
-) -> isize {
-    if !delta.is_finite() {
-        return 0;
+    line_height: f32,
+) -> f32 {
+    if !delta_lines.is_finite() || !line_height.is_finite() || line_height <= 0.0 {
+        return 0.0;
     }
     let scale = if fast { fast_sensitivity } else { sensitivity };
     let limit = if fast { 32.0 } else { 8.0 };
-    (delta * scale).round().clamp(-limit, limit) as isize
+    (delta_lines * scale).clamp(-limit, limit) * line_height
+}
+
+/// Keep discrete wheel input from jumping the viewport by a whole row at once.
+/// High-resolution trackpad events bypass this easing and keep their raw pixel
+/// displacement.
+fn eased_scroll_step(remaining: f32) -> f32 {
+    if !remaining.is_finite() || remaining == 0.0 {
+        return 0.0;
+    }
+    if remaining.abs() <= 0.75 {
+        remaining
+    } else {
+        (remaining * 0.32).clamp(-24.0, 24.0)
+    }
 }
 
 fn cursor_scroll_top(scroll_top: usize, line: usize, rows: usize, margin: usize) -> usize {
@@ -12763,12 +12937,24 @@ mod tests {
     }
 
     #[test]
-    fn alt_scroll_uses_its_own_bounded_sensitivity() {
-        assert_eq!(scroll_wheel_line_delta(0.4, false, 1.0, 4.0), 0);
-        assert_eq!(scroll_wheel_line_delta(0.4, true, 1.0, 4.0), 2);
-        assert_eq!(scroll_wheel_line_delta(0.4, false, 2.0, 4.0), 1);
-        assert_eq!(scroll_wheel_line_delta(100.0, true, 1.0, 4.0), 32);
-        assert_eq!(scroll_wheel_line_delta(f32::NAN, false, 1.0, 4.0), 0);
+    fn wheel_scrolling_keeps_fractional_pixels_and_bounds_fast_motion() {
+        assert_eq!(scroll_wheel_pixel_delta(0.4, false, 1.0, 4.0, 20.0), 8.0);
+        assert_eq!(scroll_wheel_pixel_delta(0.4, true, 1.0, 4.0, 20.0), 32.0);
+        assert_eq!(scroll_wheel_pixel_delta(0.4, false, 2.0, 4.0, 20.0), 16.0);
+        assert_eq!(scroll_wheel_pixel_delta(100.0, true, 1.0, 4.0, 20.0), 640.0);
+        assert_eq!(
+            scroll_wheel_pixel_delta(f32::NAN, false, 1.0, 4.0, 20.0),
+            0.0
+        );
+    }
+
+    #[test]
+    fn discrete_wheel_motion_eases_in_small_frame_steps() {
+        assert_eq!(eased_scroll_step(0.5), 0.5);
+        assert_eq!(eased_scroll_step(-0.5), -0.5);
+        assert_eq!(eased_scroll_step(8.0), 2.56);
+        assert_eq!(eased_scroll_step(-100.0), -24.0);
+        assert_eq!(eased_scroll_step(f32::NAN), 0.0);
     }
 
     #[gpui::test]
@@ -15325,7 +15511,7 @@ mod tests {
     }
 
     #[test]
-    fn centered_search_scroll_line_centers_matches_and_clamps_at_document_edges() {
+    fn centered_search_scroll_row_centers_matches_and_clamps_at_document_edges() {
         let text = (0..40)
             .map(|line| format!("line {line}"))
             .collect::<Vec<_>>()
@@ -15342,15 +15528,15 @@ mod tests {
         );
 
         assert_eq!(
-            centered_search_scroll_line(&layout, Position::new(20, 0), 10),
+            centered_search_scroll_row(&layout, Position::new(20, 0), 10),
             Some(15)
         );
         assert_eq!(
-            centered_search_scroll_line(&layout, Position::new(2, 0), 10),
+            centered_search_scroll_row(&layout, Position::new(2, 0), 10),
             Some(0)
         );
         assert_eq!(
-            centered_search_scroll_line(&layout, Position::new(39, 0), 10),
+            centered_search_scroll_row(&layout, Position::new(39, 0), 10),
             Some(30)
         );
     }
@@ -15398,6 +15584,16 @@ mod tests {
         );
         assert_eq!(find_selection_highlights(&snapshot, "Foo").len(), 1);
         assert!(find_selection_highlights(&snapshot, "").is_empty());
+    }
+
+    #[test]
+    fn selection_paint_skips_lines_outside_the_selected_range() {
+        let selection = (Position::new(2, 3), Position::new(4, 2));
+        assert_eq!(selection_columns_on_line(selection, 1, 8), None);
+        assert_eq!(selection_columns_on_line(selection, 2, 8), Some((3, 8)));
+        assert_eq!(selection_columns_on_line(selection, 3, 8), Some((0, 8)));
+        assert_eq!(selection_columns_on_line(selection, 4, 8), Some((0, 2)));
+        assert_eq!(selection_columns_on_line(selection, 5, 8), None);
     }
 
     #[test]
