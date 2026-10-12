@@ -244,6 +244,11 @@ impl EditorSplitTree {
         Ok(())
     }
 
+    /// Restore every divider to an even split while preserving the tree shape.
+    pub fn reset_sizes(&mut self) {
+        reset_sizes(&mut self.root);
+    }
+
     /// Resize the split containing `group`. Positive values give more space
     /// to the first child; negative values give more space to the second.
     pub fn resize(&mut self, group: EditorGroupId, delta: f32) -> Result<(), SplitError> {
@@ -290,6 +295,20 @@ fn collect_groups(node: &SplitNode, groups: &mut Vec<EditorGroupId>) {
             collect_groups(first, groups);
             collect_groups(second, groups);
         }
+    }
+}
+
+fn reset_sizes(node: &mut SplitNode) {
+    if let SplitNode::Split {
+        first_size,
+        first,
+        second,
+        ..
+    } = node
+    {
+        *first_size = 0.5;
+        reset_sizes(first);
+        reset_sizes(second);
     }
 }
 
@@ -476,6 +495,31 @@ mod tests {
         tree.focus(second).expect("focus second");
         tree.close_other_groups().expect("close others");
         assert_eq!(tree.groups(), [second]);
+    }
+
+    #[test]
+    fn reset_sizes_equalizes_every_nested_divider() {
+        let mut tree = EditorSplitTree::new(EditorGroupId::new(1));
+        let second = tree.split_right().expect("split right");
+        tree.resize_at(&SplitPath::root(), 0.2)
+            .expect("resize root");
+        tree.focus(EditorGroupId::new(1))
+            .expect("focus first group");
+        tree.split_down().expect("nested split");
+        tree.resize_at(&SplitPath::root().child(SplitSide::First), -0.15)
+            .expect("resize nested divider");
+
+        tree.reset_sizes();
+
+        assert_eq!(
+            tree.split_handles()
+                .iter()
+                .map(|handle| handle.first_size)
+                .collect::<Vec<_>>(),
+            [0.5, 0.5]
+        );
+        assert!(tree.contains(second));
+        tree.validate().expect("tree remains valid");
     }
 
     #[test]

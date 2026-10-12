@@ -87,6 +87,7 @@ pub enum SplitIntent {
     FocusPrevious,
     Close,
     CloseOthers,
+    ResetSizes,
     Resize { delta_milli: i16 },
 }
 
@@ -212,6 +213,10 @@ impl EditorState {
             }
             SplitIntent::Close => self.splits.close_focused().map(|_| ()),
             SplitIntent::CloseOthers => self.splits.close_other_groups(),
+            SplitIntent::ResetSizes => {
+                self.splits.reset_sizes();
+                Ok(())
+            }
             SplitIntent::Resize { delta_milli } => self
                 .splits
                 .resize(self.splits.focused_group(), f32::from(delta_milli) / 1000.0),

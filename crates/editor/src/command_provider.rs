@@ -214,6 +214,7 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         }
         CommandId::EditorCloseGroup => EditorCommandRoute::Split(SplitIntent::Close),
         CommandId::EditorCloseOtherGroups => EditorCommandRoute::Split(SplitIntent::CloseOthers),
+        CommandId::EditorResetSplitSizes => EditorCommandRoute::Split(SplitIntent::ResetSizes),
         CommandId::EditorTriggerCompletion => {
             EditorCommandRoute::Language(EditorLanguageCommand::TriggerCompletion)
         }
@@ -348,6 +349,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorFocusPreviousGroup,
     CommandId::EditorCloseGroup,
     CommandId::EditorCloseOtherGroups,
+    CommandId::EditorResetSplitSizes,
     CommandId::EditorTriggerCompletion,
     CommandId::EditorGoToDefinition,
     CommandId::EditorGoToDeclaration,
@@ -705,6 +707,12 @@ impl CommandProvider for EditorCommandProvider {
             )
             .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(
+                CommandId::EditorResetSplitSizes,
+                "Reset Editor Split Sizes",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(
                 CommandId::EditorTriggerCompletion,
                 "Trigger Completion",
                 "Editor",
@@ -975,6 +983,22 @@ mod tests {
             );
             assert!(route_for_command(id).is_some());
         }
+    }
+
+    #[test]
+    fn editor_split_size_reset_is_registered_and_routes_to_editor_split_state() {
+        let command = EditorCommandProvider
+            .commands()
+            .into_iter()
+            .find(|command| command.id == CommandId::EditorResetSplitSizes)
+            .expect("split size reset descriptor");
+
+        assert_eq!(command.title, "Reset Editor Split Sizes");
+        assert_eq!(command.contexts, vec![CommandContext::Editor]);
+        assert_eq!(
+            route_for_command(CommandId::EditorResetSplitSizes),
+            Some(EditorCommandRoute::Split(SplitIntent::ResetSizes))
+        );
     }
 
     #[test]

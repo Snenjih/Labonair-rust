@@ -1272,6 +1272,10 @@ impl EditorView {
                     }
                     SplitIntent::Close => self.editor_splits.close_focused().map(|_| ()),
                     SplitIntent::CloseOthers => self.editor_splits.close_other_groups(),
+                    SplitIntent::ResetSizes => {
+                        self.editor_splits.reset_sizes();
+                        Ok(())
+                    }
                     SplitIntent::Resize { delta_milli } => self.editor_splits.resize(
                         self.editor_splits.focused_group(),
                         f32::from(delta_milli) / 1000.0,
