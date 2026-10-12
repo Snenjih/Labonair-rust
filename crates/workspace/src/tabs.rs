@@ -25,6 +25,14 @@ use labonair_ui_kit::IconName;
 
 use crate::spaces::{SpaceId, DEFAULT_SPACE_ID};
 
+/// Git state projected from an editor's current gutter snapshot for tab chrome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabGitStatus {
+    Added,
+    Modified,
+    Deleted,
+}
+
 /// The category of a tab. Content views for most kinds arrive in later phases;
 /// the model already covers them so the tab bar and store are stable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -144,6 +152,8 @@ pub struct Tab {
     pub peek: bool,
     /// Kept in the pinned group and protected from tab-strip close gestures.
     pub pinned: bool,
+    /// Current editor file Git status, when its gutter snapshot is current.
+    pub git_status: Option<TabGitStatus>,
     pub data: TabData,
     /// The Space this tab belongs to (T20-008 Spaces). Set once, from
     /// [`TabStore::current_space`], at creation time — there is no such thing
@@ -288,6 +298,7 @@ impl TabStore {
             dirty: false,
             peek: false,
             pinned: false,
+            git_status: None,
             data,
             space_id: self.current_space,
         });
@@ -503,6 +514,23 @@ impl TabStore {
             t.peek = peek;
             changed
         });
+    }
+
+    /// Update the Git status marker for a file-backed tab.
+    pub fn set_git_status(
+        &mut self,
+        id: u64,
+        status: Option<TabGitStatus>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+            return;
+        };
+        if tab.git_status == status {
+            return;
+        }
+        tab.git_status = status;
+        cx.notify();
     }
 
     /// Pin a tab into the front group in its Space. Pinning promotes a peek

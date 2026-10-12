@@ -203,6 +203,7 @@
     "commandPaletteCloseOnOverlayClick": true,
     "showNavHistoryButtons": true,
     "showTabBarButtons": true,
+    "showEditorTabGitStatus": true,
     // Block the first quit attempt while a terminal/SSH shell is running.
     "confirmQuitWithActiveSessions": true
   },

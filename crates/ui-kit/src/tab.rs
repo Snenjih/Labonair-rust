@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder, px, AnyElement, App, Div, InteractiveElement, IntoElement,
+    div, prelude::FluentBuilder, px, AnyElement, App, Div, Hsla, InteractiveElement, IntoElement,
     ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
 };
 
@@ -38,6 +38,7 @@ pub struct TabItemBuilder {
     selected: bool,
     disabled: bool,
     dirty: bool,
+    status_color: Option<Hsla>,
     busy: bool,
     peek: bool,
     pinned: bool,
@@ -64,6 +65,7 @@ pub fn tab_item(
         selected: false,
         disabled: false,
         dirty: false,
+        status_color: None,
         busy: false,
         peek: false,
         pinned: false,
@@ -97,6 +99,12 @@ impl TabItemBuilder {
 
     pub fn dirty(mut self, dirty: bool) -> Self {
         self.dirty = dirty;
+        self
+    }
+
+    /// Append a small owner-colored state marker after the tab title.
+    pub fn status_color(mut self, color: Option<Hsla>) -> Self {
+        self.status_color = color;
         self
     }
 
@@ -159,6 +167,7 @@ impl TabItemBuilder {
             selected,
             disabled,
             dirty,
+            status_color,
             busy,
             peek,
             pinned,
@@ -243,6 +252,9 @@ impl TabItemBuilder {
 
         if dirty {
             row = row.child(indicator(IndicatorSize::Xs, palette.fg.opacity(0.7)));
+        }
+        if let Some(color) = status_color {
+            row = row.child(indicator(IndicatorSize::Xs, color));
         }
         if busy {
             row = row.child(indicator(IndicatorSize::Xs, palette.info));

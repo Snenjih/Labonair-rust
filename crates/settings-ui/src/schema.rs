@@ -1305,6 +1305,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Show the Spaces and new-tab controls in the titlebar."
         ),
         field!(
+            workspace.show_editor_tab_git_status,
+            "showEditorTabGitStatus",
+            Switch,
+            "Show Git status in editor tabs",
+            "Show a colored marker when an open editor file has Git changes."
+        ),
+        field!(
             workspace.confirm_quit_with_active_sessions,
             "confirmQuitWithActiveSessions",
             Switch,
@@ -1418,6 +1425,7 @@ mod tests {
         for path in [
             "workspace.showNavHistoryButtons",
             "workspace.showTabBarButtons",
+            "workspace.showEditorTabGitStatus",
         ] {
             let field = fields
                 .iter()

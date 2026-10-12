@@ -121,16 +121,17 @@ use crate::spaces::{Space, SpaceId, SpaceStore, DEFAULT_SPACE_ID};
 use crate::ssh_connection::{
     ConnStage, ConnectionKind, ConnectionState, ConnectionStatusStore, StageStatus,
 };
-use crate::tabs::{Tab, TabData, TabKind, TabStore};
+use crate::tabs::{Tab, TabData, TabGitStatus, TabKind, TabStore};
 use crate::theme::ThemeStore;
 use crate::views::preview::{PreviewImageAction, PreviewView};
 use crate::views::sftp::{SftpEvent, SftpView};
 use crate::views::terminal::TerminalView;
 use labonair_background_host::BackgroundHost;
 use labonair_editor::{
-    FileFinderCandidate, FileFinderQuery, FileFinderResult, LanguageServiceRuntime, MultiBuffer,
-    MultiBufferSaveOutcome, MultiBufferSaveRequest, Position, ProjectDiagnosticRegistry,
-    ProjectReplaceResult, ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, SearchError,
+    FileFinderCandidate, FileFinderQuery, FileFinderResult, GitGutterSnapshot, GitGutterState,
+    GitHunkStatus, LanguageServiceRuntime, MultiBuffer, MultiBufferSaveOutcome,
+    MultiBufferSaveRequest, Position, ProjectDiagnosticRegistry, ProjectReplaceResult,
+    ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, Revision, SearchError,
     SearchQuery, TextRange,
 };
 use labonair_editor_ui::{EditorBufferSnapshot, EditorEvent, EditorSidePreviewContent, EditorView};
@@ -149,6 +150,44 @@ use labonair_ui_kit::{
     BlinkCursor, ButtonSize, ButtonVariant, IconButtonShape, IconName, IndicatorSize, MenuItem,
     Palette, SubmenuHoverSource, TabLayout,
 };
+
+fn editor_tab_git_status(
+    snapshot: &GitGutterSnapshot,
+    revision: Revision,
+    path: &str,
+) -> Option<TabGitStatus> {
+    if snapshot.revision != revision
+        || snapshot.path != path
+        || !matches!(
+            snapshot.state,
+            GitGutterState::Ready | GitGutterState::Empty
+        )
+        || snapshot.hunks.is_empty()
+    {
+        return None;
+    }
+
+    let mut added = false;
+    let mut modified = false;
+    let mut deleted = false;
+    for hunk in &snapshot.hunks {
+        match hunk.status {
+            GitHunkStatus::Added | GitHunkStatus::Untracked => added = true,
+            GitHunkStatus::Modified => modified = true,
+            GitHunkStatus::Deleted => deleted = true,
+        }
+    }
+
+    if modified || (added && deleted) {
+        Some(TabGitStatus::Modified)
+    } else if deleted {
+        Some(TabGitStatus::Deleted)
+    } else if added {
+        Some(TabGitStatus::Added)
+    } else {
+        None
+    }
+}
 
 fn relative_path_under_root(path: &Path, root: &Path) -> Option<String> {
     let relative = path.strip_prefix(root).ok()?;
@@ -3492,6 +3531,19 @@ impl Workspace {
     }
 
     fn watch_editor(&self, tab_id: u64, view: &Entity<EditorView>, cx: &mut Context<Self>) {
+        let tabs = self.tabs.clone();
+        cx.observe(view, move |_, editor, cx| {
+            let editor = editor.read(cx);
+            let path = editor
+                .path()
+                .map(|path| path.to_string_lossy().into_owned());
+            let status = path.as_deref().and_then(|path| {
+                editor_tab_git_status(editor.git_gutter_snapshot(), editor.editor_revision(), path)
+            });
+            tabs.update(cx, |tabs, cx| tabs.set_git_status(tab_id, status, cx));
+        })
+        .detach();
+
         cx.subscribe(view, move |this, view, ev: &EditorEvent, cx| {
             if matches!(ev, EditorEvent::CloseRequested) {
                 // Vim `:q` / `:wq` — close this editor's tab.
@@ -6228,6 +6280,16 @@ impl Workspace {
         let id = tab.id;
         let active = self.tabs.read(cx).active_id() == id;
         let label = SharedString::from(tab.label());
+        let status_color = (tab.kind == TabKind::Editor
+            && WorkspaceSettings::try_get(cx)
+                .is_some_and(|settings| settings.show_editor_tab_git_status()))
+        .then_some(tab.git_status)
+        .flatten()
+        .map(|status| match status {
+            TabGitStatus::Added => c.success,
+            TabGitStatus::Modified => c.warning,
+            TabGitStatus::Deleted => c.error,
+        });
 
         // D4 — tab-entrance animation (`@keyframes labonair-tab-in` in the
         // reference `globals.css`: fade + `scale(0.86) → 1` over `--dur-base`
@@ -6298,6 +6360,7 @@ impl Workspace {
             .dirty(tab.kind == TabKind::Editor && tab.dirty)
             .peek(tab.kind == TabKind::Editor && tab.peek)
             .pinned(tab.pinned)
+            .status_color(status_color)
             .label_content(label_content)
             .on_activate({
                 let view = view.clone();
@@ -8770,10 +8833,48 @@ impl labonair_command_palette::PaletteWorkspace for Workspace {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_local_file_uri, is_supported_external_document_link, relative_path_under_root,
-        shell_quote, ssh_tab_title,
+        decode_local_file_uri, editor_tab_git_status, is_supported_external_document_link,
+        relative_path_under_root, shell_quote, ssh_tab_title, TabGitStatus,
     };
+    use labonair_editor::{GitGutterSnapshot, GitGutterState, GitHunk, GitHunkStatus, Revision};
     use std::path::Path;
+
+    fn git_hunk(status: GitHunkStatus) -> GitHunk {
+        GitHunk {
+            id: "hunk".into(),
+            status,
+            header: "@@ -1 +1 @@".into(),
+            old_start: 1,
+            old_lines: 1,
+            new_start: 1,
+            new_lines: 1,
+            changed_lines: Vec::new(),
+            patch: String::new(),
+            inline_decorations: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn editor_tab_git_status_requires_a_current_snapshot_and_summarizes_hunks() {
+        let revision = Revision::new(1);
+        let mut snapshot = GitGutterSnapshot::empty("src/lib.rs", revision);
+        snapshot.state = GitGutterState::Ready;
+        snapshot.hunks = vec![git_hunk(GitHunkStatus::Added)];
+        assert_eq!(
+            editor_tab_git_status(&snapshot, revision, "src/lib.rs"),
+            Some(TabGitStatus::Added)
+        );
+
+        snapshot.hunks.push(git_hunk(GitHunkStatus::Deleted));
+        assert_eq!(
+            editor_tab_git_status(&snapshot, revision, "src/lib.rs"),
+            Some(TabGitStatus::Modified)
+        );
+        assert_eq!(
+            editor_tab_git_status(&snapshot, Revision::new(2), "src/lib.rs"),
+            None
+        );
+    }
 
     #[test]
     fn tab_file_relative_path_requires_a_path_inside_the_project_root() {

@@ -391,6 +391,7 @@ fn workspace_from(p: &Preferences) -> WorkspaceContent {
         command_palette_close_on_overlay_click: Some(p.command_palette_close_on_overlay_click),
         show_nav_history_buttons: WorkspaceContent::defaults().show_nav_history_buttons,
         show_tab_bar_buttons: WorkspaceContent::defaults().show_tab_bar_buttons,
+        show_editor_tab_git_status: WorkspaceContent::defaults().show_editor_tab_git_status,
         // No v1 `Preferences` equivalent — inherits the shipped default.
         confirm_quit_with_active_sessions: WorkspaceContent::defaults()
             .confirm_quit_with_active_sessions,

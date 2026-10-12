@@ -798,6 +798,10 @@ impl WorkspaceSettings {
         self.0.show_tab_bar_buttons.unwrap_or(true)
     }
 
+    pub fn show_editor_tab_git_status(&self) -> bool {
+        self.0.show_editor_tab_git_status.unwrap_or(true)
+    }
+
     /// Block the first quit attempt while a terminal/SSH shell is running.
     pub fn confirm_quit_with_active_sessions(&self) -> bool {
         self.0.confirm_quit_with_active_sessions.unwrap_or(true)
@@ -996,6 +1000,17 @@ mod tests {
         let settings = TerminalSettings::from_settings(&content);
         assert_eq!(settings.terminal_opacity(), 42);
         assert!(!settings.copy_on_select());
+    }
+
+    #[test]
+    fn workspace_editor_tab_git_status_defaults_on_and_can_be_hidden() {
+        let defaults = WorkspaceSettings::from_settings(&SettingsContent::default());
+        assert!(defaults.show_editor_tab_git_status());
+
+        let mut content = SettingsContent::default();
+        content.workspace.show_editor_tab_git_status = Some(false);
+        let settings = WorkspaceSettings::from_settings(&content);
+        assert!(!settings.show_editor_tab_git_status());
     }
 
     #[test]
