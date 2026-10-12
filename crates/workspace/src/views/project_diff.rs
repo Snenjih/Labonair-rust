@@ -148,13 +148,19 @@ impl ProjectDiffView {
     /// Point the item at a (possibly new) review. Idempotent for a repeated
     /// working-tree or read-only source — calls just re-point the selection.
     pub fn apply_request(&mut self, req: ProjectDiffRequest, cx: &mut Context<Self>) {
+        let repository_changed = !same_repository_context(
+            self.repo_root.as_deref(),
+            self.session_id.as_deref(),
+            &req.repo_root,
+            req.session_id.as_deref(),
+        );
         self.repo_root = Some(req.repo_root);
         self.session_id = req.session_id;
         self.mode = req.mode;
 
         match req.source.clone() {
             DiffSource::WorkingTree => {
-                let source_changed = self.source != DiffSource::WorkingTree;
+                let source_changed = repository_changed || self.source != DiffSource::WorkingTree;
                 self.source = DiffSource::WorkingTree;
                 self.commit_files.clear();
                 self.files = req.files;
@@ -165,7 +171,8 @@ impl ProjectDiffView {
                 }
             }
             DiffSource::Commit { .. } | DiffSource::Stash { .. } | DiffSource::Branch { .. } => {
-                let same_source = same_read_only_source(&self.source, &req.source);
+                let same_source =
+                    !repository_changed && same_read_only_source(&self.source, &req.source);
                 self.source = req.source.clone();
                 if !same_source {
                     self.load_read_only_diff(req.source, cx);
@@ -486,6 +493,15 @@ impl ProjectDiffView {
                 .unwrap_or_else(|| "Project Diff".to_string()),
         }
     }
+}
+
+fn same_repository_context(
+    left_root: Option<&str>,
+    left_session: Option<&str>,
+    right_root: &str,
+    right_session: Option<&str>,
+) -> bool {
+    left_root == Some(right_root) && left_session == right_session
 }
 
 fn same_read_only_source(left: &DiffSource, right: &DiffSource) -> bool {
@@ -1051,6 +1067,28 @@ mod tests {
         assert!(same_read_only_source(&stash, &stash));
         assert!(same_read_only_source(&branch, &same_branch));
         assert!(!same_read_only_source(&branch, &commit));
+    }
+
+    #[test]
+    fn repository_context_identity_includes_root_and_remote_session() {
+        assert!(same_repository_context(
+            Some("/work/project"),
+            Some("ssh-session"),
+            "/work/project",
+            Some("ssh-session"),
+        ));
+        assert!(!same_repository_context(
+            Some("/work/project"),
+            Some("ssh-session"),
+            "/work/other",
+            Some("ssh-session"),
+        ));
+        assert!(!same_repository_context(
+            Some("/work/project"),
+            Some("ssh-session"),
+            "/work/project",
+            Some("other-session"),
+        ));
     }
 
     #[test]
