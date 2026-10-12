@@ -1109,6 +1109,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Continue from the opposite end after reaching the last match."
         ),
         field!(
+            editor.search_center_on_match,
+            "searchCenterOnMatch",
+            Switch,
+            "Search: center current match",
+            "Keep the active search result near the middle of the editor viewport."
+        ),
+        field!(
             editor.search_include_ignored,
             "searchIncludeIgnored",
             Switch,
@@ -1356,6 +1363,19 @@ mod tests {
         let mut content = SettingsContent::default();
         assert!((field.set)(&mut content, Value::Bool(false)));
         assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn search_center_on_match_is_an_exposed_switch() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.searchCenterOnMatch")
+            .expect("search center-on-match setting");
+        assert!(matches!(field.control, FieldControl::Switch));
+
+        let mut content = SettingsContent::defaults();
+        assert!((field.set)(&mut content, Value::Bool(true)));
+        assert_eq!((field.get)(&content), Some(Value::Bool(true)));
     }
 
     #[test]

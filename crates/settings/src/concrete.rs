@@ -408,6 +408,10 @@ impl EditorSettings {
         self.0.search_wrap.unwrap_or(true)
     }
 
+    pub fn search_center_on_match(&self) -> bool {
+        self.0.search_center_on_match.unwrap_or(false)
+    }
+
     pub fn search_include_ignored(&self) -> bool {
         self.0.search_include_ignored.unwrap_or(false)
     }
@@ -1036,6 +1040,7 @@ mod tests {
         assert!(!defaults.search_whole_word());
         assert!(!defaults.search_regex());
         assert!(defaults.search_wrap());
+        assert!(!defaults.search_center_on_match());
         assert!(!defaults.search_include_ignored());
         assert!(defaults.search_on_type());
         assert_eq!(
@@ -1049,6 +1054,7 @@ mod tests {
         content.editor.search_whole_word = Some(true);
         content.editor.search_regex = Some(true);
         content.editor.search_wrap = Some(false);
+        content.editor.search_center_on_match = Some(true);
         content.editor.search_include_ignored = Some(true);
         content.editor.search_on_type = Some(false);
         content.editor.search_seed_from_cursor = Some(SearchSeedBehavior::Selection);
@@ -1058,6 +1064,7 @@ mod tests {
         assert!(settings.search_whole_word());
         assert!(settings.search_regex());
         assert!(!settings.search_wrap());
+        assert!(settings.search_center_on_match());
         assert!(settings.search_include_ignored());
         assert!(!settings.search_on_type());
         assert_eq!(

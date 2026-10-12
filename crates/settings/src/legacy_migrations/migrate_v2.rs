@@ -546,6 +546,7 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         search_whole_word: defaults.search_whole_word,
         search_regex: defaults.search_regex,
         search_wrap: defaults.search_wrap,
+        search_center_on_match: defaults.search_center_on_match,
         search_include_ignored: defaults.search_include_ignored,
         search_on_type: defaults.search_on_type,
         search_seed_from_cursor: defaults.search_seed_from_cursor,

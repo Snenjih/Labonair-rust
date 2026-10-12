@@ -151,6 +151,7 @@
     "searchWholeWord": false,
     "searchRegex": false,
     "searchWrap": true,
+    "searchCenterOnMatch": false,
     "searchIncludeIgnored": false,
     "searchOnType": true,
     "searchSeedFromCursor": "always",

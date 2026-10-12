@@ -327,6 +327,7 @@ pub struct EditorContent {
     pub search_whole_word: Option<bool>,
     pub search_regex: Option<bool>,
     pub search_wrap: Option<bool>,
+    pub search_center_on_match: Option<bool>,
     pub search_include_ignored: Option<bool>,
     pub search_on_type: Option<bool>,
     pub search_seed_from_cursor: Option<SearchSeedBehavior>,
@@ -426,6 +427,7 @@ impl EditorContent {
             search_whole_word: Some(false),
             search_regex: Some(false),
             search_wrap: Some(true),
+            search_center_on_match: Some(false),
             search_include_ignored: Some(false),
             search_on_type: Some(true),
             search_seed_from_cursor: Some(SearchSeedBehavior::Always),
@@ -466,6 +468,7 @@ mod tests {
             "searchWholeWord": true,
             "searchRegex": true,
             "searchWrap": false,
+            "searchCenterOnMatch": true,
             "searchIncludeIgnored": true,
             "searchOnType": false,
             "searchSeedFromCursor": "never"
@@ -476,6 +479,7 @@ mod tests {
         assert_eq!(parsed.search_whole_word, Some(true));
         assert_eq!(parsed.search_regex, Some(true));
         assert_eq!(parsed.search_wrap, Some(false));
+        assert_eq!(parsed.search_center_on_match, Some(true));
         assert_eq!(parsed.search_include_ignored, Some(true));
         assert_eq!(parsed.search_on_type, Some(false));
         assert_eq!(
@@ -489,6 +493,7 @@ mod tests {
         assert_eq!(defaults["searchWholeWord"], false);
         assert_eq!(defaults["searchRegex"], false);
         assert_eq!(defaults["searchWrap"], true);
+        assert_eq!(defaults["searchCenterOnMatch"], false);
         assert_eq!(defaults["searchIncludeIgnored"], false);
         assert_eq!(defaults["searchOnType"], true);
         assert_eq!(defaults["searchSeedFromCursor"], "always");

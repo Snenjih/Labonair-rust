@@ -321,6 +321,20 @@ fn scrollbar_scroll_from_pointer(
     (offset / travel * geometry.max_scroll as f32).round() as usize
 }
 
+fn centered_search_scroll_line(
+    layout: &DisplaySnapshot,
+    position: Position,
+    visible_rows: usize,
+) -> Option<usize> {
+    let (match_row, _) = layout.position_to_display(position)?;
+    let visible_rows = visible_rows.max(1);
+    let max_top_row = layout.total_rows.saturating_sub(visible_rows);
+    let top_row = match_row.saturating_sub(visible_rows / 2).min(max_top_row);
+    layout
+        .display_to_position(top_row, 0)
+        .map(|position| position.line)
+}
+
 fn minimap_slot(line: usize, line_count: usize, slot_count: usize) -> Option<usize> {
     if line_count == 0 || slot_count == 0 || line >= line_count {
         return None;
@@ -4747,7 +4761,27 @@ impl EditorView {
         s.active = Some(idx);
         self.doc.set_caret(m.start, false);
         self.doc.set_caret(m.end, true);
-        self.ensure_cursor_visible(cx);
+        if self.prefs.search_center_on_match() {
+            let scroll_line = {
+                let snapshot = self.doc.snapshot();
+                let config = self.display_config();
+                let visible_rows = self.visible_rows();
+                let layout = self.display_layout(&snapshot, config);
+                centered_search_scroll_line(layout, m.start, visible_rows)
+            };
+            if let Some(scroll_line) = scroll_line {
+                let old_scroll_top = self.scroll_top;
+                self.scroll_top = scroll_line;
+                self.clamp_scroll();
+                if self.scroll_top != old_scroll_top {
+                    self.schedule_inlay_hints(self.prefs.inlay_scroll_debounce_ms(), cx);
+                }
+            } else {
+                self.ensure_cursor_visible(cx);
+            }
+        } else {
+            self.ensure_cursor_visible(cx);
+        }
     }
 
     // ── Key handling ────────────────────────────────────────────────────────
@@ -10056,6 +10090,39 @@ mod tests {
     }
 
     #[gpui::test]
+    fn center_on_match_preference_centers_the_active_buffer_search_result(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            install_editor_prefs(cx, |editor| editor.search_center_on_match = Some(true));
+        });
+        cx.update(|cx| {
+            view.update(cx, |editor, cx| {
+                let text = (0..40)
+                    .map(|line| if line == 20 { "target" } else { "line" })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                editor.doc = Document::from_file("many.rs".into(), &text, 1);
+                editor.metrics = (10.0, 18.0);
+                editor.bounds = Some(gpui::Bounds {
+                    origin: gpui::Point::default(),
+                    size: gpui::Size {
+                        width: px(500.0),
+                        height: px(180.0),
+                    },
+                });
+                editor.apply_prefs(cx);
+                assert_eq!(
+                    editor
+                        .search_set(SearchQuery::new("target", SearchOptions::default()), cx)
+                        .unwrap(),
+                    (1, 1)
+                );
+                assert_eq!(editor.scroll_top, 15);
+            });
+        });
+    }
+
+    #[gpui::test]
     fn search_replace_actions_use_typed_state_and_one_undo_step(cx: &mut TestAppContext) {
         let view = setup(cx);
         cx.update(|cx| {
@@ -10996,6 +11063,37 @@ mod tests {
         assert_eq!(
             find_scrollbar_marker_offsets(&snapshot, &display, 5.0, "hit", true),
             vec![0.0, 3.0]
+        );
+    }
+
+    #[test]
+    fn centered_search_scroll_line_centers_matches_and_clamps_at_document_edges() {
+        let text = (0..40)
+            .map(|line| format!("line {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let snapshot = labonair_editor::EditorBuffer::from_text(&text).snapshot();
+        let layout = DisplayMap::build(
+            &snapshot,
+            Viewport {
+                height_rows: snapshot.byte_len() + 1,
+                ..Default::default()
+            },
+            DisplayConfig::default(),
+            &[],
+        );
+
+        assert_eq!(
+            centered_search_scroll_line(&layout, Position::new(20, 0), 10),
+            Some(15)
+        );
+        assert_eq!(
+            centered_search_scroll_line(&layout, Position::new(2, 0), 10),
+            Some(0)
+        );
+        assert_eq!(
+            centered_search_scroll_line(&layout, Position::new(39, 0), 10),
+            Some(30)
         );
     }
 
