@@ -405,6 +405,8 @@ pub struct EditorContent {
     pub vim_cursor_shape_normal: Option<VimCursorShape>,
     /// Vim Insert-mode caret shape.
     pub vim_cursor_shape_insert: Option<VimCursorShape>,
+    /// Vim Replace-mode caret shape.
+    pub vim_cursor_shape_replace: Option<VimCursorShape>,
     /// Vim Visual-mode caret shape.
     pub vim_cursor_shape_visual: Option<VimCursorShape>,
 }
@@ -508,6 +510,7 @@ impl EditorContent {
             editor_cursor_style: Some(EditorCursorStyle::Bar),
             vim_cursor_shape_normal: Some(VimCursorShape::Block),
             vim_cursor_shape_insert: Some(VimCursorShape::Inherit),
+            vim_cursor_shape_replace: Some(VimCursorShape::Underline),
             vim_cursor_shape_visual: Some(VimCursorShape::Block),
         }
     }

@@ -1397,6 +1397,7 @@ impl EditorView {
             let modal_mode = match vim.mode() {
                 VimMode::Normal => "normal",
                 VimMode::Insert => "insert",
+                VimMode::Replace => "replace",
                 VimMode::Visual => "visual",
                 VimMode::VisualLine => "visual_line",
                 VimMode::Command => "command",
@@ -6809,7 +6810,10 @@ impl EditorView {
     /// editor navigation handle it (arrow / paging keys in insert mode).
     fn vim_key(&self, ks: &gpui::Keystroke) -> Option<VimKey> {
         let m = &ks.modifiers;
-        let insert = self.vim.as_ref().map(Vim::mode) == Some(VimMode::Insert);
+        let insert = matches!(
+            self.vim.as_ref().map(Vim::mode),
+            Some(VimMode::Insert | VimMode::Replace)
+        );
         match ks.key.as_str() {
             "escape" => Some(VimKey::Esc),
             "enter" | "return" => Some(VimKey::Enter),
@@ -12332,6 +12336,7 @@ fn effective_cursor_style(prefs: &EditorSettings, vim_mode: Option<VimMode>) -> 
         None => return prefs.cursor_style(),
         Some(VimMode::Normal | VimMode::Command) => prefs.vim_cursor_shape_normal(),
         Some(VimMode::Insert) => prefs.vim_cursor_shape_insert(),
+        Some(VimMode::Replace) => prefs.vim_cursor_shape_replace(),
         Some(VimMode::Visual | VimMode::VisualLine) => prefs.vim_cursor_shape_visual(),
     };
     match shape {
@@ -12473,6 +12478,7 @@ mod tests {
             editor.editor_cursor_style = Some(EditorCursorStyle::Bar);
             editor.vim_cursor_shape_normal = Some(VimCursorShape::Block);
             editor.vim_cursor_shape_insert = Some(VimCursorShape::Inherit);
+            editor.vim_cursor_shape_replace = Some(VimCursorShape::Underline);
             editor.vim_cursor_shape_visual = Some(VimCursorShape::Underline);
         });
 
@@ -12487,6 +12493,10 @@ mod tests {
         );
         assert_eq!(
             effective_cursor_style(&prefs, Some(VimMode::VisualLine)),
+            EditorCursorStyle::Underline
+        );
+        assert_eq!(
+            effective_cursor_style(&prefs, Some(VimMode::Replace)),
             EditorCursorStyle::Underline
         );
     }

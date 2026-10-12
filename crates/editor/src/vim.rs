@@ -34,6 +34,7 @@ fn snapshot(doc: &Document) -> BufferSnapshot {
 pub enum VimMode {
     Normal,
     Insert,
+    Replace,
     Visual,
     VisualLine,
     /// Ex command line (`:`), forward search (`/`) or backward search (`?`).
@@ -224,6 +225,7 @@ impl Vim {
                 s
             }
             VimMode::Insert => "-- INSERT --".into(),
+            VimMode::Replace => "-- REPLACE --".into(),
             VimMode::Visual => "-- VISUAL --".into(),
             VimMode::VisualLine => "-- VISUAL LINE --".into(),
             VimMode::Command => self
@@ -238,6 +240,7 @@ impl Vim {
     pub fn on_key(&mut self, doc: &mut Document, key: VimKey) -> VimResponse {
         match self.mode {
             VimMode::Insert => self.insert_key(doc, key),
+            VimMode::Replace => self.replace_key(doc, key),
             VimMode::Command => self.command_key(doc, key),
             VimMode::Normal | VimMode::Visual | VimMode::VisualLine => self.normal_key(doc, key),
         }
@@ -279,6 +282,25 @@ impl Vim {
                 } else {
                     doc.insert(&c.to_string());
                 }
+                VimResponse::ok()
+            }
+            VimKey::Redo => VimResponse::ok(),
+        }
+    }
+
+    fn replace_key(&mut self, doc: &mut Document, key: VimKey) -> VimResponse {
+        match key {
+            VimKey::Esc => {
+                self.leave_insert(doc);
+                VimResponse::ok()
+            }
+            VimKey::Char(character) => {
+                doc.execute_edit(EditIntent::InsertOvertype(character.to_string()));
+                VimResponse::ok()
+            }
+            VimKey::Enter | VimKey::Tab => self.insert_key(doc, key),
+            VimKey::Backspace => {
+                doc.backspace();
                 VimResponse::ok()
             }
             VimKey::Redo => VimResponse::ok(),
@@ -516,6 +538,11 @@ impl Vim {
         }
 
         match c {
+            'R' if self.pending_op.is_none() && !self.mode.is_visual() => {
+                self.count = 0;
+                self.mode = VimMode::Replace;
+                VimResponse::ok()
+            }
             'i' | 'a' | 'I' | 'A' | 'o' | 'O' | 's' | 'S' | 'C' if self.pending_op.is_none() => {
                 self.enter_insert(doc, c);
                 VimResponse::ok()
@@ -1684,6 +1711,32 @@ mod tests {
         keys(&mut v, &mut d, "X\u{1b}");
         assert_eq!(v.mode(), VimMode::Normal);
         assert_eq!(d.text(), "Xhello");
+    }
+
+    #[test]
+    fn replace_mode_overwrites_characters_and_undoes_as_one_typing_group() {
+        let mut vim = Vim::default();
+        let mut document = doc("cat");
+
+        keys(&mut vim, &mut document, "Rdog");
+        assert_eq!(vim.mode(), VimMode::Replace);
+        assert_eq!(document.text(), "dog");
+        keys(&mut vim, &mut document, "\u{1b}");
+        assert_eq!(vim.mode(), VimMode::Normal);
+        document.undo();
+        assert_eq!(document.text(), "cat");
+    }
+
+    #[test]
+    fn replace_mode_inserts_after_the_end_of_a_line() {
+        let mut vim = Vim::default();
+        let mut document = doc("cat");
+        document.set_caret(Position::new(0, 3), false);
+
+        keys(&mut vim, &mut document, "R!");
+        keys(&mut vim, &mut document, "\u{1b}");
+        assert_eq!(document.text(), "cat!");
+        assert_eq!(document.cursor, Position::new(0, 3));
     }
 
     #[test]

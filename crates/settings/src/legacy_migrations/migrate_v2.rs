@@ -558,6 +558,7 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_cursor_style: defaults.editor_cursor_style,
         vim_cursor_shape_normal: Some(VimCursorShape::Block),
         vim_cursor_shape_insert: Some(VimCursorShape::Inherit),
+        vim_cursor_shape_replace: Some(VimCursorShape::Underline),
         vim_cursor_shape_visual: Some(VimCursorShape::Block),
         search_case_sensitive: defaults.search_case_sensitive,
         search_smart_case: defaults.search_smart_case,

@@ -182,6 +182,7 @@
     "editorCursorStyle": "bar",
     "vimCursorShapeNormal": "block",
     "vimCursorShapeInsert": "inherit",
+    "vimCursorShapeReplace": "underline",
     "vimCursorShapeVisual": "block"
   },
 

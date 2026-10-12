@@ -1141,6 +1141,18 @@ pub fn all_fields() -> Vec<AnyField> {
             "Caret shape while Vim is in Insert mode."
         ),
         field!(
+            editor.vim_cursor_shape_replace,
+            "vimCursorShapeReplace",
+            Select(&[
+                ("inherit", "Inherit editor style"),
+                ("block", "Block"),
+                ("underline", "Underline"),
+                ("bar", "Bar")
+            ]),
+            "Vim: replace cursor shape",
+            "Caret shape while Vim is in Replace mode."
+        ),
+        field!(
             editor.vim_cursor_shape_visual,
             "vimCursorShapeVisual",
             Select(&[
@@ -1685,6 +1697,7 @@ mod tests {
         for path in [
             "editor.vimCursorShapeNormal",
             "editor.vimCursorShapeInsert",
+            "editor.vimCursorShapeReplace",
             "editor.vimCursorShapeVisual",
         ] {
             let field = fields

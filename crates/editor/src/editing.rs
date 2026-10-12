@@ -17,6 +17,9 @@ use crate::symbols::{larger_syntax_ranges, smaller_syntax_ranges};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditIntent {
     Insert(String),
+    /// Type while replacing the character under each empty caret, inserting
+    /// at end-of-line. Used by Vim Replace mode.
+    InsertOvertype(String),
     /// Replace each selection with its matching text, or broadcast one value
     /// when only one is provided. Used for multi-cursor paste.
     InsertMany(Vec<String>),
@@ -258,6 +261,7 @@ impl Document {
     pub fn execute_edit(&mut self, intent: EditIntent) -> EditorCommandResult {
         match intent {
             EditIntent::Insert(text) => self.multi_insert(&text),
+            EditIntent::InsertOvertype(text) => self.multi_overtype(&text),
             EditIntent::InsertMany(texts) => self.multi_insert_many(&texts),
             EditIntent::DeleteBackward => self.multi_delete(false),
             EditIntent::DeleteBracketPairBackward => self.delete_bracket_pair_backward(),
@@ -306,6 +310,32 @@ impl Document {
             .into_iter()
             .map(|range| (range, text.to_string()))
             .collect::<Vec<_>>();
+        self.apply_targets(targets, text.chars().count() == 1, EditSource::Typing, None)
+    }
+
+    fn multi_overtype(&mut self, text: &str) -> EditorCommandResult {
+        if text.is_empty() {
+            return EditorCommandResult::unchanged();
+        }
+        let snapshot = self.snapshot();
+        let targets = self
+            .selection_set()
+            .ranges(&snapshot)
+            .into_iter()
+            .map(|range| {
+                let overtype_range = if range.is_empty() {
+                    let next = next_char_range(&snapshot, range.start);
+                    if snapshot.text_range(next) == "\n" {
+                        TextRange::new(range.start, range.start)
+                    } else {
+                        next
+                    }
+                } else {
+                    range
+                };
+                (overtype_range, text.to_string())
+            })
+            .collect();
         self.apply_targets(targets, text.chars().count() == 1, EditSource::Typing, None)
     }
 
@@ -2266,6 +2296,18 @@ mod tests {
         assert_eq!(document.text(), "a a");
         document.undo();
         assert_eq!(document.text(), "ax ax");
+    }
+
+    #[test]
+    fn insert_overtype_replaces_one_character_or_inserts_at_line_ends() {
+        let mut document = doc("ab\ncd");
+        document.set_caret(Position::new(0, 1), false);
+        document.execute_edit(EditIntent::InsertOvertype("X".into()));
+        assert_eq!(document.text(), "aX\ncd");
+        assert_eq!(document.cursor, Position::new(0, 2));
+
+        document.execute_edit(EditIntent::InsertOvertype("Y".into()));
+        assert_eq!(document.text(), "aXY\ncd");
     }
 
     #[test]

@@ -614,6 +614,12 @@ impl EditorSettings {
             .unwrap_or(VimCursorShape::Inherit)
     }
 
+    pub fn vim_cursor_shape_replace(&self) -> VimCursorShape {
+        self.0
+            .vim_cursor_shape_replace
+            .unwrap_or(VimCursorShape::Underline)
+    }
+
     pub fn vim_cursor_shape_visual(&self) -> VimCursorShape {
         self.0
             .vim_cursor_shape_visual
@@ -1179,6 +1185,10 @@ mod tests {
         let defaults = EditorSettings::from_settings(&SettingsContent::default());
         assert_eq!(defaults.vim_cursor_shape_normal(), VimCursorShape::Block);
         assert_eq!(defaults.vim_cursor_shape_insert(), VimCursorShape::Inherit);
+        assert_eq!(
+            defaults.vim_cursor_shape_replace(),
+            VimCursorShape::Underline
+        );
         assert_eq!(defaults.vim_cursor_shape_visual(), VimCursorShape::Block);
         assert_eq!(defaults.cursor_style(), EditorCursorStyle::Bar);
 
