@@ -3022,6 +3022,20 @@ impl Workspace {
         self.split_active(dir, window, cx);
     }
 
+    /// Evenly redistribute every divider in the active workspace layout.
+    pub fn reset_pane_sizes(&mut self, cx: &mut Context<Self>) {
+        let Some(tab_id) = self.active_ws_tab(cx) else {
+            return;
+        };
+        if self
+            .layouts
+            .get_mut(&tab_id)
+            .is_some_and(WorkspaceLayout::reset_sizes)
+        {
+            cx.notify();
+        }
+    }
+
     /// `Close Tab`: close the active pane if the tab is split, else the tab.
     pub fn close_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.close_active_pane_or_tab(window, cx);

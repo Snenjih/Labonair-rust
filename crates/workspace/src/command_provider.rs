@@ -240,6 +240,11 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
     });
 
     let workspace_handle = workspace.clone();
+    register!(CommandId::ResetPaneSizes, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.reset_pane_sizes(cx));
+    });
+
+    let workspace_handle = workspace.clone();
     register!(CommandId::ClosePane, move |window, cx| {
         workspace_handle.update(cx, |workspace, cx| workspace.close_pane(window, cx));
     });
@@ -578,6 +583,8 @@ impl CommandProvider for WorkspaceCommandProvider {
                 .with_contexts(&[CommandContext::Terminal])
                 .with_default_binding("cmd-shift-d", Some(CommandContext::Terminal))
                 .with_icon(CommandIcon::ChevronDown),
+            CommandDescriptor::new(CommandId::ResetPaneSizes, "Reset Pane Sizes", "Layout")
+                .with_contexts(&[CommandContext::Terminal]),
             CommandDescriptor::new(CommandId::ClosePane, "Close Active Pane", "Layout")
                 .with_contexts(&[CommandContext::Terminal])
                 .with_default_binding("cmd-shift-w", Some(CommandContext::Terminal))
@@ -635,6 +642,13 @@ mod tests {
                     && candidate.context == Some(CommandContext::Terminal)
             }));
         }
+        let reset = commands
+            .iter()
+            .find(|command| command.id == CommandId::ResetPaneSizes)
+            .expect("reset pane sizes descriptor");
+        assert_eq!(reset.title, "Reset Pane Sizes");
+        assert_eq!(reset.contexts, vec![CommandContext::Terminal]);
+        assert!(reset.default_bindings.is_empty());
     }
 
     #[test]
