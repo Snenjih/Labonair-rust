@@ -74,7 +74,7 @@ use crate::syntax_theme::EditorPalette;
 use labonair_notifications::{notification_center, Notification};
 use labonair_theme::{modal_scrim, ThemeStore};
 use labonair_ui_kit::{
-    banner, button, context_menu, icon_button_builder, popover_menu, text_field,
+    banner, button, button_disabled, context_menu, icon_button_builder, popover_menu, text_field,
     text_field_surface, text_input, ButtonSize, ButtonVariant, IconButtonShape, IconName,
     InputEvent, InputState, ListItem, MenuItem, Palette, Severity, SubmenuHoverSource,
     TextFieldState, Tooltip,
@@ -944,6 +944,7 @@ pub struct EditorView {
     go_to_line_requested: bool,
     go_to_line_input: Option<Entity<InputState>>,
     format_on_save_in_flight: bool,
+    save_intent_after_format: Option<SaveIntent>,
     cursor_blink_on: bool,
     editor_focused: bool,
     minimap_hovered: bool,
@@ -1165,6 +1166,7 @@ impl EditorView {
             go_to_line_requested: false,
             go_to_line_input: None,
             format_on_save_in_flight: false,
+            save_intent_after_format: None,
             cursor_blink_on: true,
             editor_focused: false,
             minimap_hovered: false,
@@ -1650,6 +1652,7 @@ impl EditorView {
         self.rename_requested = false;
         self.rename_input = None;
         self.format_on_save_in_flight = false;
+        self.save_intent_after_format = None;
         let language = LanguageId::new(self.doc.language);
         let (sender, receiver) = tokio::sync::oneshot::channel();
         let runtime = self.language_services.clone();
@@ -1942,12 +1945,13 @@ impl EditorView {
             if self.format_on_save_in_flight {
                 // Keep the one-shot guard set while re-entering `save`; the
                 // fallback write must not start an endless format request.
+                let intent = self.save_intent_after_format.unwrap_or(SaveIntent::Normal);
                 notify_info(
                     cx,
                     "Format on save",
                     "The language service could not format this document; saving the current text.",
                 );
-                self.save(cx);
+                self.save_with_intent(intent, cx);
             } else if slot == LanguageServiceRequestSlot::TypeDefinition {
                 notify(
                     cx,
@@ -1980,11 +1984,12 @@ impl EditorView {
             }
             LanguageServiceResponse::Formatting(edits) => {
                 let save_after_format = self.format_on_save_in_flight;
+                let intent = self.save_intent_after_format.unwrap_or(SaveIntent::Normal);
                 self.apply_service_edits(edits, cx);
                 if save_after_format {
                     // Re-enter save once with the formatting result already
                     // applied. `save` clears this guard before writing.
-                    self.save(cx);
+                    self.save_with_intent(intent, cx);
                 }
             }
             LanguageServiceResponse::CodeActions(actions) if actions.len() == 1 => {
@@ -3411,6 +3416,8 @@ impl EditorView {
         self.close_language_service_document();
         self.line_ending_menu_anchor = None;
         self.encoding_menu_anchor = None;
+        self.format_on_save_in_flight = false;
+        self.save_intent_after_format = None;
         self.pending_navigation = None;
         self.doc = Document::loading(path.clone());
         self.recovery_prompt = None;
@@ -3519,6 +3526,8 @@ impl EditorView {
         };
         self.line_ending_menu_anchor = None;
         self.encoding_menu_anchor = None;
+        self.format_on_save_in_flight = false;
+        self.save_intent_after_format = None;
         self.invalidate_git_requests();
         self.git_gutter =
             GitGutterSnapshot::loading(path.to_string_lossy().to_string(), self.editor_revision());
@@ -3576,6 +3585,14 @@ impl EditorView {
     // ── Saving ──────────────────────────────────────────────────────────────
 
     pub fn save(&mut self, cx: &mut Context<Self>) {
+        self.save_with_intent(SaveIntent::Normal, cx);
+    }
+
+    fn overwrite_external(&mut self, cx: &mut Context<Self>) {
+        self.save_with_intent(SaveIntent::OverwriteExternal, cx);
+    }
+
+    fn save_with_intent(&mut self, intent: SaveIntent, cx: &mut Context<Self>) {
         let Some(path) = self.doc.path.clone() else {
             notify(cx, "Save", "This document has no file path.");
             return;
@@ -3588,19 +3605,22 @@ impl EditorView {
             );
             return;
         };
-        if let Err(error) = self
-            .doc
-            .prepare_save(&file_snapshot.identity, SaveIntent::Normal)
-        {
+        if let Err(error) = self.doc.prepare_save(&file_snapshot.identity, intent) {
             notify(cx, "Save failed", &error.to_string());
             return;
         }
         if self.prefs.format_on_save() && !self.format_on_save_in_flight {
             self.apply_save_policy();
             self.format_on_save_in_flight = true;
+            self.save_intent_after_format = Some(intent);
             self.request_language_service(LanguageServiceRequest::Formatting, cx);
             return;
         }
+        let intent = if self.format_on_save_in_flight {
+            self.save_intent_after_format.take().unwrap_or(intent)
+        } else {
+            intent
+        };
         self.format_on_save_in_flight = false;
         let path_str = path.to_string_lossy().to_string();
         let revision_before_policy = self.editor_revision();
@@ -3622,9 +3642,13 @@ impl EditorView {
                 .unwrap_or(file_snapshot.line_ending),
         );
         let bom = Self::storage_bom(format.map(|format| format.bom).unwrap_or(file_snapshot.bom));
+        let save_intent = match intent {
+            SaveIntent::Normal => StorageSaveIntent::Normal,
+            SaveIntent::OverwriteExternal => StorageSaveIntent::OverwriteExternal,
+        };
         let write = cx.background_executor().spawn(async move {
             let current = stat_editor_file_sync(&path_str)?;
-            if current.identity != expected {
+            if intent == SaveIntent::Normal && current.identity != expected {
                 return Err(EditorFileError::ExternalChange {
                     expected,
                     actual: current.identity,
@@ -3637,7 +3661,7 @@ impl EditorView {
                 line_ending,
                 bom,
                 &current.identity,
-                StorageSaveIntent::Normal,
+                save_intent,
             )
         });
         cx.spawn(async move |this, cx| {
@@ -5748,8 +5772,31 @@ impl EditorView {
     fn render_conflict_banner(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
         let c = Palette::from_theme(theme);
-        banner(Severity::Warning, c)
-            .child("This file changed on disk since you started editing.")
+        let banner = banner(Severity::Warning, c)
+            .child("This file changed on disk since you started editing.");
+        let banner = if self.format_on_save_in_flight {
+            banner.child(
+                button_disabled(
+                    "conflict-overwrite",
+                    c,
+                    ButtonVariant::Outlined,
+                    ButtonSize::Xs,
+                )
+                .child("Overwrite"),
+            )
+        } else {
+            banner.child(
+                button(
+                    "conflict-overwrite",
+                    c,
+                    ButtonVariant::Outlined,
+                    ButtonSize::Xs,
+                )
+                .child("Overwrite")
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.overwrite_external(cx))),
+            )
+        };
+        banner
             .child(
                 button(
                     "conflict-reload",
@@ -9306,6 +9353,58 @@ mod tests {
         document.keep_buffer().unwrap();
         assert_eq!(document.file_state(), &FileState::Dirty);
         assert_eq!(document.text(), local_text);
+    }
+
+    #[gpui::test]
+    fn conflict_overwrite_action_saves_the_local_buffer(cx: &mut TestAppContext) {
+        let path = std::env::temp_dir().join(format!(
+            "labonair-editor-overwrite-{}-{}.txt",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::write(&path, "before").unwrap();
+
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| this.open_path(path.clone(), cx));
+        });
+        cx.background_executor.run_until_parked();
+        cx.update(|cx| {
+            view.update(cx, |this, _cx| {
+                assert_eq!(this.doc.file_state(), &FileState::Clean);
+                this.doc.move_caret(Motion::DocEnd, false);
+                this.doc.insert(" local");
+            });
+        });
+
+        std::fs::write(&path, "external").unwrap();
+        let external_identity = stat_editor_file_sync(&path.to_string_lossy())
+            .expect("stat external edit")
+            .identity;
+        cx.update(|cx| {
+            view.update(cx, |this, _cx| {
+                this.doc
+                    .observe_file(Some(EditorView::editor_identity(external_identity)))
+                    .unwrap();
+                assert_eq!(this.doc.file_state(), &FileState::Conflict);
+            });
+        });
+
+        cx.update(|cx| {
+            view.update(cx, |this, cx| this.overwrite_external(cx));
+        });
+        cx.background_executor.run_until_parked();
+        cx.update(|cx| {
+            view.update(cx, |this, _cx| {
+                assert_eq!(this.doc.file_state(), &FileState::Clean);
+                assert_eq!(this.doc.text(), "before local");
+            });
+        });
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "before local");
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]

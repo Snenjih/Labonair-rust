@@ -866,6 +866,10 @@ mod tests {
             .unwrap_err();
         assert!(matches!(error, FileLifecycleError::ExternalChange { .. }));
         lifecycle
+            .observe_external(Some(identity("a.txt", 2)))
+            .unwrap();
+        assert_eq!(lifecycle.state(), &FileState::Conflict);
+        lifecycle
             .prepare_save(&identity("a.txt", 2), SaveIntent::OverwriteExternal)
             .unwrap();
     }

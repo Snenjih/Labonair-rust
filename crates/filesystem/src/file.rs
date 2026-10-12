@@ -990,6 +990,36 @@ mod lifecycle_tests {
     }
 
     #[test]
+    fn explicit_overwrite_replaces_external_file_changes() {
+        let path = temp_path("overwrite-external");
+        std::fs::write(&path, b"original").expect("create overwrite test input");
+        let path_text = path.to_string_lossy().to_string();
+        let loaded = load_editor_file_lifecycle_sync(&path_text, None).expect("load test input");
+        let EditorLifecycleLoad::Text { snapshot } = loaded else {
+            panic!("test input should load as text");
+        };
+        std::fs::write(&path, b"external edit").expect("write external change");
+
+        let saved = save_editor_file_lifecycle_sync(
+            &path_text,
+            "local edit",
+            StorageEncoding::Utf8,
+            StorageLineEnding::Lf,
+            StorageBom::None,
+            &snapshot.identity,
+            StorageSaveIntent::OverwriteExternal,
+        )
+        .expect("explicit overwrite should replace the changed file");
+
+        assert_eq!(saved.text, "local edit");
+        assert_eq!(
+            std::fs::read(&path).expect("read overwritten file"),
+            b"local edit"
+        );
+        std::fs::remove_file(path).expect("remove test input");
+    }
+
+    #[test]
     fn loads_utf16_bom_and_detects_its_line_endings() {
         let path = temp_path("utf16-load");
         let mut bytes = vec![0xff, 0xfe];
