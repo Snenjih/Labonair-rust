@@ -131,6 +131,25 @@ impl crate::MergeFrom for EditorDocumentColorMode {
     }
 }
 
+/// Unit system used for raster image file sizes in the editor preview.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum ImageViewerUnit {
+    /// Base-1024 units (KiB, MiB, …).
+    #[default]
+    Binary,
+    /// Base-1000 units (kB, MB, …).
+    Decimal,
+}
+
+impl crate::MergeFrom for ImageViewerUnit {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
 /// How the editor minimap is shown. `Auto` is shown only when the document
 /// extends beyond the visible viewport.
 #[derive(
@@ -274,6 +293,7 @@ pub struct EditorContent {
     pub editor_minimap_thumb: Option<EditorMinimapThumb>,
     pub editor_minimap_thumb_border: Option<EditorMinimapThumbBorder>,
     pub editor_minimap_current_line_highlight: Option<EditorMinimapCurrentLineHighlight>,
+    pub image_viewer_unit: Option<ImageViewerUnit>,
     pub editor_minimap_max_width_columns: Option<u32>,
     pub editor_scrollbar_show: Option<EditorScrollbarVisibility>,
     pub editor_scrollbar_cursors: Option<bool>,
@@ -376,6 +396,7 @@ impl EditorContent {
             editor_minimap_thumb: Some(EditorMinimapThumb::Always),
             editor_minimap_thumb_border: Some(EditorMinimapThumbBorder::LeftOpen),
             editor_minimap_current_line_highlight: Some(EditorMinimapCurrentLineHighlight::Inherit),
+            image_viewer_unit: Some(ImageViewerUnit::Binary),
             editor_minimap_max_width_columns: Some(80),
             editor_scrollbar_show: Some(EditorScrollbarVisibility::Auto),
             editor_scrollbar_cursors: Some(true),
@@ -602,5 +623,19 @@ mod tests {
             parsed.editor_lsp_document_colors,
             Some(EditorDocumentColorMode::Inline)
         );
+    }
+
+    #[test]
+    fn image_viewer_unit_parses_and_defaults_to_binary() {
+        let defaults = serde_json::to_value(EditorContent::defaults()).expect("editor defaults");
+        assert_eq!(defaults["imageViewerUnit"], "binary");
+
+        let parsed: EditorContent = serde_json::from_value(serde_json::json!({
+            "imageViewerUnit": "decimal"
+        }))
+        .expect("image viewer unit");
+        assert_eq!(parsed.image_viewer_unit, Some(ImageViewerUnit::Decimal));
+        let serialized = serde_json::to_value(parsed).expect("serialize image viewer unit");
+        assert_eq!(serialized["imageViewerUnit"], "decimal");
     }
 }

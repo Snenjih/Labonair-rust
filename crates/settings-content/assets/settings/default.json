@@ -99,6 +99,8 @@
     "editorMinimapThumb": "always",
     "editorMinimapThumbBorder": "left_open",
     "editorMinimapCurrentLineHighlight": "inherit",
+    // "binary" uses KiB/MiB; "decimal" uses kB/MB.
+    "imageViewerUnit": "binary",
     "editorMinimapMaxWidthColumns": 80,
     "editorScrollbarShow": "auto",
     "editorScrollbarCursors": true,

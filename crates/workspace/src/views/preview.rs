@@ -33,6 +33,7 @@ use labonair_editor::{
     BufferSnapshot, EditorBuffer, HighlightKind, Language, StyledRun, SyntaxHighlighter,
 };
 use labonair_notifications::{notification_center, Notification};
+use labonair_settings::{EditorSettings, Settings as _};
 use labonair_ui_kit::{
     button, divider, text_field, text_field_surface, text_input, Axis, ButtonSize, ButtonVariant,
     InputEvent, InputState, Palette, TextFieldState, Tooltip,
@@ -359,27 +360,38 @@ fn image_scroll_offset_after_pan(pointer_origin: f32, scroll_origin: f32, pointe
     scroll_origin + pointer_now - pointer_origin
 }
 
-fn format_image_size(byte_len: usize) -> String {
-    const KIB: f64 = 1024.0;
-    let size = byte_len as f64;
-    if size >= KIB * KIB {
-        format!("{:.1} MiB", size / KIB / KIB)
-    } else if size >= KIB {
-        format!("{:.1} KiB", size / KIB)
-    } else {
+fn format_image_size(
+    byte_len: usize,
+    unit: labonair_settings::content::editor::ImageViewerUnit,
+) -> String {
+    use labonair_settings::content::editor::ImageViewerUnit;
+
+    let (base, units): (f64, &[&str]) = match unit {
+        ImageViewerUnit::Binary => (1024.0, &["KiB", "MiB", "GiB", "TiB", "PiB", "EiB"]),
+        ImageViewerUnit::Decimal => (1000.0, &["kB", "MB", "GB", "TB", "PB", "EB"]),
+    };
+    let mut size = byte_len as f64;
+    let mut unit_index = 0;
+    while size >= base && unit_index < units.len() {
+        size /= base;
+        unit_index += 1;
+    }
+    if unit_index == 0 {
         format!("{byte_len} B")
+    } else {
+        format!("{size:.1} {}", units[unit_index - 1])
     }
 }
 
 impl PreviewImage {
-    fn metadata(&self) -> String {
+    fn metadata(&self, unit: labonair_settings::content::editor::ImageViewerUnit) -> String {
         format!(
             "{} × {} · {} · {} bpp · {}",
             self.width,
             self.height,
             self.format,
             self.bits_per_pixel,
-            format_image_size(self.byte_len)
+            format_image_size(self.byte_len, unit)
         )
     }
 }
@@ -1241,6 +1253,9 @@ impl Focusable for PreviewView {
 impl Render for PreviewView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
+        let image_viewer_unit = EditorSettings::try_get(cx)
+            .and_then(|settings| settings.content().image_viewer_unit)
+            .unwrap_or_default();
         let bg = theme.background();
         let fg = theme.foreground();
         let muted = theme.muted_foreground();
@@ -1532,7 +1547,7 @@ impl Render for PreviewView {
                     ImageZoom::Scale(scale) => format!("{:.0}%", scale * 100.0),
                 };
                 let metadata = match &self.content {
-                    Content::Image(image) => image.metadata(),
+                    Content::Image(image) => image.metadata(image_viewer_unit),
                     _ => String::new(),
                 };
                 let zoom_control = if let Some(input) = self.image_zoom_input.as_ref() {
@@ -2137,20 +2152,42 @@ mod tests {
         assert_eq!((preview.width, preview.height), (2, 3));
         assert_eq!(preview.format, "PNG");
         assert_eq!(preview.bits_per_pixel, 24);
-        assert!(preview.metadata().contains("2 × 3 · PNG · 24 bpp"));
         assert!(preview
-            .metadata()
-            .ends_with(&format_image_size(preview.byte_len)));
+            .metadata(labonair_settings::content::editor::ImageViewerUnit::Binary)
+            .contains("2 × 3 · PNG · 24 bpp"));
+        assert!(preview
+            .metadata(labonair_settings::content::editor::ImageViewerUnit::Binary)
+            .ends_with(&format_image_size(
+                preview.byte_len,
+                labonair_settings::content::editor::ImageViewerUnit::Binary
+            )));
 
         let _ = std::fs::remove_file(path);
     }
 
     #[test]
     fn image_size_uses_binary_units() {
-        assert_eq!(format_image_size(0), "0 B");
-        assert_eq!(format_image_size(1023), "1023 B");
-        assert_eq!(format_image_size(1024), "1.0 KiB");
-        assert_eq!(format_image_size(1024 * 1024), "1.0 MiB");
+        use labonair_settings::content::editor::ImageViewerUnit;
+
+        assert_eq!(format_image_size(0, ImageViewerUnit::Binary), "0 B");
+        assert_eq!(format_image_size(1023, ImageViewerUnit::Binary), "1023 B");
+        assert_eq!(format_image_size(1024, ImageViewerUnit::Binary), "1.0 KiB");
+        assert_eq!(
+            format_image_size(1024 * 1024, ImageViewerUnit::Binary),
+            "1.0 MiB"
+        );
+    }
+
+    #[test]
+    fn image_size_uses_decimal_units_when_configured() {
+        use labonair_settings::content::editor::ImageViewerUnit;
+
+        assert_eq!(format_image_size(999, ImageViewerUnit::Decimal), "999 B");
+        assert_eq!(format_image_size(1000, ImageViewerUnit::Decimal), "1.0 kB");
+        assert_eq!(
+            format_image_size(1_000_000, ImageViewerUnit::Decimal),
+            "1.0 MB"
+        );
     }
 
     #[test]

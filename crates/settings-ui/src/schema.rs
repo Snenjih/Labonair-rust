@@ -603,6 +603,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Choose whether the minimap appears only in the active editor or in every editor."
         ),
         field!(
+            editor.image_viewer_unit,
+            "imageViewerUnit",
+            Select(&[("binary", "Binary (KiB, MiB)"), ("decimal", "Decimal (kB, MB)")]),
+            "Image file size units",
+            "Choose binary or decimal units for image metadata."
+        ),
+        field!(
             editor.editor_minimap_thumb,
             "editorMinimapThumb",
             Select(&[("always", "Always"), ("hover", "On hover")]),
@@ -1370,6 +1377,25 @@ mod tests {
         let mut content = SettingsContent::default();
         assert!((field.set)(&mut content, Value::Bool(false)));
         assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn image_viewer_unit_is_an_exposed_select() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.imageViewerUnit")
+            .expect("image viewer unit setting");
+        match field.control {
+            FieldControl::Select(options) => {
+                assert!(options.contains(&("binary", "Binary (KiB, MiB)")));
+                assert!(options.contains(&("decimal", "Decimal (kB, MB)")));
+            }
+            _ => panic!("image viewer unit should use a select control"),
+        }
+
+        let mut content = SettingsContent::defaults();
+        assert!((field.set)(&mut content, Value::String("decimal".into())));
+        assert_eq!((field.get)(&content), Some(Value::String("decimal".into())));
     }
 
     #[test]

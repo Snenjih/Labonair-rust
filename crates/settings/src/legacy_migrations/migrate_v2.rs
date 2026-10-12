@@ -478,6 +478,7 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_minimap_thumb: Some(EditorMinimapThumb::Always),
         editor_minimap_thumb_border: Some(EditorMinimapThumbBorder::LeftOpen),
         editor_minimap_current_line_highlight: Some(EditorMinimapCurrentLineHighlight::Inherit),
+        image_viewer_unit: defaults.image_viewer_unit,
         editor_minimap_max_width_columns: Some(80),
         editor_scrollbar_show: Some(EditorScrollbarVisibility::Auto),
         editor_scrollbar_cursors: Some(true),
