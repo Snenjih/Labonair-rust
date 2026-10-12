@@ -785,13 +785,15 @@ impl CommandProvider for EditorCommandProvider {
             .with_contexts(&[CommandContext::Editor])
             .with_submenu(CommandSubmenu::Diagnostics),
             CommandDescriptor::new(CommandId::EditorNextDiagnostic, "Next Diagnostic", "Editor")
-                .with_contexts(&[CommandContext::Editor]),
+                .with_contexts(&[CommandContext::Editor])
+                .with_default_binding("f8", Some(CommandContext::Editor)),
             CommandDescriptor::new(
                 CommandId::EditorPreviousDiagnostic,
                 "Previous Diagnostic",
                 "Editor",
             )
-            .with_contexts(&[CommandContext::Editor]),
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("shift-f8", Some(CommandContext::Editor)),
             CommandDescriptor::new(CommandId::EditorNextGitChange, "Next Git Change", "Editor")
                 .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(
@@ -929,6 +931,27 @@ mod tests {
                 line: 11,
             }
         );
+    }
+
+    #[test]
+    fn diagnostic_navigation_commands_use_the_standard_editor_bindings() {
+        let commands = EditorCommandProvider.commands();
+        for (id, binding) in [
+            (CommandId::EditorNextDiagnostic, "f8"),
+            (CommandId::EditorPreviousDiagnostic, "shift-f8"),
+        ] {
+            let command = commands
+                .iter()
+                .find(|command| command.id == id)
+                .expect("diagnostic navigation descriptor");
+            assert_eq!(command.default_bindings.len(), 1);
+            assert_eq!(command.default_bindings[0].keystrokes, binding);
+            assert_eq!(
+                command.default_bindings[0].context,
+                Some(CommandContext::Editor)
+            );
+            assert!(route_for_command(id).is_some());
+        }
     }
 
     #[test]
