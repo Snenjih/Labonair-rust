@@ -7,4 +7,4 @@
 mod editor;
 mod syntax_theme;
 
-pub use editor::{EditorEvent, EditorView};
+pub use editor::{EditorBufferSnapshot, EditorEvent, EditorView};

@@ -472,6 +472,14 @@ impl TabStore {
         });
     }
 
+    pub fn set_url(&mut self, id: u64, url: Option<String>, cx: &mut Context<Self>) {
+        self.with_tab(id, cx, |t| {
+            let changed = t.data.url != url;
+            t.data.url = url;
+            changed
+        });
+    }
+
     pub fn set_dirty(&mut self, id: u64, dirty: bool, cx: &mut Context<Self>) {
         self.with_tab(id, cx, |t| {
             let changed = t.dirty != dirty;

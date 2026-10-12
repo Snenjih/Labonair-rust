@@ -131,7 +131,7 @@ use labonair_editor::{
     ProjectReplaceResult, ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, SearchError,
     SearchQuery, TextRange,
 };
-use labonair_editor_ui::{EditorEvent, EditorView};
+use labonair_editor_ui::{EditorBufferSnapshot, EditorEvent, EditorView};
 use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
 use labonair_hosts_host::{ActiveTunnelRow, HostStatus, HostView};
 use labonair_hosts_ui::HostManagerView;
@@ -525,6 +525,8 @@ pub struct Workspace {
     sftp_views: HashMap<u64, Entity<SftpView>>,
     /// Native preview view per `Preview` tab id (T15-006 — WebView replacement).
     previews: HashMap<u64, Entity<PreviewView>>,
+    /// Preview tabs that follow edits from their source editor tab.
+    markdown_previews: HashMap<u64, u64>,
     /// The shared commit-graph view, lazily created for the `GitGraph` tab.
     git_graph: Option<Entity<GitGraphView>>,
     /// The keymap-management view, lazily created for the single `Keymap` tab.
@@ -573,6 +575,7 @@ pub struct Workspace {
     pending_sftp: Vec<String>,
     /// File-open requests queued by SFTP views, drained in `render`.
     pending_open: Vec<PendingOpen>,
+    pending_preview_focus: bool,
     next_pane_id: PaneId,
     /// Tab id whose close is awaiting unsaved-changes confirmation.
     confirm_close: Option<u64>,
@@ -821,6 +824,7 @@ impl Workspace {
             project_search_task: None,
             sftp_views: HashMap::new(),
             previews: HashMap::new(),
+            markdown_previews: HashMap::new(),
             git_graph: None,
             keymap: None,
             hosts,
@@ -838,6 +842,7 @@ impl Workspace {
             remote_edits: HashMap::new(),
             pending_sftp: Vec::new(),
             pending_open: Vec::new(),
+            pending_preview_focus: false,
             next_pane_id: 1,
             confirm_close: None,
             pending_close: VecDeque::new(),
@@ -2497,6 +2502,7 @@ impl Workspace {
         let tab_id = if let Some(tab_id) = existing {
             self.tabs.update(cx, |s, cx| {
                 s.set_custom_title(tab_id, Some(title.clone()), cx);
+                s.set_url(tab_id, Some(target.clone()), cx);
                 s.set_active(tab_id, cx);
             });
             tab_id
@@ -2519,10 +2525,114 @@ impl Workspace {
             tab_id
         };
 
+        self.markdown_previews
+            .retain(|_, preview_tab_id| *preview_tab_id != tab_id);
         if let Some(view) = self.previews.get(&tab_id).cloned() {
             view.update(cx, |p, cx| p.set_url(target, cx));
         }
         self.focus_active(window, cx);
+    }
+
+    /// Open the Editor-owned Markdown buffer in a Workspace preview tab. The
+    /// preview keeps following that editor tab through subsequent revisions.
+    fn open_markdown_preview_for_editor(
+        &mut self,
+        editor_tab_id: u64,
+        source: EditorBufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        let target = source
+            .path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled.md".to_string());
+        let name = source
+            .path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            .unwrap_or("Untitled");
+        let title = format!("{name} Preview");
+        let existing = self
+            .markdown_previews
+            .get(&editor_tab_id)
+            .copied()
+            .filter(|preview_tab_id| self.previews.contains_key(preview_tab_id));
+
+        let preview_tab_id = if let Some(preview_tab_id) = existing {
+            self.tabs.update(cx, |tabs, cx| {
+                tabs.set_custom_title(preview_tab_id, Some(title.clone()), cx);
+                tabs.set_url(preview_tab_id, Some(target.clone()), cx);
+                tabs.set_active(preview_tab_id, cx);
+            });
+            preview_tab_id
+        } else {
+            let preview_tab_id = self.tabs.update(cx, |tabs, cx| {
+                let preview_tab_id = tabs.open(
+                    TabKind::Preview,
+                    TabData {
+                        url: Some(target.clone()),
+                        ..TabData::default()
+                    },
+                    cx,
+                );
+                tabs.set_custom_title(preview_tab_id, Some(title), cx);
+                tabs.set_active(preview_tab_id, cx);
+                preview_tab_id
+            });
+            let theme = self.theme.clone();
+            let view = cx.new(|cx| PreviewView::new(theme, cx));
+            self.previews.insert(preview_tab_id, view);
+            self.markdown_previews.insert(editor_tab_id, preview_tab_id);
+            preview_tab_id
+        };
+
+        if let Some(view) = self.previews.get(&preview_tab_id).cloned() {
+            let language = source.language;
+            let path = source.path;
+            let snapshot = source.snapshot;
+            view.update(cx, |preview, cx| {
+                preview.set_editor_source(path, language, snapshot, cx)
+            });
+        }
+        self.pending_preview_focus = true;
+        cx.notify();
+    }
+
+    fn update_markdown_preview_for_editor(
+        &mut self,
+        editor_tab_id: u64,
+        source: EditorBufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(preview_tab_id) = self.markdown_previews.get(&editor_tab_id).copied() else {
+            return;
+        };
+        let Some(view) = self.previews.get(&preview_tab_id).cloned() else {
+            self.markdown_previews.remove(&editor_tab_id);
+            return;
+        };
+        let title = source
+            .path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            .map(|name| format!("{name} Preview"));
+        let target = source
+            .path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled.md".to_string());
+        self.tabs.update(cx, |tabs, cx| {
+            tabs.set_custom_title(preview_tab_id, title, cx);
+            tabs.set_url(preview_tab_id, Some(target), cx);
+        });
+        let language = source.language;
+        let path = source.path;
+        let snapshot = source.snapshot;
+        view.update(cx, |preview, cx| {
+            preview.set_editor_source(path, language, snapshot, cx)
+        });
     }
 
     /// Save the active editor tab (`Cmd-S`).
@@ -2656,11 +2766,21 @@ impl Workspace {
         cx.subscribe(view, move |this, view, ev: &EditorEvent, cx| {
             if matches!(ev, EditorEvent::CloseRequested) {
                 // Vim `:q` / `:wq` — close this editor's tab.
+                this.markdown_previews.remove(&tab_id);
                 if let Some(removed) = this.tabs.update(cx, |s, cx| s.close(tab_id, cx)) {
                     this.retire_tab(&removed, cx);
                 }
                 cx.notify();
                 return;
+            }
+            match ev {
+                EditorEvent::MarkdownPreviewRequested(source) => {
+                    this.open_markdown_preview_for_editor(tab_id, source.clone(), cx);
+                }
+                EditorEvent::BufferChanged(source) => {
+                    this.update_markdown_preview_for_editor(tab_id, source.clone(), cx);
+                }
+                _ => {}
             }
             let dirty = view.read(cx).is_dirty();
             let is_remote_edit = this.remote_edits.contains_key(&tab_id);
@@ -3018,6 +3138,8 @@ impl Workspace {
         let active_kind = self.tabs.read(cx).active().map(|tab| tab.kind);
         if let Some(editor) = self.editors.get(&active_id) {
             editor.read(cx).focus(window);
+        } else if let Some(preview) = self.previews.get(&active_id) {
+            window.focus(&preview.read(cx).focus_handle(cx));
         } else if active_kind == Some(TabKind::Keymap) {
             if let Some(view) = &self.keymap {
                 window.focus(&view.read(cx).focus_handle(cx));
@@ -3881,6 +4003,9 @@ impl Workspace {
         }
         self.editors.remove(&tab.id);
         self.previews.remove(&tab.id);
+        self.markdown_previews.remove(&tab.id);
+        self.markdown_previews
+            .retain(|_, preview_tab_id| *preview_tab_id != tab.id);
 
         // SFTP browser tab: drop the view and close its SFTP/SSH session.
         let sftp_handle = self
@@ -7443,6 +7568,9 @@ impl Render for Workspace {
                     }
                 }
             }
+        }
+        if std::mem::take(&mut self.pending_preview_focus) {
+            self.focus_active(window, cx);
         }
         let want_prompt = self.ssh_prompt.is_some();
         if want_prompt && !self.prompt_shown {

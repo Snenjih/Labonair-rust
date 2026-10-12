@@ -4,6 +4,14 @@ Older entries preserve the state of the code when each issue was recorded.
 When an API was later renamed or removed, the current implementation and
 normative documentation take precedence over the historical symbol name.
 
+## 2026-10-12 — Buffer revisions are document-local
+
+Editor `Revision` values restart for each loaded buffer. A consumer following
+editor snapshots must not treat `(path, revision)` alone as a global identity:
+a reload or a different buffer can have the same revision number while its
+content differs. Re-apply each typed buffer-change event, or include an
+independent buffer generation in any future deduplication key.
+
 ## 2026-10-07 — Terminal startup resized against the whole window and overlaid backgrounds
 
 **Symptom:** opening a terminal caused a startup redraw burst and could make

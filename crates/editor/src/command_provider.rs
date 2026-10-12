@@ -48,6 +48,7 @@ pub enum EditorUiCommand {
     GoToLineColumn,
     ToggleSearchSelection,
     ToggleReadOnly,
+    OpenMarkdownPreview,
     ToggleBreadcrumb,
     ToggleInlayHints,
     Rewrap,
@@ -118,6 +119,9 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
             EditorCommandRoute::Ui(EditorUiCommand::ToggleSearchSelection)
         }
         CommandId::EditorToggleReadOnly => EditorCommandRoute::Ui(EditorUiCommand::ToggleReadOnly),
+        CommandId::EditorOpenMarkdownPreview => {
+            EditorCommandRoute::Ui(EditorUiCommand::OpenMarkdownPreview)
+        }
         CommandId::EditorToggleBreadcrumb => {
             EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb)
         }
@@ -274,6 +278,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorGoToLineColumn,
     CommandId::EditorToggleSearchSelection,
     CommandId::EditorToggleReadOnly,
+    CommandId::EditorOpenMarkdownPreview,
     CommandId::EditorToggleBreadcrumb,
     CommandId::EditorToggleInlayHints,
     CommandId::EditorDeleteLine,
@@ -432,6 +437,13 @@ impl CommandProvider for EditorCommandProvider {
                 "Editor",
             )
             .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(
+                CommandId::EditorOpenMarkdownPreview,
+                "Open Markdown Preview",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("cmd-shift-v", Some(CommandContext::Editor)),
             CommandDescriptor::new(CommandId::GoToSymbol, "Go to Symbol…", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_icon(CommandIcon::FileCode)
@@ -953,6 +965,27 @@ mod tests {
         assert_eq!(
             command.default_bindings[0].context,
             Some(CommandContext::Editor)
+        );
+    }
+
+    #[test]
+    fn markdown_preview_is_editor_owned_and_uses_its_pinned_binding() {
+        let command = EditorCommandProvider
+            .commands()
+            .into_iter()
+            .find(|command| command.id == CommandId::EditorOpenMarkdownPreview)
+            .expect("Markdown Preview descriptor");
+
+        assert_eq!(command.title, "Open Markdown Preview");
+        assert_eq!(command.id.action_name(), "markdown::OpenPreview");
+        assert_eq!(command.default_bindings[0].keystrokes, "cmd-shift-v");
+        assert_eq!(
+            command.default_bindings[0].context,
+            Some(CommandContext::Editor)
+        );
+        assert_eq!(
+            route_for_command(CommandId::EditorOpenMarkdownPreview),
+            Some(EditorCommandRoute::Ui(EditorUiCommand::OpenMarkdownPreview))
         );
     }
 

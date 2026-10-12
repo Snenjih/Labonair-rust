@@ -51,10 +51,10 @@ use labonair_editor::{
         FileCapabilities, FileLifecycleEvent, FileState, LineEnding, ReloadDecision, SaveIntent,
     },
     map_range_through_edits, next_match_with_wrap, replace_all_checked, replace_one,
-    word_at_cursor, Anchor, AnchorAffinity, CancellationToken, DisplayConfig, DisplayMap,
-    DisplayRowKind, DisplaySnapshot, Document, DocumentColor, DocumentColorValue, DocumentVersion,
-    Edit, EditorSessionId, EditorSessionSnapshot, EditorViewSession, FoldRange, FoldingRange,
-    GitDecorationProvider, GitDecorationRequest, GitDiscardPreview, GitEditorCommand,
+    word_at_cursor, Anchor, AnchorAffinity, BufferSnapshot, CancellationToken, DisplayConfig,
+    DisplayMap, DisplayRowKind, DisplaySnapshot, Document, DocumentColor, DocumentColorValue,
+    DocumentVersion, Edit, EditorSessionId, EditorSessionSnapshot, EditorViewSession, FoldRange,
+    FoldingRange, GitDecorationProvider, GitDecorationRequest, GitDiscardPreview, GitEditorCommand,
     GitGutterError, GitGutterSnapshot, GitHunkAction, GitHunkActionKind, GitHunkStatus, Helix,
     HelixKey, HelixMode, HunkActionSink, InlayHint, InlayHintKind, KillRing, Language, LanguageId,
     LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceRequest,
@@ -80,14 +80,27 @@ use labonair_ui_kit::{
 };
 
 /// Editor → workspace notifications.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum EditorEvent {
     /// Dirty flag or title-relevant state changed — re-sync the tab.
     Changed,
     /// The user made their first edit — a peek tab should become permanent.
     Edited,
+    /// A Markdown preview should open for this exact immutable source revision.
+    MarkdownPreviewRequested(EditorBufferSnapshot),
+    /// The content or file identity of an editor buffer changed.
+    BufferChanged(EditorBufferSnapshot),
     /// Vim `:q` / `:wq` — the hosting workspace should close this editor's tab.
     CloseRequested,
+}
+
+/// Immutable source data crossing from the Editor owner into its Workspace
+/// preview host. The rope snapshot is cheap to clone and remains revisioned.
+#[derive(Clone, Debug)]
+pub struct EditorBufferSnapshot {
+    pub path: Option<PathBuf>,
+    pub language: Language,
+    pub snapshot: BufferSnapshot,
 }
 
 /// Editor-owned query and match state shared by the workspace search overlay
@@ -193,8 +206,9 @@ fn editor_toolbar_has_contribution(
     quick_actions: bool,
     selections_menu: bool,
     code_actions: bool,
+    markdown_preview: bool,
 ) -> bool {
-    breadcrumbs || quick_actions || selections_menu || code_actions
+    breadcrumbs || quick_actions || selections_menu || code_actions || markdown_preview
 }
 
 /// The divider's cursor communicates the resize operation; the drag payload
@@ -1278,6 +1292,17 @@ impl EditorView {
                     cx.notify();
                 }
             }
+            EditorCommandRoute::Ui(EditorUiCommand::OpenMarkdownPreview) => {
+                if let Some(source) = self.markdown_source_snapshot() {
+                    cx.emit(EditorEvent::MarkdownPreviewRequested(source));
+                } else {
+                    notify_info(
+                        cx,
+                        "Markdown Preview",
+                        "Open a Markdown file before opening its preview.",
+                    );
+                }
+            }
             EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb) => {
                 self.breadcrumb_visible_override = Some(!self.breadcrumbs_visible());
                 cx.notify();
@@ -1432,6 +1457,22 @@ impl EditorView {
         )
     }
 
+    fn buffer_snapshot(&self) -> EditorBufferSnapshot {
+        EditorBufferSnapshot {
+            path: self.doc.path.clone(),
+            language: self.doc.language,
+            snapshot: self.doc.snapshot(),
+        }
+    }
+
+    fn markdown_source_snapshot(&self) -> Option<EditorBufferSnapshot> {
+        (self.doc.language == Language::Markdown).then(|| self.buffer_snapshot())
+    }
+
+    fn emit_buffer_changed(&self, cx: &mut Context<Self>) {
+        cx.emit(EditorEvent::BufferChanged(self.buffer_snapshot()));
+    }
+
     fn finish_command(
         &mut self,
         revision_before: Revision,
@@ -1449,6 +1490,9 @@ impl EditorView {
         self.ensure_cursor_visible(cx);
         self.refresh_matches();
         cx.emit(EditorEvent::Changed);
+        if revision_changed {
+            self.emit_buffer_changed(cx);
+        }
         if !dirty_before && self.doc.is_dirty() {
             cx.emit(EditorEvent::Edited);
         }
@@ -3395,6 +3439,7 @@ impl EditorView {
                 this.resync_syntax();
                 this.refresh_git(cx);
                 cx.emit(EditorEvent::Changed);
+                this.emit_buffer_changed(cx);
                 cx.notify();
             });
         })
@@ -3501,6 +3546,7 @@ impl EditorView {
                             this.sync_language_service_document(cx);
                             this.refresh_git(cx);
                             cx.emit(EditorEvent::Changed);
+                            this.emit_buffer_changed(cx);
                             cx.notify();
                         }
                     }
@@ -3512,6 +3558,7 @@ impl EditorView {
                         this.resync_syntax();
                         this.refresh_git(cx);
                         cx.emit(EditorEvent::Changed);
+                        this.emit_buffer_changed(cx);
                         cx.notify();
                     }
                 }
@@ -3691,6 +3738,7 @@ impl EditorView {
             cx.emit(EditorEvent::Edited);
         }
         if self.editor_revision() != revision_before {
+            self.emit_buffer_changed(cx);
             self.sync_language_service_document(cx);
             self.refresh_git(cx);
             if let Some(trigger) = self.signature_help_trigger() {
@@ -4728,6 +4776,7 @@ impl EditorView {
                 cx.emit(EditorEvent::Edited);
             }
             if self.editor_revision() != revision_before {
+                self.emit_buffer_changed(cx);
                 self.sync_language_service_document(cx);
                 self.refresh_git(cx);
             }
@@ -4790,6 +4839,7 @@ impl EditorView {
             cx.emit(EditorEvent::Edited);
         }
         if self.editor_revision() != revision_before {
+            self.emit_buffer_changed(cx);
             self.sync_language_service_document(cx);
             self.refresh_git(cx);
         }
@@ -6612,12 +6662,14 @@ impl EditorView {
         let selections_menu = self.prefs.selections_menu();
         let code_actions = self.prefs.toolbar_code_actions()
             && self.language_service_snapshot.capabilities.code_actions;
+        let markdown_preview = self.doc.language == Language::Markdown;
         let temporary_read_only = self.doc.temporary_read_only();
         if !editor_toolbar_has_contribution(
             breadcrumbs,
             quick_actions,
             selections_menu,
             code_actions,
+            markdown_preview,
         ) && !temporary_read_only
         {
             return None;
@@ -6646,6 +6698,19 @@ impl EditorView {
             .justify_end()
             .gap_1()
             .flex_shrink_0();
+        if markdown_preview {
+            let preview =
+                icon_button_builder("editor-markdown-preview-toggle", palette, IconName::Eye)
+                    .size(ButtonSize::IconSm)
+                    .shape(IconButtonShape::Square)
+                    .tooltip("Open Markdown Preview")
+                    .render()
+                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                        let _ = this
+                            .dispatch_registered_command(CommandId::EditorOpenMarkdownPreview, cx);
+                    }));
+            actions = actions.child(preview);
+        }
         if temporary_read_only {
             let toggle = button(
                 "editor-read-only-toggle",
@@ -9730,6 +9795,10 @@ mod tests {
                     this.prefs.selections_menu(),
                     this.prefs.toolbar_code_actions()
                         && this.language_service_snapshot.capabilities.code_actions,
+                    false,
+                ));
+                assert!(editor_toolbar_has_contribution(
+                    false, false, false, false, true
                 ));
             });
         });

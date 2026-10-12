@@ -24,6 +24,7 @@ use gpui::{
     InteractiveElement, ObjectFit, SharedString, StatefulInteractiveElement, Window,
 };
 
+use labonair_editor::{BufferSnapshot, Language};
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{button, divider, Axis, ButtonSize, ButtonVariant, Palette};
 
@@ -100,6 +101,7 @@ enum Content {
     External {
         why: SharedString,
     },
+    Unsupported(SharedString),
     Error(SharedString),
 }
 
@@ -110,6 +112,7 @@ pub struct PreviewView {
     focus_handle: FocusHandle,
     url: String,
     content: Content,
+    source_bound: bool,
 }
 
 impl PreviewView {
@@ -120,6 +123,7 @@ impl PreviewView {
             focus_handle: cx.focus_handle(),
             url: String::new(),
             content: Content::Empty,
+            source_bound: false,
         }
     }
 
@@ -130,12 +134,39 @@ impl PreviewView {
     /// Point the pane at a new address and re-resolve its content.
     pub fn set_url(&mut self, url: impl Into<String>, cx: &mut Context<Self>) {
         self.url = url.into();
+        self.source_bound = false;
         self.resolve_content(cx);
+        cx.notify();
+    }
+
+    /// Bind this preview tab to an immutable editor revision. Markdown source
+    /// is parsed immediately; switching the source editor to another language
+    /// leaves an explicit unavailable state instead of stale rendered content.
+    pub fn set_editor_source(
+        &mut self,
+        path: Option<PathBuf>,
+        language: Language,
+        snapshot: BufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        self.url = path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled.md".to_string());
+        self.source_bound = true;
+        self.content = if language == Language::Markdown {
+            Content::Markdown(parse_markdown(&snapshot.text()))
+        } else {
+            Content::Unsupported("The followed editor buffer is not Markdown.".into())
+        };
         cx.notify();
     }
 
     /// Re-read the current address from disk.
     pub fn reload(&mut self, cx: &mut Context<Self>) {
+        if self.source_bound {
+            return;
+        }
         self.resolve_content(cx);
         cx.notify();
     }
@@ -318,6 +349,15 @@ impl Render for PreviewView {
                 .text_color(muted)
                 .child("Preview unavailable")
                 .into_any_element(),
+            Content::Unsupported(message) => div()
+                .flex_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .p_6()
+                .text_color(muted)
+                .child(message.clone())
+                .into_any_element(),
         };
 
         div()
@@ -344,18 +384,20 @@ impl Render for PreviewView {
                             .overflow_hidden()
                             .child(address),
                     )
-                    .child(
-                        labonair_ui_kit::button_no_hover(
-                            "preview-reload",
-                            c,
-                            ButtonVariant::Subtle,
-                            ButtonSize::Xs,
+                    .when(!self.source_bound, |d| {
+                        d.child(
+                            labonair_ui_kit::button_no_hover(
+                                "preview-reload",
+                                c,
+                                ButtonVariant::Subtle,
+                                ButtonSize::Xs,
+                            )
+                            .text_color(muted)
+                            .hover(|s| s.text_color(fg))
+                            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reload(cx)))
+                            .child("Reload"),
                         )
-                        .text_color(muted)
-                        .hover(|s| s.text_color(fg))
-                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reload(cx)))
-                        .child("Reload"),
-                    )
+                    })
                     .when(!self.url.is_empty(), |d| {
                         d.child(
                             labonair_ui_kit::button_no_hover(
@@ -555,6 +597,7 @@ fn table_row(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gpui::AppContext;
 
     #[test]
     fn previewable_matches_reference_extensions() {
@@ -613,5 +656,73 @@ mod tests {
             _ => panic!("expected markdown"),
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[gpui::test]
+    fn markdown_preview_tracks_editor_buffer_revisions(cx: &mut gpui::TestAppContext) {
+        let view = cx.update(|cx| {
+            let theme = cx.new(|_| ThemeStore::new(gpui::WindowAppearance::Light));
+            cx.new(|cx| PreviewView::new(theme, cx))
+        });
+        let first = labonair_editor::EditorBuffer::from_text("# Initial").snapshot();
+        cx.update(|cx| {
+            view.update(cx, |preview, cx| {
+                preview.set_editor_source(
+                    Some(PathBuf::from("/docs/readme.md")),
+                    Language::Markdown,
+                    first,
+                    cx,
+                );
+            });
+        });
+        cx.update(|cx| {
+            let preview = view.read(cx);
+            assert_eq!(preview.url(), "/docs/readme.md");
+            assert!(preview.source_bound);
+            assert!(matches!(
+                preview.content,
+                Content::Markdown(ref blocks)
+                    if matches!(blocks.first(), Some(MdBlock::Heading { spans, .. })
+                        if spans.iter().any(|span| span.plain() == "Initial"))
+            ));
+        });
+
+        let second = labonair_editor::EditorBuffer::from_text("# Updated").snapshot();
+        cx.update(|cx| {
+            view.update(cx, |preview, cx| {
+                preview.set_editor_source(
+                    Some(PathBuf::from("/docs/readme.md")),
+                    Language::Markdown,
+                    second,
+                    cx,
+                );
+            });
+        });
+        cx.update(|cx| {
+            let preview = view.read(cx);
+            assert!(matches!(
+                preview.content,
+                Content::Markdown(ref blocks)
+                    if matches!(blocks.first(), Some(MdBlock::Heading { spans, .. })
+                        if spans.iter().any(|span| span.plain() == "Updated"))
+            ));
+        });
+
+        let code = labonair_editor::EditorBuffer::from_text("fn main() {}").snapshot();
+        cx.update(|cx| {
+            view.update(cx, |preview, cx| {
+                preview.set_editor_source(
+                    Some(PathBuf::from("/docs/main.rs")),
+                    Language::Rust,
+                    code,
+                    cx,
+                );
+            });
+        });
+        cx.update(|cx| {
+            let preview = view.read(cx);
+            assert_eq!(preview.url(), "/docs/main.rs");
+            assert!(matches!(preview.content, Content::Unsupported(_)));
+        });
     }
 }
