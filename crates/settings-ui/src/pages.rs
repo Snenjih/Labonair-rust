@@ -378,7 +378,16 @@ const EDITOR_GROUPS: &[Group] = &[
         paths!("editor": "editorTabSize", "editorDragAndDropSelection"),
     ),
     ("Indentation", paths!("editor": "editorIndentWithTabs")),
-    ("Formatting & Save", paths!("editor": "editorFormatOnSave")),
+    (
+        "Formatting & Save",
+        paths!("editor":
+            "editorFormatOnSave",
+            "editorAutoSave",
+            "editorAutoSaveDelay",
+            "editorTrimTrailingWhitespace",
+            "editorInsertFinalNewline"
+        ),
+    ),
     (
         "Display",
         paths!("editor":
@@ -393,7 +402,9 @@ const EDITOR_GROUPS: &[Group] = &[
             "editorFastScrollSensitivity",
             "editorVerticalScrollMargin",
             "editorHighlightCurrentLine",
-            "editorBracketMatching"
+            "editorBracketMatching",
+            "editorShowCursorPosition",
+            "editorShowSelectionStats"
         ),
     ),
     (
@@ -427,7 +438,8 @@ const EDITOR_GROUPS: &[Group] = &[
             "editorToolbarBreadcrumbs",
             "editorToolbarQuickActions",
             "editorSelectionsMenu",
-            "editorToolbarCodeActions"
+            "editorToolbarCodeActions",
+            "editorShowOutline"
         ),
     ),
     (
@@ -459,7 +471,9 @@ const LANGUAGE_GROUPS: &[Group] = &[(
         "editorInlayEditDebounceMs",
         "editorInlayScrollDebounceMs",
         "editorCompletion",
-        "editorHover"
+        "editorHover",
+        "editorAutocompleteDebounceMs",
+        "editorMaxFileSizeMb"
     ),
 )];
 

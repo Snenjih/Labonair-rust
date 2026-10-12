@@ -154,22 +154,6 @@ macro_rules! field {
 /// saved hosts and keymap migration data) deliberately has no row here.
 /// Order is declaration order within each Settings area; page layout
 /// (`pages.rs`) decides on-screen placement, not this list.
-/// Compatibility-only model fields that are intentionally not exposed by the
-/// native Settings UI. Their values remain readable by the Settings owner for
-/// migration/unknown-key compatibility, but a visible control would falsely
-/// advertise a runtime consumer that the inventory explicitly removed.
-const UI_REMOVED_FIELDS: &[&str] = &[
-    "editor.editorTrimTrailingWhitespace",
-    "editor.editorInsertFinalNewline",
-    "editor.editorShowCursorPosition",
-    "editor.editorShowSelectionStats",
-    "editor.editorShowOutline",
-    "editor.editorAutocompleteDebounceMs",
-    "editor.editorMaxFileSizeMb",
-    "editor.editorAutoSave",
-    "editor.editorAutoSaveDelay",
-];
-
 pub fn all_fields() -> Vec<AnyField> {
     use FieldControl::{Float, FontFamily, Int, Select, SftpColumns, Switch, Text};
     let fields = vec![
@@ -1400,9 +1384,6 @@ pub fn all_fields() -> Vec<AnyField> {
         ),
     ];
     fields
-        .into_iter()
-        .filter(|field| !UI_REMOVED_FIELDS.contains(&field.json_path))
-        .collect()
 }
 
 #[cfg(test)]
@@ -1632,6 +1613,37 @@ mod tests {
         let mut content = SettingsContent::default();
         assert!((field.set)(&mut content, Value::Bool(false)));
         assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn editor_save_and_status_preferences_are_exposed_with_typed_controls() {
+        let fields = all_fields();
+        for path in [
+            "editor.editorAutoSave",
+            "editor.editorTrimTrailingWhitespace",
+            "editor.editorInsertFinalNewline",
+            "editor.editorShowCursorPosition",
+            "editor.editorShowSelectionStats",
+            "editor.editorShowOutline",
+        ] {
+            let field = fields
+                .iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing settings field {path}"));
+            assert!(matches!(field.control, FieldControl::Switch), "{path}");
+        }
+
+        for path in [
+            "editor.editorAutoSaveDelay",
+            "editor.editorAutocompleteDebounceMs",
+            "editor.editorMaxFileSizeMb",
+        ] {
+            let field = fields
+                .iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing settings field {path}"));
+            assert!(matches!(field.control, FieldControl::Int { .. }), "{path}");
+        }
     }
 
     #[test]
