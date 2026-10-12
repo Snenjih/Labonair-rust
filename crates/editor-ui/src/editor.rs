@@ -100,8 +100,10 @@ pub enum EditorEvent {
     MarkdownPreviewRequested(EditorBufferSnapshot),
     /// A following Markdown preview should bind to this Editor tab and revision.
     MarkdownFollowingPreviewRequested(EditorBufferSnapshot),
-    /// An SVG preview should open for this file path in the Workspace preview host.
-    SvgPreviewRequested(PathBuf),
+    /// An SVG preview should bind to this immutable editor revision.
+    SvgPreviewRequested(EditorBufferSnapshot),
+    /// A single SVG preview should follow whichever Editor tab was last active.
+    SvgFollowingPreviewRequested(EditorBufferSnapshot),
     /// A delimited text preview should open for this file in the Workspace preview host.
     TabularPreviewRequested(PathBuf),
     /// The content or file identity of an editor buffer changed.
@@ -1926,18 +1928,36 @@ impl EditorView {
                 }
             }
             EditorCommandRoute::Ui(EditorUiCommand::OpenSvgPreview) => {
-                let svg_path = self.doc.path.clone().filter(|path| {
+                let source = self.doc.path.as_ref().filter(|path| {
                     path.extension()
                         .and_then(|extension| extension.to_str())
                         .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
                 });
-                if let Some(path) = svg_path {
-                    cx.emit(EditorEvent::SvgPreviewRequested(path));
+                if source.is_some() {
+                    cx.emit(EditorEvent::SvgPreviewRequested(self.buffer_snapshot()));
                 } else {
                     notify_info(
                         cx,
                         "SVG Preview",
                         "Open an SVG file before opening its preview.",
+                    );
+                }
+            }
+            EditorCommandRoute::Ui(EditorUiCommand::OpenFollowingSvgPreview) => {
+                let source = self.doc.path.as_ref().filter(|path| {
+                    path.extension()
+                        .and_then(|extension| extension.to_str())
+                        .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
+                });
+                if source.is_some() {
+                    cx.emit(EditorEvent::SvgFollowingPreviewRequested(
+                        self.buffer_snapshot(),
+                    ));
+                } else {
+                    notify_info(
+                        cx,
+                        "SVG Preview",
+                        "Open an SVG file before opening a following preview.",
                     );
                 }
             }
@@ -12045,6 +12065,49 @@ mod tests {
         );
         assert_eq!(source.language, Language::Markdown);
         assert_eq!(source.snapshot.text(), "# Guide");
+    }
+
+    #[gpui::test]
+    fn following_svg_preview_command_emits_typed_editor_source(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        let captured = Arc::new(std::sync::Mutex::new(None));
+        let captured_event = captured.clone();
+        let _subscription = cx.update(|cx| {
+            cx.subscribe(&view, move |_, event: &EditorEvent, _| {
+                if let EditorEvent::SvgFollowingPreviewRequested(source) = event {
+                    if let Ok(mut captured) = captured_event.lock() {
+                        *captured = Some(source.clone());
+                    }
+                }
+            })
+        });
+
+        cx.update(|cx| {
+            view.update(cx, |view, cx| {
+                view.doc = Document::from_file(
+                    "icon.svg".into(),
+                    r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>"#,
+                    1,
+                );
+                assert!(
+                    view.dispatch_registered_command(CommandId::EditorOpenFollowingSvgPreview, cx)
+                );
+            });
+        });
+
+        let source = captured
+            .lock()
+            .expect("event capture lock")
+            .clone()
+            .expect("following SVG preview event");
+        assert_eq!(
+            source.path.as_deref(),
+            Some(std::path::Path::new("icon.svg"))
+        );
+        assert_eq!(
+            source.snapshot.text(),
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>"#
+        );
     }
 
     #[gpui::test]

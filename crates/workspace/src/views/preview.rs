@@ -11,11 +11,11 @@
 //!   the native [`markdown`](crate::markdown) parser.
 //! * **Delimited tables** (`csv`, `tsv`, `ssv`, `psv`) render in a bounded
 //!   native table view with quoted-field parsing.
-//! * **HTML, PDF, SVG and remote URLs** cannot be rendered in-process; the pane
-//!   shows the address plus an **Open in system browser** button
-//!   (`/usr/bin/open` on macOS, `xdg-open` on Linux).
+//! * **SVG** is rasterized through `resvg` with local and remote image
+//!   references disabled. HTML, PDF and remote URLs show an external-open
+//!   fallback because GPUI has no embedded WebView.
 //!
-//! This is the single documented deviation from 1:1 parity (see `ROADMAP.md`).
+//! Browser-dependent documents use the native external-open fallback.
 
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
@@ -466,9 +466,9 @@ impl PreviewView {
         cx.notify();
     }
 
-    /// Bind this preview tab to an immutable editor revision. Markdown source
-    /// is parsed immediately; switching the source editor to another language
-    /// leaves an explicit unavailable state instead of stale rendered content.
+    /// Bind this preview tab to an immutable Markdown editor revision.
+    /// Switching the source editor to another language leaves an explicit
+    /// unavailable state instead of stale rendered content.
     pub fn set_editor_source(
         &mut self,
         path: Option<PathBuf>,
@@ -499,6 +499,91 @@ impl PreviewView {
         };
         self.load_markdown_images(cx);
         self.load_markdown_code_highlights(cx);
+        cx.notify();
+    }
+
+    /// Render an immutable SVG editor revision in the background. This keeps
+    /// following previews in sync with unsaved edits and never blocks GPUI.
+    pub fn set_editor_svg_source(
+        &mut self,
+        path: Option<PathBuf>,
+        snapshot: BufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        self.load_generation = self.load_generation.wrapping_add(1);
+        let generation = self.load_generation;
+        let next_url = path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled.svg".to_string());
+        let changed_source = !self.source_bound || self.url != next_url;
+        self.pending_fragment = None;
+        self.markdown_images.clear();
+        self.markdown_syntax_runs.clear();
+        self.markdown_source_path = None;
+        if changed_source {
+            self.image_zoom = ImageZoom::Fit;
+            self.image_zoom_input = None;
+            self.image_pan = None;
+            self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
+        }
+        self.url = next_url;
+        self.source_bound = true;
+
+        let is_svg = path
+            .as_deref()
+            .and_then(Path::extension)
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"));
+        if !is_svg {
+            self.content = Content::Unsupported("The followed editor buffer is not SVG.".into());
+            cx.notify();
+            return;
+        }
+
+        self.content = Content::Loading;
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    if snapshot.byte_len() as u64 > MAX_SVG_SOURCE_BYTES {
+                        return Err(format!(
+                            "SVG exceeds the {} MiB preview limit",
+                            MAX_SVG_SOURCE_BYTES / (1024 * 1024)
+                        ));
+                    }
+                    let source = snapshot.text();
+                    render_svg(source.as_bytes())
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.load_generation != generation {
+                    return;
+                }
+                match result {
+                    Ok(image) => this.content = Content::Image(image),
+                    Err(error) => {
+                        let url = this.url.clone();
+                        let message: SharedString = format!("Could not render SVG: {error}").into();
+                        notification_center(cx).update(cx, |center, cx| {
+                            center.push(
+                                Notification::error(
+                                    "Preview unavailable",
+                                    "Could not render the SVG preview.",
+                                )
+                                .source("preview")
+                                .details(message.clone())
+                                .dedupe_key(format!("preview:svg:{url}")),
+                                cx,
+                            );
+                        });
+                        this.content = Content::Error(message);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
         cx.notify();
     }
 
@@ -1017,6 +1102,12 @@ fn load_svg(path: &str) -> Result<PreviewImage, String> {
 }
 
 fn render_svg(bytes: &[u8]) -> Result<PreviewImage, String> {
+    if bytes.len() as u64 > MAX_SVG_SOURCE_BYTES {
+        return Err(format!(
+            "SVG exceeds the {} MiB preview limit",
+            MAX_SVG_SOURCE_BYTES / (1024 * 1024)
+        ));
+    }
     let mut options = resvg::usvg::Options::default();
     // Do not let a document read local or remote files through <image href>.
     // Embedded data URLs remain supported by the default data resolver.
@@ -2123,6 +2214,71 @@ mod tests {
         });
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[gpui::test]
+    fn svg_preview_renders_the_current_editor_revision_in_background(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let view = cx.update(|cx| {
+            let theme = cx.new(|_| ThemeStore::new(gpui::WindowAppearance::Light));
+            cx.new(|cx| PreviewView::new(theme, cx))
+        });
+        let source = labonair_editor::EditorBuffer::from_text(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="16"><rect width="24" height="16" fill="red"/></svg>"#,
+        )
+        .snapshot();
+        cx.update(|cx| {
+            view.update(cx, |preview, cx| {
+                preview.set_editor_svg_source(Some(PathBuf::from("/assets/icon.svg")), source, cx);
+                assert!(matches!(preview.content, Content::Loading));
+            });
+        });
+
+        cx.background_executor.run_until_parked();
+        cx.update(|cx| {
+            let preview = view.read(cx);
+            assert_eq!(preview.url(), "/assets/icon.svg");
+            assert!(preview.source_bound);
+            assert!(matches!(
+                &preview.content,
+                Content::Image(image) if image.format == "SVG" && image.width == 24
+            ));
+        });
+
+        let updated_source = labonair_editor::EditorBuffer::from_text(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="30" height="16"><rect width="30" height="16" fill="blue"/></svg>"#,
+        )
+        .snapshot();
+        cx.update(|cx| {
+            view.update(cx, |preview, cx| {
+                preview.image_zoom = ImageZoom::Scale(1.5);
+                preview.set_editor_svg_source(
+                    Some(PathBuf::from("/assets/icon.svg")),
+                    updated_source,
+                    cx,
+                );
+                assert_eq!(preview.image_zoom, ImageZoom::Scale(1.5));
+            });
+        });
+        cx.background_executor.run_until_parked();
+        cx.update(|cx| {
+            assert!(matches!(
+                &view.read(cx).content,
+                Content::Image(image) if image.format == "SVG" && image.width == 30
+            ));
+        });
+
+        let not_svg = labonair_editor::EditorBuffer::from_text("<root />").snapshot();
+        cx.update(|cx| {
+            view.update(cx, |preview, cx| {
+                preview.set_editor_svg_source(Some(PathBuf::from("/docs/readme.xml")), not_svg, cx);
+                assert!(matches!(
+                    &preview.content,
+                    Content::Unsupported(message) if message.contains("not SVG")
+                ));
+            });
+        });
     }
 
     #[gpui::test]

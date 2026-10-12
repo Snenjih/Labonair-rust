@@ -58,6 +58,7 @@ pub enum EditorUiCommand {
     PreviousSnippetTabstop,
     OpenMarkdownPreview,
     OpenFollowingMarkdownPreview,
+    OpenFollowingSvgPreview,
     OpenSvgPreview,
     OpenTabularPreview,
     ToggleBreadcrumb,
@@ -149,6 +150,9 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         }
         CommandId::EditorOpenFollowingMarkdownPreview => {
             EditorCommandRoute::Ui(EditorUiCommand::OpenFollowingMarkdownPreview)
+        }
+        CommandId::EditorOpenFollowingSvgPreview => {
+            EditorCommandRoute::Ui(EditorUiCommand::OpenFollowingSvgPreview)
         }
         CommandId::EditorOpenSvgPreview => EditorCommandRoute::Ui(EditorUiCommand::OpenSvgPreview),
         CommandId::EditorOpenTabularPreview => {
@@ -327,6 +331,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorToggleReadOnly,
     CommandId::EditorOpenMarkdownPreview,
     CommandId::EditorOpenFollowingMarkdownPreview,
+    CommandId::EditorOpenFollowingSvgPreview,
     CommandId::EditorOpenSvgPreview,
     CommandId::EditorOpenTabularPreview,
     CommandId::EditorToggleBreadcrumb,
@@ -502,6 +507,12 @@ impl CommandProvider for EditorCommandProvider {
             CommandDescriptor::new(
                 CommandId::EditorOpenFollowingMarkdownPreview,
                 "Open Following Markdown Preview",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(
+                CommandId::EditorOpenFollowingSvgPreview,
+                "Open Following SVG Preview",
                 "Editor",
             )
             .with_contexts(&[CommandContext::Editor]),
@@ -1268,6 +1279,25 @@ mod tests {
             route_for_command(CommandId::EditorOpenFollowingMarkdownPreview),
             Some(EditorCommandRoute::Ui(
                 EditorUiCommand::OpenFollowingMarkdownPreview
+            ))
+        );
+    }
+
+    #[test]
+    fn following_svg_preview_is_an_editor_owned_command() {
+        let command = EditorCommandProvider
+            .commands()
+            .into_iter()
+            .find(|command| command.id == CommandId::EditorOpenFollowingSvgPreview)
+            .expect("Following SVG Preview descriptor");
+
+        assert_eq!(command.title, "Open Following SVG Preview");
+        assert_eq!(command.id.action_name(), "svg::OpenFollowingPreview");
+        assert!(command.default_bindings.is_empty());
+        assert_eq!(
+            route_for_command(CommandId::EditorOpenFollowingSvgPreview),
+            Some(EditorCommandRoute::Ui(
+                EditorUiCommand::OpenFollowingSvgPreview
             ))
         );
     }
