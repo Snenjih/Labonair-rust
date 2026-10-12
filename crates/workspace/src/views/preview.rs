@@ -22,8 +22,8 @@ use std::sync::Arc;
 use gpui::prelude::*;
 use gpui::{
     div, img, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, Image, ImageFormat,
-    InteractiveElement, ObjectFit, ScrollHandle, ScrollWheelEvent, SharedString,
-    StatefulInteractiveElement, Window,
+    InteractiveElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ObjectFit,
+    ScrollHandle, ScrollWheelEvent, SharedString, StatefulInteractiveElement, Window,
 };
 
 use labonair_editor::{BufferSnapshot, Language};
@@ -179,6 +179,14 @@ enum ImageZoom {
     Scale(f32),
 }
 
+#[derive(Clone, Copy)]
+struct ImagePan {
+    pointer_x: f32,
+    pointer_y: f32,
+    scroll_x: f32,
+    scroll_y: f32,
+}
+
 const MIN_IMAGE_ZOOM: f32 = 0.05;
 const MAX_IMAGE_ZOOM: f32 = 8.0;
 
@@ -201,6 +209,10 @@ fn image_zoom_scale(zoom: ImageZoom, fit_scale: f32) -> f32 {
 
 fn image_scroll_offset_after_zoom(anchor: f32, offset: f32, ratio: f32) -> f32 {
     anchor - (anchor - offset) * ratio
+}
+
+fn image_scroll_offset_after_pan(pointer_origin: f32, scroll_origin: f32, pointer_now: f32) -> f32 {
+    scroll_origin + pointer_now - pointer_origin
 }
 
 fn format_image_size(byte_len: usize) -> String {
@@ -241,6 +253,7 @@ pub struct PreviewView {
     markdown_scroll: ScrollHandle,
     image_scroll: ScrollHandle,
     image_zoom: ImageZoom,
+    image_pan: Option<ImagePan>,
 }
 
 impl PreviewView {
@@ -257,6 +270,7 @@ impl PreviewView {
             markdown_scroll: ScrollHandle::new(),
             image_scroll: ScrollHandle::new(),
             image_zoom: ImageZoom::Fit,
+            image_pan: None,
         }
     }
 
@@ -270,6 +284,7 @@ impl PreviewView {
         self.source_bound = false;
         self.pending_fragment = None;
         self.image_zoom = ImageZoom::Fit;
+        self.image_pan = None;
         self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
         self.resolve_content(cx);
         cx.notify();
@@ -285,6 +300,7 @@ impl PreviewView {
         self.source_bound = false;
         self.pending_fragment = fragment;
         self.image_zoom = ImageZoom::Fit;
+        self.image_pan = None;
         self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
         self.resolve_content(cx);
         cx.notify();
@@ -303,6 +319,7 @@ impl PreviewView {
         self.load_generation = self.load_generation.wrapping_add(1);
         self.pending_fragment = None;
         self.image_zoom = ImageZoom::Fit;
+        self.image_pan = None;
         self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
         self.url = path
             .as_ref()
@@ -459,6 +476,42 @@ impl PreviewView {
             cx.notify();
         }
     }
+
+    fn begin_image_pan(&mut self, position: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
+        if !matches!(self.content, Content::Image(_)) {
+            return;
+        }
+        let offset = self.image_scroll.offset();
+        self.image_pan = Some(ImagePan {
+            pointer_x: f32::from(position.x),
+            pointer_y: f32::from(position.y),
+            scroll_x: f32::from(offset.x),
+            scroll_y: f32::from(offset.y),
+        });
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn move_image_pan(&mut self, position: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
+        let Some(pan) = self.image_pan else {
+            return;
+        };
+        let offset_x =
+            image_scroll_offset_after_pan(pan.pointer_x, pan.scroll_x, f32::from(position.x));
+        let offset_y =
+            image_scroll_offset_after_pan(pan.pointer_y, pan.scroll_y, f32::from(position.y));
+        self.image_scroll
+            .set_offset(gpui::point(px(offset_x), px(offset_y)));
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn end_image_pan(&mut self, cx: &mut Context<Self>) {
+        if self.image_pan.take().is_some() {
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
 }
 
 fn resolve(url: &str) -> Content {
@@ -608,7 +661,53 @@ impl Render for PreviewView {
                             cx,
                         );
                         cx.stop_propagation();
-                    }));
+                    }))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                            window.focus(&this.focus_handle);
+                            this.begin_image_pan(event.position, cx);
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Middle,
+                        cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                            window.focus(&this.focus_handle);
+                            this.begin_image_pan(event.position, cx);
+                        }),
+                    )
+                    .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _window, cx| {
+                        if matches!(
+                            event.pressed_button,
+                            Some(MouseButton::Left | MouseButton::Middle)
+                        ) {
+                            this.move_image_pan(event.position, cx);
+                        }
+                    }))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _event: &MouseUpEvent, _window, cx| {
+                            this.end_image_pan(cx);
+                        }),
+                    )
+                    .on_mouse_up(
+                        MouseButton::Middle,
+                        cx.listener(|this, _event: &MouseUpEvent, _window, cx| {
+                            this.end_image_pan(cx);
+                        }),
+                    )
+                    .on_mouse_up_out(
+                        MouseButton::Left,
+                        cx.listener(|this, _event: &MouseUpEvent, _window, cx| {
+                            this.end_image_pan(cx);
+                        }),
+                    )
+                    .on_mouse_up_out(
+                        MouseButton::Middle,
+                        cx.listener(|this, _event: &MouseUpEvent, _window, cx| {
+                            this.end_image_pan(cx);
+                        }),
+                    );
                 let image_body = match self.image_zoom {
                     ImageZoom::Fit => container.overflow_hidden().child(
                         img(image.image.clone())
@@ -1062,6 +1161,12 @@ mod tests {
     fn image_zoom_keeps_the_point_under_the_pointer_stationary() {
         assert_eq!(image_scroll_offset_after_zoom(100.0, 0.0, 2.0), -100.0);
         assert_eq!(image_scroll_offset_after_zoom(80.0, -20.0, 1.5), -70.0);
+    }
+
+    #[test]
+    fn image_pan_tracks_pointer_delta_from_the_drag_origin() {
+        assert_eq!(image_scroll_offset_after_pan(100.0, -20.0, 130.0), 10.0);
+        assert_eq!(image_scroll_offset_after_pan(40.0, -60.0, 20.0), -80.0);
     }
 
     #[test]
