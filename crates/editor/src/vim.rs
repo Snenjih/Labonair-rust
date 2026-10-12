@@ -252,7 +252,12 @@ impl Vim {
                 VimResponse::ok()
             }
             VimKey::Enter => {
-                doc.insert("\n");
+                let unit = if self.options.expandtab {
+                    " ".repeat(self.options.shiftwidth.max(1))
+                } else {
+                    "\t".to_string()
+                };
+                doc.execute_edit(EditIntent::AutoIndent { unit });
                 VimResponse::ok()
             }
             VimKey::Backspace => {
@@ -1693,6 +1698,19 @@ mod tests {
         assert_eq!(document.text(), "<main></main>");
         assert_eq!(document.cursor, Position::new(0, 6));
         assert_eq!(vim.mode(), VimMode::Insert);
+    }
+
+    #[test]
+    fn insert_mode_continues_markdown_lists_on_enter() {
+        let mut document = Document::from_file("notes.md".into(), "- first", 0);
+        document.set_caret(Position::new(0, 7), false);
+        let mut vim = Vim::default();
+
+        vim.on_key(&mut document, VimKey::Char('i'));
+        vim.on_key(&mut document, VimKey::Enter);
+
+        assert_eq!(document.text(), "- first\n- ");
+        assert_eq!(document.cursor, Position::new(1, 2));
     }
 
     #[test]

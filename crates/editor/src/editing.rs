@@ -1077,6 +1077,11 @@ impl Document {
             .iter()
             .map(|selection| {
                 let range = selection.range().resolve(&snapshot);
+                if self.language == Language::Markdown && range.is_empty() {
+                    if let Some(target) = markdown_list_continuation(&snapshot, range.start) {
+                        return target;
+                    }
+                }
                 let indentation = auto_indent(&text, range.start, unit);
                 (range, format!("\n{indentation}"))
             })
@@ -1785,6 +1790,66 @@ pub fn auto_indent(text: &str, offset: usize, unit: &str) -> String {
     }
 }
 
+fn markdown_list_continuation(
+    snapshot: &BufferSnapshot,
+    caret: usize,
+) -> Option<(TextRange, String)> {
+    let position = snapshot.byte_to_position(caret);
+    if caret != snapshot.line_end_byte(position.line) {
+        return None;
+    }
+    let line = snapshot.line(position.line);
+    let indentation_len = line.len() - line.trim_start_matches([' ', '\t']).len();
+    let indentation = &line[..indentation_len];
+    let content = &line[indentation_len..];
+    let (marker, item_text) = markdown_list_marker(content)?;
+    if item_text.trim().is_empty() {
+        let marker_start = snapshot.line_start_byte(position.line) + indentation_len;
+        return Some((
+            TextRange::new(marker_start, caret),
+            format!("\n{indentation}"),
+        ));
+    }
+    Some((
+        TextRange::new(caret, caret),
+        format!("\n{indentation}{marker}"),
+    ))
+}
+
+fn markdown_list_marker(content: &str) -> Option<(String, &str)> {
+    for marker in ["- ", "* ", "+ ", "> "] {
+        if let Some(item_text) = content.strip_prefix(marker) {
+            return Some((marker.to_string(), item_text));
+        }
+    }
+    if matches!(content, "-" | "*" | "+" | ">") {
+        return Some((format!("{content} "), ""));
+    }
+
+    let digits_end = content
+        .char_indices()
+        .find_map(|(index, character)| (!character.is_ascii_digit()).then_some(index))
+        .unwrap_or(content.len());
+    if digits_end == 0 {
+        return None;
+    }
+    let digits = &content[..digits_end];
+    let suffix = &content[digits_end..];
+    for ending in [". ", ") "] {
+        if let Some(item_text) = suffix.strip_prefix(ending) {
+            let number = digits.parse::<u64>().ok()?;
+            return Some((format!("{}{}", number.saturating_add(1), ending), item_text));
+        }
+    }
+    for ending in ['.', ')'] {
+        if suffix == ending.to_string() {
+            let number = digits.parse::<u64>().ok()?;
+            return Some((format!("{}{} ", number.saturating_add(1), ending), ""));
+        }
+    }
+    None
+}
+
 fn matching_pair(ch: char) -> Option<char> {
     match ch {
         '(' => Some(')'),
@@ -2414,6 +2479,35 @@ mod tests {
         assert_eq!(document.cursor, Position::new(1, 4));
         document.undo();
         assert_eq!(document.text(), "  if {");
+    }
+
+    #[test]
+    fn markdown_enter_continues_bullets_and_increments_numbered_items() {
+        let mut bullet = Document::from_file("notes.md".into(), "  - first", 0);
+        bullet.set_caret(Position::new(0, 9), false);
+        bullet.execute_edit(EditIntent::AutoIndent { unit: "  ".into() });
+        assert_eq!(bullet.text(), "  - first\n  - ");
+        assert_eq!(bullet.cursor, Position::new(1, 4));
+
+        let mut numbered = Document::from_file("notes.md".into(), "8. item", 0);
+        numbered.set_caret(Position::new(0, 7), false);
+        numbered.execute_edit(EditIntent::AutoIndent { unit: "  ".into() });
+        assert_eq!(numbered.text(), "8. item\n9. ");
+        assert_eq!(numbered.cursor, Position::new(1, 3));
+    }
+
+    #[test]
+    fn markdown_enter_exits_an_empty_list_item() {
+        let mut document = Document::from_file("notes.md".into(), "  - ", 0);
+        document.set_caret(Position::new(0, 4), false);
+        document.execute_edit(EditIntent::AutoIndent { unit: "  ".into() });
+        assert_eq!(document.text(), "  \n  ");
+        assert_eq!(document.cursor, Position::new(1, 2));
+
+        let mut plain_text = Document::from_file("notes.txt".into(), "- item", 0);
+        plain_text.set_caret(Position::new(0, 6), false);
+        plain_text.execute_edit(EditIntent::AutoIndent { unit: "  ".into() });
+        assert_eq!(plain_text.text(), "- item\n");
     }
 
     #[test]
