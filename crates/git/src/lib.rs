@@ -316,6 +316,15 @@ pub trait GitGraphService: Send + Sync {
         session_id: Option<String>,
         skip: Option<usize>,
     ) -> GitFuture<Vec<CommitInfo>>;
+    /// History of one file, following renames when Git can identify them.
+    fn file_log(
+        &self,
+        path: String,
+        file: String,
+        limit: Option<u32>,
+        session_id: Option<String>,
+        skip: Option<usize>,
+    ) -> GitFuture<Vec<CommitInfo>>;
     fn commit_numstat(
         &self,
         path: String,

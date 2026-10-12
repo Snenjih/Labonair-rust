@@ -72,10 +72,40 @@ impl GitGraphService for GitGraphTransportService {
         Box::pin(async move {
             super::git_get_log(
                 path,
-                limit,
-                all_branches,
-                session_id,
-                skip,
+                super::GitLogRequest {
+                    limit,
+                    all_branches,
+                    session_id,
+                    skip,
+                    file: None,
+                },
+                &ssh_state,
+                events.clone(),
+            )
+            .await
+        })
+    }
+
+    fn file_log(
+        &self,
+        path: String,
+        file: String,
+        limit: Option<u32>,
+        session_id: Option<String>,
+        skip: Option<usize>,
+    ) -> GitFuture<Vec<CommitInfo>> {
+        let ssh_state = self.ssh_state.clone();
+        let events = self.events.clone();
+        Box::pin(async move {
+            super::git_get_log(
+                path,
+                super::GitLogRequest {
+                    limit,
+                    all_branches: false,
+                    session_id,
+                    skip,
+                    file: Some(file),
+                },
                 &ssh_state,
                 events.clone(),
             )
@@ -192,10 +222,13 @@ impl GitService for GitTransportService {
         Box::pin(async move {
             super::git_get_log(
                 path,
-                limit,
-                all_branches,
-                session_id,
-                skip,
+                super::GitLogRequest {
+                    limit,
+                    all_branches,
+                    session_id,
+                    skip,
+                    file: None,
+                },
                 &ssh_state,
                 events.clone(),
             )

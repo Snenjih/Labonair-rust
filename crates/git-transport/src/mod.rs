@@ -992,37 +992,42 @@ pub async fn git_continue(
 }
 
 /// Returns the commit log.
-pub async fn git_get_log(
+pub(crate) struct GitLogRequest {
+    pub limit: Option<u32>,
+    pub all_branches: bool,
+    pub session_id: Option<String>,
+    pub skip: Option<usize>,
+    /// Relative pathspec; when present Git follows that file across renames.
+    pub file: Option<String>,
+}
+
+pub(crate) async fn git_get_log(
     path: String,
-    limit: Option<u32>,
-    all_branches: bool,
-    session_id: Option<String>,
-    skip: Option<usize>,
+    request: GitLogRequest,
     sftp_state: &SshState,
     events: EventBus,
 ) -> Result<Vec<CommitInfo>, String> {
     // Remote page size defaults lower than local's 500 — a single exec must
     // finish within the session's existing 15s timeout, and remote round-trip
     // + remote CPU cost is higher per commit than a local process.
-    let default_limit = if session_id.is_some() { 200 } else { 500 };
-    let n = limit.unwrap_or(default_limit).to_string();
-    let skip_str = skip.map(|s| s.to_string());
+    let default_limit = if request.session_id.is_some() {
+        200
+    } else {
+        500
+    };
+    let n = request.limit.unwrap_or(default_limit).to_string();
+    let skip_str = request.skip.map(|s| s.to_string());
     let format = "--format=%x1e%H%x00%P%x00%an%x00%ae%x00%at%x00%s%x00%D".to_string();
 
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
+    let executor = resolve_executor(path, request.session_id, sftp_state.clone(), events.clone());
 
-    let mut args: Vec<&str> = vec!["log"];
-    if all_branches {
-        args.push("--all");
-    }
-    if let Some(ref s) = skip_str {
-        args.push("--skip");
-        args.push(s);
-    }
-    args.push("-n");
-    args.push(&n);
-    args.push(&format);
-    args.push("--shortstat");
+    let args = git_log_arguments(
+        &n,
+        request.all_branches,
+        skip_str.as_deref(),
+        &format,
+        request.file.as_deref(),
+    );
 
     let raw = executor.run(&args).await?;
 
@@ -1089,6 +1094,28 @@ pub async fn git_get_log(
     }
 
     Ok(commits)
+}
+
+fn git_log_arguments<'a>(
+    limit: &'a str,
+    all_branches: bool,
+    skip: Option<&'a str>,
+    format: &'a str,
+    file: Option<&'a str>,
+) -> Vec<&'a str> {
+    let mut args = vec!["log"];
+    if all_branches {
+        args.push("--all");
+    }
+    if let Some(skip) = skip {
+        args.push("--skip");
+        args.push(skip);
+    }
+    args.extend(["-n", limit, format, "--shortstat"]);
+    if let Some(file) = file {
+        args.extend(["--follow", "--", file]);
+    }
+    args
 }
 
 /// Returns the full detail (message + stat) of a single commit.
@@ -1742,6 +1769,22 @@ mod tests {
     fn shortstat_handles_missing_fields() {
         assert_eq!(parse_shortstat("1 file changed, 1 insertion(+)"), (1, 1, 0));
         assert_eq!(parse_shortstat(""), (0, 0, 0));
+    }
+
+    #[test]
+    fn file_history_log_uses_follow_and_a_literal_pathspec() {
+        let args = git_log_arguments(
+            "20",
+            false,
+            Some("3"),
+            "--format=%H",
+            Some("--looks-like-an-option.rs"),
+        );
+        assert_eq!(
+            &args[args.len() - 3..],
+            ["--follow", "--", "--looks-like-an-option.rs"]
+        );
+        assert_eq!(&args[..4], ["log", "--skip", "3", "-n"]);
     }
 
     #[test]

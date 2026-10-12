@@ -4321,6 +4321,23 @@ impl Workspace {
         self.git_graph = Some(view);
     }
 
+    fn ensure_git_graph_view(&mut self, cx: &mut Context<Self>) -> Entity<GitGraphView> {
+        if let Some(view) = &self.git_graph {
+            return view.clone();
+        }
+        let view = cx.new(|cx| {
+            GitGraphView::new(
+                self.git_graph_service.clone(),
+                self.tokio.clone(),
+                self.theme.clone(),
+                cx,
+            )
+        });
+        cx.observe(&view, |_, _, cx| cx.notify()).detach();
+        self.git_graph = Some(view.clone());
+        view
+    }
+
     /// The app's [`PanelRegistry`](labonair_panel::PanelRegistry). Populated
     /// once by `labonair_shell::register_builtin_panels` right after the
     /// `Workspace` is constructed; read by the shell's dock rendering and
@@ -4695,18 +4712,8 @@ impl Workspace {
     }
 
     pub fn open_git_graph_tab(&mut self, cx: &mut Context<Self>) {
-        if self.git_graph.is_none() {
-            let view = cx.new(|cx| {
-                GitGraphView::new(
-                    self.git_graph_service.clone(),
-                    self.tokio.clone(),
-                    self.theme.clone(),
-                    cx,
-                )
-            });
-            cx.observe(&view, |_, _, cx| cx.notify()).detach();
-            self.git_graph = Some(view);
-        }
+        let view = self.ensure_git_graph_view(cx);
+        view.update(cx, |graph, cx| graph.clear_file_history(cx));
         let existing = self
             .tabs
             .read(cx)
@@ -4714,11 +4721,46 @@ impl Workspace {
             .iter()
             .find(|t| t.kind == TabKind::GitGraph)
             .map(|t| t.id);
-        self.tabs.update(cx, |s, cx| match existing {
-            Some(id) => s.set_active(id, cx),
-            None => {
-                s.open(TabKind::GitGraph, TabData::default(), cx);
-            }
+        self.tabs.update(cx, |s, cx| {
+            let id = match existing {
+                Some(id) => {
+                    s.set_active(id, cx);
+                    id
+                }
+                None => s.open(TabKind::GitGraph, TabData::default(), cx),
+            };
+            s.set_custom_title(id, None, cx);
+        });
+    }
+
+    /// Open the Git Graph tab scoped to the history of one local editor file.
+    pub fn open_file_history_tab(&mut self, path: String, cx: &mut Context<Self>) {
+        let graph = self.ensure_git_graph_view(cx);
+        if let Err(error) = graph.update(cx, |graph, cx| graph.set_file_history(path.clone(), cx)) {
+            labonair_notifications::notify_err::<()>("File History", Err(error), cx);
+            return;
+        }
+        let title = Path::new(&path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| format!("History · {name}"))
+            .unwrap_or_else(|| "File History".to_string());
+        let existing = self
+            .tabs
+            .read(cx)
+            .tabs()
+            .iter()
+            .find(|tab| tab.kind == TabKind::GitGraph)
+            .map(|tab| tab.id);
+        self.tabs.update(cx, |tabs, cx| {
+            let id = match existing {
+                Some(id) => {
+                    tabs.set_active(id, cx);
+                    id
+                }
+                None => tabs.open(TabKind::GitGraph, TabData::default(), cx),
+            };
+            tabs.set_custom_title(id, Some(title), cx);
         });
     }
 
@@ -8216,6 +8258,21 @@ impl Workspace {
                         }),
                 );
             }
+            items.push(
+                MenuItem::new("open-file-history", "File History")
+                    .icon(IconName::GitCompare)
+                    .on_click({
+                        let view = view.clone();
+                        let path = path.to_string();
+                        move |_, _, cx| {
+                            view.update(cx, |this, cx| {
+                                this.context_menu = None;
+                                this.open_file_history_tab(path.clone(), cx);
+                                cx.notify();
+                            });
+                        }
+                    }),
+            );
             items.push(MenuItem::separator());
         }
         if kind == Some(TabKind::Editor) && is_peek {
