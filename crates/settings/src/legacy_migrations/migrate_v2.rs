@@ -474,6 +474,7 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_auto_close_brackets: Some(true),
         editor_auto_surround: Some(true),
         editor_drag_and_drop_selection: Some(true),
+        editor_multi_cursor_modifier: defaults.editor_multi_cursor_modifier,
         editor_mouse_wheel_zoom: Some(false),
         editor_scroll_sensitivity: Some(1.0),
         editor_fast_scroll_sensitivity: Some(4.0),

@@ -45,6 +45,24 @@ impl crate::MergeFrom for VimCursorShape {
     }
 }
 
+/// Pointer modifier used to add cursors or start a rectangular selection.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum MultiCursorModifier {
+    #[default]
+    Alt,
+    Control,
+    Platform,
+}
+
+impl crate::MergeFrom for MultiCursorModifier {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
 /// Active editor input mode. The value is stored as `editorMode` so the modal
 /// modes remain mutually exclusive in settings and the editor UI.
 #[derive(
@@ -307,6 +325,8 @@ pub struct EditorContent {
     pub editor_auto_close_brackets: Option<bool>,
     pub editor_auto_surround: Option<bool>,
     pub editor_drag_and_drop_selection: Option<bool>,
+    /// Modifier used for additional cursors and rectangular selections.
+    pub editor_multi_cursor_modifier: Option<MultiCursorModifier>,
     pub editor_mouse_wheel_zoom: Option<bool>,
     pub editor_scroll_sensitivity: Option<f32>,
     pub editor_fast_scroll_sensitivity: Option<f32>,
@@ -426,6 +446,7 @@ impl EditorContent {
             editor_auto_close_brackets: Some(true),
             editor_auto_surround: Some(true),
             editor_drag_and_drop_selection: Some(true),
+            editor_multi_cursor_modifier: Some(MultiCursorModifier::Alt),
             editor_mouse_wheel_zoom: Some(false),
             editor_scroll_sensitivity: Some(1.0),
             editor_fast_scroll_sensitivity: Some(4.0),
@@ -593,6 +614,26 @@ mod tests {
 
         let value = serde_json::to_value(parsed).expect("serialize editor preferences");
         assert_eq!(value["editorDragAndDropSelection"], false);
+    }
+
+    #[test]
+    fn multi_cursor_modifier_defaults_to_alt_and_uses_typed_values() {
+        let defaults = EditorContent::defaults();
+        assert_eq!(
+            defaults.editor_multi_cursor_modifier,
+            Some(MultiCursorModifier::Alt)
+        );
+
+        let parsed: EditorContent = serde_json::from_value(serde_json::json!({
+            "editorMultiCursorModifier": "control"
+        }))
+        .expect("parse multi-cursor modifier");
+        assert_eq!(
+            parsed.editor_multi_cursor_modifier,
+            Some(MultiCursorModifier::Control)
+        );
+        let value = serde_json::to_value(parsed).expect("serialize multi-cursor modifier");
+        assert_eq!(value["editorMultiCursorModifier"], "control");
     }
 
     #[test]

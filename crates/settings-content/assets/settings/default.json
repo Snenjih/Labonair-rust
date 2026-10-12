@@ -93,6 +93,7 @@
     "editorAutoCloseBrackets": true,
     "editorAutoSurround": true,
     "editorDragAndDropSelection": true,
+    "editorMultiCursorModifier": "alt",
     "editorMouseWheelZoom": false,
     "editorScrollSensitivity": 1.0,
     "editorFastScrollSensitivity": 4.0,

@@ -556,6 +556,17 @@ pub fn all_fields() -> Vec<AnyField> {
             "Move a selected range by dragging it to another place in the editor."
         ),
         field!(
+            editor.editor_multi_cursor_modifier,
+            "editorMultiCursorModifier",
+            Select(&[
+                ("alt", "Alt"),
+                ("control", "Control"),
+                ("platform", "Platform key (Command / Super)")
+            ]),
+            "Multi-cursor modifier",
+            "Hold this modifier while clicking or dragging to add cursors or select a rectangle."
+        ),
+        field!(
             editor.editor_mouse_wheel_zoom,
             "editorMouseWheelZoom",
             Switch,
@@ -1769,6 +1780,26 @@ mod tests {
         let mut content = SettingsContent::default();
         assert!((field.set)(&mut content, Value::Bool(false)));
         assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn editor_multi_cursor_modifier_is_an_exposed_select() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorMultiCursorModifier")
+            .expect("editor multi-cursor modifier setting");
+        match field.control {
+            FieldControl::Select(options) => {
+                assert!(options.iter().any(|(value, _)| *value == "alt"));
+                assert!(options.iter().any(|(value, _)| *value == "control"));
+                assert!(options.iter().any(|(value, _)| *value == "platform"));
+            }
+            _ => panic!("multi-cursor modifier should use a select control"),
+        }
+
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::String("control".into())));
+        assert_eq!((field.get)(&content), Some(Value::String("control".into())));
     }
 
     #[test]

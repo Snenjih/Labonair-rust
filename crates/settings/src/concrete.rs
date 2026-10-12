@@ -15,7 +15,7 @@ use labonair_settings_content::{
         EditorContent, EditorCursorStyle, EditorDiagnosticMaxSeverity, EditorDocumentColorMode,
         EditorMinimapCurrentLineHighlight, EditorMinimapDisplayIn, EditorMinimapThumb,
         EditorMinimapThumbBorder, EditorMinimapVisibility, EditorModalMode,
-        EditorScrollbarVisibility, SearchSeedBehavior, VimCursorShape,
+        EditorScrollbarVisibility, MultiCursorModifier, SearchSeedBehavior, VimCursorShape,
     },
     file_manager::{default_sftp_columns, FileManagerContent, SftpColumn},
     general::{GeneralContent, StartupTab, ThemePref},
@@ -373,6 +373,12 @@ impl EditorSettings {
 
     pub fn drag_and_drop_selection(&self) -> bool {
         self.0.editor_drag_and_drop_selection.unwrap_or(true)
+    }
+
+    pub fn multi_cursor_modifier(&self) -> MultiCursorModifier {
+        self.0
+            .editor_multi_cursor_modifier
+            .unwrap_or(MultiCursorModifier::Alt)
     }
 
     pub fn mouse_wheel_zoom(&self) -> bool {
@@ -1141,6 +1147,19 @@ mod tests {
         let mut content = SettingsContent::default();
         content.editor.editor_drag_and_drop_selection = Some(false);
         assert!(!EditorSettings::from_settings(&content).drag_and_drop_selection());
+    }
+
+    #[test]
+    fn editor_multi_cursor_modifier_defaults_to_alt_and_can_be_changed() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(defaults.multi_cursor_modifier(), MultiCursorModifier::Alt);
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_multi_cursor_modifier = Some(MultiCursorModifier::Platform);
+        assert_eq!(
+            EditorSettings::from_settings(&content).multi_cursor_modifier(),
+            MultiCursorModifier::Platform
+        );
     }
 
     #[test]

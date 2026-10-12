@@ -35,7 +35,7 @@ use labonair_settings::content::editor::{
     EditorCursorStyle, EditorDiagnosticMaxSeverity, EditorDocumentColorMode,
     EditorMinimapCurrentLineHighlight, EditorMinimapDisplayIn, EditorMinimapThumb,
     EditorMinimapThumbBorder, EditorMinimapVisibility, EditorModalMode, EditorScrollbarVisibility,
-    SearchSeedBehavior, VimCursorShape,
+    MultiCursorModifier, SearchSeedBehavior, VimCursorShape,
 };
 use labonair_settings::{EditorSettings, Settings as _, SettingsStore};
 
@@ -6971,14 +6971,14 @@ impl EditorView {
             .unwrap_or_else(|| Position::new(snapshot.line_count().saturating_sub(1), 0))
     }
 
-    fn begin_selection_drag(&mut self, point: Point<Pixels>, shift: bool, alt: bool) {
+    fn begin_selection_drag(&mut self, point: Point<Pixels>, shift: bool, multi_cursor: bool) {
         let previous = self.doc.selection_set();
         let snapshot = self.doc.snapshot();
         let coordinates = self.display_coordinates_at(point).unwrap_or((0, 0));
         let position = self.position_at(point);
         let head = Anchor::new(snapshot.position_to_byte(position), AnchorAffinity::After);
 
-        let (preserved, anchor) = if shift && !alt {
+        let (preserved, anchor) = if shift && !multi_cursor {
             let primary_index = previous.primary_index();
             let anchor = previous.primary().anchor;
             let preserved = previous
@@ -6988,7 +6988,7 @@ impl EditorView {
                 .filter_map(|(index, selection)| (index != primary_index).then_some(*selection))
                 .collect();
             (preserved, anchor)
-        } else if alt {
+        } else if multi_cursor {
             (
                 previous.selections().to_vec(),
                 Anchor::new(head.offset(), AnchorAffinity::Before),
@@ -7008,15 +7008,15 @@ impl EditorView {
             previous,
             preserved,
             anchor,
-            columnar: alt,
+            columnar: multi_cursor,
             origin_visual_row: coordinates.0,
             origin_display_column: coordinates.1,
         });
     }
 
-    fn begin_text_drag(&mut self, point: Point<Pixels>, shift: bool, alt: bool) -> bool {
+    fn begin_text_drag(&mut self, point: Point<Pixels>, shift: bool, multi_cursor: bool) -> bool {
         self.text_drag = None;
-        if shift || alt || !self.prefs.drag_and_drop_selection() {
+        if shift || multi_cursor || !self.prefs.drag_and_drop_selection() {
             return false;
         }
 
@@ -12123,7 +12123,13 @@ impl Render for EditorView {
                     {
                         return;
                     }
-                    if ev.modifiers.platform || ev.modifiers.control {
+                    let multi_cursor = multi_cursor_modifier_active(
+                        this.prefs.multi_cursor_modifier(),
+                        ev.modifiers.alt,
+                        ev.modifiers.control,
+                        ev.modifiers.platform,
+                    );
+                    if (ev.modifiers.platform || ev.modifiers.control) && !multi_cursor {
                         let position = this.position_at(ev.position);
                         let target = this
                             .document_link_at_position(position)
@@ -12138,12 +12144,8 @@ impl Render for EditorView {
                         }
                     }
                     window.focus(&this.focus_handle);
-                    if !this.begin_text_drag(ev.position, ev.modifiers.shift, ev.modifiers.alt) {
-                        this.begin_selection_drag(
-                            ev.position,
-                            ev.modifiers.shift,
-                            ev.modifiers.alt,
-                        );
+                    if !this.begin_text_drag(ev.position, ev.modifiers.shift, multi_cursor) {
+                        this.begin_selection_drag(ev.position, ev.modifiers.shift, multi_cursor);
                     }
                     cx.stop_propagation();
                     cx.notify();
@@ -12347,6 +12349,19 @@ fn effective_cursor_style(prefs: &EditorSettings, vim_mode: Option<VimMode>) -> 
     }
 }
 
+fn multi_cursor_modifier_active(
+    modifier: MultiCursorModifier,
+    alt: bool,
+    control: bool,
+    platform: bool,
+) -> bool {
+    match modifier {
+        MultiCursorModifier::Alt => alt,
+        MultiCursorModifier::Control => control,
+        MultiCursorModifier::Platform => platform,
+    }
+}
+
 fn notify(cx: &mut App, title: &str, body: &str) {
     let (title, body) = (title.to_string(), body.to_string());
     notification_center(cx).update(cx, |center, cx| {
@@ -12499,6 +12514,34 @@ mod tests {
             effective_cursor_style(&prefs, Some(VimMode::Replace)),
             EditorCursorStyle::Underline
         );
+    }
+
+    #[test]
+    fn multi_cursor_modifier_matches_only_its_configured_input() {
+        assert!(multi_cursor_modifier_active(
+            MultiCursorModifier::Alt,
+            true,
+            false,
+            false
+        ));
+        assert!(!multi_cursor_modifier_active(
+            MultiCursorModifier::Alt,
+            false,
+            true,
+            true
+        ));
+        assert!(multi_cursor_modifier_active(
+            MultiCursorModifier::Control,
+            false,
+            true,
+            false
+        ));
+        assert!(multi_cursor_modifier_active(
+            MultiCursorModifier::Platform,
+            false,
+            false,
+            true
+        ));
     }
 
     #[test]
@@ -13007,6 +13050,42 @@ mod tests {
                 assert!(this.doc.undo_selection());
                 assert_eq!(this.doc.selection_set().len(), 1);
                 assert_eq!(this.doc.cursor, Position::new(0, 1));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn configured_control_click_adds_a_second_cursor(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            install_editor_prefs(cx, |editor| {
+                editor.editor_multi_cursor_modifier = Some(MultiCursorModifier::Control);
+            });
+        });
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.apply_prefs(cx);
+                this.metrics = (10.0, 18.0);
+                this.gutter_width = 0.0;
+                this.bounds = Some(gpui::Bounds {
+                    origin: gpui::Point::default(),
+                    size: gpui::Size {
+                        width: px(120.0),
+                        height: px(80.0),
+                    },
+                });
+                this.doc = Document::from_file("test.txt".into(), "abc\ndef", 1);
+                this.doc.set_caret(Position::new(0, 1), false);
+
+                let multi_cursor = multi_cursor_modifier_active(
+                    this.prefs.multi_cursor_modifier(),
+                    false,
+                    true,
+                    false,
+                );
+                this.begin_selection_drag(gpui::point(px(20.0), px(18.0)), false, multi_cursor);
+                this.finish_selection_drag();
+                assert_eq!(this.doc.selection_set().len(), 2);
             });
         });
     }
