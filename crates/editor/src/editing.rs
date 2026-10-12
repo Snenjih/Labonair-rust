@@ -908,10 +908,13 @@ impl Document {
             let range = selection.range().resolve(&snapshot);
             let next = if range.is_empty() {
                 word_range(&snapshot, range.start)
+                    .or_else(|| enclosing_bracket_range(&snapshot, range))
                     .or_else(|| line_range(&snapshot, range.start))
                     .unwrap_or(range)
             } else {
-                line_range(&snapshot, range.start).unwrap_or(range)
+                enclosing_bracket_range(&snapshot, range)
+                    .or_else(|| line_range(&snapshot, range.start))
+                    .unwrap_or(range)
             };
             expanded.push(Selection {
                 anchor: Anchor::new(next.start, AnchorAffinity::Before),
@@ -941,7 +944,14 @@ impl Document {
             .iter()
             .map(|selection| {
                 let range = selection.range().resolve(&snapshot);
-                Selection::collapsed(Anchor::new(range.start, AnchorAffinity::After))
+                if let Some(inner) = inner_bracket_range(&snapshot, range) {
+                    Selection {
+                        anchor: Anchor::new(inner.start, AnchorAffinity::Before),
+                        head: Anchor::new(inner.end, AnchorAffinity::After),
+                    }
+                } else {
+                    Selection::collapsed(Anchor::new(range.start, AnchorAffinity::After))
+                }
             })
             .collect();
         self.set_selection_set(SelectionSet::from_selections(
@@ -1689,6 +1699,42 @@ fn line_range(snapshot: &BufferSnapshot, at: usize) -> Option<TextRange> {
     })
 }
 
+fn enclosing_bracket_range(snapshot: &BufferSnapshot, range: TextRange) -> Option<TextRange> {
+    let text = snapshot.text();
+    let mut best = None;
+    for (offset, character) in text[..range.start].char_indices() {
+        if !matches!(character, '(' | '[' | '{') {
+            continue;
+        }
+        let Some(close) = matching_bracket(&text, offset) else {
+            continue;
+        };
+        let candidate = TextRange::new(offset, close + 1);
+        if candidate.start <= range.start
+            && candidate.end >= range.end
+            && candidate.len() > range.len()
+            && best.is_none_or(|current: TextRange| candidate.len() < current.len())
+        {
+            best = Some(candidate);
+        }
+    }
+    best
+}
+
+fn inner_bracket_range(snapshot: &BufferSnapshot, range: TextRange) -> Option<TextRange> {
+    if range.len() < 2 {
+        return None;
+    }
+    let text = snapshot.text();
+    let open = *text.as_bytes().get(range.start)? as char;
+    if !matches!(open, '(' | '[' | '{')
+        || matching_bracket(&text, range.start) != Some(range.end - 1)
+    {
+        return None;
+    }
+    Some(TextRange::new(range.start + 1, range.end - 1))
+}
+
 pub fn matching_bracket(text: &str, offset: usize) -> Option<usize> {
     let bytes = text.as_bytes();
     let bracket = *bytes.get(offset)? as char;
@@ -2013,6 +2059,22 @@ mod tests {
         let session = SnippetSession::parse("fn ${1:name}(${2})");
         assert_eq!(session.text, "fn name()");
         assert_eq!(session.placeholders.len(), 2);
+    }
+
+    #[test]
+    fn selection_expands_through_enclosing_brackets_and_shrinks_to_inner_text() {
+        let mut document = doc("call(alpha)");
+        document.set_caret(Position::new(0, 7), false);
+
+        document.execute_edit(EditIntent::ExpandSelection);
+        assert_eq!(document.selected_text().as_deref(), Some("alpha"));
+        document.execute_edit(EditIntent::ExpandSelection);
+        assert_eq!(document.selected_text().as_deref(), Some("(alpha)"));
+        document.execute_edit(EditIntent::ShrinkSelection);
+        assert_eq!(document.selected_text().as_deref(), Some("alpha"));
+        document.execute_edit(EditIntent::ShrinkSelection);
+        assert!(document.selected_text().is_none());
+        assert_eq!(document.cursor, Position::new(0, 5));
     }
 
     #[test]
