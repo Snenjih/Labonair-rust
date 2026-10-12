@@ -116,6 +116,14 @@ impl CommandDispatcher {
         self.owner_handlers.handler(id)
     }
 
+    /// Whether a registered command has executable behavior at the
+    /// composition boundary. The keymap adapter uses this before converting a
+    /// feature-owned command into the generic GPUI action.
+    pub(crate) fn has_execution_handler(&self, id: CommandId) -> bool {
+        self.owner_handlers.handler(id).is_some()
+            || self.commands.iter().any(|command| command.id == id)
+    }
+
     /// Mutable assembly boundary for dynamic palette action contributions.
     pub(crate) fn palette_action_handlers_mut(&mut self) -> &mut PaletteActionHandlerRegistry {
         &mut self.palette_actions
@@ -214,6 +222,12 @@ pub(crate) fn attach_action_handlers(
             }));
         };
     }
+
+    el = el.on_action(
+        cx.listener(|this, action: &menu::RunRegisteredCommand, window, cx| {
+            this.dispatch_command(action.command, window, cx);
+        }),
+    );
 
     on!(menu::NewTerminalTab => CommandId::NewTerminalTab);
     on!(menu::OpenProject => CommandId::OpenProject);

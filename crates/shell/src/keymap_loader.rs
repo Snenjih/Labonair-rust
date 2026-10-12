@@ -52,7 +52,7 @@ fn display_map(effective: &[EffectiveBinding], registry: &CommandDispatcher) -> 
 pub(crate) fn reload_and_apply(cx: &mut App, registry: &CommandDispatcher) {
     let snapshot = labonair_keymap::adapter::load_descriptors(registry.iter());
     let effective = snapshot.effective_bindings;
-    crate::menu::apply_keymap(cx, &effective);
+    crate::menu::apply_keymap(cx, &effective, registry);
     cx.set_global(display_map(&effective, registry));
 }
 

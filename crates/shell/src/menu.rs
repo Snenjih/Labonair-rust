@@ -17,9 +17,9 @@
 //! tab actually has a (splittable / split) workspace, so those items grey out
 //! on their own — no explicit `set_menus` re-sync needed.
 //!
-//! Items for features that don't exist yet (SSH, SFTP, AI, editor, host
-//! manager) have no handler and therefore render disabled, per the task
-//! note; their phase wires a handler in and they light up.
+//! Feature-owned commands use a generic typed GPUI action that forwards their
+//! stable [`CommandId`] to the registered owner handler. The shell carries the
+//! action across the keymap boundary but does not implement feature behavior.
 
 use gpui::{
     actions, Action, App, DummyKeyboardMapper, KeyBinding, KeyBindingContextPredicate, Keystroke,
@@ -30,6 +30,15 @@ use std::rc::Rc;
 use labonair_command_palette_core::CommandId;
 use labonair_keymap::file::EffectiveBinding;
 use labonair_notifications::{notification_center, Notification};
+
+/// GPUI keymap action that forwards a stable registered command identity to
+/// its owner-provided handler. Shell only carries the identity across GPUI's
+/// action boundary; feature behavior remains with the registered owner.
+#[derive(Clone, Debug, PartialEq, gpui::Action)]
+#[action(namespace = labonair, no_json)]
+pub struct RunRegisteredCommand {
+    pub command: CommandId,
+}
 
 actions!(
     labonair,
@@ -144,10 +153,14 @@ fn notify(cx: &mut App, title: &'static str, body: &'static str) {
 /// `keymap.json` takes effect with no restart. GPUI derives the native
 /// menu-item accelerator hints from the same keymap, so the menu stays in
 /// sync automatically.
-pub fn apply_keymap(cx: &mut App, effective: &[EffectiveBinding]) {
+pub(crate) fn apply_keymap(
+    cx: &mut App,
+    effective: &[EffectiveBinding],
+    commands: &crate::commands::CommandDispatcher,
+) {
     cx.clear_key_bindings();
     cx.bind_keys(fixed_bindings());
-    cx.bind_keys(bindings_from_keymap(effective));
+    cx.bind_keys(bindings_from_keymap(effective, commands));
 }
 
 /// Fixed / OS-reserved accelerators — never customizable, so they never go
@@ -164,12 +177,13 @@ fn fixed_bindings() -> Vec<KeyBinding> {
     ]
 }
 
-/// Resolve a `keymap.json` action name (`CommandId::action_name()`) to the
-/// concrete `menu::` GPUI `Action` it dispatches, for the subset of commands
-/// that have a key-bindable menu action today. `None` for an action name with
-/// no concrete `Action` type (e.g. a palette-only sub-page navigator) — the
-/// caller skips + logs those instead of failing the whole keymap.
-fn action_for(name: &str) -> Option<Box<dyn Action>> {
+/// Resolve a keymap action to a GPUI action. App/window commands keep their
+/// dedicated action types; commands with a registered owner handler use the
+/// generic typed bridge. Commands without executable behavior are skipped.
+fn action_for(
+    name: &str,
+    commands: &crate::commands::CommandDispatcher,
+) -> Option<Box<dyn Action>> {
     let command = labonair_keymap::runtime::command_for_action(name)?;
     Some(match command {
         CommandId::OpenCommandPalette => Box::new(CommandPalette),
@@ -209,6 +223,7 @@ fn action_for(name: &str) -> Option<Box<dyn Action>> {
         CommandId::CheckForUpdates => Box::new(CheckForUpdates),
         CommandId::DebugCyclePanelDock => Box::new(DebugCyclePanelDock),
         CommandId::DebugToggleDockZoom => Box::new(DebugToggleDockZoom),
+        _ if commands.has_execution_handler(command) => Box::new(RunRegisteredCommand { command }),
         _ => return None,
     })
 }
@@ -219,10 +234,13 @@ fn action_for(name: &str) -> Option<Box<dyn Action>> {
 /// `KeyBinding::new` is only ever called on data already proven to parse —
 /// an entry that fails validation (bad keystroke, bad context, unknown
 /// action) is skipped with a `tracing::warn!` instead of crashing the app.
-fn bindings_from_keymap(effective: &[EffectiveBinding]) -> Vec<KeyBinding> {
+fn bindings_from_keymap(
+    effective: &[EffectiveBinding],
+    commands: &crate::commands::CommandDispatcher,
+) -> Vec<KeyBinding> {
     let mut out = Vec::with_capacity(effective.len());
     for binding in effective {
-        let Some(action) = action_for(&binding.action) else {
+        let Some(action) = action_for(&binding.action, commands) else {
             continue; // no concrete Action for this command — not key-bindable yet.
         };
         if binding
@@ -369,6 +387,7 @@ fn dock_menu() -> Vec<MenuItem> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use labonair_command_palette_core::CommandProvider as _;
 
     /// Every default-keymap binding either resolves to a concrete `Action`
     /// and loads, or is a deliberate no-op (no menu action yet) — either way
@@ -382,7 +401,8 @@ mod tests {
             labonair_keymap::file::KeybindSource::Default,
             &default,
         )]);
-        let loaded = bindings_from_keymap(&effective);
+        let commands = crate::commands::register_builtin_commands();
+        let loaded = bindings_from_keymap(&effective, &commands);
         // Every action referenced in the shipped default asset has a concrete
         // `menu::` Action in `action_for` (this test would fail loudly via
         // count mismatch if a new default binding's action were forgotten
@@ -400,14 +420,55 @@ mod tests {
             labonair_keymap::file::KeybindSource::User,
             &file,
         )]);
-        assert!(bindings_from_keymap(&effective).is_empty());
+        let commands = crate::commands::register_builtin_commands();
+        assert!(bindings_from_keymap(&effective, &commands).is_empty());
     }
 
     #[test]
     fn legacy_shortcuts_action_resolves_to_keymap_surface() {
-        assert!(action_for("settings::OpenShortcuts").is_some());
-        assert!(action_for("zed::OpenKeymap").is_some());
-        assert!(action_for(CommandId::OpenFile.action_name()).is_some());
+        let commands = crate::commands::register_builtin_commands();
+        assert!(action_for("settings::OpenShortcuts", &commands).is_some());
+        assert!(action_for("zed::OpenKeymap", &commands).is_some());
+        assert!(action_for(CommandId::OpenFile.action_name(), &commands).is_some());
+    }
+
+    #[test]
+    fn owner_registered_editor_commands_load_through_the_generic_action() {
+        let provider = labonair_editor::command_provider::EditorCommandProvider;
+        let descriptors = provider.commands();
+        let mut commands = crate::commands::CommandDispatcher::default();
+        commands.register_provider(&provider);
+        for id in labonair_editor::command_provider::EXECUTABLE_EDITOR_COMMAND_IDS {
+            let descriptor = descriptors
+                .iter()
+                .find(|descriptor| descriptor.id == *id)
+                .expect("executable Editor command has owner metadata")
+                .clone();
+            commands.register(descriptor, |_shell, _window, _cx| {});
+        }
+        let effective = labonair_keymap::runtime::defaults_from_descriptors(commands.iter())
+            .into_iter()
+            .map(|binding| EffectiveBinding {
+                keystrokes: binding.keystrokes,
+                action: binding.command.action_name().to_owned(),
+                context: binding
+                    .context
+                    .map(labonair_keymap::runtime::context_name)
+                    .map(str::to_owned),
+                source: labonair_keymap::file::KeybindSource::Default,
+            })
+            .collect::<Vec<_>>();
+        let loaded = bindings_from_keymap(&effective, &commands);
+        assert_eq!(loaded.len(), effective.len());
+
+        let action = action_for(CommandId::EditorSelectLine.action_name(), &commands)
+            .expect("registered command action");
+        assert_eq!(action.name(), RunRegisteredCommand::name_for_type());
+        assert!(action_for(
+            CommandId::EditorSelectLine.action_name(),
+            &crate::commands::CommandDispatcher::default()
+        )
+        .is_none());
     }
 
     #[test]
