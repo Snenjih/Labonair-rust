@@ -244,6 +244,15 @@ impl Document {
         self.lifecycle.path()
     }
 
+    /// Override path-based language detection for this document session.
+    pub fn set_language(&mut self, language: Language) -> bool {
+        if self.language == language {
+            return false;
+        }
+        self.language = language;
+        true
+    }
+
     pub fn file_capabilities(&self) -> Option<crate::lifecycle::FileCapabilities> {
         self.file_snapshot().map(|snapshot| snapshot.capabilities)
     }

@@ -18,9 +18,9 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     canvas, div, px, relative, AnyElement, App, AppContext, Bounds, ClickEvent, ClipboardItem,
     Context, Entity, EventEmitter, FocusHandle, Focusable, HighlightStyle, InteractiveElement,
-    IntoElement, KeyContext, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollWheelEvent, SharedString,
-    StatefulInteractiveElement, Styled, StyledText, Task, Window,
+    IntoElement, KeyContext, KeyDownEvent, ListAlignment, ListState, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollWheelEvent,
+    SharedString, StatefulInteractiveElement, Styled, StyledText, Task, Window,
 };
 use labonair_command_palette_core::CommandId;
 use labonair_filesystem::file::{
@@ -75,10 +75,10 @@ use crate::syntax_theme::EditorPalette;
 use labonair_notifications::{notification_center, Notification};
 use labonair_theme::{modal_scrim, ThemeStore};
 use labonair_ui_kit::{
-    banner, button, button_disabled, context_menu, icon_button_builder, popover_menu, text_field,
-    text_field_surface, text_input, ButtonSize, ButtonVariant, IconButtonShape, IconName,
-    InputEvent, InputState, ListItem, MenuItem, Palette, Severity, SubmenuHoverSource,
-    TextFieldState, Tooltip,
+    banner, button, button_disabled, context_menu, icon_button_builder, popover_menu,
+    select_popover, select_trigger, text_field, text_field_surface, text_input, ButtonSize,
+    ButtonVariant, IconButtonShape, IconName, InputEvent, InputState, ListItem, MenuItem, Palette,
+    SelectOption, SelectPopoverAnchor, Severity, SubmenuHoverSource, TextFieldState, Tooltip,
 };
 
 /// Editor → workspace notifications.
@@ -862,6 +862,8 @@ pub struct EditorView {
     /// or unavailable results fall back to the local symbol ranges.
     server_fold_ranges: Vec<FoldRange>,
     selection_menu_anchor: Option<Point<Pixels>>,
+    language_menu_anchor: Option<Point<Pixels>>,
+    language_list_state: ListState,
     line_ending_menu_anchor: Option<Point<Pixels>>,
     encoding_menu_anchor: Option<Point<Pixels>>,
     selection_drag: Option<EditorSelectionDrag>,
@@ -1111,6 +1113,8 @@ impl EditorView {
             folds: Vec::new(),
             server_fold_ranges: Vec::new(),
             selection_menu_anchor: None,
+            language_menu_anchor: None,
+            language_list_state: ListState::new(Language::ALL.len(), ListAlignment::Top, px(32.0)),
             line_ending_menu_anchor: None,
             encoding_menu_anchor: None,
             selection_drag: None,
@@ -2965,6 +2969,9 @@ impl EditorView {
             .map(|path| path.to_string_lossy().into_owned());
         if snapshot.file_path != path {
             return;
+        }
+        if let Some(language) = Language::from_label(&snapshot.language) {
+            self.doc.set_language(language);
         }
         self.recovery_prompt = snapshot.recovery.clone();
         self.editor_splits = if snapshot.split_tree.validate().is_ok() {
@@ -6655,16 +6662,31 @@ impl EditorView {
                 selected_chars
             ));
         }
-        let right_label = format!(
-            "{} · {} lines",
-            self.doc.language.label(),
-            snapshot.line_count()
-        );
+        let language = self.doc.language;
+        let language_trigger = select_trigger(
+            "editor-language-menu",
+            palette,
+            language.label(),
+            self.language_menu_anchor.is_some(),
+        )
+        .tooltip(|window, cx| Tooltip::new("Select language mode").build(window, cx))
+        .on_click(cx.listener(|this, event: &ClickEvent, _window, cx| {
+            this.language_menu_anchor = Some(Point {
+                x: event.position().x,
+                y: event.position().y + px(4.0),
+            });
+            cx.stop_propagation();
+            cx.notify();
+        }));
         let mut right = div()
             .flex()
             .items_center()
             .gap_2()
-            .child(SharedString::from(right_label));
+            .child(language_trigger)
+            .child(SharedString::from(format!(
+                "{} lines",
+                snapshot.line_count()
+            )));
         if self.prefs.diagnostics() && self.diagnostics_revision == Some(snapshot.revision()) {
             let diagnostics = self.language_service_state.snapshot().diagnostics;
             let (errors, warnings) = diagnostic_error_warning_counts(&diagnostics);
@@ -6780,6 +6802,52 @@ impl EditorView {
             .child(SharedString::from(left.join("  ·  ")))
             .child(right)
             .into_any_element()
+    }
+
+    fn render_language_menu(&self, palette: Palette, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let anchor = self.language_menu_anchor?;
+        let options: Vec<SelectOption> = Language::ALL
+            .iter()
+            .map(|language| (language.id().into(), language.label().into()))
+            .collect();
+        let editor = cx.entity();
+        let dismiss_editor = editor.clone();
+        let dismiss = move |_window: &mut Window, app: &mut App| {
+            dismiss_editor.update(app, |this, cx| {
+                this.language_menu_anchor = None;
+                cx.notify();
+            });
+        };
+        let on_select = move |token: &SharedString, _window: &mut Window, app: &mut App| {
+            if let Some(language) = Language::from_id(token.as_ref()) {
+                editor.update(app, |this, cx| this.set_language_mode(language, cx));
+            }
+        };
+        Some(select_popover(
+            SelectPopoverAnchor::new("editor-language", anchor, self.language_list_state.clone()),
+            palette,
+            &options,
+            self.doc.language.id(),
+            dismiss,
+            on_select,
+        ))
+    }
+
+    fn set_language_mode(&mut self, language: Language, cx: &mut Context<Self>) {
+        self.language_menu_anchor = None;
+        if !self.doc.set_language(language) {
+            cx.notify();
+            return;
+        }
+        self.close_language_service_document();
+        self.resync_syntax();
+        self.symbol_cache = None;
+        self.display_layout_cache = None;
+        self.folds.clear();
+        self.server_fold_ranges.clear();
+        self.sync_language_service_document(cx);
+        cx.emit(EditorEvent::Changed);
+        cx.notify();
     }
 
     fn render_line_ending_menu(
@@ -9083,6 +9151,7 @@ impl Render for EditorView {
             .children(self.render_language_service_status(cx))
             .child(buffer_surface)
             .children(self.render_selection_menu(ui_palette, cx))
+            .children(self.render_language_menu(ui_palette, cx))
             .children(self.render_line_ending_menu(ui_palette, cx))
             .children(self.render_encoding_menu(ui_palette, cx))
             .when(self.vim.is_some(), |d| d.child(self.render_vim_status(cx)))
@@ -9594,6 +9663,43 @@ mod tests {
 
                 assert_eq!(view.doc.text(), "let value = main:word:1:arg");
                 assert_eq!(view.doc.selected_text().as_deref(), Some("arg"));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn manual_language_mode_refreshes_editor_owned_language_state(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |view, cx| {
+                view.doc = Document::from_file("notes.txt".into(), "fn main() {}", 1);
+                assert_eq!(view.doc.language, Language::PlainText);
+
+                view.set_language_mode(Language::Rust, cx);
+
+                assert_eq!(view.doc.language, Language::Rust);
+                assert_eq!(view.syntax.language(), Language::Rust);
+                assert_eq!(view.session_snapshot().language, "Rust");
+                assert!(view.language_service_open);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn manual_language_mode_restores_from_editor_session(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |view, _cx| {
+                view.doc = Document::from_file("notes.txt".into(), "fn main() {}", 1);
+                let mut session = view.session_snapshot();
+                session.language = "Rust".to_owned();
+                view.set_pending_session(session);
+
+                view.apply_pending_session();
+                view.resync_syntax();
+
+                assert_eq!(view.doc.language, Language::Rust);
+                assert_eq!(view.syntax.language(), Language::Rust);
             });
         });
     }
