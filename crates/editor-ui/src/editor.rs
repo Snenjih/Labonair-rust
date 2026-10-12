@@ -130,6 +130,9 @@ struct EditorSelectionDrag {
     previous: SelectionSet,
     preserved: Vec<Selection>,
     anchor: Anchor,
+    columnar: bool,
+    origin_visual_row: usize,
+    origin_display_column: usize,
 }
 
 const EDITOR_SCROLLBAR_SIZE: f32 = 10.0;
@@ -4928,11 +4931,11 @@ impl EditorView {
         true
     }
 
-    fn position_at(&mut self, p: Point<Pixels>) -> Position {
+    fn display_coordinates_at(&mut self, p: Point<Pixels>) -> Option<(usize, usize)> {
         let origin = self.bounds.map(|b| b.origin).unwrap_or_default();
         let (cw, lh) = self.metrics;
         if cw <= 0.0 || lh <= 0.0 {
-            return self.doc.cursor;
+            return None;
         }
         let x = (f32::from(p.x - origin.x) - self.gutter_width).max(0.0);
         let y = f32::from(p.y - origin.y).max(0.0);
@@ -4944,6 +4947,16 @@ impl EditorView {
         let first_row = layout.logical_line_to_visual_row(scroll_top);
         let visual_row = first_row.saturating_add((y / lh) as usize);
         let display_column = ((x / cw) + 0.5) as usize + scroll_left;
+        Some((visual_row, display_column))
+    }
+
+    fn position_at(&mut self, p: Point<Pixels>) -> Position {
+        let snapshot = self.doc.snapshot();
+        let config = self.display_config();
+        let Some((visual_row, display_column)) = self.display_coordinates_at(p) else {
+            return self.doc.cursor;
+        };
+        let layout = self.display_layout(&snapshot, config);
         layout
             .display_to_position(visual_row, display_column)
             .unwrap_or_else(|| Position::new(snapshot.line_count().saturating_sub(1), 0))
@@ -4952,6 +4965,7 @@ impl EditorView {
     fn begin_selection_drag(&mut self, point: Point<Pixels>, shift: bool, alt: bool) {
         let previous = self.doc.selection_set();
         let snapshot = self.doc.snapshot();
+        let coordinates = self.display_coordinates_at(point).unwrap_or((0, 0));
         let position = self.position_at(point);
         let head = Anchor::new(snapshot.position_to_byte(position), AnchorAffinity::After);
 
@@ -4985,6 +4999,9 @@ impl EditorView {
             previous,
             preserved,
             anchor,
+            columnar: alt,
+            origin_visual_row: coordinates.0,
+            origin_display_column: coordinates.1,
         });
     }
 
@@ -4993,6 +5010,50 @@ impl EditorView {
             return;
         };
         let snapshot = self.doc.snapshot();
+        if drag.columnar {
+            let (current_visual_row, current_display_column) = self
+                .display_coordinates_at(point)
+                .unwrap_or((drag.origin_visual_row, drag.origin_display_column));
+            let config = self.display_config();
+            let (columnar_selections, columnar_primary) = {
+                let layout = self.display_layout(&snapshot, config);
+                let last_row = layout.total_rows.saturating_sub(1);
+                let origin_row = drag.origin_visual_row.min(last_row);
+                let current_row = current_visual_row.min(last_row);
+                let start_row = origin_row.min(current_row);
+                let end_row = origin_row.max(current_row);
+                let mut selections = Vec::new();
+                let mut primary = 0;
+                for visual_row in start_row..=end_row {
+                    let (Some(anchor_position), Some(head_position)) = (
+                        layout.display_to_position(visual_row, drag.origin_display_column),
+                        layout.display_to_position(visual_row, current_display_column),
+                    ) else {
+                        continue;
+                    };
+                    if visual_row == current_row {
+                        primary = selections.len();
+                    }
+                    selections.push(Selection {
+                        anchor: Anchor::new(
+                            snapshot.position_to_byte(anchor_position),
+                            AnchorAffinity::Before,
+                        ),
+                        head: Anchor::new(
+                            snapshot.position_to_byte(head_position),
+                            AnchorAffinity::After,
+                        ),
+                    });
+                }
+                (selections, primary)
+            };
+            let mut selections = drag.preserved;
+            let primary = selections.len() + columnar_primary;
+            selections.extend(columnar_selections);
+            let selection_set = SelectionSet::from_selections(selections, primary);
+            self.doc.set_selection_set_transient(selection_set);
+            return;
+        }
         let position = self.position_at(point);
         let head = Anchor::new(snapshot.position_to_byte(position), AnchorAffinity::After);
         let mut selections = drag.preserved;
@@ -9118,7 +9179,9 @@ mod tests {
     }
 
     #[gpui::test]
-    fn alt_pointer_drag_adds_a_secondary_selection_and_undoes_as_one_step(cx: &mut TestAppContext) {
+    fn alt_pointer_drag_adds_rectangular_selections_and_undoes_as_one_step(
+        cx: &mut TestAppContext,
+    ) {
         let view = setup(cx);
         cx.update(|cx| {
             view.update(cx, |this, _cx| {
@@ -9131,19 +9194,27 @@ mod tests {
                         height: px(80.0),
                     },
                 });
-                this.doc = Document::from_file("test.txt".into(), "abcdef", 1);
-                this.doc.cursor = Position::new(0, 1);
+                this.doc =
+                    Document::from_file("test.txt".into(), "abcdef\nuvwxyz\n012345\nlast", 1);
+                this.doc.cursor = Position::new(3, 1);
 
                 this.begin_selection_drag(gpui::point(px(30.0), px(0.0)), false, true);
-                this.update_selection_drag(gpui::point(px(50.0), px(0.0)));
+                this.update_selection_drag(gpui::point(px(50.0), px(36.0)));
                 this.finish_selection_drag();
 
                 let selections = this.doc.selection_set();
-                assert_eq!(selections.len(), 2);
-                assert_eq!(this.doc.selected_text().as_deref(), Some("de"));
+                assert_eq!(selections.len(), 4);
+                let snapshot = this.doc.snapshot();
+                let selected_rows = selections
+                    .ranges(&snapshot)
+                    .into_iter()
+                    .filter(|range| range.start < range.end)
+                    .map(|range| snapshot.text_range(range))
+                    .collect::<Vec<_>>();
+                assert_eq!(selected_rows, ["de", "xy", "34"]);
                 assert!(this.doc.undo_selection());
                 assert_eq!(this.doc.selection_set().len(), 1);
-                assert_eq!(this.doc.cursor, Position::new(0, 1));
+                assert_eq!(this.doc.cursor, Position::new(3, 1));
                 assert!(!this.doc.undo_selection());
             });
         });
