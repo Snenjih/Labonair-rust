@@ -56,7 +56,7 @@ use labonair_settings_content::{
     editor::{
         EditorContent, EditorDiagnosticMaxSeverity, EditorMinimapCurrentLineHighlight,
         EditorMinimapDisplayIn, EditorMinimapSetting, EditorMinimapThumb, EditorMinimapThumbBorder,
-        EditorMinimapVisibility, EditorModalMode, EditorScrollbarVisibility,
+        EditorMinimapVisibility, EditorModalMode, EditorScrollbarVisibility, VimCursorShape,
     },
     file_manager::{FileManagerContent, SftpColumn},
     general::{self, GeneralContent},
@@ -556,6 +556,9 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_cursor_blink: defaults.editor_cursor_blink,
         editor_cursor_blink_interval_ms: defaults.editor_cursor_blink_interval_ms,
         editor_cursor_style: defaults.editor_cursor_style,
+        vim_cursor_shape_normal: Some(VimCursorShape::Block),
+        vim_cursor_shape_insert: Some(VimCursorShape::Inherit),
+        vim_cursor_shape_visual: Some(VimCursorShape::Block),
         search_case_sensitive: defaults.search_case_sensitive,
         search_smart_case: defaults.search_smart_case,
         search_whole_word: defaults.search_whole_word,

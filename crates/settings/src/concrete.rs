@@ -15,7 +15,7 @@ use labonair_settings_content::{
         EditorContent, EditorCursorStyle, EditorDiagnosticMaxSeverity, EditorDocumentColorMode,
         EditorMinimapCurrentLineHighlight, EditorMinimapDisplayIn, EditorMinimapThumb,
         EditorMinimapThumbBorder, EditorMinimapVisibility, EditorModalMode,
-        EditorScrollbarVisibility, SearchSeedBehavior,
+        EditorScrollbarVisibility, SearchSeedBehavior, VimCursorShape,
     },
     file_manager::{default_sftp_columns, FileManagerContent, SftpColumn},
     general::{GeneralContent, StartupTab, ThemePref},
@@ -602,6 +602,24 @@ impl EditorSettings {
         self.0.editor_cursor_style.unwrap_or(EditorCursorStyle::Bar)
     }
 
+    pub fn vim_cursor_shape_normal(&self) -> VimCursorShape {
+        self.0
+            .vim_cursor_shape_normal
+            .unwrap_or(VimCursorShape::Block)
+    }
+
+    pub fn vim_cursor_shape_insert(&self) -> VimCursorShape {
+        self.0
+            .vim_cursor_shape_insert
+            .unwrap_or(VimCursorShape::Inherit)
+    }
+
+    pub fn vim_cursor_shape_visual(&self) -> VimCursorShape {
+        self.0
+            .vim_cursor_shape_visual
+            .unwrap_or(VimCursorShape::Block)
+    }
+
     pub fn rulers(&self) -> &str {
         self.0.editor_rulers.as_deref().unwrap_or("")
     }
@@ -1153,6 +1171,22 @@ mod tests {
         assert_eq!(
             EditorSettings::from_settings(&content).vertical_scroll_margin(),
             20
+        );
+    }
+
+    #[test]
+    fn vim_cursor_shapes_have_mode_defaults_and_inherit_the_editor_shape() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(defaults.vim_cursor_shape_normal(), VimCursorShape::Block);
+        assert_eq!(defaults.vim_cursor_shape_insert(), VimCursorShape::Inherit);
+        assert_eq!(defaults.vim_cursor_shape_visual(), VimCursorShape::Block);
+        assert_eq!(defaults.cursor_style(), EditorCursorStyle::Bar);
+
+        let mut content = SettingsContent::default();
+        content.editor.vim_cursor_shape_insert = Some(VimCursorShape::Underline);
+        assert_eq!(
+            EditorSettings::from_settings(&content).vim_cursor_shape_insert(),
+            VimCursorShape::Underline
         );
     }
 

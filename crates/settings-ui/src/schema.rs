@@ -1117,6 +1117,42 @@ pub fn all_fields() -> Vec<AnyField> {
             "Shape of the editor caret."
         ),
         field!(
+            editor.vim_cursor_shape_normal,
+            "vimCursorShapeNormal",
+            Select(&[
+                ("inherit", "Inherit editor style"),
+                ("block", "Block"),
+                ("underline", "Underline"),
+                ("bar", "Bar")
+            ]),
+            "Vim: normal cursor shape",
+            "Caret shape while Vim is in Normal mode."
+        ),
+        field!(
+            editor.vim_cursor_shape_insert,
+            "vimCursorShapeInsert",
+            Select(&[
+                ("inherit", "Inherit editor style"),
+                ("block", "Block"),
+                ("underline", "Underline"),
+                ("bar", "Bar")
+            ]),
+            "Vim: insert cursor shape",
+            "Caret shape while Vim is in Insert mode."
+        ),
+        field!(
+            editor.vim_cursor_shape_visual,
+            "vimCursorShapeVisual",
+            Select(&[
+                ("inherit", "Inherit editor style"),
+                ("block", "Block"),
+                ("underline", "Underline"),
+                ("bar", "Bar")
+            ]),
+            "Vim: visual cursor shape",
+            "Caret shape while Vim is in Visual or Visual Line mode."
+        ),
+        field!(
             editor.editor_cursor_blink,
             "editorCursorBlink",
             Switch,
@@ -1641,6 +1677,41 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing settings field {path}"));
             assert!(matches!(field.control, FieldControl::Switch));
         }
+    }
+
+    #[test]
+    fn vim_cursor_shape_settings_are_exposed_as_typed_selects() {
+        let fields = all_fields();
+        for path in [
+            "editor.vimCursorShapeNormal",
+            "editor.vimCursorShapeInsert",
+            "editor.vimCursorShapeVisual",
+        ] {
+            let field = fields
+                .iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing settings field {path}"));
+            match field.control {
+                FieldControl::Select(options) => {
+                    assert!(options.iter().any(|(value, _)| *value == "inherit"));
+                    assert!(options.iter().any(|(value, _)| *value == "block"));
+                    assert!(options.iter().any(|(value, _)| *value == "underline"));
+                    assert!(options.iter().any(|(value, _)| *value == "bar"));
+                }
+                _ => panic!("{path} should use a select control"),
+            }
+        }
+
+        let field = fields
+            .into_iter()
+            .find(|field| field.json_path == "editor.vimCursorShapeInsert")
+            .expect("insert cursor shape setting");
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::String("underline".into())));
+        assert_eq!(
+            (field.get)(&content),
+            Some(Value::String("underline".into()))
+        );
     }
 
     #[test]

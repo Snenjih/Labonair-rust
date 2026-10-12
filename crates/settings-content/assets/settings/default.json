@@ -179,7 +179,10 @@
     // Caret blink half-period, in milliseconds.
     "editorCursorBlinkIntervalMs": 530,
     // "block" | "underline" | "bar".
-    "editorCursorStyle": "bar"
+    "editorCursorStyle": "bar",
+    "vimCursorShapeNormal": "block",
+    "vimCursorShapeInsert": "inherit",
+    "vimCursorShapeVisual": "block"
   },
 
   "fileManager": {

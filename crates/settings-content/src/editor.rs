@@ -25,6 +25,26 @@ impl crate::MergeFrom for EditorCursorStyle {
     }
 }
 
+/// Cursor shape override for an active Vim mode. `Inherit` uses the editor's
+/// normal cursor-style setting.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum VimCursorShape {
+    #[default]
+    Inherit,
+    Block,
+    Underline,
+    Bar,
+}
+
+impl crate::MergeFrom for VimCursorShape {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
 /// Active editor input mode. The value is stored as `editorMode` so the modal
 /// modes remain mutually exclusive in settings and the editor UI.
 #[derive(
@@ -381,6 +401,12 @@ pub struct EditorContent {
     pub editor_cursor_blink_interval_ms: Option<u32>,
     /// Caret shape.
     pub editor_cursor_style: Option<EditorCursorStyle>,
+    /// Vim Normal-mode caret shape.
+    pub vim_cursor_shape_normal: Option<VimCursorShape>,
+    /// Vim Insert-mode caret shape.
+    pub vim_cursor_shape_insert: Option<VimCursorShape>,
+    /// Vim Visual-mode caret shape.
+    pub vim_cursor_shape_visual: Option<VimCursorShape>,
 }
 
 impl EditorContent {
@@ -480,6 +506,9 @@ impl EditorContent {
             editor_cursor_blink: Some(true),
             editor_cursor_blink_interval_ms: Some(530),
             editor_cursor_style: Some(EditorCursorStyle::Bar),
+            vim_cursor_shape_normal: Some(VimCursorShape::Block),
+            vim_cursor_shape_insert: Some(VimCursorShape::Inherit),
+            vim_cursor_shape_visual: Some(VimCursorShape::Block),
         }
     }
 }

@@ -98,6 +98,9 @@ pub const PROJECT_SETTINGS_WHITELIST: &[(&str, &[&str])] = &[
             "editorAutoSaveDelay",
             "editorLineNumbers",
             "editorRelativeLineNumbers",
+            "vimCursorShapeNormal",
+            "vimCursorShapeInsert",
+            "vimCursorShapeVisual",
         ],
     ),
 ];
@@ -263,6 +266,9 @@ mod tests {
         assert!(is_project_setting_allowed("general.restoreWindowState"));
         assert!(is_project_setting_allowed("editor.editorTabSize"));
         assert!(is_project_setting_allowed("editor.editorLspDocumentColors"));
+        assert!(is_project_setting_allowed("editor.vimCursorShapeNormal"));
+        assert!(is_project_setting_allowed("editor.vimCursorShapeInsert"));
+        assert!(is_project_setting_allowed("editor.vimCursorShapeVisual"));
         assert!(!is_project_setting_allowed("general.autostart"));
         assert!(!is_project_setting_allowed("mcp.bridgePort"));
         assert!(!is_project_setting_allowed("general"));

@@ -32,9 +32,10 @@ use labonair_filesystem::file::{
     StorageLineEnding, StorageSaveIntent,
 };
 use labonair_settings::content::editor::{
-    EditorDiagnosticMaxSeverity, EditorDocumentColorMode, EditorMinimapCurrentLineHighlight,
-    EditorMinimapDisplayIn, EditorMinimapThumb, EditorMinimapThumbBorder, EditorMinimapVisibility,
-    EditorModalMode, EditorScrollbarVisibility, SearchSeedBehavior,
+    EditorCursorStyle, EditorDiagnosticMaxSeverity, EditorDocumentColorMode,
+    EditorMinimapCurrentLineHighlight, EditorMinimapDisplayIn, EditorMinimapThumb,
+    EditorMinimapThumbBorder, EditorMinimapVisibility, EditorModalMode, EditorScrollbarVisibility,
+    SearchSeedBehavior, VimCursorShape,
 };
 use labonair_settings::{EditorSettings, Settings as _, SettingsStore};
 
@@ -11897,14 +11898,16 @@ impl Render for EditorView {
             .then_some(caret_point)
             .flatten()
             .map(|(visual_row, column)| {
-                use labonair_settings::content::editor::EditorCursorStyle;
-                let (top, width, height, bg_color) = match self.prefs.cursor_style() {
-                    EditorCursorStyle::Bar => (0.0, 2.0, line_h, accent),
-                    EditorCursorStyle::Underline => {
-                        ((line_h - 2.0).max(0.0), char_w.max(2.0), 2.0, accent)
-                    }
-                    EditorCursorStyle::Block => (0.0, char_w.max(2.0), line_h, accent.opacity(0.6)),
-                };
+                let (top, width, height, bg_color) =
+                    match effective_cursor_style(&self.prefs, self.vim.as_ref().map(Vim::mode)) {
+                        EditorCursorStyle::Bar => (0.0, 2.0, line_h, accent),
+                        EditorCursorStyle::Underline => {
+                            ((line_h - 2.0).max(0.0), char_w.max(2.0), 2.0, accent)
+                        }
+                        EditorCursorStyle::Block => {
+                            (0.0, char_w.max(2.0), line_h, accent.opacity(0.6))
+                        }
+                    };
                 div()
                     .absolute()
                     .top(px((visual_row.saturating_sub(first_visual) as f32)
@@ -12324,6 +12327,21 @@ fn should_auto_pair_bracket(
     }
 }
 
+fn effective_cursor_style(prefs: &EditorSettings, vim_mode: Option<VimMode>) -> EditorCursorStyle {
+    let shape = match vim_mode {
+        None => return prefs.cursor_style(),
+        Some(VimMode::Normal | VimMode::Command) => prefs.vim_cursor_shape_normal(),
+        Some(VimMode::Insert) => prefs.vim_cursor_shape_insert(),
+        Some(VimMode::Visual | VimMode::VisualLine) => prefs.vim_cursor_shape_visual(),
+    };
+    match shape {
+        VimCursorShape::Inherit => prefs.cursor_style(),
+        VimCursorShape::Block => EditorCursorStyle::Block,
+        VimCursorShape::Underline => EditorCursorStyle::Underline,
+        VimCursorShape::Bar => EditorCursorStyle::Bar,
+    }
+}
+
 fn notify(cx: &mut App, title: &str, body: &str) {
     let (title, body) = (title.to_string(), body.to_string());
     notification_center(cx).update(cx, |center, cx| {
@@ -12447,6 +12465,30 @@ mod tests {
         assert!(should_auto_pair_bracket(')', false, true, false));
         assert!(!should_auto_pair_bracket(')', false, false, true));
         assert!(!should_auto_pair_bracket('x', true, true, true));
+    }
+
+    #[test]
+    fn vim_cursor_shape_follows_mode_and_inherits_the_editor_default() {
+        let prefs = editor_prefs(|editor| {
+            editor.editor_cursor_style = Some(EditorCursorStyle::Bar);
+            editor.vim_cursor_shape_normal = Some(VimCursorShape::Block);
+            editor.vim_cursor_shape_insert = Some(VimCursorShape::Inherit);
+            editor.vim_cursor_shape_visual = Some(VimCursorShape::Underline);
+        });
+
+        assert_eq!(effective_cursor_style(&prefs, None), EditorCursorStyle::Bar);
+        assert_eq!(
+            effective_cursor_style(&prefs, Some(VimMode::Normal)),
+            EditorCursorStyle::Block
+        );
+        assert_eq!(
+            effective_cursor_style(&prefs, Some(VimMode::Insert)),
+            EditorCursorStyle::Bar
+        );
+        assert_eq!(
+            effective_cursor_style(&prefs, Some(VimMode::VisualLine)),
+            EditorCursorStyle::Underline
+        );
     }
 
     #[test]
