@@ -185,11 +185,11 @@ pub fn quote_paths(paths: &[PathBuf]) -> String {
         .join(" ")
 }
 
-/// Extensions the explorer offers "Open in Preview" for, plus the
-/// text/markdown kinds the native preview pane can additionally render.
+/// Extensions the explorer offers "Open in Preview" for, including the
+/// markdown, image, and delimited-table kinds the native pane can render.
 pub const PREVIEW_EXTENSIONS: &[&str] = &[
     "html", "htm", "png", "jpg", "jpeg", "gif", "webp", "svg", "pdf", "bmp", "ico", "md",
-    "markdown", "txt", "text",
+    "markdown", "txt", "text", "csv", "tsv", "ssv", "psv",
 ];
 
 /// Whether `path` is something the preview tab knows how to open.
@@ -234,6 +234,7 @@ mod tests {
     fn is_previewable_matches_known_extensions() {
         assert!(is_previewable("/x/report.md"));
         assert!(is_previewable("/x/pic.PNG"));
+        assert!(is_previewable("/x/data.csv"));
         assert!(is_previewable("https://example.com/a.html"));
         assert!(!is_previewable("/x/main.rs"));
         assert!(!is_previewable("/x/Makefile"));

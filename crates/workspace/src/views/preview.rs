@@ -9,6 +9,8 @@
 //!   natively via GPUI's `img()`.
 //! * **Markdown / plain text** (`md`, `markdown`, `txt`, `text`) render through
 //!   the native [`markdown`](crate::markdown) parser.
+//! * **Delimited tables** (`csv`, `tsv`, `ssv`, `psv`) render in a bounded
+//!   native table view with quoted-field parsing.
 //! * **HTML, PDF, SVG and remote URLs** cannot be rendered in-process; the pane
 //!   shows the address plus an **Open in system browser** button
 //!   (`/usr/bin/open` on macOS, `xdg-open` on Linux).
@@ -154,6 +156,7 @@ enum Content {
     Loading,
     Image(PreviewImage),
     Markdown(Vec<MdBlock>),
+    Table(TabularPreview),
     /// Needs a browser engine — offer "open externally" only. `why` explains it.
     External {
         why: SharedString,
@@ -171,6 +174,15 @@ struct PreviewImage {
     bits_per_pixel: u16,
     byte_len: usize,
 }
+
+#[derive(Clone, Default)]
+struct TabularPreview {
+    rows: Vec<Vec<String>>,
+    column_count: usize,
+    total_rows: usize,
+}
+
+const MAX_TABLE_PREVIEW_ROWS: usize = 1_000;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum ImageZoom {
@@ -564,6 +576,21 @@ fn resolve(url: &str) -> Content {
             Ok(text) => Content::Markdown(parse_markdown(&text)),
             Err(e) => Content::Error(format!("Could not read file: {e}").into()),
         },
+        "csv" | "tsv" | "ssv" | "psv" => {
+            let delimiter = match ext.as_str() {
+                "tsv" => '\t',
+                "ssv" => ';',
+                "psv" => '|',
+                _ => ',',
+            };
+            match std::fs::read_to_string(url).map_err(|error| error.to_string()) {
+                Ok(text) => match parse_delimited(&text, delimiter) {
+                    Ok(table) => Content::Table(table),
+                    Err(error) => Content::Error(error.into()),
+                },
+                Err(error) => Content::Error(format!("Could not read file: {error}").into()),
+            }
+        }
         "html" | "htm" => Content::External {
             why: "HTML pages need a browser engine — opening in your default browser.".into(),
         },
@@ -577,6 +604,82 @@ fn resolve(url: &str) -> Content {
             why: "This file type opens in your default application.".into(),
         },
     }
+}
+
+fn parse_delimited(text: &str, delimiter: char) -> Result<TabularPreview, String> {
+    if text.is_empty() {
+        return Ok(TabularPreview::default());
+    }
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    let mut rows = Vec::new();
+    let mut row = Vec::new();
+    let mut field = String::new();
+    let mut in_quotes = false;
+    let mut ended_on_row_boundary = false;
+    let mut column_count = 0;
+    let mut total_rows = 0;
+    let mut characters = normalized.chars().peekable();
+
+    while let Some(character) = characters.next() {
+        if in_quotes {
+            if character == '"' {
+                if characters.peek() == Some(&'"') {
+                    characters.next();
+                    field.push('"');
+                } else {
+                    in_quotes = false;
+                }
+            } else {
+                field.push(character);
+            }
+            ended_on_row_boundary = false;
+            continue;
+        }
+
+        match character {
+            '"' if field.is_empty() => {
+                in_quotes = true;
+                ended_on_row_boundary = false;
+            }
+            '\n' => {
+                row.push(std::mem::take(&mut field));
+                total_rows += 1;
+                column_count = column_count.max(row.len());
+                if rows.len() < MAX_TABLE_PREVIEW_ROWS {
+                    rows.push(std::mem::take(&mut row));
+                } else {
+                    row.clear();
+                }
+                ended_on_row_boundary = true;
+            }
+            value if value == delimiter => {
+                row.push(std::mem::take(&mut field));
+                ended_on_row_boundary = false;
+            }
+            value => {
+                field.push(value);
+                ended_on_row_boundary = false;
+            }
+        }
+    }
+
+    if in_quotes {
+        return Err("The table contains an unterminated quoted field.".to_string());
+    }
+    if !ended_on_row_boundary {
+        row.push(field);
+        total_rows += 1;
+        column_count = column_count.max(row.len());
+        if rows.len() < MAX_TABLE_PREVIEW_ROWS {
+            rows.push(row);
+        }
+    }
+
+    Ok(TabularPreview {
+        rows,
+        column_count,
+        total_rows,
+    })
 }
 
 fn load_image(path: &str) -> Result<PreviewImage, String> {
@@ -784,6 +887,60 @@ impl Render for PreviewView {
                         .map(|b| render_block(b, fg, muted, border, accent, &self.url, cx)),
                 )
                 .into_any_element(),
+            Content::Table(table) => {
+                let row_status = if table.total_rows > table.rows.len() {
+                    format!(
+                        "Showing first {} of {} rows · {} columns",
+                        table.rows.len(),
+                        table.total_rows,
+                        table.column_count
+                    )
+                } else {
+                    format!("{} rows · {} columns", table.total_rows, table.column_count)
+                };
+                let rows = table.rows.iter().enumerate().map(|(row_index, row)| {
+                    let cells = (0..table.column_count).map(|column_index| {
+                        let value = row.get(column_index).cloned().unwrap_or_default();
+                        div()
+                            .w(px(180.0))
+                            .flex_shrink_0()
+                            .overflow_hidden()
+                            .px_2()
+                            .py_1()
+                            .border_r_1()
+                            .border_b_1()
+                            .border_color(border)
+                            .text_size(px(12.0))
+                            .when(row_index == 0, |cell| {
+                                cell.bg(accent)
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(fg)
+                            })
+                            .child(SharedString::from(value))
+                    });
+                    div().flex().flex_none().children(cells)
+                });
+                div()
+                    .id("preview-table")
+                    .flex_1()
+                    .overflow_x_scroll()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.markdown_scroll)
+                    .flex()
+                    .flex_col()
+                    .text_color(fg)
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .px_3()
+                            .py_1()
+                            .text_size(px(10.0))
+                            .text_color(muted)
+                            .child(SharedString::from(row_status)),
+                    )
+                    .children(rows)
+                    .into_any_element()
+            }
             Content::External { why } => div()
                 .flex_1()
                 .flex()
@@ -1156,6 +1313,7 @@ mod tests {
     fn previewable_matches_reference_extensions() {
         assert!(is_previewable("/x/report.md"));
         assert!(is_previewable("/x/pic.PNG"));
+        assert!(is_previewable("/x/data.csv"));
         assert!(is_previewable("https://example.com/a.html"));
         assert!(!is_previewable("/x/main.rs"));
         assert!(!is_previewable("/x/Makefile"));
@@ -1169,6 +1327,59 @@ mod tests {
         ));
         assert!(matches!(resolve("/tmp/x.html"), Content::External { .. }));
         assert!(matches!(resolve(""), Content::Empty));
+    }
+
+    #[test]
+    fn delimited_preview_parses_quotes_escaped_quotes_and_embedded_newlines() {
+        let table = parse_delimited(
+            "name,note\r\nAda,\"hello, \"\"world\"\"\"\r\nGrace,\"line 1\nline 2\"\r\n",
+            ',',
+        )
+        .expect("valid CSV");
+        assert_eq!(table.column_count, 2);
+        assert_eq!(table.total_rows, 3);
+        assert_eq!(table.rows[0], ["name", "note"]);
+        assert_eq!(table.rows[1], ["Ada", "hello, \"world\""]);
+        assert_eq!(table.rows[2], ["Grace", "line 1\nline 2"]);
+
+        let tabular = parse_delimited("left\tright\n1\t2", '\t').expect("valid TSV");
+        assert_eq!(tabular.rows[1], ["1", "2"]);
+    }
+
+    #[test]
+    fn delimited_preview_reports_unclosed_quotes_and_caps_rendered_rows() {
+        assert!(parse_delimited("name,comment\nAda,\"unfinished", ',').is_err());
+
+        let text = (0..MAX_TABLE_PREVIEW_ROWS + 5)
+            .map(|index| format!("{index},value"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let table = parse_delimited(&text, ',').expect("valid CSV");
+        assert_eq!(table.total_rows, MAX_TABLE_PREVIEW_ROWS + 5);
+        assert_eq!(table.rows.len(), MAX_TABLE_PREVIEW_ROWS);
+    }
+
+    #[test]
+    fn csv_resolves_to_a_native_table_preview() {
+        let path = std::env::temp_dir().join(format!(
+            "labonair-preview-table-{}-{}.csv",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::write(&path, "name,score\nAda,10\n").expect("write fixture");
+
+        match resolve(path.to_str().expect("UTF-8 temp path")) {
+            Content::Table(table) => {
+                assert_eq!(table.total_rows, 2);
+                assert_eq!(table.rows[1], ["Ada", "10"]);
+            }
+            _ => panic!("CSV should resolve to a table preview"),
+        }
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
