@@ -166,6 +166,60 @@ async fn pull_diagnostics_use_full_and_unchanged_reports() {
 }
 
 #[tokio::test]
+async fn declaration_and_implementation_keep_cross_file_locations() {
+    let process = LocalLanguageServiceProcess::spawn(config())
+        .await
+        .expect("fixture starts");
+    let capabilities = process.capabilities().await;
+    assert!(capabilities.declaration);
+    assert!(capabilities.implementation);
+    process
+        .did_open(
+            "file:///fixture.rs".into(),
+            LanguageId::new(Language::Rust),
+            "struct Widget;".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+
+    for request in [
+        LanguageServiceRequest::Declaration {
+            position: LspPosition {
+                line: 0,
+                character: 7,
+            },
+        },
+        LanguageServiceRequest::Implementation {
+            position: LspPosition {
+                line: 0,
+                character: 7,
+            },
+        },
+    ] {
+        let result = process
+            .request(LocalLanguageServiceRequest {
+                uri: "file:///fixture.rs".into(),
+                snapshot: EditorBuffer::from_text("struct Widget;").snapshot(),
+                version: DocumentVersion::new(1),
+                generation: 1,
+                request,
+                cancellation: CancellationToken::default(),
+            })
+            .await;
+        assert!(matches!(
+            result.response,
+            Ok(LanguageServiceResponse::Definition(targets))
+                if targets.len() == 1
+                    && targets[0].uri.as_deref() == Some("file:///fixture-target.rs")
+                    && targets[0].selection_range.start == LspPosition { line: 2, character: 3 }
+        ));
+    }
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
 async fn call_hierarchy_prepares_and_loads_incoming_and_outgoing_calls() {
     let process = LocalLanguageServiceProcess::spawn(config())
         .await

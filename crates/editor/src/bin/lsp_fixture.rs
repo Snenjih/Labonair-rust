@@ -43,6 +43,8 @@ fn main() -> io::Result<()> {
                     "signatureHelpProvider": if !minimal { json!({}) } else { Value::Null },
                     "hoverProvider": !minimal,
                     "definitionProvider": !minimal,
+                    "declarationProvider": !minimal,
+                    "implementationProvider": !minimal,
                     "referencesProvider": !minimal,
                     "callHierarchyProvider": !minimal,
                     "codeLensProvider": if !minimal { json!({ "resolveProvider": true }) } else { Value::Null },
@@ -120,6 +122,18 @@ fn main() -> io::Result<()> {
                     "result": result
                 }))?;
             }
+            "textDocument/definition"
+            | "textDocument/declaration"
+            | "textDocument/implementation"
+            | "textDocument/typeDefinition"
+            | "textDocument/references" => write_message(&json!({
+                "jsonrpc": "2.0",
+                "id": message.get("id"),
+                "result": [{
+                    "uri": "file:///fixture-target.rs",
+                    "range": { "start": { "line": 2, "character": 3 }, "end": { "line": 2, "character": 8 } }
+                }]
+            }))?,
             "textDocument/signatureHelp" => write_message(
                 &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "signatures": [{ "label": "fixture()", "documentation": { "kind": "markdown", "value": "fixture docs" } }] } }),
             )?,
@@ -131,9 +145,6 @@ fn main() -> io::Result<()> {
                     &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "contents": { "kind": "markdown", "value": "fixture hover" } } }),
                 )?;
             }
-            "textDocument/definition" | "textDocument/references" => write_message(
-                &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": [{ "uri": "file:///fixture", "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 1 } } }] }),
-            )?,
             "textDocument/prepareCallHierarchy" => write_message(
                 &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": [{ "name": "root", "kind": 12, "uri": "file:///fixture", "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 8 } }, "selectionRange": { "start": { "line": 0, "character": 3 }, "end": { "line": 0, "character": 7 } }, "data": { "symbol": "root" } }] }),
             )?,

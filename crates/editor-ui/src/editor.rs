@@ -62,12 +62,12 @@ use labonair_editor::{
     LanguageServiceRequest, LanguageServiceResponse, LanguageServiceResult, LanguageServiceRuntime,
     LanguageServiceRuntimeSnapshot, LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus,
     LanguageServiceSnapshot, LanguageServiceState, LocalLanguageServiceRequest, LspPosition,
-    LspRange, Match, NavigationHistory, NavigationLocation, Position, ProjectBufferCandidate,
-    ProjectReplacePlan, ProjectReplaceRequest, ProjectReplaceResult, ProjectReplaceTarget,
-    ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest, ProjectSearchResult,
-    ProjectSearchSession, ProjectSearchSnapshot, Revision, SavePolicy, SearchError, SearchOptions,
-    SearchQuery, Selection, SelectionSet, SnippetSession, SyntaxHighlighter, TextRange, Viewport,
-    Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
+    LspRange, Match, NavigationHistory, NavigationLocation, NavigationTarget, Position,
+    ProjectBufferCandidate, ProjectReplacePlan, ProjectReplaceRequest, ProjectReplaceResult,
+    ProjectReplaceTarget, ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest,
+    ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot, Revision, SavePolicy,
+    SearchError, SearchOptions, SearchQuery, Selection, SelectionSet, SnippetSession,
+    SyntaxHighlighter, TextRange, Viewport, Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
 };
 use labonair_editor::{build_breadcrumb_state, BreadcrumbState};
 
@@ -951,6 +951,22 @@ fn error_lens_for_line(
     (!message.is_empty()).then_some((diagnostic.severity, message))
 }
 
+fn navigation_target_label(target: &NavigationTarget) -> String {
+    let file = target
+        .uri
+        .as_deref()
+        .and_then(|uri| uri.rsplit('/').next())
+        .unwrap_or("Current file");
+    let position = target.selection_range.start;
+    format!(
+        "{} · {}:{}:{}",
+        target.name,
+        file,
+        position.line.saturating_add(1),
+        position.character.saturating_add(1)
+    )
+}
+
 fn diagnostic_hover_text(diagnostic: &labonair_editor::Diagnostic) -> String {
     let severity = match diagnostic.severity {
         labonair_editor::language_services::DiagnosticSeverity::Error => "Error",
@@ -1177,6 +1193,10 @@ pub struct EditorView {
     signature_help_position: Option<LspPosition>,
     navigation_request_serial: Option<u64>,
     navigation_position: Option<LspPosition>,
+    navigation_results: Option<Vec<NavigationTarget>>,
+    navigation_results_title: String,
+    navigation_results_selected: usize,
+    navigation_result_direct: bool,
     folding_ranges_request_serial: Option<u64>,
     language_service_request_serial: u64,
     code_actions: Option<Vec<labonair_editor::CodeAction>>,
@@ -1261,6 +1281,9 @@ impl EditorView {
     fn keymap_context(&self) -> KeyContext {
         let mut context = KeyContext::default();
         context.add("Editor");
+        if self.navigation_results.is_some() {
+            context.add("NavigationResults");
+        }
         if self.call_hierarchy_open {
             context.add("CallHierarchyPicker");
         }
@@ -1443,6 +1466,10 @@ impl EditorView {
             signature_help_position: None,
             navigation_request_serial: None,
             navigation_position: None,
+            navigation_results: None,
+            navigation_results_title: String::new(),
+            navigation_results_selected: 0,
+            navigation_result_direct: true,
             folding_ranges_request_serial: None,
             language_service_request_serial: 0,
             code_actions: None,
@@ -1884,30 +1911,55 @@ impl EditorView {
             EditorLanguageCommand::ToggleCallHierarchyDirection => {
                 self.toggle_call_hierarchy_direction(cx);
             }
-            EditorLanguageCommand::GoToDefinition
-            | EditorLanguageCommand::GoToDeclaration
-            | EditorLanguageCommand::GoToImplementation
-            | EditorLanguageCommand::PeekDefinition => {
-                self.request_language_service(
-                    LanguageServiceRequest::Definition {
-                        position: self.current_lsp_position(),
-                    },
-                    cx,
-                );
-            }
+            EditorLanguageCommand::GoToDefinition => self.request_navigation(
+                LanguageServiceRequest::Definition {
+                    position: self.current_lsp_position(),
+                },
+                "Go to Definition",
+                true,
+                cx,
+            ),
+            EditorLanguageCommand::GoToDeclaration => self.request_navigation(
+                LanguageServiceRequest::Declaration {
+                    position: self.current_lsp_position(),
+                },
+                "Go to Declaration",
+                true,
+                cx,
+            ),
+            EditorLanguageCommand::GoToImplementation => self.request_navigation(
+                LanguageServiceRequest::Implementation {
+                    position: self.current_lsp_position(),
+                },
+                "Go to Implementation",
+                true,
+                cx,
+            ),
+            EditorLanguageCommand::PeekDefinition => self.request_navigation(
+                LanguageServiceRequest::Definition {
+                    position: self.current_lsp_position(),
+                },
+                "Peek Definition",
+                false,
+                cx,
+            ),
             EditorLanguageCommand::GoToTypeDefinition => {
-                self.request_language_service(
+                self.request_navigation(
                     LanguageServiceRequest::TypeDefinition {
                         position: self.current_lsp_position(),
                     },
+                    "Go to Type Definition",
+                    true,
                     cx,
                 );
             }
             EditorLanguageCommand::GoToReferences => {
-                self.request_language_service(
+                self.request_navigation(
                     LanguageServiceRequest::References {
                         position: self.current_lsp_position(),
                     },
+                    "References",
+                    false,
                     cx,
                 );
             }
@@ -1979,6 +2031,20 @@ impl EditorView {
             cx,
         );
         cx.notify();
+    }
+
+    fn request_navigation(
+        &mut self,
+        request: LanguageServiceRequest,
+        title: &str,
+        direct_single_result: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.navigation_results = None;
+        self.navigation_results_title = title.to_string();
+        self.navigation_results_selected = 0;
+        self.navigation_result_direct = direct_single_result;
+        self.request_language_service(request, cx);
     }
 
     fn execute_code_lens(&mut self, command: LanguageServiceCommand, cx: &mut Context<Self>) {
@@ -2334,6 +2400,8 @@ impl EditorView {
                 (LanguageServiceRequestSlot::SignatureHelp, Some(*position))
             }
             LanguageServiceRequest::Definition { position }
+            | LanguageServiceRequest::Declaration { position }
+            | LanguageServiceRequest::Implementation { position }
             | LanguageServiceRequest::References { position } => {
                 (LanguageServiceRequestSlot::Navigation, Some(*position))
             }
@@ -2589,6 +2657,14 @@ impl EditorView {
                     "Type Definition unavailable",
                     &response_error_text(&response),
                 );
+            } else if slot == LanguageServiceRequestSlot::Navigation {
+                self.navigation_results = None;
+                notify(
+                    cx,
+                    &self.navigation_results_title,
+                    &response_error_text(&response),
+                );
+                cx.notify();
             } else if slot == LanguageServiceRequestSlot::FoldingRanges {
                 self.server_fold_ranges.clear();
                 cx.notify();
@@ -2616,15 +2692,11 @@ impl EditorView {
                 self.schedule_error_lens(cx);
             }
             LanguageServiceResponse::Definition(targets)
-            | LanguageServiceResponse::TypeDefinition(targets)
-            | LanguageServiceResponse::References(targets) => {
-                if let Some(target) = targets.first() {
-                    let position = target
-                        .selection_range
-                        .start
-                        .to_position(&self.doc.snapshot());
-                    self.goto_position(position, cx);
-                }
+            | LanguageServiceResponse::TypeDefinition(targets) => {
+                self.present_navigation_results(targets, self.navigation_result_direct, cx);
+            }
+            LanguageServiceResponse::References(targets) => {
+                self.present_navigation_results(targets, false, cx);
             }
             LanguageServiceResponse::CallHierarchyItems(items) => {
                 let Some(item) = items.into_iter().next() else {
@@ -2715,6 +2787,92 @@ impl EditorView {
             }
             _ => {}
         }
+    }
+
+    fn present_navigation_results(
+        &mut self,
+        targets: Vec<NavigationTarget>,
+        direct_single_result: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if targets.is_empty() {
+            self.navigation_results = None;
+            notify_info(
+                cx,
+                &self.navigation_results_title,
+                "No locations were found.",
+            );
+            return;
+        }
+        if direct_single_result && targets.len() == 1 {
+            let target = &targets[0];
+            let is_current_document = target
+                .uri
+                .as_deref()
+                .is_none_or(|uri| self.language_service_uri.as_deref() == Some(uri));
+            if is_current_document {
+                self.goto_lsp_position(target.selection_range.start, cx);
+                return;
+            }
+        }
+        self.navigation_results_selected = 0;
+        self.navigation_results = Some(targets);
+        cx.notify();
+    }
+
+    fn move_navigation_result_selection(&mut self, delta: isize, cx: &mut Context<Self>) {
+        let Some(targets) = &self.navigation_results else {
+            return;
+        };
+        if targets.is_empty() {
+            return;
+        }
+        let count = targets.len();
+        self.navigation_results_selected = if delta < 0 {
+            if self.navigation_results_selected == 0 {
+                count - 1
+            } else {
+                self.navigation_results_selected - 1
+            }
+        } else {
+            (self.navigation_results_selected + 1) % count
+        };
+        cx.notify();
+    }
+
+    fn select_navigation_result(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(target) = self
+            .navigation_results
+            .as_ref()
+            .and_then(|targets| targets.get(index))
+            .cloned()
+        else {
+            return;
+        };
+        self.navigation_results = None;
+        let target_uri = target
+            .uri
+            .clone()
+            .or_else(|| self.language_service_uri.clone());
+        if target_uri.as_deref() == self.language_service_uri.as_deref() {
+            self.goto_lsp_position(target.selection_range.start, cx);
+        } else if let (Some(uri), Some(navigate)) =
+            (target_uri, self.call_hierarchy_navigator.clone())
+        {
+            navigate(uri, target.selection_range.start, window, cx);
+        } else {
+            notify_info(
+                cx,
+                &self.navigation_results_title,
+                "This location cannot be opened from the current workspace.",
+            );
+        }
+        cx.notify();
     }
 
     fn completion_range(&self, snapshot: &labonair_editor::BufferSnapshot) -> TextRange {
@@ -5758,7 +5916,7 @@ impl EditorView {
         );
     }
 
-    fn on_key(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    fn on_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let ks = &ev.keystroke;
         let m = &ks.modifiers;
 
@@ -5783,6 +5941,33 @@ impl EditorView {
             cx.notify();
             cx.stop_propagation();
             return;
+        }
+
+        if self.navigation_results.is_some() {
+            let handled = match ks.key.as_str() {
+                "escape" if !m.platform && !m.control && !m.alt => {
+                    self.navigation_results = None;
+                    cx.notify();
+                    true
+                }
+                "up" if !m.platform && !m.control && !m.alt => {
+                    self.move_navigation_result_selection(-1, cx);
+                    true
+                }
+                "down" if !m.platform && !m.control && !m.alt => {
+                    self.move_navigation_result_selection(1, cx);
+                    true
+                }
+                "enter" if !m.platform && !m.control && !m.alt => {
+                    self.select_navigation_result(self.navigation_results_selected, window, cx);
+                    true
+                }
+                _ => false,
+            };
+            if handled {
+                cx.stop_propagation();
+                return;
+            }
         }
 
         if self.completion_visible {
@@ -9292,6 +9477,69 @@ impl EditorView {
                 }
             }
         }
+        if let Some(targets) = self.navigation_results.as_ref() {
+            shown = true;
+            let selected = self
+                .navigation_results_selected
+                .min(targets.len().saturating_sub(1));
+            let rows = targets.iter().enumerate().take(100).map(|(index, target)| {
+                let label = navigation_target_label(target);
+                ListItem::new(
+                    ("editor-navigation-result", index),
+                    palette.fg,
+                    palette.muted,
+                    palette.selected_fill,
+                )
+                .selected(index == selected)
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.select_navigation_result(index, window, cx);
+                }))
+                .child(SharedString::from(label))
+            });
+            overlay = overlay
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .px_2()
+                        .py_1()
+                        .child(labonair_ui_kit::list_header(
+                            self.navigation_results_title.clone(),
+                            palette.muted,
+                        ))
+                        .child(
+                            button(
+                                "editor-navigation-results-close",
+                                palette,
+                                ButtonVariant::Subtle,
+                                ButtonSize::Xs,
+                            )
+                            .child("Close")
+                            .on_click(cx.listener(
+                                |this, _: &ClickEvent, _, cx| {
+                                    this.navigation_results = None;
+                                    cx.notify();
+                                },
+                            )),
+                        ),
+                )
+                .child(
+                    div()
+                        .id("editor-navigation-results-list")
+                        .max_h(px(240.0))
+                        .overflow_y_scroll()
+                        .children(rows),
+                )
+                .child(
+                    div()
+                        .px_2()
+                        .py_1()
+                        .text_xs()
+                        .text_color(palette.muted)
+                        .child("↑ ↓ to choose · Enter to open · Esc to close"),
+                );
+        }
         if self.call_hierarchy_open {
             shown = true;
             let direction_label = match self.call_hierarchy_direction {
@@ -12107,6 +12355,7 @@ mod tests {
                 };
                 let target = labonair_editor::NavigationTarget {
                     name: "Widget".into(),
+                    uri: None,
                     range: LspRange {
                         start: position,
                         end: LspPosition {
@@ -12128,6 +12377,43 @@ mod tests {
                     cx,
                 );
                 assert_eq!(this.doc.cursor, Position::new(0, 7));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn references_keep_all_targets_until_the_user_selects_one(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("test.rs".into(), "struct Widget;\n", 1);
+                this.language_service_uri = Some("file:///workspace/test.rs".into());
+                let target = |uri: &str, line| NavigationTarget {
+                    name: "Widget".into(),
+                    uri: Some(uri.into()),
+                    range: LspRange {
+                        start: LspPosition { line, character: 0 },
+                        end: LspPosition { line, character: 5 },
+                    },
+                    selection_range: LspRange {
+                        start: LspPosition { line, character: 0 },
+                        end: LspPosition { line, character: 5 },
+                    },
+                };
+                let cursor = this.doc.cursor;
+                this.apply_language_service_response(
+                    Ok(LanguageServiceResponse::References(vec![
+                        target("file:///workspace/a.rs", 2),
+                        target("file:///workspace/b.rs", 8),
+                    ])),
+                    LanguageServiceRequestSlot::Navigation,
+                    cx,
+                );
+                assert_eq!(this.doc.cursor, cursor);
+                assert_eq!(this.navigation_results.as_ref().map(Vec::len), Some(2));
+                assert_eq!(this.navigation_results_selected, 0);
+                this.move_navigation_result_selection(1, cx);
+                assert_eq!(this.navigation_results_selected, 1);
             });
         });
     }

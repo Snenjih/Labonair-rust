@@ -2674,6 +2674,17 @@ impl Workspace {
                 return;
             }
         };
+        let path = if let Some(root) = self.filesystem_root(cx).map(std::path::PathBuf::from) {
+            match root_safe_path(&root, &path) {
+                Ok(path) => path,
+                Err(error) => {
+                    labonair_notifications::notify_err::<()>("Language navigation", Err(error), cx);
+                    return;
+                }
+            }
+        } else {
+            path
+        };
         let path_string = path.to_string_lossy().into_owned();
         self.open_file(path_string, false, window, cx);
         if let Some(editor) = self

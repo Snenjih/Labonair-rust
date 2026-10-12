@@ -400,6 +400,8 @@ impl LocalLanguageServiceProcess {
                         signature_help: false,
                         hover: false,
                         definition: false,
+                        declaration: false,
+                        implementation: false,
                         type_definition: false,
                         references: false,
                         call_hierarchy: false,
@@ -795,6 +797,8 @@ impl LocalLanguageServiceProcess {
                 signature_help: false,
                 hover: false,
                 definition: false,
+                declaration: false,
+                implementation: false,
                 type_definition: false,
                 references: false,
                 call_hierarchy: false,
@@ -842,6 +846,8 @@ impl LocalLanguageServiceProcess {
                         "textDocument": {
                             "completion": { "completionItem": { "snippetSupport": true } },
                             "hover": {},
+                            "declaration": { "dynamicRegistration": false },
+                            "implementation": { "dynamicRegistration": false },
                             "callHierarchy": { "dynamicRegistration": false },
                             "codeLens": { "dynamicRegistration": false },
                             "documentLink": { "dynamicRegistration": false },
@@ -1098,6 +1104,12 @@ impl LocalLanguageServiceProcess {
                 LanguageServiceResponse::Hover(parse_hover(&value))
             }
             LanguageServiceRequest::Definition { .. } => {
+                LanguageServiceResponse::Definition(parse_locations(&value))
+            }
+            LanguageServiceRequest::Declaration { .. } => {
+                LanguageServiceResponse::Definition(parse_locations(&value))
+            }
+            LanguageServiceRequest::Implementation { .. } => {
                 LanguageServiceResponse::Definition(parse_locations(&value))
             }
             LanguageServiceRequest::TypeDefinition { .. } => {
@@ -1524,6 +1536,8 @@ fn parse_server_capabilities(value: &Value) -> (LanguageServiceCapabilities, Vec
             signature_help: advertised(capabilities.get("signatureHelpProvider")),
             hover: advertised(capabilities.get("hoverProvider")),
             definition: advertised(capabilities.get("definitionProvider")),
+            declaration: advertised(capabilities.get("declarationProvider")),
+            implementation: advertised(capabilities.get("implementationProvider")),
             type_definition: advertised(capabilities.get("typeDefinitionProvider")),
             references: advertised(capabilities.get("referencesProvider")),
             call_hierarchy: advertised(capabilities.get("callHierarchyProvider")),
@@ -1604,6 +1618,14 @@ fn request_parts(uri: &str, request: &LanguageServiceRequest) -> (&'static str, 
         ),
         LanguageServiceRequest::Definition { position } => (
             "textDocument/definition",
+            json!({ "textDocument": text_document, "position": position_value(*position) }),
+        ),
+        LanguageServiceRequest::Declaration { position } => (
+            "textDocument/declaration",
+            json!({ "textDocument": text_document, "position": position_value(*position) }),
+        ),
+        LanguageServiceRequest::Implementation { position } => (
+            "textDocument/implementation",
             json!({ "textDocument": text_document, "position": position_value(*position) }),
         ),
         LanguageServiceRequest::TypeDefinition { position } => (
@@ -1898,9 +1920,15 @@ fn parse_locations(value: &Value) -> Vec<NavigationTarget> {
     values
         .iter()
         .filter_map(|item| {
+            let uri = item
+                .get("uri")
+                .or_else(|| item.get("targetUri"))
+                .and_then(Value::as_str)
+                .map(str::to_string)?;
             let range = item
                 .get("range")
                 .and_then(parse_range)
+                .or_else(|| item.get("targetRange").and_then(parse_range))
                 .or_else(|| item.get("targetSelectionRange").and_then(parse_range))?;
             let selection_range = item
                 .get("selectionRange")
@@ -1913,6 +1941,7 @@ fn parse_locations(value: &Value) -> Vec<NavigationTarget> {
                     .and_then(Value::as_str)
                     .unwrap_or("location")
                     .to_string(),
+                uri: Some(uri),
                 range,
                 selection_range,
             })
@@ -2455,7 +2484,16 @@ mod tests {
             &json!([{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } }, "newText": "pub" }]),
         );
         assert_eq!(edits[0].replacement, "pub");
-        assert_eq!(parse_locations(&json!({ "uri": "file:///x", "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } } }))[0].range.start.line, 0);
+        let locations = parse_locations(&json!([
+            { "uri": "file:///x", "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } } },
+            { "targetUri": "file:///y", "targetRange": { "start": { "line": 3, "character": 0 }, "end": { "line": 3, "character": 5 } }, "targetSelectionRange": { "start": { "line": 3, "character": 1 }, "end": { "line": 3, "character": 4 } } }
+        ]));
+        assert_eq!(locations.len(), 2);
+        assert_eq!(locations[0].uri.as_deref(), Some("file:///x"));
+        assert_eq!(locations[0].range.start.line, 0);
+        assert_eq!(locations[1].uri.as_deref(), Some("file:///y"));
+        assert_eq!(locations[1].range.start.line, 3);
+        assert_eq!(locations[1].selection_range.start.character, 1);
     }
 
     #[test]
@@ -2471,6 +2509,29 @@ mod tests {
         assert_eq!(method, "textDocument/typeDefinition");
         assert_eq!(params["textDocument"]["uri"], "file:///fixture.rs");
         assert_eq!(params["position"], json!({ "line": 2, "character": 4 }));
+    }
+
+    #[test]
+    fn declaration_and_implementation_use_distinct_lsp_methods() {
+        let position = LspPosition {
+            line: 4,
+            character: 2,
+        };
+        for (request, expected_method) in [
+            (
+                LanguageServiceRequest::Declaration { position },
+                "textDocument/declaration",
+            ),
+            (
+                LanguageServiceRequest::Implementation { position },
+                "textDocument/implementation",
+            ),
+        ] {
+            let (method, params) = request_parts("file:///fixture.rs", &request);
+            assert_eq!(method, expected_method);
+            assert_eq!(params["textDocument"]["uri"], "file:///fixture.rs");
+            assert_eq!(params["position"], json!({ "line": 4, "character": 2 }));
+        }
     }
 
     #[test]
@@ -2721,10 +2782,12 @@ mod tests {
     #[test]
     fn advertised_capabilities_are_explicit() {
         let (capabilities, types) = parse_server_capabilities(
-            &json!({ "capabilities": { "hoverProvider": true, "typeDefinitionProvider": true, "callHierarchyProvider": true, "codeLensProvider": { "resolveProvider": true }, "executeCommandProvider": { "commands": ["fixture.run"] }, "documentLinkProvider": { "resolveProvider": true }, "inlayHintProvider": { "resolveProvider": true }, "colorProvider": true, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
+            &json!({ "capabilities": { "hoverProvider": true, "declarationProvider": true, "implementationProvider": true, "typeDefinitionProvider": true, "callHierarchyProvider": true, "codeLensProvider": { "resolveProvider": true }, "executeCommandProvider": { "commands": ["fixture.run"] }, "documentLinkProvider": { "resolveProvider": true }, "inlayHintProvider": { "resolveProvider": true }, "colorProvider": true, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
         );
         assert!(capabilities.hover);
         assert!(capabilities.document_colors);
+        assert!(capabilities.declaration);
+        assert!(capabilities.implementation);
         assert!(capabilities.type_definition);
         assert!(capabilities.call_hierarchy);
         assert!(capabilities.code_lens);

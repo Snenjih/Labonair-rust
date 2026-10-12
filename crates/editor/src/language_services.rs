@@ -183,6 +183,9 @@ pub struct HoverContent {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NavigationTarget {
     pub name: String,
+    /// LSP file URI for remote targets; syntax-derived results stay local and
+    /// leave this empty because their provider does not own a file path.
+    pub uri: Option<String>,
     pub range: LspRange,
     pub selection_range: LspRange,
 }
@@ -305,6 +308,8 @@ pub enum LanguageServiceCapability {
     SignatureHelp,
     Hover,
     Definition,
+    Declaration,
+    Implementation,
     TypeDefinition,
     References,
     CallHierarchy,
@@ -366,6 +371,8 @@ pub struct LanguageServiceCapabilities {
     pub signature_help: bool,
     pub hover: bool,
     pub definition: bool,
+    pub declaration: bool,
+    pub implementation: bool,
     pub type_definition: bool,
     pub references: bool,
     pub call_hierarchy: bool,
@@ -391,6 +398,8 @@ impl LanguageServiceCapabilities {
         signature_help: false,
         hover: true,
         definition: true,
+        declaration: false,
+        implementation: false,
         type_definition: false,
         references: true,
         call_hierarchy: false,
@@ -416,6 +425,8 @@ impl LanguageServiceCapabilities {
             LanguageServiceCapability::SignatureHelp => self.signature_help,
             LanguageServiceCapability::Hover => self.hover,
             LanguageServiceCapability::Definition => self.definition,
+            LanguageServiceCapability::Declaration => self.declaration,
+            LanguageServiceCapability::Implementation => self.implementation,
             LanguageServiceCapability::TypeDefinition => self.type_definition,
             LanguageServiceCapability::References => self.references,
             LanguageServiceCapability::CallHierarchy => self.call_hierarchy,
@@ -451,6 +462,12 @@ pub enum LanguageServiceRequest {
         position: LspPosition,
     },
     Definition {
+        position: LspPosition,
+    },
+    Declaration {
+        position: LspPosition,
+    },
+    Implementation {
         position: LspPosition,
     },
     TypeDefinition {
@@ -523,6 +540,8 @@ impl LanguageServiceRequest {
             Self::SignatureHelp { .. } => LanguageServiceCapability::SignatureHelp,
             Self::Hover { .. } => LanguageServiceCapability::Hover,
             Self::Definition { .. } => LanguageServiceCapability::Definition,
+            Self::Declaration { .. } => LanguageServiceCapability::Declaration,
+            Self::Implementation { .. } => LanguageServiceCapability::Implementation,
             Self::TypeDefinition { .. } => LanguageServiceCapability::TypeDefinition,
             Self::References { .. } => LanguageServiceCapability::References,
             Self::PrepareCallHierarchy { .. }
@@ -1219,6 +1238,7 @@ impl SyntaxLanguageService {
                 .filter(|(name, _)| *name == word)
                 .map(|(name, range)| NavigationTarget {
                     name,
+                    uri: None,
                     range: LspRange::from_text_range(snapshot, range),
                     selection_range: LspRange::from_text_range(snapshot, range),
                 })
@@ -1229,6 +1249,7 @@ impl SyntaxLanguageService {
             .filter(|symbol| symbol.name == word)
             .map(|symbol| NavigationTarget {
                 name: symbol.name,
+                uri: None,
                 range: LspRange::from_text_range(snapshot, symbol.range),
                 selection_range: LspRange::from_text_range(snapshot, symbol.name_range),
             })
@@ -1238,6 +1259,7 @@ impl SyntaxLanguageService {
                 (document_symbols(self.language.language(), snapshot).is_empty()).then(|| {
                     NavigationTarget {
                         name: word,
+                        uri: None,
                         range: LspRange::from_text_range(snapshot, word_range),
                         selection_range: LspRange::from_text_range(snapshot, word_range),
                     }
@@ -1477,6 +1499,12 @@ impl LocalLanguageService for SyntaxLanguageService {
                 LanguageServiceResponse::Hover(hover)
             }
             LanguageServiceRequest::Definition { position } => {
+                LanguageServiceResponse::Definition(self.navigation(snapshot, position, false))
+            }
+            LanguageServiceRequest::Declaration { position } => {
+                LanguageServiceResponse::Definition(self.navigation(snapshot, position, false))
+            }
+            LanguageServiceRequest::Implementation { position } => {
                 LanguageServiceResponse::Definition(self.navigation(snapshot, position, false))
             }
             LanguageServiceRequest::TypeDefinition { position } => {
@@ -1793,6 +1821,18 @@ mod tests {
             LanguageServiceRequest::TypeDefinition { position: pos }.capability(),
             LanguageServiceCapability::TypeDefinition
         );
+        assert_eq!(
+            LanguageServiceRequest::Declaration { position: pos }.capability(),
+            LanguageServiceCapability::Declaration
+        );
+        assert_eq!(
+            LanguageServiceRequest::Implementation { position: pos }.capability(),
+            LanguageServiceCapability::Implementation
+        );
+        assert!(!LanguageServiceCapabilities::SYNTAX_DERIVED
+            .supports(LanguageServiceCapability::Declaration));
+        assert!(!LanguageServiceCapabilities::SYNTAX_DERIVED
+            .supports(LanguageServiceCapability::Implementation));
         assert!(!LanguageServiceCapabilities::SYNTAX_DERIVED
             .supports(LanguageServiceCapability::TypeDefinition));
         let definition = service(Language::Rust)

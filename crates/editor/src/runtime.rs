@@ -377,6 +377,8 @@ impl LanguageServiceRuntime {
                 signature_help: false,
                 hover: false,
                 definition: false,
+                declaration: false,
+                implementation: false,
                 type_definition: false,
                 references: false,
                 call_hierarchy: false,
