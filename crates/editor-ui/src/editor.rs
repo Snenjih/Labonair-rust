@@ -1359,6 +1359,18 @@ fn current_prefs(cx: &App) -> EditorSettings {
     })
 }
 
+fn primary_editor_font_family(font_family_stack: &str) -> Option<&str> {
+    let stack = font_family_stack.trim();
+    let first = stack.chars().next()?;
+    let family = if first == '"' || first == '\'' {
+        let end = stack[1..].find(first)?;
+        &stack[1..end + 1]
+    } else {
+        stack.split(',').next()?.trim()
+    };
+    (!family.is_empty()).then_some(family)
+}
+
 fn inlay_hint_tooltip_at_position<'a>(
     hints: &'a [InlayHint],
     snapshot: &labonair_editor::BufferSnapshot,
@@ -11212,12 +11224,13 @@ impl Render for EditorView {
         let muted = theme.muted_foreground();
         let accent = theme.accent();
         let gutter_bg = theme.card();
-        let editor_font_weight = gpui::FontWeight(self.prefs.font_weight() as f32);
         let mut font = theme.buffer_font();
-        font.weight = editor_font_weight;
+        if let Some(family) = primary_editor_font_family(self.prefs.font_family()) {
+            font.family = family.to_owned().into();
+        }
+        font.weight = gpui::FontWeight(self.prefs.font_weight() as f32);
         let font_px = self.effective_font_size() as f32;
         let line_h = (font_px * self.prefs.line_height()).ceil().max(1.0);
-        let editor_font_family = self.prefs.font_family().to_string();
 
         let font_id = cx.text_system().resolve_font(&font);
         let char_w = cx
@@ -11385,8 +11398,7 @@ impl Render for EditorView {
                 .justify_end()
                 .pr(px(8.0))
                 .text_size(px(font_px))
-                .font_family(editor_font_family.clone())
-                .font_weight(editor_font_weight)
+                .font(font.clone())
                 .text_color(if on_cursor { fg } else { muted })
                 .child(SharedString::from(
                     if matches!(display_row.kind, DisplayRowKind::FoldPlaceholder { .. }) {
@@ -11474,9 +11486,12 @@ impl Render for EditorView {
                 .items_start()
                 .text_size(px(font_px))
                 .line_height(px(line_h))
-                .font_family(editor_font_family.clone())
-                .font_weight(editor_font_weight)
+                .font(font.clone())
                 .text_color(fg);
+            #[cfg(test)]
+            if display_row.visual_row == first_visual {
+                row = row.debug_selector(|| "editor-first-text-row".to_string());
+            }
             row = if wrapping {
                 row.w(px(content_w))
             } else {
@@ -12144,7 +12159,7 @@ impl Render for EditorView {
                     .border_color(ui_palette.border)
                     .text_xs()
                     .text_color(ui_palette.muted)
-                    .font_family(editor_font_family.clone())
+                    .font(font.clone())
                     .child(SharedString::from(label)),
             );
         }
@@ -12191,7 +12206,7 @@ impl Render for EditorView {
             cx,
         ));
         if show_text_area {
-            let mut editor_surface_container = div().relative().flex_1().min_w_0().min_h_0();
+            let mut editor_surface_container = div().relative().flex().flex_1().min_w_0().min_h_0();
             if minimap {
                 editor_surface_container = editor_surface_container.pr(px(minimap_width));
             }
@@ -12724,6 +12739,21 @@ mod tests {
     }
 
     #[test]
+    fn editor_font_family_uses_one_family_from_a_css_stack() {
+        assert_eq!(
+            primary_editor_font_family("\"JetBrains Mono\", SFMono-Regular, monospace"),
+            Some("JetBrains Mono")
+        );
+        assert_eq!(
+            primary_editor_font_family("'Fira Code', monospace"),
+            Some("Fira Code")
+        );
+        assert_eq!(primary_editor_font_family("Fira Code"), Some("Fira Code"));
+        assert_eq!(primary_editor_font_family("  "), None);
+        assert_eq!(primary_editor_font_family("\"unterminated"), None);
+    }
+
+    #[test]
     fn modifier_wheel_zoom_requires_its_editor_preference() {
         assert!(!should_zoom_font_on_scroll(false, true, false));
         assert!(!should_zoom_font_on_scroll(false, false, true));
@@ -12950,6 +12980,37 @@ mod tests {
             let theme = cx.new(|_| ThemeStore::new(gpui::WindowAppearance::Light));
             cx.new(|cx| EditorView::new(theme, cx))
         })
+    }
+
+    #[gpui::test]
+    fn first_document_text_row_has_visible_layout_bounds(cx: &mut TestAppContext) {
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            let theme = cx.new(|_| ThemeStore::new(gpui::WindowAppearance::Dark));
+            let mut editor = EditorView::new(theme, cx);
+            editor.doc = Document::from_file(
+                "LICENSE".into(),
+                "Apache License\nVersion 2.0, January 2004\n",
+                1,
+            );
+            editor
+        });
+
+        let row_bounds = cx
+            .debug_bounds("editor-first-text-row")
+            .expect("the first document text row should be rendered");
+        assert!(f32::from(row_bounds.size.width) > 0.0);
+        assert!(f32::from(row_bounds.size.height) > 0.0);
+        let text_area_height = cx.cx.update(|app| {
+            view.read(app)
+                .bounds
+                .map(|bounds| f32::from(bounds.size.height))
+        });
+        assert!(
+            text_area_height.is_some_and(|height| height > 0.0),
+            "the editor text area must have a nonzero viewport height"
+        );
+        let first_line = cx.cx.update(|app| view.read(app).doc.snapshot().line(0));
+        assert_eq!(first_line, "Apache License");
     }
 
     #[gpui::test]

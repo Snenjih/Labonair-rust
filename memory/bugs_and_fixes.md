@@ -4,6 +4,24 @@ Older entries preserve the state of the code when each issue was recorded.
 When an API was later renamed or removed, the current implementation and
 normative documentation take precedence over the historical symbol name.
 
+## 2026-10-12 — Editor text area collapsed to zero height
+
+**Symptom:** opened files showed their path and line count, but no source text.
+A GPUI test measured a populated first row at 110×21 px while the enclosing
+text-area viewport measured 1920×0 px, so `overflow_hidden()` clipped every
+row.
+
+**Root cause:** `editor_surface_container` had the default block display. Its
+editor child used `flex_1()`, which only takes effect inside a flex container;
+the text area's children are positioned absolutely, leaving its auto height at
+zero.
+
+**Fix:** make `editor_surface_container` a flex row so the editor viewport
+fills the available height beside the optional minimap. The font stack passed
+to GPUI was also normalized to its first family while preserving the theme
+fallback chain; this was a separate rendering issue and did not correct the
+zero-height clipping by itself.
+
 ## 2026-10-12 — Buffer revisions are document-local
 
 Editor `Revision` values restart for each loaded buffer. A consumer following
