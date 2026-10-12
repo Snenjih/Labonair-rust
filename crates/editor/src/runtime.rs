@@ -379,6 +379,7 @@ impl LanguageServiceRuntime {
                 definition: false,
                 type_definition: false,
                 references: false,
+                call_hierarchy: false,
                 rename: false,
                 code_actions: false,
                 semantic_tokens: false,

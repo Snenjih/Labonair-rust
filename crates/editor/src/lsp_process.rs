@@ -21,13 +21,13 @@ use tokio::time;
 
 use crate::buffer::{BufferSnapshot, Edit};
 use crate::language_services::{
-    CancellationToken, CodeAction, CompletionItem, CompletionKind, CompletionList,
-    CompletionTextFormat, Diagnostic, DiagnosticSeverity, DocumentColor, DocumentColorValue,
-    DocumentVersion, FoldingRange, HoverContent, InlayHint, InlayHintKind, LanguageId,
-    LanguageServerId, LanguageServiceCapabilities, LanguageServiceEditCapabilities,
-    LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceError,
-    LanguageServiceRequest, LanguageServiceResponse, LanguageServiceResult, LspPosition, LspRange,
-    NavigationTarget, SemanticToken, SignatureHelp,
+    CallHierarchyCall, CallHierarchyItem, CancellationToken, CodeAction, CompletionItem,
+    CompletionKind, CompletionList, CompletionTextFormat, Diagnostic, DiagnosticSeverity,
+    DocumentColor, DocumentColorValue, DocumentVersion, FoldingRange, HoverContent, InlayHint,
+    InlayHintKind, LanguageId, LanguageServerId, LanguageServiceCapabilities,
+    LanguageServiceEditCapabilities, LanguageServiceEditRequest, LanguageServiceEditResponse,
+    LanguageServiceError, LanguageServiceRequest, LanguageServiceResponse, LanguageServiceResult,
+    LspPosition, LspRange, NavigationTarget, SemanticToken, SignatureHelp,
 };
 use crate::symbols::{DocumentSymbol, SymbolKind};
 
@@ -399,6 +399,7 @@ impl LocalLanguageServiceProcess {
                         definition: false,
                         type_definition: false,
                         references: false,
+                        call_hierarchy: false,
                         rename: false,
                         code_actions: false,
                         semantic_tokens: false,
@@ -764,6 +765,7 @@ impl LocalLanguageServiceProcess {
                 definition: false,
                 type_definition: false,
                 references: false,
+                call_hierarchy: false,
                 rename: false,
                 code_actions: false,
                 semantic_tokens: false,
@@ -802,6 +804,7 @@ impl LocalLanguageServiceProcess {
                         "textDocument": {
                             "completion": { "completionItem": { "snippetSupport": true } },
                             "hover": {},
+                            "callHierarchy": { "dynamicRegistration": false },
                             "publishDiagnostics": {},
                             "synchronization": { "dynamicRegistration": false },
                         },
@@ -1055,6 +1058,19 @@ impl LocalLanguageServiceProcess {
             }
             LanguageServiceRequest::References { .. } => {
                 LanguageServiceResponse::References(parse_locations(&value))
+            }
+            LanguageServiceRequest::PrepareCallHierarchy { .. } => {
+                LanguageServiceResponse::CallHierarchyItems(parse_call_hierarchy_items(&value))
+            }
+            LanguageServiceRequest::IncomingCalls { .. } => {
+                LanguageServiceResponse::CallHierarchyCalls(parse_call_hierarchy_calls(
+                    &value, "from",
+                ))
+            }
+            LanguageServiceRequest::OutgoingCalls { .. } => {
+                LanguageServiceResponse::CallHierarchyCalls(parse_call_hierarchy_calls(
+                    &value, "to",
+                ))
             }
             LanguageServiceRequest::Rename { .. } => {
                 LanguageServiceResponse::Rename(parse_workspace_edits(uri, snapshot, &value))
@@ -1349,6 +1365,7 @@ fn parse_server_capabilities(value: &Value) -> (LanguageServiceCapabilities, Vec
             definition: advertised(capabilities.get("definitionProvider")),
             type_definition: advertised(capabilities.get("typeDefinitionProvider")),
             references: advertised(capabilities.get("referencesProvider")),
+            call_hierarchy: advertised(capabilities.get("callHierarchyProvider")),
             rename: advertised(capabilities.get("renameProvider")),
             code_actions: advertised(capabilities.get("codeActionProvider")),
             semantic_tokens: semantic.is_some_and(|value| !value.is_null()),
@@ -1415,6 +1432,18 @@ fn request_parts(uri: &str, request: &LanguageServiceRequest) -> (&'static str, 
         LanguageServiceRequest::References { position } => (
             "textDocument/references",
             json!({ "textDocument": text_document, "position": position_value(*position), "context": { "includeDeclaration": true } }),
+        ),
+        LanguageServiceRequest::PrepareCallHierarchy { position } => (
+            "textDocument/prepareCallHierarchy",
+            json!({ "textDocument": text_document, "position": position_value(*position) }),
+        ),
+        LanguageServiceRequest::IncomingCalls { item } => (
+            "callHierarchy/incomingCalls",
+            json!({ "item": call_hierarchy_item_value(item) }),
+        ),
+        LanguageServiceRequest::OutgoingCalls { item } => (
+            "callHierarchy/outgoingCalls",
+            json!({ "item": call_hierarchy_item_value(item) }),
         ),
         LanguageServiceRequest::Rename { position, new_name } => (
             "textDocument/rename",
@@ -1690,6 +1719,82 @@ fn parse_locations(value: &Value) -> Vec<NavigationTarget> {
             })
         })
         .collect()
+}
+
+fn parse_call_hierarchy_items(value: &Value) -> Vec<CallHierarchyItem> {
+    let values = value.as_array().cloned().unwrap_or_else(|| {
+        if value.is_object() {
+            vec![value.clone()]
+        } else {
+            Vec::new()
+        }
+    });
+    values
+        .iter()
+        .filter_map(parse_call_hierarchy_item)
+        .collect()
+}
+
+fn parse_call_hierarchy_calls(value: &Value, item_field: &str) -> Vec<CallHierarchyCall> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|call| {
+            let item = parse_call_hierarchy_item(call.get(item_field)?)?;
+            let ranges = call
+                .get("fromRanges")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(parse_range)
+                .collect();
+            Some(CallHierarchyCall { item, ranges })
+        })
+        .collect()
+}
+
+fn parse_call_hierarchy_item(value: &Value) -> Option<CallHierarchyItem> {
+    Some(CallHierarchyItem {
+        name: value.get("name")?.as_str()?.to_string(),
+        kind: u32::try_from(value.get("kind")?.as_u64()?).ok()?,
+        uri: value.get("uri")?.as_str()?.to_string(),
+        range: parse_range(value.get("range")?)?,
+        selection_range: parse_range(value.get("selectionRange")?)?,
+        detail: value
+            .get("detail")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        tags: value
+            .get("tags")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_u64)
+            .filter_map(|tag| u32::try_from(tag).ok())
+            .collect(),
+        data: value.get("data").filter(|data| !data.is_null()).cloned(),
+    })
+}
+
+fn call_hierarchy_item_value(item: &CallHierarchyItem) -> Value {
+    let mut value = json!({
+        "name": item.name,
+        "kind": item.kind,
+        "uri": item.uri,
+        "range": range_value(item.range),
+        "selectionRange": range_value(item.selection_range),
+    });
+    if let Some(detail) = &item.detail {
+        value["detail"] = json!(detail);
+    }
+    if !item.tags.is_empty() {
+        value["tags"] = json!(item.tags);
+    }
+    if let Some(data) = &item.data {
+        value["data"] = data.clone();
+    }
+    value
 }
 
 fn parse_workspace_edits(uri: &str, snapshot: &BufferSnapshot, value: &Value) -> Vec<Edit> {
@@ -2089,6 +2194,93 @@ mod tests {
     }
 
     #[test]
+    fn call_hierarchy_requests_keep_the_typed_item_payload() {
+        let position = LspPosition {
+            line: 3,
+            character: 8,
+        };
+        let (method, params) = request_parts(
+            "file:///fixture.rs",
+            &LanguageServiceRequest::PrepareCallHierarchy { position },
+        );
+        assert_eq!(method, "textDocument/prepareCallHierarchy");
+        assert_eq!(params["textDocument"]["uri"], "file:///fixture.rs");
+        assert_eq!(params["position"], json!({ "line": 3, "character": 8 }));
+
+        let item = CallHierarchyItem {
+            name: "caller".into(),
+            kind: 12,
+            uri: "file:///fixture.rs".into(),
+            range: LspRange {
+                start: position,
+                end: position,
+            },
+            selection_range: LspRange {
+                start: position,
+                end: position,
+            },
+            detail: Some("module::caller".into()),
+            tags: vec![1],
+            data: Some(json!({ "serverToken": "keep-me" })),
+        };
+        let (method, params) = request_parts(
+            "file:///fixture.rs",
+            &LanguageServiceRequest::IncomingCalls { item: item.clone() },
+        );
+        assert_eq!(method, "callHierarchy/incomingCalls");
+        assert_eq!(params["item"]["data"]["serverToken"], "keep-me");
+        assert_eq!(params["item"]["detail"], "module::caller");
+
+        let (method, params) = request_parts(
+            "file:///fixture.rs",
+            &LanguageServiceRequest::OutgoingCalls { item },
+        );
+        assert_eq!(method, "callHierarchy/outgoingCalls");
+        assert_eq!(params["item"]["kind"], 12);
+    }
+
+    #[test]
+    fn call_hierarchy_results_parse_items_and_call_ranges() {
+        let item = json!({
+            "name": "caller",
+            "kind": 12,
+            "uri": "file:///repo/src/lib.rs",
+            "range": { "start": { "line": 2, "character": 0 }, "end": { "line": 4, "character": 1 } },
+            "selectionRange": { "start": { "line": 2, "character": 4 }, "end": { "line": 2, "character": 10 } },
+            "detail": "module::caller",
+            "tags": [1],
+            "data": { "id": 7 }
+        });
+        let prepared = parse_call_hierarchy_items(&json!([item.clone()]));
+        assert_eq!(prepared.len(), 1);
+        assert_eq!(prepared[0].name, "caller");
+        assert_eq!(prepared[0].detail.as_deref(), Some("module::caller"));
+        assert_eq!(prepared[0].tags, vec![1]);
+        assert_eq!(prepared[0].data, Some(json!({ "id": 7 })));
+
+        let calls = parse_call_hierarchy_calls(
+            &json!([{
+                "from": item,
+                "fromRanges": [{
+                    "start": { "line": 3, "character": 6 },
+                    "end": { "line": 3, "character": 12 }
+                }]
+            }]),
+            "from",
+        );
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].item.uri, "file:///repo/src/lib.rs");
+        assert_eq!(
+            calls[0].ranges[0].start,
+            LspPosition {
+                line: 3,
+                character: 6
+            }
+        );
+        assert!(parse_call_hierarchy_calls(&json!([{}]), "to").is_empty());
+    }
+
+    #[test]
     fn inlay_hints_use_the_lsp_range_and_parse_labels_without_editing_text() {
         let range = LspRange {
             start: LspPosition {
@@ -2151,11 +2343,12 @@ mod tests {
     #[test]
     fn advertised_capabilities_are_explicit() {
         let (capabilities, types) = parse_server_capabilities(
-            &json!({ "capabilities": { "hoverProvider": true, "typeDefinitionProvider": true, "inlayHintProvider": { "resolveProvider": true }, "colorProvider": true, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
+            &json!({ "capabilities": { "hoverProvider": true, "typeDefinitionProvider": true, "callHierarchyProvider": true, "inlayHintProvider": { "resolveProvider": true }, "colorProvider": true, "semanticTokensProvider": { "legend": { "tokenTypes": ["type"] } } } }),
         );
         assert!(capabilities.hover);
         assert!(capabilities.document_colors);
         assert!(capabilities.type_definition);
+        assert!(capabilities.call_hierarchy);
         assert!(capabilities.inlay_hints);
         assert!(!capabilities.completion);
         assert_eq!(types, vec!["type"]);

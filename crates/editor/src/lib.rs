@@ -69,13 +69,13 @@ pub use helix::{Helix, HelixKey, HelixMode};
 pub use kill_ring::{KillRing, KILL_RING_CAPACITY};
 pub use language::Language;
 pub use language_services::{
-    default_registry, BackgroundRequest, CancellationToken, CodeAction, CompletionItem,
-    CompletionKind, CompletionList, CompletionTextFormat, Diagnostic, DiagnosticSeverity,
-    DocumentColor, DocumentColorValue, DocumentVersion, FoldingRange, HoverContent, InlayHint,
-    InlayHintKind, LanguageId, LanguageServerId, LanguageServiceCapabilities,
-    LanguageServiceCapability, LanguageServiceEditCapabilities, LanguageServiceEditCapability,
-    LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceError,
-    LanguageServiceRegistry, LanguageServiceRequest, LanguageServiceResponse,
+    default_registry, BackgroundRequest, CallHierarchyCall, CallHierarchyItem, CancellationToken,
+    CodeAction, CompletionItem, CompletionKind, CompletionList, CompletionTextFormat, Diagnostic,
+    DiagnosticSeverity, DocumentColor, DocumentColorValue, DocumentVersion, FoldingRange,
+    HoverContent, InlayHint, InlayHintKind, LanguageId, LanguageServerId,
+    LanguageServiceCapabilities, LanguageServiceCapability, LanguageServiceEditCapabilities,
+    LanguageServiceEditCapability, LanguageServiceEditRequest, LanguageServiceEditResponse,
+    LanguageServiceError, LanguageServiceRegistry, LanguageServiceRequest, LanguageServiceResponse,
     LanguageServiceResult, LanguageServiceSnapshot, LanguageServiceState, LocalLanguageService,
     LspPosition, LspRange, NavigationTarget, SemanticToken, SignatureHelp, SyntaxLanguageService,
 };

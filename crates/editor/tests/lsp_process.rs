@@ -107,6 +107,84 @@ async fn process_handshake_sync_and_response_correlation_work() {
 }
 
 #[tokio::test]
+async fn call_hierarchy_prepares_and_loads_incoming_and_outgoing_calls() {
+    let process = LocalLanguageServiceProcess::spawn(config())
+        .await
+        .expect("fixture starts");
+    assert!(process.capabilities().await.call_hierarchy);
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "fn root() {}".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+    let snapshot = EditorBuffer::from_text("fn root() {}").snapshot();
+    let prepared = process
+        .request(LocalLanguageServiceRequest {
+            uri: "file:///fixture".into(),
+            snapshot: snapshot.clone(),
+            version: DocumentVersion::new(1),
+            generation: 1,
+            request: LanguageServiceRequest::PrepareCallHierarchy {
+                position: LspPosition {
+                    line: 0,
+                    character: 3,
+                },
+            },
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    let item = match prepared.response {
+        Ok(LanguageServiceResponse::CallHierarchyItems(items)) => {
+            assert_eq!(items[0].name, "root");
+            assert_eq!(items[0].data, Some(serde_json::json!({ "symbol": "root" })));
+            items[0].clone()
+        }
+        other => panic!("unexpected prepare result: {other:?}"),
+    };
+
+    let incoming = process
+        .request(LocalLanguageServiceRequest {
+            uri: "file:///fixture".into(),
+            snapshot: snapshot.clone(),
+            version: DocumentVersion::new(1),
+            generation: 1,
+            request: LanguageServiceRequest::IncomingCalls { item: item.clone() },
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(matches!(
+        incoming.response,
+        Ok(LanguageServiceResponse::CallHierarchyCalls(calls))
+            if calls[0].item.name == "caller"
+                && calls[0].item.uri == "file:///caller.rs"
+                && calls[0].ranges[0].start.line == 2
+    ));
+
+    let outgoing = process
+        .request(LocalLanguageServiceRequest {
+            uri: "file:///fixture".into(),
+            snapshot,
+            version: DocumentVersion::new(1),
+            generation: 1,
+            request: LanguageServiceRequest::OutgoingCalls { item },
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(matches!(
+        outgoing.response,
+        Ok(LanguageServiceResponse::CallHierarchyCalls(calls))
+            if calls[0].item.name == "callee"
+                && calls[0].item.uri == "file:///callee.rs"
+    ));
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
 async fn stale_versions_and_unadvertised_capabilities_are_typed() {
     let process = LocalLanguageServiceProcess::spawn(config_with(vec!["minimal".into()]))
         .await

@@ -12,6 +12,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
@@ -49,23 +50,24 @@ use labonair_editor::{
         FileCapabilities, FileLifecycleEvent, FileState, LineEnding, ReloadDecision, SaveIntent,
     },
     map_range_through_edits, next_match_with_wrap, replace_all_checked, replace_one,
-    word_at_cursor, Anchor, AnchorAffinity, BufferSnapshot, CancellationToken, DisplayConfig,
-    DisplayMap, DisplayRowKind, DisplaySnapshot, Document, DocumentColor, DocumentColorValue,
-    DocumentVersion, Edit, EditorEditability, EditorSessionId, EditorSessionSnapshot,
-    EditorViewSession, FoldRange, FoldingRange, GitBlameRequest, GitBlameSnapshot,
-    GitDecorationProvider, GitDecorationRequest, GitDiscardPreview, GitEditorCommand,
-    GitGutterError, GitGutterSnapshot, GitHunkAction, GitHunkActionKind, GitHunkStatus, Helix,
-    HelixKey, HelixMode, HunkActionSink, InlayHint, InlayHintKind, KillRing, Language, LanguageId,
-    LanguageServiceCapabilities, LanguageServiceEditRequest, LanguageServiceEditResponse,
-    LanguageServiceRequest, LanguageServiceResponse, LanguageServiceResult, LanguageServiceRuntime,
-    LanguageServiceRuntimeSnapshot, LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus,
-    LanguageServiceSnapshot, LanguageServiceState, LocalLanguageServiceRequest, LspPosition,
-    LspRange, Match, NavigationHistory, NavigationLocation, Position, ProjectBufferCandidate,
-    ProjectReplacePlan, ProjectReplaceRequest, ProjectReplaceResult, ProjectReplaceTarget,
-    ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest, ProjectSearchResult,
-    ProjectSearchSession, ProjectSearchSnapshot, Revision, SavePolicy, SearchError, SearchOptions,
-    SearchQuery, Selection, SelectionSet, SnippetSession, SyntaxHighlighter, TextRange, Viewport,
-    Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
+    word_at_cursor, Anchor, AnchorAffinity, BufferSnapshot, CallHierarchyCall, CallHierarchyItem,
+    CancellationToken, DisplayConfig, DisplayMap, DisplayRowKind, DisplaySnapshot, Document,
+    DocumentColor, DocumentColorValue, DocumentVersion, Edit, EditorEditability, EditorSessionId,
+    EditorSessionSnapshot, EditorViewSession, FoldRange, FoldingRange, GitBlameRequest,
+    GitBlameSnapshot, GitDecorationProvider, GitDecorationRequest, GitDiscardPreview,
+    GitEditorCommand, GitGutterError, GitGutterSnapshot, GitHunkAction, GitHunkActionKind,
+    GitHunkStatus, Helix, HelixKey, HelixMode, HunkActionSink, InlayHint, InlayHintKind, KillRing,
+    Language, LanguageId, LanguageServiceCapabilities, LanguageServiceEditRequest,
+    LanguageServiceEditResponse, LanguageServiceRequest, LanguageServiceResponse,
+    LanguageServiceResult, LanguageServiceRuntime, LanguageServiceRuntimeSnapshot,
+    LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus, LanguageServiceSnapshot,
+    LanguageServiceState, LocalLanguageServiceRequest, LspPosition, LspRange, Match,
+    NavigationHistory, NavigationLocation, Position, ProjectBufferCandidate, ProjectReplacePlan,
+    ProjectReplaceRequest, ProjectReplaceResult, ProjectReplaceTarget, ProjectSearchHit,
+    ProjectSearchQuery, ProjectSearchRequest, ProjectSearchResult, ProjectSearchSession,
+    ProjectSearchSnapshot, Revision, SavePolicy, SearchError, SearchOptions, SearchQuery,
+    Selection, SelectionSet, SnippetSession, SyntaxHighlighter, TextRange, Viewport, Vim, VimKey,
+    VimMode, VimOptions, WhitespaceMode,
 };
 use labonair_editor::{build_breadcrumb_state, BreadcrumbState};
 
@@ -78,6 +80,8 @@ use labonair_ui_kit::{
     ButtonVariant, IconButtonShape, IconName, InputEvent, InputState, ListItem, MenuItem, Palette,
     SelectOption, SelectPopoverAnchor, Severity, SubmenuHoverSource, TextFieldState, Tooltip,
 };
+
+type CallHierarchyNavigator = Rc<dyn Fn(String, LspPosition, &mut Window, &mut App)>;
 
 /// Editor → workspace notifications.
 #[derive(Clone, Debug)]
@@ -765,8 +769,16 @@ enum LanguageServiceRequestSlot {
     SignatureHelp,
     Navigation,
     TypeDefinition,
+    CallHierarchy,
     InlayHints,
     FoldingRanges,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum CallHierarchyDirection {
+    #[default]
+    Incoming,
+    Outgoing,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1066,6 +1078,7 @@ pub struct EditorView {
     buffer_search_input: Option<Entity<InputState>>,
     project_search: ProjectSearchSession,
     pending_navigation: Option<Position>,
+    pending_lsp_navigation: Option<LspPosition>,
     navigation_history: NavigationHistory,
     /// Tree-sitter syntax highlighter for the current document (T06-002).
     syntax: SyntaxHighlighter,
@@ -1101,6 +1114,7 @@ pub struct EditorView {
     /// Editor-owned language-service runtime and its revision-safe result
     /// projection. Workspace only injects the runtime at composition time.
     language_services: Arc<LanguageServiceRuntime>,
+    call_hierarchy_navigator: Option<CallHierarchyNavigator>,
     language_service_snapshot: LanguageServiceRuntimeSnapshot,
     language_service_state: LanguageServiceState,
     language_service_uri: Option<String>,
@@ -1126,6 +1140,12 @@ pub struct EditorView {
     folding_ranges_request_serial: Option<u64>,
     language_service_request_serial: u64,
     code_actions: Option<Vec<labonair_editor::CodeAction>>,
+    call_hierarchy_root: Option<CallHierarchyItem>,
+    call_hierarchy_calls: Vec<CallHierarchyCall>,
+    call_hierarchy_direction: CallHierarchyDirection,
+    call_hierarchy_open: bool,
+    call_hierarchy_loading: bool,
+    call_hierarchy_request_serial: Option<u64>,
     rename_requested: bool,
     rename_input: Option<Entity<InputState>>,
     go_to_line_requested: bool,
@@ -1201,6 +1221,9 @@ impl EditorView {
     fn keymap_context(&self) -> KeyContext {
         let mut context = KeyContext::default();
         context.add("Editor");
+        if self.call_hierarchy_open {
+            context.add("CallHierarchyPicker");
+        }
 
         let (editor_mode, modal_mode) = if let Some(vim) = &self.vim {
             context.add("EditorVim");
@@ -1325,6 +1348,7 @@ impl EditorView {
             buffer_search_input: None,
             project_search: ProjectSearchSession::default(),
             pending_navigation: None,
+            pending_lsp_navigation: None,
             navigation_history: NavigationHistory::default(),
             syntax: SyntaxHighlighter::new(Language::PlainText),
             vim,
@@ -1350,6 +1374,7 @@ impl EditorView {
             character_palette_group_open: None,
             git_discard_confirmation: None,
             language_services,
+            call_hierarchy_navigator: None,
             language_service_snapshot,
             language_service_state: LanguageServiceState::new(DocumentVersion::new(0)),
             language_service_uri: None,
@@ -1375,6 +1400,12 @@ impl EditorView {
             folding_ranges_request_serial: None,
             language_service_request_serial: 0,
             code_actions: None,
+            call_hierarchy_root: None,
+            call_hierarchy_calls: Vec::new(),
+            call_hierarchy_direction: CallHierarchyDirection::Incoming,
+            call_hierarchy_open: false,
+            call_hierarchy_loading: false,
+            call_hierarchy_request_serial: None,
             rename_requested: false,
             rename_input: None,
             go_to_line_requested: false,
@@ -1401,6 +1432,14 @@ impl EditorView {
                 .snapshot(self.doc.language, DocumentVersion::new(0), 0);
         self.language_service_open = false;
         self.language_service_uri = None;
+    }
+
+    /// Inject the Workspace-owned file-opening path for call-hierarchy rows.
+    pub fn set_call_hierarchy_navigator(
+        &mut self,
+        navigator: impl Fn(String, LspPosition, &mut Window, &mut App) + 'static,
+    ) {
+        self.call_hierarchy_navigator = Some(Rc::new(navigator));
     }
 
     pub fn language_service_snapshot(&self) -> LanguageServiceRuntimeSnapshot {
@@ -1769,6 +1808,12 @@ impl EditorView {
                 self.dismiss_completion();
                 self.schedule_completion(cx);
             }
+            EditorLanguageCommand::ShowIncomingCalls => {
+                self.start_call_hierarchy(cx);
+            }
+            EditorLanguageCommand::ToggleCallHierarchyDirection => {
+                self.toggle_call_hierarchy_direction(cx);
+            }
             EditorLanguageCommand::GoToDefinition
             | EditorLanguageCommand::GoToDeclaration
             | EditorLanguageCommand::GoToImplementation
@@ -1849,6 +1894,41 @@ impl EditorView {
             EditorLanguageCommand::NextDiagnostic => self.navigate_diagnostic(true, cx),
             EditorLanguageCommand::PreviousDiagnostic => self.navigate_diagnostic(false, cx),
         }
+    }
+
+    fn start_call_hierarchy(&mut self, cx: &mut Context<Self>) {
+        self.call_hierarchy_open = true;
+        self.call_hierarchy_loading = true;
+        self.call_hierarchy_root = None;
+        self.call_hierarchy_calls.clear();
+        self.call_hierarchy_direction = CallHierarchyDirection::Incoming;
+        self.request_language_service(
+            LanguageServiceRequest::PrepareCallHierarchy {
+                position: self.current_lsp_position(),
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn toggle_call_hierarchy_direction(&mut self, cx: &mut Context<Self>) {
+        let Some(item) = self.call_hierarchy_root.clone() else {
+            self.start_call_hierarchy(cx);
+            return;
+        };
+        self.call_hierarchy_direction = match self.call_hierarchy_direction {
+            CallHierarchyDirection::Incoming => CallHierarchyDirection::Outgoing,
+            CallHierarchyDirection::Outgoing => CallHierarchyDirection::Incoming,
+        };
+        self.call_hierarchy_open = true;
+        self.call_hierarchy_loading = true;
+        self.call_hierarchy_calls.clear();
+        let request = match self.call_hierarchy_direction {
+            CallHierarchyDirection::Incoming => LanguageServiceRequest::IncomingCalls { item },
+            CallHierarchyDirection::Outgoing => LanguageServiceRequest::OutgoingCalls { item },
+        };
+        self.request_language_service(request, cx);
+        cx.notify();
     }
 
     /// Snapshot of the Editor-owned internal split tree for integration and
@@ -2063,6 +2143,11 @@ impl EditorView {
         self.signature_help_request_serial = None;
         self.signature_help_position = None;
         self.code_actions = None;
+        self.call_hierarchy_root = None;
+        self.call_hierarchy_calls.clear();
+        self.call_hierarchy_open = false;
+        self.call_hierarchy_loading = false;
+        self.call_hierarchy_request_serial = None;
         self.rename_requested = false;
         self.rename_input = None;
         self.format_on_save_in_flight = false;
@@ -2162,6 +2247,13 @@ impl EditorView {
             LanguageServiceRequest::TypeDefinition { position } => {
                 (LanguageServiceRequestSlot::TypeDefinition, Some(*position))
             }
+            LanguageServiceRequest::PrepareCallHierarchy { position } => {
+                (LanguageServiceRequestSlot::CallHierarchy, Some(*position))
+            }
+            LanguageServiceRequest::IncomingCalls { .. }
+            | LanguageServiceRequest::OutgoingCalls { .. } => {
+                (LanguageServiceRequestSlot::CallHierarchy, None)
+            }
             LanguageServiceRequest::InlayHints { .. } => {
                 (LanguageServiceRequestSlot::InlayHints, None)
             }
@@ -2192,6 +2284,9 @@ impl EditorView {
             }
             LanguageServiceRequestSlot::FoldingRanges => {
                 self.folding_ranges_request_serial = Some(request_serial);
+            }
+            LanguageServiceRequestSlot::CallHierarchy => {
+                self.call_hierarchy_request_serial = Some(request_serial);
             }
             LanguageServiceRequestSlot::Other => {}
         }
@@ -2238,6 +2333,7 @@ impl EditorView {
                             LanguageServiceRequestSlot::Completion
                                 | LanguageServiceRequestSlot::SignatureHelp
                                 | LanguageServiceRequestSlot::TypeDefinition
+                                | LanguageServiceRequestSlot::CallHierarchy
                         ) || this.format_on_save_in_flight))
                 {
                     this.apply_language_service_response(response, slot, cx);
@@ -2275,6 +2371,11 @@ impl EditorView {
                     && self.navigation_position == request_position
                     && request_position
                         .is_some_and(|position| self.current_lsp_position() == position)
+            }
+            LanguageServiceRequestSlot::CallHierarchy => {
+                self.call_hierarchy_request_serial == Some(request_serial)
+                    && request_position
+                        .is_none_or(|position| self.current_lsp_position() == position)
             }
             LanguageServiceRequestSlot::InlayHints => {
                 self.inlay_hints_request_serial == Some(request_serial)
@@ -2375,6 +2476,14 @@ impl EditorView {
             } else if slot == LanguageServiceRequestSlot::FoldingRanges {
                 self.server_fold_ranges.clear();
                 cx.notify();
+            } else if slot == LanguageServiceRequestSlot::CallHierarchy {
+                self.call_hierarchy_loading = false;
+                notify(
+                    cx,
+                    "Call hierarchy unavailable",
+                    &response_error_text(&response),
+                );
+                cx.notify();
             }
             return;
         };
@@ -2393,6 +2502,24 @@ impl EditorView {
                         .to_position(&self.doc.snapshot());
                     self.goto_position(position, cx);
                 }
+            }
+            LanguageServiceResponse::CallHierarchyItems(items) => {
+                let Some(item) = items.into_iter().next() else {
+                    self.call_hierarchy_root = None;
+                    self.call_hierarchy_loading = false;
+                    notify_info(cx, "Call hierarchy", "No callable symbol was found here.");
+                    cx.notify();
+                    return;
+                };
+                self.call_hierarchy_root = Some(item.clone());
+                self.call_hierarchy_direction = CallHierarchyDirection::Incoming;
+                self.call_hierarchy_loading = true;
+                self.request_language_service(LanguageServiceRequest::IncomingCalls { item }, cx);
+            }
+            LanguageServiceResponse::CallHierarchyCalls(calls) => {
+                self.call_hierarchy_calls = calls;
+                self.call_hierarchy_loading = false;
+                cx.notify();
             }
             LanguageServiceResponse::Formatting(edits) => {
                 let save_after_format = self.format_on_save_in_flight;
@@ -3619,7 +3746,20 @@ impl EditorView {
             self.pending_navigation = Some(position);
             return;
         }
+        self.pending_lsp_navigation = None;
         self.navigate_to_position(position, cx);
+    }
+
+    /// Move to an LSP UTF-16 position, retaining it until the target document
+    /// finishes loading when Workspace has just opened the result file.
+    pub fn goto_lsp_position(&mut self, position: LspPosition, cx: &mut Context<Self>) {
+        if matches!(self.doc.file_state(), FileState::Loading) {
+            self.pending_lsp_navigation = Some(position);
+            return;
+        }
+        self.pending_lsp_navigation = None;
+        let buffer_position = position.to_position(&self.doc.snapshot());
+        self.navigate_to_position(buffer_position, cx);
     }
 
     fn navigation_location(&self) -> NavigationLocation {
@@ -4182,6 +4322,7 @@ impl EditorView {
         self.format_on_save_in_flight = false;
         self.save_intent_after_format = None;
         self.pending_navigation = None;
+        self.pending_lsp_navigation = None;
         self.navigation_history.clear();
         self.doc = Document::loading(path.clone());
         self.reset_editor_group_views();
@@ -4204,7 +4345,9 @@ impl EditorView {
                 if !failed {
                     this.apply_pending_session();
                     this.sync_language_service_document(cx);
-                    if let Some(position) = this.pending_navigation.take() {
+                    if let Some(position) = this.pending_lsp_navigation.take() {
+                        this.goto_lsp_position(position, cx);
+                    } else if let Some(position) = this.pending_navigation.take() {
                         this.goto_position(position, cx);
                     }
                 }
@@ -5419,6 +5562,18 @@ impl EditorView {
             && !m.alt
         {
             self.cancel_go_to_line_column(cx);
+            cx.stop_propagation();
+            return;
+        }
+
+        if self.call_hierarchy_open
+            && ks.key.as_str() == "escape"
+            && !m.platform
+            && !m.control
+            && !m.alt
+        {
+            self.call_hierarchy_open = false;
+            cx.notify();
             cx.stop_propagation();
             return;
         }
@@ -8912,6 +9067,125 @@ impl EditorView {
                 }
             }
         }
+        if self.call_hierarchy_open {
+            shown = true;
+            let direction_label = match self.call_hierarchy_direction {
+                CallHierarchyDirection::Incoming => "Incoming calls",
+                CallHierarchyDirection::Outgoing => "Outgoing calls",
+            };
+            let toggle_label = match self.call_hierarchy_direction {
+                CallHierarchyDirection::Incoming => "Show outgoing",
+                CallHierarchyDirection::Outgoing => "Show incoming",
+            };
+            let root_label = self
+                .call_hierarchy_root
+                .as_ref()
+                .map(|item| item.name.as_str())
+                .unwrap_or("Call hierarchy");
+            let header = div()
+                .flex()
+                .items_center()
+                .gap_1()
+                .child(labonair_ui_kit::list_header(
+                    format!("{direction_label} · {root_label}"),
+                    palette.muted,
+                ))
+                .child(
+                    button(
+                        "editor-call-hierarchy-toggle-direction",
+                        palette,
+                        ButtonVariant::Subtle,
+                        ButtonSize::Xs,
+                    )
+                    .child(toggle_label)
+                    .on_click(cx.listener(
+                        |this, _: &ClickEvent, _window, cx| {
+                            this.toggle_call_hierarchy_direction(cx);
+                        },
+                    )),
+                )
+                .child(
+                    button(
+                        "editor-call-hierarchy-close",
+                        palette,
+                        ButtonVariant::Subtle,
+                        ButtonSize::Xs,
+                    )
+                    .child("Close")
+                    .on_click(cx.listener(
+                        |this, _: &ClickEvent, _window, cx| {
+                            this.call_hierarchy_open = false;
+                            cx.notify();
+                        },
+                    )),
+                );
+            overlay = overlay.child(header);
+            if self.call_hierarchy_loading {
+                overlay = overlay.child(
+                    div()
+                        .px_2()
+                        .py_1()
+                        .text_xs()
+                        .text_color(palette.muted)
+                        .child("Loading call hierarchy…"),
+                );
+            } else if self.call_hierarchy_calls.is_empty() {
+                overlay = overlay.child(
+                    div()
+                        .px_2()
+                        .py_1()
+                        .text_xs()
+                        .text_color(palette.muted)
+                        .child(match self.call_hierarchy_direction {
+                            CallHierarchyDirection::Incoming => "No incoming calls.",
+                            CallHierarchyDirection::Outgoing => "No outgoing calls.",
+                        }),
+                );
+            } else {
+                let rows =
+                    self.call_hierarchy_calls
+                        .iter()
+                        .enumerate()
+                        .take(100)
+                        .map(|(index, call)| {
+                            let line = call.item.selection_range.start.line.saturating_add(1);
+                            let file = call
+                                .item
+                                .uri
+                                .rsplit('/')
+                                .next()
+                                .unwrap_or(call.item.uri.as_str());
+                            let detail = call.item.detail.as_deref().unwrap_or(file);
+                            let label = format!("{} · {detail}:{line}", call.item.name);
+                            let uri = call.item.uri.clone();
+                            let position = call.item.selection_range.start;
+                            ListItem::new(
+                                ("editor-call-hierarchy-item", index),
+                                palette.fg,
+                                palette.muted,
+                                palette.selected_fill,
+                            )
+                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                this.call_hierarchy_open = false;
+                                if this.language_service_uri.as_deref() == Some(uri.as_str()) {
+                                    this.goto_lsp_position(position, cx);
+                                } else if let Some(navigate) = this.call_hierarchy_navigator.clone()
+                                {
+                                    navigate(uri.clone(), position, window, cx);
+                                }
+                                cx.notify();
+                            }))
+                            .child(SharedString::from(label))
+                        });
+                overlay = overlay.child(
+                    div()
+                        .id("editor-call-hierarchy-results")
+                        .max_h(px(240.0))
+                        .overflow_y_scroll()
+                        .children(rows),
+                );
+            }
+        }
         if let Some(actions) = self.code_actions.clone() {
             if !actions.is_empty() {
                 shown = true;
@@ -10348,6 +10622,75 @@ mod tests {
             let theme = cx.new(|_| ThemeStore::new(gpui::WindowAppearance::Light));
             cx.new(|cx| EditorView::new(theme, cx))
         })
+    }
+
+    #[gpui::test]
+    fn call_hierarchy_commands_open_a_contextual_picker(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("main.rs".into(), "fn main() {}", 1);
+                assert!(this.dispatch_registered_command(CommandId::EditorShowIncomingCalls, cx));
+                assert!(this.call_hierarchy_open);
+                assert_eq!(
+                    this.call_hierarchy_direction,
+                    CallHierarchyDirection::Incoming
+                );
+                assert!(key_context_matches(
+                    &this.keymap_context(),
+                    "CallHierarchyPicker"
+                ));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn call_hierarchy_rows_keep_typed_targets_and_utf16_navigation(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.doc = Document::from_file("main.rs".into(), "a😀bc\n", 1);
+                let position = LspPosition {
+                    line: 0,
+                    character: 3,
+                };
+                this.goto_lsp_position(position, cx);
+                assert_eq!(this.cursor_position(), Position::new(0, 2));
+
+                let item = CallHierarchyItem {
+                    name: "caller".into(),
+                    kind: 12,
+                    uri: "file:///repo/caller.rs".into(),
+                    range: LspRange {
+                        start: position,
+                        end: position,
+                    },
+                    selection_range: LspRange {
+                        start: position,
+                        end: position,
+                    },
+                    detail: Some("crate::caller".into()),
+                    tags: Vec::new(),
+                    data: None,
+                };
+                this.apply_language_service_response(
+                    Ok(LanguageServiceResponse::CallHierarchyCalls(vec![
+                        CallHierarchyCall {
+                            item: item.clone(),
+                            ranges: vec![item.selection_range],
+                        },
+                    ])),
+                    LanguageServiceRequestSlot::CallHierarchy,
+                    cx,
+                );
+                assert!(!this.call_hierarchy_loading);
+                assert_eq!(this.call_hierarchy_calls[0].item.name, "caller");
+                assert_eq!(
+                    this.call_hierarchy_calls[0].item.uri,
+                    "file:///repo/caller.rs"
+                );
+            });
+        });
     }
 
     fn key_context_matches(context: &KeyContext, expression: &str) -> bool {

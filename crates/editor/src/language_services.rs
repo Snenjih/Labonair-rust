@@ -15,6 +15,8 @@ use std::sync::{
 };
 use std::thread::{self, JoinHandle};
 
+use serde_json::Value;
+
 use crate::buffer::{BufferSnapshot, Edit, Position, Revision, TextRange};
 use crate::language::Language;
 use crate::symbols::{document_symbols, DocumentSymbol};
@@ -185,6 +187,27 @@ pub struct NavigationTarget {
     pub selection_range: LspRange,
 }
 
+/// One LSP call-hierarchy symbol. `data` is opaque server state that must be
+/// returned unchanged when requesting incoming or outgoing calls.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CallHierarchyItem {
+    pub name: String,
+    pub kind: u32,
+    pub uri: String,
+    pub range: LspRange,
+    pub selection_range: LspRange,
+    pub detail: Option<String>,
+    pub tags: Vec<u32>,
+    pub data: Option<Value>,
+}
+
+/// A caller/callee row and the source ranges that form the call site.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CallHierarchyCall {
+    pub item: CallHierarchyItem,
+    pub ranges: Vec<LspRange>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CodeAction {
     pub title: String,
@@ -256,6 +279,7 @@ pub enum LanguageServiceCapability {
     Definition,
     TypeDefinition,
     References,
+    CallHierarchy,
     Rename,
     CodeActions,
     SemanticTokens,
@@ -311,6 +335,7 @@ pub struct LanguageServiceCapabilities {
     pub definition: bool,
     pub type_definition: bool,
     pub references: bool,
+    pub call_hierarchy: bool,
     pub rename: bool,
     pub code_actions: bool,
     pub semantic_tokens: bool,
@@ -330,6 +355,7 @@ impl LanguageServiceCapabilities {
         definition: true,
         type_definition: false,
         references: true,
+        call_hierarchy: false,
         rename: true,
         code_actions: true,
         semantic_tokens: true,
@@ -349,6 +375,7 @@ impl LanguageServiceCapabilities {
             LanguageServiceCapability::Definition => self.definition,
             LanguageServiceCapability::TypeDefinition => self.type_definition,
             LanguageServiceCapability::References => self.references,
+            LanguageServiceCapability::CallHierarchy => self.call_hierarchy,
             LanguageServiceCapability::Rename => self.rename,
             LanguageServiceCapability::CodeActions => self.code_actions,
             LanguageServiceCapability::SemanticTokens => self.semantic_tokens,
@@ -383,6 +410,15 @@ pub enum LanguageServiceRequest {
     },
     References {
         position: LspPosition,
+    },
+    PrepareCallHierarchy {
+        position: LspPosition,
+    },
+    IncomingCalls {
+        item: CallHierarchyItem,
+    },
+    OutgoingCalls {
+        item: CallHierarchyItem,
     },
     Rename {
         position: LspPosition,
@@ -429,6 +465,9 @@ impl LanguageServiceRequest {
             Self::Definition { .. } => LanguageServiceCapability::Definition,
             Self::TypeDefinition { .. } => LanguageServiceCapability::TypeDefinition,
             Self::References { .. } => LanguageServiceCapability::References,
+            Self::PrepareCallHierarchy { .. }
+            | Self::IncomingCalls { .. }
+            | Self::OutgoingCalls { .. } => LanguageServiceCapability::CallHierarchy,
             Self::Rename { .. } => LanguageServiceCapability::Rename,
             Self::CodeActions { .. } => LanguageServiceCapability::CodeActions,
             Self::SemanticTokens => LanguageServiceCapability::SemanticTokens,
@@ -450,6 +489,8 @@ pub enum LanguageServiceResponse {
     Definition(Vec<NavigationTarget>),
     TypeDefinition(Vec<NavigationTarget>),
     References(Vec<NavigationTarget>),
+    CallHierarchyItems(Vec<CallHierarchyItem>),
+    CallHierarchyCalls(Vec<CallHierarchyCall>),
     Rename(Vec<Edit>),
     CodeActions(Vec<CodeAction>),
     SemanticTokens(Vec<SemanticToken>),
@@ -1374,6 +1415,13 @@ impl LocalLanguageService for SyntaxLanguageService {
             LanguageServiceRequest::References { position } => {
                 LanguageServiceResponse::References(self.navigation(snapshot, position, true))
             }
+            LanguageServiceRequest::PrepareCallHierarchy { .. }
+            | LanguageServiceRequest::IncomingCalls { .. }
+            | LanguageServiceRequest::OutgoingCalls { .. } => {
+                return Err(LanguageServiceError::UnsupportedCapability(
+                    LanguageServiceCapability::CallHierarchy,
+                ));
+            }
             LanguageServiceRequest::Rename { position, new_name } => {
                 LanguageServiceResponse::Rename(self.rename(snapshot, position, new_name))
             }
@@ -1675,6 +1723,34 @@ mod tests {
             )
             .unwrap();
         assert!(matches!(rename, LanguageServiceResponse::Rename(ref edits) if edits.len() == 2));
+    }
+
+    #[test]
+    fn call_hierarchy_is_a_separate_lsp_capability() {
+        let snapshot = snapshot("fn caller() { callee(); }\nfn callee() {}\n");
+        let position = LspPosition {
+            line: 0,
+            character: 5,
+        };
+        let request = LanguageServiceRequest::PrepareCallHierarchy { position };
+        assert_eq!(
+            request.capability(),
+            LanguageServiceCapability::CallHierarchy
+        );
+        assert!(!service(Language::Rust)
+            .capabilities()
+            .supports(LanguageServiceCapability::CallHierarchy));
+        assert!(matches!(
+            service(Language::Rust).request(
+                &snapshot,
+                DocumentVersion::new(1),
+                request,
+                &CancellationToken::default(),
+            ),
+            Err(LanguageServiceError::UnsupportedCapability(
+                LanguageServiceCapability::CallHierarchy
+            ))
+        ));
     }
 
     #[test]

@@ -161,6 +161,58 @@ fn relative_path_under_root(path: &Path, root: &Path) -> Option<String> {
     Some(relative.to_string_lossy().into_owned())
 }
 
+fn decode_local_file_uri(uri: &str) -> Result<std::path::PathBuf, String> {
+    let encoded_path = uri
+        .strip_prefix("file://")
+        .ok_or_else(|| "Call hierarchy returned a non-file URI.".to_string())?;
+    let local_path = if encoded_path.starts_with('/') {
+        encoded_path.to_string()
+    } else if let Some(path) = encoded_path.strip_prefix("localhost/") {
+        format!("/{path}")
+    } else {
+        return Err("Call hierarchy returned a non-local file URI.".to_string());
+    };
+    if local_path.contains('?') || local_path.contains('#') {
+        return Err("Call hierarchy returned an invalid file URI.".to_string());
+    }
+
+    fn hex_digit(byte: u8) -> Option<u8> {
+        match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            b'A'..=b'F' => Some(byte - b'A' + 10),
+            _ => None,
+        }
+    }
+
+    let bytes = local_path.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let high = bytes
+                .get(index + 1)
+                .and_then(|byte| hex_digit(*byte))
+                .ok_or_else(|| "Call hierarchy returned a malformed file URI.".to_string())?;
+            let low = bytes
+                .get(index + 2)
+                .and_then(|byte| hex_digit(*byte))
+                .ok_or_else(|| "Call hierarchy returned a malformed file URI.".to_string())?;
+            decoded.push((high << 4) | low);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    let path = String::from_utf8(decoded)
+        .map_err(|_| "Call hierarchy returned a non-UTF-8 file path.".to_string())?;
+    if path.contains('\0') {
+        return Err("Call hierarchy returned an invalid file path.".to_string());
+    }
+    Ok(std::path::PathBuf::from(path))
+}
+
 /// Interval for draining backend SSH events into the workspace.
 const SSH_POLL_INTERVAL: Duration = Duration::from_millis(40);
 
@@ -2473,6 +2525,36 @@ impl Workspace {
         self.focus_active(window, cx);
     }
 
+    fn open_call_hierarchy_location(
+        &mut self,
+        uri: String,
+        position: labonair_editor::LspPosition,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let path = match decode_local_file_uri(&uri) {
+            Ok(path) => path,
+            Err(error) => {
+                labonair_notifications::notify_err::<()>(
+                    "Call hierarchy navigation",
+                    Err(error),
+                    cx,
+                );
+                return;
+            }
+        };
+        let path_string = path.to_string_lossy().into_owned();
+        self.open_file(path_string, false, window, cx);
+        if let Some(editor) = self
+            .editors
+            .iter()
+            .find(|(_, editor)| editor.read(cx).path().as_deref() == Some(path.as_path()))
+            .map(|(_, editor)| editor.clone())
+        {
+            editor.update(cx, |editor, cx| editor.goto_lsp_position(position, cx));
+        }
+    }
+
     /// Open one Finder result only after re-validating it against the current
     /// explicit workspace root. Finder results may outlive a root transition
     /// or a file deletion, so the adapter never trusts stale UI metadata.
@@ -2842,9 +2924,16 @@ impl Workspace {
         let theme = self.theme.clone();
         let bridge = self.editor_git_bridge.clone();
         let language_services = self.editor_language_services.clone();
+        let workspace = cx.entity();
         cx.new(|cx| {
             let mut view = EditorView::new_with_language_services(theme, language_services, cx);
             view.set_git_bridge(bridge.clone(), bridge.clone());
+            let workspace = workspace.clone();
+            view.set_call_hierarchy_navigator(move |uri, position, window, app| {
+                workspace.update(app, |this, cx| {
+                    this.open_call_hierarchy_location(uri, position, window, cx);
+                });
+            });
             view
         })
     }
@@ -8093,7 +8182,7 @@ impl labonair_command_palette::PaletteWorkspace for Workspace {
 
 #[cfg(test)]
 mod tests {
-    use super::{relative_path_under_root, shell_quote, ssh_tab_title};
+    use super::{decode_local_file_uri, relative_path_under_root, shell_quote, ssh_tab_title};
     use std::path::Path;
 
     #[test]
@@ -8110,6 +8199,21 @@ mod tests {
             relative_path_under_root(Path::new("/repo/../other/main.rs"), Path::new("/repo")),
             None
         );
+    }
+
+    #[test]
+    fn call_hierarchy_file_uri_decodes_local_paths() {
+        assert_eq!(
+            decode_local_file_uri("file:///repo/src/my%20file.rs").unwrap(),
+            Path::new("/repo/src/my file.rs")
+        );
+        assert_eq!(
+            decode_local_file_uri("file://localhost/repo/src/file.rs").unwrap(),
+            Path::new("/repo/src/file.rs")
+        );
+        assert!(decode_local_file_uri("https://example.test/file.rs").is_err());
+        assert!(decode_local_file_uri("file://remote-host/repo/file.rs").is_err());
+        assert!(decode_local_file_uri("file:///repo/bad%2.rs").is_err());
     }
 
     #[test]

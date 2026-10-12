@@ -17,6 +17,8 @@ pub enum EditorLanguageCommand {
     GoToDefinition,
     GoToDeclaration,
     GoToReferences,
+    ShowIncomingCalls,
+    ToggleCallHierarchyDirection,
     GoToImplementation,
     GoToTypeDefinition,
     PeekDefinition,
@@ -229,6 +231,12 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         CommandId::EditorGoToReferences => {
             EditorCommandRoute::Language(EditorLanguageCommand::GoToReferences)
         }
+        CommandId::EditorShowIncomingCalls => {
+            EditorCommandRoute::Language(EditorLanguageCommand::ShowIncomingCalls)
+        }
+        CommandId::EditorToggleCallHierarchyDirection => {
+            EditorCommandRoute::Language(EditorLanguageCommand::ToggleCallHierarchyDirection)
+        }
         CommandId::EditorGoToImplementation => {
             EditorCommandRoute::Language(EditorLanguageCommand::GoToImplementation)
         }
@@ -358,6 +366,8 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorGoToDefinition,
     CommandId::EditorGoToDeclaration,
     CommandId::EditorGoToReferences,
+    CommandId::EditorShowIncomingCalls,
+    CommandId::EditorToggleCallHierarchyDirection,
     CommandId::EditorGoToImplementation,
     CommandId::EditorGoToTypeDefinition,
     CommandId::EditorPeekDefinition,
@@ -746,6 +756,20 @@ impl CommandProvider for EditorCommandProvider {
                 "Editor",
             )
             .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(
+                CommandId::EditorShowIncomingCalls,
+                "Show Incoming Calls",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("cmd-k cmd-h", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
+                CommandId::EditorToggleCallHierarchyDirection,
+                "Toggle Call Hierarchy Direction",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor, CommandContext::CallHierarchyPicker])
+            .with_default_binding("cmd-k cmd-h", Some(CommandContext::CallHierarchyPicker)),
             CommandDescriptor::new(
                 CommandId::EditorGoToImplementation,
                 "Go to Implementation",
@@ -1413,6 +1437,46 @@ mod tests {
             ))
         );
         assert!(EXECUTABLE_EDITOR_COMMAND_IDS.contains(&CommandId::EditorShowCharacterPalette));
+    }
+
+    #[test]
+    fn call_hierarchy_commands_have_editor_and_picker_bindings() {
+        let commands = EditorCommandProvider.commands();
+        let incoming = commands
+            .iter()
+            .find(|command| command.id == CommandId::EditorShowIncomingCalls)
+            .expect("incoming calls command");
+        assert_eq!(incoming.default_bindings[0].keystrokes, "cmd-k cmd-h");
+        assert_eq!(
+            incoming.default_bindings[0].context,
+            Some(CommandContext::Editor)
+        );
+        assert_eq!(
+            route_for_command(CommandId::EditorShowIncomingCalls),
+            Some(EditorCommandRoute::Language(
+                EditorLanguageCommand::ShowIncomingCalls
+            ))
+        );
+
+        let toggle = commands
+            .iter()
+            .find(|command| command.id == CommandId::EditorToggleCallHierarchyDirection)
+            .expect("call hierarchy direction command");
+        assert_eq!(toggle.default_bindings[0].keystrokes, "cmd-k cmd-h");
+        assert_eq!(
+            toggle.default_bindings[0].context,
+            Some(CommandContext::CallHierarchyPicker)
+        );
+        assert!(toggle.contexts.contains(&CommandContext::Editor));
+        assert!(
+            EXECUTABLE_EDITOR_COMMAND_IDS.contains(&CommandId::EditorToggleCallHierarchyDirection)
+        );
+        assert_eq!(
+            route_for_command(CommandId::EditorToggleCallHierarchyDirection),
+            Some(EditorCommandRoute::Language(
+                EditorLanguageCommand::ToggleCallHierarchyDirection
+            ))
+        );
     }
 
     #[test]
