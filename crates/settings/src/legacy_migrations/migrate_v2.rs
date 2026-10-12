@@ -555,6 +555,7 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         // No v1 `Preferences` equivalent — inherits the shipped default.
         editor_highlight_current_line: defaults.editor_highlight_current_line,
         editor_selection_highlight: defaults.editor_selection_highlight,
+        editor_rounded_selection: defaults.editor_rounded_selection,
         editor_cursor_blink: defaults.editor_cursor_blink,
         editor_cursor_blink_interval_ms: defaults.editor_cursor_blink_interval_ms,
         editor_cursor_style: defaults.editor_cursor_style,

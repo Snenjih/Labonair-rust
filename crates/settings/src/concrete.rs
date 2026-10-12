@@ -482,6 +482,10 @@ impl EditorSettings {
         self.0.editor_selection_highlight.unwrap_or(true)
     }
 
+    pub fn rounded_selection(&self) -> bool {
+        self.0.editor_rounded_selection.unwrap_or(true)
+    }
+
     pub fn line_height(&self) -> f32 {
         self.0.editor_line_height.unwrap_or(1.55).clamp(1.0, 2.5)
     }
@@ -1255,6 +1259,16 @@ mod tests {
         let mut content = SettingsContent::default();
         content.editor.editor_selection_highlight = Some(false);
         assert!(!EditorSettings::from_settings(&content).selection_highlight());
+    }
+
+    #[test]
+    fn editor_rounded_selection_defaults_on_and_can_be_disabled() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(defaults.rounded_selection());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_rounded_selection = Some(false);
+        assert!(!EditorSettings::from_settings(&content).rounded_selection());
     }
 
     #[test]

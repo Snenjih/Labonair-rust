@@ -11351,6 +11351,7 @@ impl Render for EditorView {
         } else {
             Vec::new()
         };
+        let rounded_selection = self.prefs.rounded_selection();
 
         // Gutter rows. Line-number visibility follows the editor preferences
         // (T13-003); Vim's `:set number` overrides them while Vim mode is on.
@@ -11588,15 +11589,21 @@ impl Render for EditorView {
                             .display_column_for_source_position(Position::new(line, hi))
                             .unwrap_or_else(|| hi.saturating_sub(start_column))
                             .saturating_sub(display.viewport.left_column);
-                        row = row.child(
-                            div()
-                                .absolute()
-                                .left(px(display_start as f32 * char_w))
-                                .top_0()
-                                .w(px(((display_end.saturating_sub(display_start)) as f32 * char_w).max(2.0)))
-                                .h(px(line_h))
-                                .bg(accent.opacity(0.3)),
-                        );
+                        let selection = div()
+                            .absolute()
+                            .left(px(display_start as f32 * char_w))
+                            .top_0()
+                            .w(px(
+                                ((display_end.saturating_sub(display_start)) as f32 * char_w)
+                                    .max(2.0),
+                            ))
+                            .h(px(line_h));
+                        let selection = if rounded_selection {
+                            selection.rounded(px(2.0))
+                        } else {
+                            selection
+                        };
+                        row = row.child(selection.bg(accent.opacity(0.3)));
                     }
                 }
                 if let Some(search) = &self.search {

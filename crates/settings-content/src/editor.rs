@@ -418,6 +418,8 @@ pub struct EditorContent {
     pub editor_highlight_current_line: Option<bool>,
     /// Highlight other occurrences of the selected text in this buffer.
     pub editor_selection_highlight: Option<bool>,
+    /// Round the corners of text-selection backgrounds.
+    pub editor_rounded_selection: Option<bool>,
     /// Blink the caret while the editor is focused.
     pub editor_cursor_blink: Option<bool>,
     /// Caret blink half-period, in milliseconds.
@@ -530,6 +532,7 @@ impl EditorContent {
             vim_smartcase: Some(true),
             editor_highlight_current_line: Some(true),
             editor_selection_highlight: Some(true),
+            editor_rounded_selection: Some(true),
             editor_cursor_blink: Some(true),
             editor_cursor_blink_interval_ms: Some(530),
             editor_cursor_style: Some(EditorCursorStyle::Bar),

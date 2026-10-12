@@ -1124,6 +1124,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Highlight other exact occurrences of the selected text in this buffer."
         ),
         field!(
+            editor.editor_rounded_selection,
+            "editorRoundedSelection",
+            Switch,
+            "Rounded selection corners",
+            "Round the corners of text-selection backgrounds."
+        ),
+        field!(
             editor.editor_cursor_style,
             "editorCursorStyle",
             Select(&[
@@ -1769,6 +1776,19 @@ mod tests {
             .into_iter()
             .find(|field| field.json_path == "editor.editorSelectionHighlight")
             .expect("editor selection-highlight setting");
+        assert!(matches!(field.control, FieldControl::Switch));
+
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::Bool(false)));
+        assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn editor_rounded_selection_is_an_exposed_switch() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorRoundedSelection")
+            .expect("editor rounded-selection setting");
         assert!(matches!(field.control, FieldControl::Switch));
 
         let mut content = SettingsContent::default();

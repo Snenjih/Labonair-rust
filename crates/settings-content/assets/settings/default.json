@@ -177,6 +177,7 @@
     "vimSmartcase": true,
     "editorHighlightCurrentLine": true,
     "editorSelectionHighlight": true,
+    "editorRoundedSelection": true,
     "editorCursorBlink": true,
     // Caret blink half-period, in milliseconds.
     "editorCursorBlinkIntervalMs": 530,
