@@ -90,6 +90,8 @@ pub enum EditorEvent {
     Edited,
     /// A Markdown preview should open for this exact immutable source revision.
     MarkdownPreviewRequested(EditorBufferSnapshot),
+    /// A following Markdown preview should bind to this Editor tab and revision.
+    MarkdownFollowingPreviewRequested(EditorBufferSnapshot),
     /// An SVG preview should open for this file path in the Workspace preview host.
     SvgPreviewRequested(PathBuf),
     /// The content or file identity of an editor buffer changed.
@@ -1363,6 +1365,17 @@ impl EditorView {
                     );
                 }
             }
+            EditorCommandRoute::Ui(EditorUiCommand::OpenFollowingMarkdownPreview) => {
+                if let Some(source) = self.markdown_source_snapshot() {
+                    cx.emit(EditorEvent::MarkdownFollowingPreviewRequested(source));
+                } else {
+                    notify_info(
+                        cx,
+                        "Markdown Preview",
+                        "Open a Markdown file before opening a following preview.",
+                    );
+                }
+            }
             EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb) => {
                 self.breadcrumb_visible_override = Some(!self.breadcrumbs_visible());
                 cx.notify();
@@ -1517,7 +1530,8 @@ impl EditorView {
         )
     }
 
-    fn buffer_snapshot(&self) -> EditorBufferSnapshot {
+    /// Return an immutable typed snapshot for the Workspace preview adapter.
+    pub fn buffer_snapshot(&self) -> EditorBufferSnapshot {
         EditorBufferSnapshot {
             path: self.doc.path.clone(),
             language: self.doc.language,
@@ -9334,6 +9348,44 @@ mod tests {
         assert_eq!(parse_line_column("1:0"), None);
         assert_eq!(parse_line_column("one"), None);
         assert_eq!(parse_line_column("1:2:3"), None);
+    }
+
+    #[gpui::test]
+    fn following_markdown_preview_command_emits_typed_editor_source(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        let captured = Arc::new(std::sync::Mutex::new(None));
+        let captured_event = captured.clone();
+        let _subscription = cx.update(|cx| {
+            cx.subscribe(&view, move |_, event: &EditorEvent, _| {
+                if let EditorEvent::MarkdownFollowingPreviewRequested(source) = event {
+                    if let Ok(mut captured) = captured_event.lock() {
+                        *captured = Some(source.clone());
+                    }
+                }
+            })
+        });
+
+        cx.update(|cx| {
+            view.update(cx, |view, cx| {
+                view.doc = Document::from_file("guide.md".into(), "# Guide", 1);
+                assert!(view.dispatch_registered_command(
+                    CommandId::EditorOpenFollowingMarkdownPreview,
+                    cx
+                ));
+            });
+        });
+
+        let source = captured
+            .lock()
+            .expect("event capture lock")
+            .clone()
+            .expect("following preview event");
+        assert_eq!(
+            source.path.as_deref(),
+            Some(std::path::Path::new("guide.md"))
+        );
+        assert_eq!(source.language, Language::Markdown);
+        assert_eq!(source.snapshot.text(), "# Guide");
     }
 
     /// Build an [`EditorSettings`] with `f` applied to a default `editor` area.

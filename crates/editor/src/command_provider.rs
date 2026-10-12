@@ -53,6 +53,7 @@ pub enum EditorUiCommand {
     NextSnippetTabstop,
     PreviousSnippetTabstop,
     OpenMarkdownPreview,
+    OpenFollowingMarkdownPreview,
     OpenSvgPreview,
     ToggleBreadcrumb,
     ToggleInlayHints,
@@ -134,6 +135,9 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         CommandId::EditorToggleReadOnly => EditorCommandRoute::Ui(EditorUiCommand::ToggleReadOnly),
         CommandId::EditorOpenMarkdownPreview => {
             EditorCommandRoute::Ui(EditorUiCommand::OpenMarkdownPreview)
+        }
+        CommandId::EditorOpenFollowingMarkdownPreview => {
+            EditorCommandRoute::Ui(EditorUiCommand::OpenFollowingMarkdownPreview)
         }
         CommandId::EditorOpenSvgPreview => EditorCommandRoute::Ui(EditorUiCommand::OpenSvgPreview),
         CommandId::EditorToggleBreadcrumb => {
@@ -297,6 +301,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorToggleSearchSelection,
     CommandId::EditorToggleReadOnly,
     CommandId::EditorOpenMarkdownPreview,
+    CommandId::EditorOpenFollowingMarkdownPreview,
     CommandId::EditorOpenSvgPreview,
     CommandId::EditorToggleBreadcrumb,
     CommandId::EditorToggleInlayHints,
@@ -463,6 +468,12 @@ impl CommandProvider for EditorCommandProvider {
             )
             .with_contexts(&[CommandContext::Editor])
             .with_default_binding("cmd-shift-v", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
+                CommandId::EditorOpenFollowingMarkdownPreview,
+                "Open Following Markdown Preview",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(
                 CommandId::EditorOpenSvgPreview,
                 "Open SVG Preview",
@@ -1056,6 +1067,25 @@ mod tests {
         assert_eq!(
             route_for_command(CommandId::EditorOpenSvgPreview),
             Some(EditorCommandRoute::Ui(EditorUiCommand::OpenSvgPreview))
+        );
+    }
+
+    #[test]
+    fn following_markdown_preview_is_an_editor_owned_command() {
+        let command = EditorCommandProvider
+            .commands()
+            .into_iter()
+            .find(|command| command.id == CommandId::EditorOpenFollowingMarkdownPreview)
+            .expect("Following Markdown Preview descriptor");
+
+        assert_eq!(command.title, "Open Following Markdown Preview");
+        assert_eq!(command.id.action_name(), "markdown::OpenFollowingPreview");
+        assert!(command.default_bindings.is_empty());
+        assert_eq!(
+            route_for_command(CommandId::EditorOpenFollowingMarkdownPreview),
+            Some(EditorCommandRoute::Ui(
+                EditorUiCommand::OpenFollowingMarkdownPreview
+            ))
         );
     }
 

@@ -542,6 +542,9 @@ pub struct Workspace {
     previews: HashMap<u64, Entity<PreviewView>>,
     /// Preview tabs that follow edits from their source editor tab.
     markdown_previews: HashMap<u64, u64>,
+    /// Single preview tab that follows whichever editor was last activated.
+    following_markdown_preview: Option<u64>,
+    following_markdown_editor: Option<u64>,
     /// The shared commit-graph view, lazily created for the `GitGraph` tab.
     git_graph: Option<Entity<GitGraphView>>,
     /// The keymap-management view, lazily created for the single `Keymap` tab.
@@ -723,6 +726,9 @@ impl Workspace {
         cx.subscribe(&tabs, |this, _, ev: &crate::tabs::ActiveTabChanged, cx| {
             if let Some(editor) = this.editors.get(&ev.0).cloned() {
                 editor.update(cx, |e, cx| e.check_external(cx));
+                if this.following_markdown_preview.is_some() {
+                    this.update_following_markdown_preview_for_editor(ev.0, cx);
+                }
             }
             // Keep the active space's "resume here" tab current live, so a
             // later `switch_space` away and back lands on the right tab
@@ -840,6 +846,8 @@ impl Workspace {
             sftp_views: HashMap::new(),
             previews: HashMap::new(),
             markdown_previews: HashMap::new(),
+            following_markdown_preview: None,
+            following_markdown_editor: None,
             git_graph: None,
             keymap: None,
             hosts,
@@ -2649,6 +2657,110 @@ impl Workspace {
         cx.notify();
     }
 
+    fn open_following_markdown_preview(
+        &mut self,
+        editor_tab_id: u64,
+        source: EditorBufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        let target = source
+            .path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled.md".to_string());
+        let name = source
+            .path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            .unwrap_or("Untitled");
+        let title = format!("{name} Following Preview");
+        let existing = self
+            .following_markdown_preview
+            .filter(|preview_tab_id| self.previews.contains_key(preview_tab_id));
+        let preview_tab_id = if let Some(preview_tab_id) = existing {
+            self.tabs.update(cx, |tabs, cx| {
+                tabs.set_custom_title(preview_tab_id, Some(title.clone()), cx);
+                tabs.set_url(preview_tab_id, Some(target), cx);
+                tabs.set_active(preview_tab_id, cx);
+            });
+            preview_tab_id
+        } else {
+            let preview_tab_id = self.tabs.update(cx, |tabs, cx| {
+                let preview_tab_id = tabs.open(
+                    TabKind::Preview,
+                    TabData {
+                        url: Some(target),
+                        ..TabData::default()
+                    },
+                    cx,
+                );
+                tabs.set_custom_title(preview_tab_id, Some(title), cx);
+                tabs.set_active(preview_tab_id, cx);
+                preview_tab_id
+            });
+            let theme = self.theme.clone();
+            let view = cx.new(|cx| PreviewView::new(theme, cx));
+            self.previews.insert(preview_tab_id, view);
+            preview_tab_id
+        };
+
+        self.following_markdown_preview = Some(preview_tab_id);
+        self.following_markdown_editor = Some(editor_tab_id);
+        self.markdown_previews
+            .retain(|_, mapped_preview_id| *mapped_preview_id != preview_tab_id);
+        self.update_following_markdown_preview_source(source, cx);
+        self.pending_preview_focus = true;
+        cx.notify();
+    }
+
+    fn update_following_markdown_preview_for_editor(
+        &mut self,
+        editor_tab_id: u64,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(editor) = self.editors.get(&editor_tab_id).cloned() else {
+            return;
+        };
+        let source = editor.read(cx).buffer_snapshot();
+        self.following_markdown_editor = Some(editor_tab_id);
+        self.update_following_markdown_preview_source(source, cx);
+    }
+
+    fn update_following_markdown_preview_source(
+        &mut self,
+        source: EditorBufferSnapshot,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(preview_tab_id) = self.following_markdown_preview else {
+            return;
+        };
+        let Some(preview) = self.previews.get(&preview_tab_id).cloned() else {
+            self.following_markdown_preview = None;
+            self.following_markdown_editor = None;
+            return;
+        };
+        let target = source
+            .path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled.md".to_string());
+        let title = source
+            .path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            .map(|name| format!("{name} Following Preview"))
+            .unwrap_or_else(|| "Untitled Following Preview".to_string());
+        self.tabs.update(cx, |tabs, cx| {
+            tabs.set_custom_title(preview_tab_id, Some(title), cx);
+            tabs.set_url(preview_tab_id, Some(target), cx);
+        });
+        preview.update(cx, |preview, cx| {
+            preview.set_editor_source(source.path, source.language, source.snapshot, cx)
+        });
+    }
+
     fn update_markdown_preview_for_editor(
         &mut self,
         editor_tab_id: u64,
@@ -2827,6 +2939,9 @@ impl Workspace {
                 EditorEvent::MarkdownPreviewRequested(source) => {
                     this.open_markdown_preview_for_editor(tab_id, source.clone(), cx);
                 }
+                EditorEvent::MarkdownFollowingPreviewRequested(source) => {
+                    this.open_following_markdown_preview(tab_id, source.clone(), cx);
+                }
                 EditorEvent::SvgPreviewRequested(path) => {
                     this.activate_preview_target(path.to_string_lossy().into_owned(), cx);
                     this.pending_preview_focus = true;
@@ -2834,6 +2949,9 @@ impl Workspace {
                 }
                 EditorEvent::BufferChanged(source) => {
                     this.update_markdown_preview_for_editor(tab_id, source.clone(), cx);
+                    if this.following_markdown_editor == Some(tab_id) {
+                        this.update_following_markdown_preview_source(source.clone(), cx);
+                    }
                 }
                 _ => {}
             }
@@ -4058,6 +4176,12 @@ impl Workspace {
         }
         self.editors.remove(&tab.id);
         self.previews.remove(&tab.id);
+        if self.following_markdown_preview == Some(tab.id) {
+            self.following_markdown_preview = None;
+            self.following_markdown_editor = None;
+        } else if self.following_markdown_editor == Some(tab.id) {
+            self.following_markdown_editor = None;
+        }
         self.markdown_previews.remove(&tab.id);
         self.markdown_previews
             .retain(|_, preview_tab_id| *preview_tab_id != tab.id);
