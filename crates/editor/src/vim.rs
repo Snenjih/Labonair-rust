@@ -16,6 +16,8 @@
 //! caret helpers break history coalescing, so each operator application forms
 //! its own undo unit while a stretch of insert-mode typing stays one unit.
 
+use std::collections::HashMap;
+
 use crate::buffer::{BufferSnapshot, Position, TextRange};
 use crate::document::Document;
 use crate::search::{find_all, SearchQuery};
@@ -131,6 +133,9 @@ pub struct Vim {
     count: usize,
     pending_op: Option<char>,
     pending_text_object: Option<char>,
+    pending_register: bool,
+    selected_register: Option<char>,
+    registers: HashMap<char, Register>,
     pending_g: bool,
     pending_replace: bool,
     pending_find: Option<char>,
@@ -174,6 +179,9 @@ impl Vim {
             count: 0,
             pending_op: None,
             pending_text_object: None,
+            pending_register: false,
+            selected_register: None,
+            registers: HashMap::new(),
             pending_g: false,
             pending_replace: false,
             pending_find: None,
@@ -468,6 +476,20 @@ impl Vim {
             };
             doc.set_caret(start, false);
             self.apply_operator(doc, op, MotionKind::Exclusive(end));
+            return VimResponse::ok();
+        }
+
+        if self.pending_register {
+            self.pending_register = false;
+            self.selected_register = match c {
+                '"' => None,
+                '_' | 'a'..='z' | 'A'..='Z' => Some(c),
+                _ => None,
+            };
+            return VimResponse::ok();
+        }
+        if c == '"' && self.pending_op.is_none() {
+            self.pending_register = true;
             return VimResponse::ok();
         }
 
@@ -859,14 +881,14 @@ impl Vim {
         };
 
         let text = self.range_text(doc, start, end);
-        self.register = Register {
+        self.record_register(Register {
             text: if linewise && !text.ends_with('\n') {
                 format!("{text}\n")
             } else {
                 text
             },
             linewise,
-        };
+        });
 
         match op {
             'y' => {
@@ -906,14 +928,14 @@ impl Vim {
     fn visual_operate(&mut self, doc: &mut Document, op: char) {
         let (start, end, linewise) = self.visual_range(doc);
         let text = self.range_text(doc, start, end);
-        self.register = Register {
+        self.record_register(Register {
             text: if linewise && !text.ends_with('\n') {
                 format!("{text}\n")
             } else {
                 text
             },
             linewise,
-        };
+        });
         self.mode = VimMode::Normal;
         match op {
             'y' => doc.set_caret(start, false),
@@ -955,19 +977,60 @@ impl Vim {
             let end = (cur.column + count as usize).min(snapshot(doc).line_len(cur.line));
             if end > cur.column {
                 let text = self.range_text(doc, cur, Position::new(cur.line, end));
-                self.register = Register {
+                self.record_register(Register {
                     text,
                     linewise: false,
-                };
+                });
                 self.range_delete(doc, cur, Position::new(cur.line, end));
             }
         } else {
             let start = cur.column.saturating_sub((-count) as usize);
             if start < cur.column {
+                let text = self.range_text(doc, Position::new(cur.line, start), cur);
+                self.record_register(Register {
+                    text,
+                    linewise: false,
+                });
                 self.range_delete(doc, Position::new(cur.line, start), cur);
             }
         }
         self.clamp_normal(doc);
+    }
+
+    fn record_register(&mut self, value: Register) {
+        let selected = self.selected_register.take();
+        if selected == Some('_') {
+            return;
+        }
+
+        self.register = value.clone();
+        let Some(name) = selected else {
+            return;
+        };
+        let key = name.to_ascii_lowercase();
+        if name.is_ascii_uppercase() {
+            let existing = self.registers.entry(key).or_default();
+            if existing.text.is_empty() {
+                *existing = value;
+            } else {
+                existing.text.push_str(&value.text);
+                existing.linewise |= value.linewise;
+            }
+        } else {
+            self.registers.insert(key, value);
+        }
+    }
+
+    fn read_register(&mut self) -> Register {
+        match self.selected_register.take() {
+            Some('_') => Register::default(),
+            Some(name) => self
+                .registers
+                .get(&name.to_ascii_lowercase())
+                .cloned()
+                .unwrap_or_default(),
+            None => self.register.clone(),
+        }
     }
 
     fn replace_char(&mut self, doc: &mut Document, c: char) {
@@ -1038,10 +1101,10 @@ impl Vim {
     }
 
     fn paste(&mut self, doc: &mut Document, after: bool) {
-        if self.register.text.is_empty() {
+        let reg = self.read_register();
+        if reg.text.is_empty() {
             return;
         }
-        let reg = self.register.clone();
         let cur = doc.cursor;
         if reg.linewise {
             let body = reg.text.trim_end_matches('\n');
@@ -1156,6 +1219,8 @@ impl Vim {
         self.count = 0;
         self.pending_op = None;
         self.pending_text_object = None;
+        self.pending_register = false;
+        self.selected_register = None;
         self.pending_g = false;
         self.pending_replace = false;
         self.pending_find = None;
@@ -1647,6 +1712,40 @@ mod tests {
         keys(&mut v, &mut d, "yw");
         keys(&mut v, &mut d, "$p");
         assert_eq!(d.text(), "hellohello");
+    }
+
+    #[test]
+    fn named_register_survives_unnamed_register_changes() {
+        let mut v = Vim::default();
+        let mut d = doc("one\ntwo\nthree");
+        keys(&mut v, &mut d, "\"ayy");
+        d.set_caret(Position::new(1, 0), false);
+        keys(&mut v, &mut d, "dd");
+        keys(&mut v, &mut d, "\"ap");
+        assert_eq!(d.text(), "one\nthree\none");
+    }
+
+    #[test]
+    fn uppercase_register_appends_to_named_register() {
+        let mut v = Vim::default();
+        let mut d = doc("one\ntwo\nthree");
+        keys(&mut v, &mut d, "\"ayy");
+        d.set_caret(Position::new(1, 0), false);
+        keys(&mut v, &mut d, "\"Ayy");
+        d.set_caret(Position::new(2, 0), false);
+        keys(&mut v, &mut d, "\"ap");
+        assert_eq!(d.text(), "one\ntwo\nthree\none\ntwo");
+    }
+
+    #[test]
+    fn black_hole_register_does_not_replace_unnamed_register() {
+        let mut v = Vim::default();
+        let mut d = doc("one\ntwo\nthree");
+        keys(&mut v, &mut d, "yy");
+        d.set_caret(Position::new(1, 0), false);
+        keys(&mut v, &mut d, "\"_dd");
+        keys(&mut v, &mut d, "p");
+        assert_eq!(d.text(), "one\nthree\none");
     }
 
     #[test]
