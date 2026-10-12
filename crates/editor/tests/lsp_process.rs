@@ -60,6 +60,21 @@ async fn process_handshake_sync_and_response_correlation_work() {
     .await
     .expect("diagnostic event");
     assert_eq!(diagnostics, DocumentVersion::new(1));
+    let pushed_diagnostics = process
+        .request(LocalLanguageServiceRequest {
+            uri: "file:///fixture".into(),
+            snapshot: EditorBuffer::from_text("fn f() {}").snapshot(),
+            version: DocumentVersion::new(1),
+            generation: 1,
+            request: LanguageServiceRequest::Diagnostics,
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(matches!(
+        pushed_diagnostics.response,
+        Ok(LanguageServiceResponse::Diagnostics(ref diagnostics))
+            if diagnostics.len() == 1 && diagnostics[0].message == "fixture diagnostic"
+    ));
     process
         .did_change(
             "file:///fixture",
@@ -103,6 +118,50 @@ async fn process_handshake_sync_and_response_correlation_work() {
         matches!(result.response, Ok(LanguageServiceResponse::Completion(list)) if list.items[0].label == "fixture")
     );
     process.did_close("file:///fixture").await.expect("close");
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
+async fn pull_diagnostics_use_full_and_unchanged_reports() {
+    let process = LocalLanguageServiceProcess::spawn(config_with(vec!["pull-diagnostics".into()]))
+        .await
+        .expect("fixture starts");
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "fn f() {}".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+
+    let make_request = || LocalLanguageServiceRequest {
+        uri: "file:///fixture".into(),
+        snapshot: EditorBuffer::from_text("fn f() {}").snapshot(),
+        version: DocumentVersion::new(1),
+        generation: 1,
+        request: LanguageServiceRequest::Diagnostics,
+        cancellation: CancellationToken::default(),
+    };
+    let first = process.request(make_request()).await;
+    assert!(matches!(
+        first.response,
+        Ok(LanguageServiceResponse::Diagnostics(ref diagnostics))
+            if diagnostics.len() == 1
+                && diagnostics[0].message == "pull fixture diagnostic"
+                && diagnostics[0].source.as_str() == "fixture"
+                && diagnostics[0].range.start.character == 1
+    ));
+
+    let unchanged = process.request(make_request()).await;
+    assert!(matches!(
+        unchanged.response,
+        Ok(LanguageServiceResponse::Diagnostics(ref diagnostics))
+            if diagnostics.len() == 1
+                && diagnostics[0].message == "pull fixture diagnostic"
+    ));
     process.shutdown().await.expect("shutdown");
 }
 

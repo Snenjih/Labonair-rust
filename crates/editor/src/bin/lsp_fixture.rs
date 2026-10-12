@@ -9,6 +9,9 @@ use serde_json::{json, Value};
 fn main() -> io::Result<()> {
     let arguments = std::env::args().collect::<Vec<_>>();
     let minimal = arguments.iter().any(|argument| argument == "minimal");
+    let pull_diagnostics = arguments
+        .iter()
+        .any(|argument| argument == "pull-diagnostics");
     let no_range_formatting = arguments
         .iter()
         .any(|argument| argument == "no-range-formatting");
@@ -52,6 +55,11 @@ fn main() -> io::Result<()> {
                     "foldingRangeProvider": !minimal,
                     "documentFormattingProvider": !minimal,
                     "documentRangeFormattingProvider": !minimal && !no_range_formatting,
+                    "diagnosticProvider": if pull_diagnostics {
+                        json!({ "identifier": "fixture", "interFileDependencies": false, "workspaceDiagnostics": false })
+                    } else {
+                        Value::Null
+                    },
                 }},
             }))?,
             "textDocument/didOpen" | "textDocument/didChange" => {
@@ -87,6 +95,31 @@ fn main() -> io::Result<()> {
             "textDocument/completion" => write_message(
                 &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "isIncomplete": false, "items": [{ "label": "fixture", "kind": 3 }] } }),
             )?,
+            "textDocument/diagnostic" => {
+                let previous_result_id = message
+                    .get("params")
+                    .and_then(|params| params.get("previousResultId"))
+                    .and_then(Value::as_str);
+                let result = if previous_result_id == Some("fixture-diagnostics-v1") {
+                    json!({ "kind": "unchanged", "resultId": "fixture-diagnostics-v1" })
+                } else {
+                    json!({
+                        "kind": "full",
+                        "resultId": "fixture-diagnostics-v1",
+                        "items": [{
+                            "range": { "start": { "line": 0, "character": 1 }, "end": { "line": 0, "character": 2 } },
+                            "severity": 1,
+                            "message": "pull fixture diagnostic",
+                            "source": "fixture-pull"
+                        }]
+                    })
+                };
+                write_message(&json!({
+                    "jsonrpc": "2.0",
+                    "id": message.get("id"),
+                    "result": result
+                }))?;
+            }
             "textDocument/signatureHelp" => write_message(
                 &json!({ "jsonrpc": "2.0", "id": message.get("id"), "result": { "signatures": [{ "label": "fixture()", "documentation": { "kind": "markdown", "value": "fixture docs" } }] } }),
             )?,

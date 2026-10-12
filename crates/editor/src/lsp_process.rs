@@ -347,6 +347,7 @@ struct DocumentState {
     generation: u64,
     text: String,
     diagnostics: Vec<Diagnostic>,
+    diagnostic_result_id: Option<String>,
 }
 
 struct ProcessState {
@@ -358,6 +359,7 @@ struct ProcessState {
     pending: HashMap<u64, PendingRequest>,
     capabilities: LanguageServiceCapabilities,
     edit_capabilities: LanguageServiceEditCapabilities,
+    pull_diagnostics: bool,
     semantic_token_types: Vec<String>,
     documents: HashMap<String, DocumentState>,
     stopping: bool,
@@ -416,6 +418,7 @@ impl LocalLanguageServiceProcess {
                         formatting: false,
                     },
                     edit_capabilities: LanguageServiceEditCapabilities::NONE,
+                    pull_diagnostics: false,
                     semantic_token_types: Vec::new(),
                     documents: HashMap::new(),
                     stopping: false,
@@ -493,6 +496,7 @@ impl LocalLanguageServiceProcess {
                     generation,
                     text: text.clone(),
                     diagnostics: Vec::new(),
+                    diagnostic_result_id: None,
                 },
             );
         }
@@ -520,6 +524,7 @@ impl LocalLanguageServiceProcess {
     ) -> Result<(), LanguageServiceError> {
         {
             let mut state = self.inner.state.lock().await;
+            let pull_diagnostics = state.pull_diagnostics;
             let document = state.documents.get_mut(uri).ok_or_else(|| {
                 LanguageServiceError::ProviderFailed("document was not opened".into())
             })?;
@@ -532,7 +537,10 @@ impl LocalLanguageServiceProcess {
             document.version = version;
             document.generation = generation;
             document.text = text.clone();
-            document.diagnostics.clear();
+            if !pull_diagnostics {
+                document.diagnostics.clear();
+                document.diagnostic_result_id = None;
+            }
         }
         self.send_notification(
             "textDocument/didChange",
@@ -603,23 +611,35 @@ impl LocalLanguageServiceProcess {
                 Err(LanguageServiceError::Cancelled),
             );
         }
-        if matches!(input.request, LanguageServiceRequest::Diagnostics) {
-            let diagnostics = self
-                .inner
-                .state
-                .lock()
-                .await
-                .documents
-                .get(&input.uri)
-                .map(|document| document.diagnostics.clone())
-                .unwrap_or_default();
+        let (pull_diagnostics, cached_diagnostics, previous_diagnostic_result_id) = {
+            let state = self.inner.state.lock().await;
+            let document = state.documents.get(&input.uri);
+            (
+                state.pull_diagnostics,
+                document
+                    .map(|document| document.diagnostics.clone())
+                    .unwrap_or_default(),
+                document.and_then(|document| document.diagnostic_result_id.clone()),
+            )
+        };
+        if matches!(input.request, LanguageServiceRequest::Diagnostics) && !pull_diagnostics {
             return self.result(
                 input.version,
                 input.generation,
-                Ok(LanguageServiceResponse::Diagnostics(diagnostics)),
+                Ok(LanguageServiceResponse::Diagnostics(cached_diagnostics)),
             );
         }
-        let (method, params) = request_parts(&input.uri, &input.request);
+        let (method, params) = if matches!(input.request, LanguageServiceRequest::Diagnostics) {
+            (
+                "textDocument/diagnostic",
+                json!({
+                    "textDocument": { "uri": input.uri },
+                    "previousResultId": previous_diagnostic_result_id,
+                }),
+            )
+        } else {
+            request_parts(&input.uri, &input.request)
+        };
         let response = match self
             .request_value(
                 method,
@@ -793,6 +813,7 @@ impl LocalLanguageServiceProcess {
                 formatting: false,
             };
             state.edit_capabilities = LanguageServiceEditCapabilities::NONE;
+            state.pull_diagnostics = false;
             state.semantic_token_types.clear();
             state.stopping = false;
             stop_rx
@@ -824,6 +845,10 @@ impl LocalLanguageServiceProcess {
                             "callHierarchy": { "dynamicRegistration": false },
                             "codeLens": { "dynamicRegistration": false },
                             "documentLink": { "dynamicRegistration": false },
+                            "diagnostic": {
+                                "dynamicRegistration": false,
+                                "relatedDocumentSupport": false
+                            },
                             "publishDiagnostics": {},
                             "synchronization": { "dynamicRegistration": false },
                         },
@@ -837,10 +862,12 @@ impl LocalLanguageServiceProcess {
             .await?;
         let (capabilities, token_types) = parse_server_capabilities(&initialized);
         let edit_capabilities = parse_server_edit_capabilities(&initialized);
+        let pull_diagnostics = server_supports_pull_diagnostics(&initialized);
         {
             let mut state = self.inner.state.lock().await;
             state.capabilities = capabilities;
             state.edit_capabilities = edit_capabilities;
+            state.pull_diagnostics = pull_diagnostics;
             state.semantic_token_types = token_types;
             state.lifecycle = ProcessLifecycleState::Running;
         }
@@ -1193,7 +1220,47 @@ impl LocalLanguageServiceProcess {
             LanguageServiceRequest::Formatting => {
                 LanguageServiceResponse::Formatting(parse_text_edits(uri, snapshot, &value))
             }
-            LanguageServiceRequest::Diagnostics => LanguageServiceResponse::Diagnostics(Vec::new()),
+            LanguageServiceRequest::Diagnostics => {
+                let report_kind = value.get("kind").and_then(Value::as_str);
+                let diagnostics = match report_kind {
+                    Some("unchanged") => {
+                        let mut state = self.inner.state.lock().await;
+                        if let Some(document) = state.documents.get_mut(uri) {
+                            if let Some(result_id) = value
+                                .get("resultId")
+                                .and_then(Value::as_str)
+                                .map(str::to_string)
+                            {
+                                document.diagnostic_result_id = Some(result_id);
+                            }
+                            document.diagnostics.clone()
+                        } else {
+                            Vec::new()
+                        }
+                    }
+                    Some("full") => {
+                        let diagnostics = parse_diagnostics(
+                            &self.inner,
+                            value.get("items").unwrap_or(&Value::Null),
+                        );
+                        let mut state = self.inner.state.lock().await;
+                        if let Some(document) = state.documents.get_mut(uri) {
+                            document.diagnostics = diagnostics.clone();
+                            document.diagnostic_result_id = value
+                                .get("resultId")
+                                .and_then(Value::as_str)
+                                .map(str::to_string);
+                        }
+                        diagnostics
+                    }
+                    _ => {
+                        return Err(LanguageServiceError::ProviderFailed(
+                            "language server returned an invalid diagnostic report".into(),
+                        ));
+                    }
+                };
+                LanguageServiceResponse::Diagnostics(diagnostics)
+            }
         };
         Ok(response)
     }
@@ -1484,6 +1551,13 @@ fn parse_server_capabilities(value: &Value) -> (LanguageServiceCapabilities, Vec
         },
         token_types,
     )
+}
+
+fn server_supports_pull_diagnostics(value: &Value) -> bool {
+    value
+        .get("capabilities")
+        .and_then(|capabilities| capabilities.get("diagnosticProvider"))
+        .is_some_and(|provider| provider.is_object() && !provider.is_null())
 }
 
 fn parse_server_edit_capabilities(value: &Value) -> LanguageServiceEditCapabilities {
