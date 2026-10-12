@@ -21,6 +21,7 @@ pub enum EditIntent {
     /// when only one is provided. Used for multi-cursor paste.
     InsertMany(Vec<String>),
     DeleteBackward,
+    DeleteBracketPairBackward,
     DeleteForward,
     /// Remove non-empty selections without deleting at empty carets.
     DeleteSelections,
@@ -259,6 +260,7 @@ impl Document {
             EditIntent::Insert(text) => self.multi_insert(&text),
             EditIntent::InsertMany(texts) => self.multi_insert_many(&texts),
             EditIntent::DeleteBackward => self.multi_delete(false),
+            EditIntent::DeleteBracketPairBackward => self.delete_bracket_pair_backward(),
             EditIntent::DeleteForward => self.multi_delete(true),
             EditIntent::DeleteSelections => self.delete_selections(),
             EditIntent::DeleteLine => self.delete_lines(),
@@ -646,6 +648,33 @@ impl Document {
             if !range.is_empty() {
                 targets.push((range, String::new()));
             }
+        }
+        self.apply_targets(targets, false, EditSource::Delete, None)
+    }
+
+    fn delete_bracket_pair_backward(&mut self) -> EditorCommandResult {
+        let snapshot = self.snapshot();
+        let mut targets = Vec::new();
+        for selection in self.selection_set().selections() {
+            let range = selection.range().resolve(&snapshot);
+            let range = if !range.is_empty() {
+                range
+            } else {
+                let previous = previous_char_range(&snapshot, range.start);
+                if previous.is_empty() {
+                    continue;
+                }
+                let next = next_char_range(&snapshot, range.start);
+                let open = snapshot
+                    .text_range(previous)
+                    .chars()
+                    .next()
+                    .unwrap_or_default();
+                matching_pair(open)
+                    .filter(|close| snapshot.text_range(next) == close.to_string())
+                    .map_or(previous, |_| TextRange::new(previous.start, next.end))
+            };
+            targets.push((range, String::new()));
         }
         self.apply_targets(targets, false, EditSource::Delete, None)
     }
@@ -2237,6 +2266,35 @@ mod tests {
         assert_eq!(document.text(), "a a");
         document.undo();
         assert_eq!(document.text(), "ax ax");
+    }
+
+    #[test]
+    fn backspace_removes_an_empty_auto_pair_as_one_undoable_edit() {
+        let mut document = doc("()");
+        document.set_caret(Position::new(0, 1), false);
+        document.execute_edit(EditIntent::DeleteBracketPairBackward);
+        assert_eq!(document.text(), "");
+        document.undo();
+        assert_eq!(document.text(), "()");
+    }
+
+    #[test]
+    fn backspace_keeps_nonempty_pairs_and_deletes_only_the_previous_character() {
+        let mut document = doc("(x)");
+        document.set_caret(Position::new(0, 2), false);
+        document.execute_edit(EditIntent::DeleteBracketPairBackward);
+        assert_eq!(document.text(), "()");
+    }
+
+    #[test]
+    fn backspace_removes_empty_pairs_at_multiple_carets_in_one_transaction() {
+        let mut document = doc("() ()");
+        document.set_caret(Position::new(0, 1), false);
+        document.execute_edit(EditIntent::AddCursor(Position::new(0, 4)));
+        document.execute_edit(EditIntent::DeleteBracketPairBackward);
+        assert_eq!(document.text(), " ");
+        document.undo();
+        assert_eq!(document.text(), "() ()");
     }
 
     #[test]

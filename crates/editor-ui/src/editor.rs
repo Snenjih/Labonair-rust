@@ -6785,7 +6785,7 @@ impl EditorView {
                 self.execute_command(EditorCommand::Edit(EditIntent::Insert(indent)), cx);
             }
             "backspace" => {
-                self.execute_command(EditorCommand::Edit(EditIntent::DeleteBackward), cx);
+                self.handle_backspace(cx);
             }
             "delete" => {
                 self.execute_command(EditorCommand::Edit(EditIntent::DeleteForward), cx);
@@ -6832,6 +6832,14 @@ impl EditorView {
     }
 
     fn handle_vim(&mut self, key: VimKey, cx: &mut Context<Self>) {
+        if key == VimKey::Backspace
+            && self.vim.as_ref().map(Vim::mode) == Some(VimMode::Insert)
+            && self.prefs.auto_close_brackets()
+        {
+            self.handle_backspace(cx);
+            return;
+        }
+
         let revision_before = self.editor_revision();
         let dirty_before = self.doc.is_dirty();
         let resp = {
@@ -6862,6 +6870,15 @@ impl EditorView {
         if resp.quit {
             cx.emit(EditorEvent::CloseRequested);
         }
+    }
+
+    fn handle_backspace(&mut self, cx: &mut Context<Self>) {
+        let intent = if self.prefs.auto_close_brackets() {
+            EditIntent::DeleteBracketPairBackward
+        } else {
+            EditIntent::DeleteBackward
+        };
+        self.execute_command(EditorCommand::Edit(intent), cx);
     }
 
     fn helix_key(&self, ks: &gpui::Keystroke) -> Option<HelixKey> {
@@ -13031,6 +13048,11 @@ mod tests {
         cx.update(|cx| {
             view.update(cx, |this, cx| {
                 this.apply_prefs(cx);
+                this.doc = Document::from_file("test.rs".into(), "()", 1);
+                this.doc.set_caret(Position::new(0, 1), false);
+                this.handle_backspace(cx);
+                assert_eq!(this.doc.text(), ")");
+
                 this.doc = Document::from_file("test.rs".into(), "", 1);
                 this.insert_printable("(", cx);
                 assert_eq!(this.doc.text(), "(");
@@ -13057,6 +13079,11 @@ mod tests {
         cx.update(|cx| {
             view.update(cx, |this, cx| {
                 this.apply_prefs(cx);
+                this.doc = Document::from_file("test.rs".into(), "()", 1);
+                this.doc.set_caret(Position::new(0, 1), false);
+                this.handle_backspace(cx);
+                assert_eq!(this.doc.text(), "");
+
                 this.doc = Document::from_file("test.rs".into(), "word", 1);
                 this.doc.set_caret(Position::new(0, 0), false);
                 this.doc.set_caret(Position::new(0, 4), true);
