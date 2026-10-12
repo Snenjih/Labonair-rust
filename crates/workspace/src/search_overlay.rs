@@ -92,6 +92,7 @@ pub struct SearchOverlay {
     options: SearchOptions,
     search_on_type: bool,
     include_ignored: bool,
+    only_open_files: bool,
     show_path_filters: bool,
     project_query_confirmed: bool,
     count: (usize, usize),
@@ -210,6 +211,7 @@ impl SearchOverlay {
             options,
             search_on_type,
             include_ignored,
+            only_open_files: false,
             show_path_filters: false,
             project_query_confirmed: false,
             count: (0, 0),
@@ -258,6 +260,7 @@ impl SearchOverlay {
     fn run_project_search(&mut self, text: String, cx: &mut Context<Self>) {
         let mut options = ProjectSearchOptions::from_search_options(self.options);
         options.include_ignored = self.include_ignored;
+        options.only_open_files = self.only_open_files;
         let include_globs = self
             .include_glob_input
             .as_ref()
@@ -282,6 +285,7 @@ impl SearchOverlay {
     fn clear_project_search(&mut self, cx: &mut Context<Self>) {
         let mut options = ProjectSearchOptions::from_search_options(self.options);
         options.include_ignored = self.include_ignored;
+        options.only_open_files = self.only_open_files;
         let query = ProjectSearchQuery::new("", options, ProjectSearchQuery::DEFAULT_MAX_RESULTS);
         let _ = self
             .workspace
@@ -341,6 +345,11 @@ impl SearchOverlay {
 
     fn toggle_include_ignored(&mut self, cx: &mut Context<Self>) {
         self.include_ignored = !self.include_ignored;
+        self.run_search(cx);
+    }
+
+    fn toggle_only_open_files(&mut self, cx: &mut Context<Self>) {
+        self.only_open_files = !self.only_open_files;
         self.run_search(cx);
     }
 
@@ -815,6 +824,24 @@ impl Render for SearchOverlay {
                                     .on_click(cx.listener(
                                         |this, _: &ClickEvent, _w, cx| {
                                             this.toggle_include_ignored(cx)
+                                        },
+                                    )),
+                                )
+                                .child(
+                                    button(
+                                        "search-only-open-files",
+                                        palette,
+                                        ButtonVariant::Subtle,
+                                        ButtonSize::Xs,
+                                    )
+                                    .child("Open files")
+                                    .when(self.only_open_files, |d| {
+                                        d.bg(palette.selected_fill)
+                                            .text_color(palette.selected_accent)
+                                    })
+                                    .on_click(cx.listener(
+                                        |this, _: &ClickEvent, _w, cx| {
+                                            this.toggle_only_open_files(cx)
                                         },
                                     )),
                                 )

@@ -1902,6 +1902,20 @@ impl Workspace {
         })))
     }
 
+    /// Saved editor file paths in the active space for the open-files search
+    /// filter. Unsaved buffers have no filesystem path to pass to the provider.
+    fn open_editor_paths_in_active_space(&self, cx: &App) -> Vec<std::path::PathBuf> {
+        let active_space = self.spaces.read(cx).active_id();
+        self.tabs
+            .read(cx)
+            .tabs_in_space(active_space)
+            .into_iter()
+            .filter(|tab| tab.kind == TabKind::Editor)
+            .filter_map(|tab| self.editors.get(&tab.id))
+            .filter_map(|editor| editor.read(cx).path())
+            .collect()
+    }
+
     /// Start the Editor-owned project search through the explicit workspace
     /// filesystem root. Workspace owns only this async adapter and operation
     /// handle; all query/result/status state stays in `EditorView`.
@@ -1928,10 +1942,18 @@ impl Workspace {
             });
             return Some(());
         };
+        let open_file_paths = if request.query.options.only_open_files {
+            crate::project_search::relative_open_paths(
+                &root,
+                self.open_editor_paths_in_active_space(cx),
+            )
+        } else {
+            Vec::new()
+        };
 
-        let job = self
-            .tokio
-            .spawn_blocking(move || crate::project_search::search_blocking(root, request));
+        let job = self.tokio.spawn_blocking(move || {
+            crate::project_search::search_blocking(root, request, open_file_paths)
+        });
         self.project_search_task = Some(cx.spawn(async move |this, cx| {
             let result = job.await.map_err(|error| error.to_string()).and_then(|r| r);
             let _ = this.update(cx, |workspace, cx| {

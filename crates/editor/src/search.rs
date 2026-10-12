@@ -131,6 +131,7 @@ pub struct ProjectSearchOptions {
     pub whole_word: bool,
     pub regex: bool,
     pub include_ignored: bool,
+    pub only_open_files: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,6 +148,7 @@ impl Default for ProjectSearchOptions {
             whole_word: false,
             regex: false,
             include_ignored: false,
+            only_open_files: false,
         }
     }
 }
@@ -159,6 +161,7 @@ impl ProjectSearchOptions {
             whole_word: options.whole_word,
             regex: options.regex,
             include_ignored: false,
+            only_open_files: false,
         }
     }
 

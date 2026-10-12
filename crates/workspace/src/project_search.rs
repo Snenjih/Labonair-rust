@@ -1,26 +1,36 @@
 //! Workspace's narrow adapter for the Editor-owned project-search contract.
 //!
 //! This module owns neither query state nor result state. It translates one
-//! typed Editor request to the existing `labonair-filesystem::grep::fs_grep`
-//! primitive and maps the response back once, on a blocking background task.
+//! typed Editor request to the existing `labonair-filesystem::grep` provider
+//! and maps the response back once, on a blocking background task.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use labonair_editor::{
     ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest, ProjectSearchResult,
 };
-use labonair_filesystem::grep::{fs_grep_with_filters, GrepResponse};
+use labonair_filesystem::grep::{fs_grep_with_options, GrepOptions, GrepResponse};
 
 pub(crate) fn search_blocking(
     root: PathBuf,
     request: ProjectSearchRequest,
+    open_file_paths: Vec<String>,
 ) -> Result<ProjectSearchResult, String> {
     let pattern = request.query.backend_pattern().map_err(|e| e.to_string())?;
-    let response = fs_grep_with_filters(
+    let options = GrepOptions {
+        include_globs: request.query.include_globs.clone(),
+        exclude_globs: request.query.exclude_globs.clone(),
+        only_paths: request
+            .query
+            .options
+            .only_open_files
+            .then_some(open_file_paths),
+        include_ignored: request.query.options.include_ignored,
+    };
+    let response = fs_grep_with_options(
         pattern,
         root.to_string_lossy().into_owned(),
-        (!request.query.include_globs.is_empty()).then(|| request.query.include_globs.clone()),
-        (!request.query.exclude_globs.is_empty()).then(|| request.query.exclude_globs.clone()),
         Some(
             !request
                 .query
@@ -28,9 +38,31 @@ pub(crate) fn search_blocking(
                 .case_sensitive_for_matching(&request.query.text),
         ),
         Some(request.query.max_results),
-        request.query.options.include_ignored,
+        options,
     )?;
     map_response(&root, &request.query, request.generation, response)
+}
+
+/// Map open editor paths into stable root-relative filters. Missing paths and
+/// paths that resolve outside the project root are excluded.
+pub(crate) fn relative_open_paths(
+    root: &Path,
+    candidates: impl IntoIterator<Item = PathBuf>,
+) -> Vec<String> {
+    let Ok(canonical_root) = std::fs::canonicalize(root) else {
+        return Vec::new();
+    };
+    let mut paths = BTreeSet::new();
+    for candidate in candidates {
+        let Ok(canonical_candidate) = std::fs::canonicalize(candidate) else {
+            continue;
+        };
+        let Ok(relative) = canonical_candidate.strip_prefix(&canonical_root) else {
+            continue;
+        };
+        paths.insert(relative.to_string_lossy().into_owned());
+    }
+    paths.into_iter().collect()
 }
 
 fn map_response(
@@ -152,6 +184,33 @@ mod tests {
         std::fs::write(&outside, "outside").expect("outside file");
         let error = root_safe_path(&root, &outside).expect_err("escape must be rejected");
         assert!(error.contains("escapes workspace root"));
+        std::fs::remove_dir_all(root).expect("remove test root");
+        std::fs::remove_file(outside).expect("remove outside file");
+    }
+
+    #[test]
+    fn relative_open_paths_are_deduplicated_and_root_scoped() {
+        let root = std::env::temp_dir().join(format!(
+            "labonair-project-open-paths-{}",
+            std::process::id()
+        ));
+        let outside = std::env::temp_dir().join(format!(
+            "labonair-project-open-outside-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_file(&outside);
+        std::fs::create_dir_all(root.join("src")).expect("create root source directory");
+        std::fs::write(root.join("src/main.rs"), "open").expect("write open file");
+        std::fs::write(&outside, "outside").expect("write outside file");
+
+        let file = root.join("src/main.rs");
+        assert_eq!(
+            relative_open_paths(&root, [file.clone(), file, outside.clone()]),
+            ["src/main.rs"]
+        );
+        assert!(relative_open_paths(&root, [root.join("missing.rs")]).is_empty());
+
         std::fs::remove_dir_all(root).expect("remove test root");
         std::fs::remove_file(outside).expect("remove outside file");
     }
