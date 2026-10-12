@@ -3217,6 +3217,26 @@ impl Workspace {
                     cx.notify();
                 }
                 EditorEvent::ProjectDiagnosticsChanged => cx.notify(),
+                EditorEvent::ProjectDiagnosticsRefreshRequested => {
+                    let source_space = this.tabs.read(cx).get(tab_id).map(|tab| tab.space_id);
+                    let editors = this
+                        .editors
+                        .iter()
+                        .filter_map(|(editor_tab_id, editor)| {
+                            let editor_space = this
+                                .tabs
+                                .read(cx)
+                                .get(*editor_tab_id)
+                                .map(|tab| tab.space_id);
+                            (source_space.is_some() && source_space == editor_space)
+                                .then(|| editor.clone())
+                        })
+                        .collect::<Vec<_>>();
+                    for editor in editors {
+                        let _ =
+                            editor.update(cx, |editor, cx| editor.refresh_project_diagnostics(cx));
+                    }
+                }
                 EditorEvent::BufferChanged(source) => {
                     this.update_markdown_preview_for_editor(tab_id, source.clone(), cx);
                     if this.following_markdown_editor == Some(tab_id) {

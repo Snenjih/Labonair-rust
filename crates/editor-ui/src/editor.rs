@@ -92,6 +92,8 @@ pub enum EditorEvent {
     Changed,
     /// Accepted diagnostics changed in the shared project registry.
     ProjectDiagnosticsChanged,
+    /// The project diagnostics result view requested a refresh across open editors.
+    ProjectDiagnosticsRefreshRequested,
     /// The user made their first edit — a peek tab should become permanent.
     Edited,
     /// A Markdown preview should open for this exact immutable source revision.
@@ -106,6 +108,12 @@ pub enum EditorEvent {
     BufferChanged(EditorBufferSnapshot),
     /// Vim `:q` / `:wq` — the hosting workspace should close this editor's tab.
     CloseRequested,
+}
+
+#[derive(Clone, Debug)]
+struct ProjectDiagnosticResult {
+    severity: labonair_editor::DiagnosticSeverity,
+    target: NavigationTarget,
 }
 
 /// Immutable source data crossing from the Editor owner into its Workspace
@@ -1214,6 +1222,8 @@ pub struct EditorView {
     navigation_results_title: String,
     navigation_results_selected: usize,
     navigation_result_direct: bool,
+    project_diagnostics: Option<Vec<ProjectDiagnosticResult>>,
+    project_diagnostics_show_warnings: bool,
     workspace_symbols_request_serial: Option<u64>,
     folding_ranges_request_serial: Option<u64>,
     language_service_request_serial: u64,
@@ -1507,6 +1517,8 @@ impl EditorView {
             navigation_results_title: String::new(),
             navigation_results_selected: 0,
             navigation_result_direct: true,
+            project_diagnostics: None,
+            project_diagnostics_show_warnings: true,
             workspace_symbols_request_serial: None,
             folding_ranges_request_serial: None,
             language_service_request_serial: 0,
@@ -1825,6 +1837,7 @@ impl EditorView {
                 self.workspace_symbol_input = None;
                 self.workspace_symbols_request_serial = None;
                 self.navigation_results = None;
+                self.project_diagnostics = None;
                 cx.notify();
             }
             EditorCommandRoute::Ui(EditorUiCommand::GoBack) => self.navigate_history_back(cx),
@@ -2089,6 +2102,7 @@ impl EditorView {
     ) {
         self.workspace_symbols_request_serial = None;
         self.navigation_results = None;
+        self.project_diagnostics = None;
         self.navigation_results_title = title.to_string();
         self.navigation_results_selected = 0;
         self.navigation_result_direct = direct_single_result;
@@ -2225,38 +2239,89 @@ impl EditorView {
     }
 
     fn show_diagnostics(&mut self, cx: &mut Context<Self>) {
-        let targets = self
+        let diagnostics = self
             .diagnostic_registry
             .snapshot()
             .into_iter()
             .map(|row| {
-                let severity = match row.diagnostic.severity {
+                let severity = row.diagnostic.severity;
+                let severity_name = match severity {
                     labonair_editor::DiagnosticSeverity::Error => "Error",
                     labonair_editor::DiagnosticSeverity::Warning => "Warning",
                     labonair_editor::DiagnosticSeverity::Information => "Information",
                     labonair_editor::DiagnosticSeverity::Hint => "Hint",
                 };
-                NavigationTarget {
-                    name: format!("{severity}: {}", row.diagnostic.message),
-                    uri: Some(row.uri),
-                    range: row.diagnostic.range,
-                    selection_range: row.diagnostic.range,
+                ProjectDiagnosticResult {
+                    severity,
+                    target: NavigationTarget {
+                        name: format!("{severity_name}: {}", row.diagnostic.message),
+                        uri: Some(row.uri),
+                        range: row.diagnostic.range,
+                        selection_range: row.diagnostic.range,
+                    },
                 }
             })
             .collect::<Vec<_>>();
-        if targets.is_empty() {
+        if diagnostics.is_empty() {
             notify_info(
                 cx,
                 "Project Diagnostics",
-                "No diagnostics are available in open editor buffers.",
+                "No problems in open editor buffers.",
             );
             return;
         }
+        self.project_diagnostics = Some(diagnostics);
+        self.project_diagnostics_show_warnings = true;
         self.navigation_results_title = "Project Diagnostics".into();
         self.navigation_result_direct = false;
         self.navigation_results_selected = 0;
-        self.navigation_results = Some(targets);
+        self.refresh_visible_project_diagnostics();
         cx.notify();
+    }
+
+    fn refresh_visible_project_diagnostics(&mut self) {
+        let Some(diagnostics) = self.project_diagnostics.as_ref() else {
+            return;
+        };
+        let targets = diagnostics
+            .iter()
+            .filter(|result| {
+                self.project_diagnostics_show_warnings
+                    || result.severity != labonair_editor::DiagnosticSeverity::Warning
+            })
+            .map(|result| result.target.clone())
+            .collect::<Vec<_>>();
+        self.navigation_results_selected = self
+            .navigation_results_selected
+            .min(targets.len().saturating_sub(1));
+        self.navigation_results = Some(targets);
+    }
+
+    fn toggle_project_diagnostic_warnings(&mut self, cx: &mut Context<Self>) {
+        if self.project_diagnostics.is_none() {
+            return;
+        }
+        self.project_diagnostics_show_warnings = !self.project_diagnostics_show_warnings;
+        self.navigation_results_selected = 0;
+        self.refresh_visible_project_diagnostics();
+        cx.notify();
+    }
+
+    fn request_project_diagnostic_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.project_diagnostics.is_some() {
+            cx.emit(EditorEvent::ProjectDiagnosticsRefreshRequested);
+        }
+    }
+
+    /// Re-run the diagnostic request for this open document. Pull-capable
+    /// language servers fetch a fresh result; push-only servers continue to
+    /// update the shared registry from their normal publish notifications.
+    pub fn refresh_project_diagnostics(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.language_service_open || self.language_service_uri.is_none() {
+            return false;
+        }
+        self.request_language_service(LanguageServiceRequest::Diagnostics, cx);
+        true
     }
 
     fn navigate_diagnostic(&mut self, forward: bool, cx: &mut Context<Self>) {
@@ -2907,6 +2972,7 @@ impl EditorView {
         direct_single_result: bool,
         cx: &mut Context<Self>,
     ) {
+        self.project_diagnostics = None;
         if targets.is_empty() {
             self.navigation_results = None;
             notify_info(
@@ -2967,6 +3033,7 @@ impl EditorView {
             return;
         };
         self.navigation_results = None;
+        self.project_diagnostics = None;
         let target_uri = target
             .uri
             .clone()
@@ -3344,6 +3411,7 @@ impl EditorView {
             return;
         }
         self.navigation_results = None;
+        self.project_diagnostics = None;
         self.navigation_results_title = "Workspace Symbols".into();
         self.navigation_results_selected = 0;
         self.navigation_result_direct = false;
@@ -6169,6 +6237,7 @@ impl EditorView {
             let handled = match ks.key.as_str() {
                 "escape" if !m.platform && !m.control && !m.alt => {
                     self.navigation_results = None;
+                    self.project_diagnostics = None;
                     cx.notify();
                     true
                 }
@@ -9732,6 +9801,7 @@ impl EditorView {
         }
         if let Some(targets) = self.navigation_results.as_ref() {
             shown = true;
+            let is_project_diagnostics = self.project_diagnostics.is_some();
             let selected = self
                 .navigation_results_selected
                 .min(targets.len().saturating_sub(1));
@@ -9749,49 +9819,100 @@ impl EditorView {
                 }))
                 .child(SharedString::from(label))
             });
-            overlay = overlay
-                .child(
+            let mut header = div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .px_2()
+                .py_1()
+                .child(labonair_ui_kit::list_header(
+                    self.navigation_results_title.clone(),
+                    palette.muted,
+                ));
+            if is_project_diagnostics {
+                let warning_label = if self.project_diagnostics_show_warnings {
+                    "Warnings: on"
+                } else {
+                    "Warnings: off"
+                };
+                header = header.child(
                     div()
                         .flex()
                         .items_center()
-                        .justify_between()
-                        .px_2()
-                        .py_1()
-                        .child(labonair_ui_kit::list_header(
-                            self.navigation_results_title.clone(),
-                            palette.muted,
-                        ))
+                        .gap_1()
                         .child(
                             button(
-                                "editor-navigation-results-close",
+                                "editor-project-diagnostics-warnings",
                                 palette,
                                 ButtonVariant::Subtle,
                                 ButtonSize::Xs,
                             )
-                            .child("Close")
+                            .child(warning_label)
                             .on_click(cx.listener(
                                 |this, _: &ClickEvent, _, cx| {
-                                    this.navigation_results = None;
-                                    cx.notify();
+                                    this.toggle_project_diagnostic_warnings(cx);
+                                },
+                            )),
+                        )
+                        .child(
+                            button(
+                                "editor-project-diagnostics-refresh",
+                                palette,
+                                ButtonVariant::Subtle,
+                                ButtonSize::Xs,
+                            )
+                            .child("Refresh")
+                            .on_click(cx.listener(
+                                |this, _: &ClickEvent, _, cx| {
+                                    this.request_project_diagnostic_refresh(cx);
                                 },
                             )),
                         ),
+                );
+            }
+            header = header.child(
+                button(
+                    "editor-navigation-results-close",
+                    palette,
+                    ButtonVariant::Subtle,
+                    ButtonSize::Xs,
                 )
-                .child(
-                    div()
-                        .id("editor-navigation-results-list")
-                        .max_h(px(240.0))
-                        .overflow_y_scroll()
-                        .children(rows),
-                )
-                .child(
+                .child("Close")
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.navigation_results = None;
+                    this.project_diagnostics = None;
+                    cx.notify();
+                })),
+            );
+            let mut results_list = div()
+                .id("editor-navigation-results-list")
+                .max_h(px(240.0))
+                .overflow_y_scroll();
+            if targets.is_empty() && is_project_diagnostics {
+                let empty_message = if self.project_diagnostics_show_warnings {
+                    "No problems in open editor buffers."
+                } else {
+                    "No errors in open editor buffers. Turn warnings on to include warnings."
+                };
+                results_list = results_list.child(
                     div()
                         .px_2()
-                        .py_1()
-                        .text_xs()
+                        .py_2()
+                        .text_sm()
                         .text_color(palette.muted)
-                        .child("↑ ↓ to choose · Enter to open · Esc to close"),
+                        .child(empty_message),
                 );
+            } else {
+                results_list = results_list.children(rows);
+            }
+            overlay = overlay.child(header).child(results_list).child(
+                div()
+                    .px_2()
+                    .py_1()
+                    .text_xs()
+                    .text_color(palette.muted)
+                    .child("↑ ↓ to choose · Enter to open · Esc to close"),
+            );
         }
         if self.call_hierarchy_open {
             shown = true;
@@ -11660,6 +11781,16 @@ mod tests {
                 assert_eq!(rows[1].name, "Warning: unused value");
                 assert_eq!(rows[1].uri.as_deref(), Some("file:///workspace/b.rs"));
                 assert_eq!(rows[1].selection_range.start.line, 7);
+
+                this.toggle_project_diagnostic_warnings(cx);
+                let without_warnings = this.navigation_results.as_ref().expect("filtered rows");
+                assert_eq!(without_warnings.len(), 1);
+                assert_eq!(without_warnings[0].name, "Error: missing type");
+                assert!(!this.project_diagnostics_show_warnings);
+
+                this.toggle_project_diagnostic_warnings(cx);
+                assert_eq!(this.navigation_results.as_ref().map(Vec::len), Some(2));
+                assert!(this.project_diagnostics_show_warnings);
             });
         });
     }
