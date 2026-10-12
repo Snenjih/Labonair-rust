@@ -9,6 +9,7 @@ use gpui::{
     InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Pixels, Point, Render,
     SharedString, StatefulInteractiveElement, Styled, Window,
 };
+use labonair_command_palette_core::CommandId;
 use labonair_mcp_core::SessionKind;
 use labonair_panel::{StatusItem, StatusSide};
 use labonair_theme::store::ThemeStore;
@@ -326,11 +327,22 @@ impl StatusItem for CursorPositionStatusItem {
         let Some((line, col)) = self.workspace.read(cx).active_editor_cursor(cx) else {
             return div().into_any_element();
         };
-        let muted = self.theme.read(cx).muted_foreground();
+        let (muted, foreground) = {
+            let theme = self.theme.read(cx);
+            (theme.muted_foreground(), theme.foreground())
+        };
         div()
+            .id("cursor-position-status")
+            .cursor_pointer()
             .text_size(px(11.0))
             .text_color(muted)
+            .hover(|style| style.text_color(foreground))
             .child(SharedString::from(format!("Ln {line}, Col {col}")))
+            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                this.workspace.update(cx, |workspace, cx| {
+                    workspace.dispatch_active_editor_command(CommandId::EditorGoToLineColumn, cx);
+                });
+            }))
             .into_any_element()
     }
 }
