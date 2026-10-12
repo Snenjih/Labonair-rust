@@ -465,6 +465,7 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
     EditorContent {
         editor_font_family: Some(p.editor_font_family.clone()),
         editor_font_size: Some(p.editor_font_size),
+        editor_font_weight: defaults.editor_font_weight,
         editor_line_height: Some(p.editor_line_height),
         editor_tab_size: Some(p.editor_tab_size),
         editor_word_wrap: Some(p.editor_word_wrap),

@@ -11212,7 +11212,9 @@ impl Render for EditorView {
         let muted = theme.muted_foreground();
         let accent = theme.accent();
         let gutter_bg = theme.card();
-        let font = theme.buffer_font();
+        let editor_font_weight = gpui::FontWeight(self.prefs.font_weight() as f32);
+        let mut font = theme.buffer_font();
+        font.weight = editor_font_weight;
         let font_px = self.effective_font_size() as f32;
         let line_h = (font_px * self.prefs.line_height()).ceil().max(1.0);
         let editor_font_family = self.prefs.font_family().to_string();
@@ -11384,6 +11386,7 @@ impl Render for EditorView {
                 .pr(px(8.0))
                 .text_size(px(font_px))
                 .font_family(editor_font_family.clone())
+                .font_weight(editor_font_weight)
                 .text_color(if on_cursor { fg } else { muted })
                 .child(SharedString::from(
                     if matches!(display_row.kind, DisplayRowKind::FoldPlaceholder { .. }) {
@@ -11472,6 +11475,7 @@ impl Render for EditorView {
                 .text_size(px(font_px))
                 .line_height(px(line_h))
                 .font_family(editor_font_family.clone())
+                .font_weight(editor_font_weight)
                 .text_color(fg);
             row = if wrapping {
                 row.w(px(content_w))

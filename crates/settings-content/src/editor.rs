@@ -317,6 +317,7 @@ impl crate::MergeFrom for EditorMinimapCurrentLineHighlight {
 pub struct EditorContent {
     pub editor_font_family: Option<String>,
     pub editor_font_size: Option<u32>,
+    pub editor_font_weight: Option<u32>,
     pub editor_line_height: Option<f32>,
     pub editor_tab_size: Option<u32>,
     pub editor_word_wrap: Option<bool>,
@@ -442,6 +443,7 @@ impl EditorContent {
         Self {
             editor_font_family: Some(mono),
             editor_font_size: Some(13),
+            editor_font_weight: Some(400),
             editor_line_height: Some(1.55),
             editor_tab_size: Some(2),
             editor_word_wrap: Some(false),

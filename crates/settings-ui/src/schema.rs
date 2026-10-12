@@ -492,6 +492,15 @@ pub fn all_fields() -> Vec<AnyField> {
             "pt",
             "Applies to open and newly opened documents."
         ),
+        field_with_details!(
+            editor.editor_font_weight,
+            "editorFontWeight",
+            Int { min: 100, max: 900, step: 50 },
+            "Font weight",
+            "Editor font weight from thin to black.",
+            "",
+            "Only applies to the buffer text and line-number gutter."
+        ),
         field!(
             editor.editor_line_height,
             "editorLineHeight",
@@ -1768,6 +1777,26 @@ mod tests {
         let mut content = SettingsContent::default();
         assert!((field.set)(&mut content, Value::String("hollow".into())));
         assert_eq!((field.get)(&content), Some(Value::String("hollow".into())));
+    }
+
+    #[test]
+    fn editor_font_weight_is_a_bounded_numeric_setting() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorFontWeight")
+            .expect("editor font-weight setting");
+        assert!(matches!(
+            field.control,
+            FieldControl::Int {
+                min: 100,
+                max: 900,
+                step: 50
+            }
+        ));
+
+        let mut content = SettingsContent::default();
+        assert!((field.set)(&mut content, Value::Number(650.into())));
+        assert_eq!((field.get)(&content), Some(Value::Number(650.into())));
     }
 
     #[test]

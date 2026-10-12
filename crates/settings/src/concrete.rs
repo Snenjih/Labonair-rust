@@ -473,6 +473,10 @@ impl EditorSettings {
         self.0.editor_font_size.unwrap_or(13)
     }
 
+    pub fn font_weight(&self) -> u32 {
+        self.0.editor_font_weight.unwrap_or(400).clamp(100, 900)
+    }
+
     /// Tint the line the caret is on.
     pub fn highlight_current_line(&self) -> bool {
         self.0.editor_highlight_current_line.unwrap_or(true)
@@ -1269,6 +1273,18 @@ mod tests {
         let mut content = SettingsContent::default();
         content.editor.editor_rounded_selection = Some(false);
         assert!(!EditorSettings::from_settings(&content).rounded_selection());
+    }
+
+    #[test]
+    fn editor_font_weight_defaults_to_normal_and_is_bounded() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(defaults.font_weight(), 400);
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_font_weight = Some(650);
+        assert_eq!(EditorSettings::from_settings(&content).font_weight(), 650);
+        content.editor.editor_font_weight = Some(1_000);
+        assert_eq!(EditorSettings::from_settings(&content).font_weight(), 900);
     }
 
     #[test]

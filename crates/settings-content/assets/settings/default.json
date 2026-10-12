@@ -84,6 +84,7 @@
   "editor": {
     "editorFontFamily": "\"JetBrains Mono\", SFMono-Regular, Menlo, monospace",
     "editorFontSize": 13,
+    "editorFontWeight": 400,
     "editorLineHeight": 1.55,
     "editorTabSize": 2,
     "editorWordWrap": false,
