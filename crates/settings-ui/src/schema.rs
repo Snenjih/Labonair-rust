@@ -565,6 +565,24 @@ pub fn all_fields() -> Vec<AnyField> {
             "Modifier + mouse wheel zoom",
             "Zoom the editor font with the platform modifier and mouse wheel."
         ),
+        field_with_details!(
+            editor.editor_scroll_sensitivity,
+            "editorScrollSensitivity",
+            Float { min_centi: 25, max_centi: 500, step_centi: 25 },
+            "Scroll sensitivity",
+            "Scale normal mouse-wheel scrolling in the editor.",
+            "×",
+            "Applies while scrolling without Alt."
+        ),
+        field_with_details!(
+            editor.editor_fast_scroll_sensitivity,
+            "editorFastScrollSensitivity",
+            Float { min_centi: 100, max_centi: 2000, step_centi: 100 },
+            "Fast scroll sensitivity",
+            "Scale editor scrolling while holding Alt.",
+            "×",
+            "Applies while scrolling with Alt held."
+        ),
         field!(
             editor.editor_indentation_guides,
             "editorIndentationGuides",
@@ -1619,6 +1637,24 @@ mod tests {
         let mut content = SettingsContent::default();
         assert!((field.set)(&mut content, Value::Bool(true)));
         assert_eq!((field.get)(&content), Some(Value::Bool(true)));
+    }
+
+    #[test]
+    fn editor_scroll_sensitivity_fields_are_bounded_float_settings() {
+        for path in [
+            "editor.editorScrollSensitivity",
+            "editor.editorFastScrollSensitivity",
+        ] {
+            let field = all_fields()
+                .into_iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing editor scroll setting {path}"));
+            assert!(matches!(field.control, FieldControl::Float { .. }));
+
+            let mut content = SettingsContent::default();
+            assert!((field.set)(&mut content, Value::from(1.5)));
+            assert_eq!((field.get)(&content), Some(Value::from(1.5)));
+        }
     }
 
     #[test]

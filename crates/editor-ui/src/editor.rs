@@ -12160,8 +12160,14 @@ impl Render for EditorView {
                     return;
                 }
                 this.font_zoom_remainder = 0.0;
-                if dy.abs() >= 0.01 {
-                    this.scroll_by(-(dy.round() as isize).clamp(-8, 8), cx);
+                let lines = scroll_wheel_line_delta(
+                    dy,
+                    ev.modifiers.alt,
+                    this.prefs.scroll_sensitivity(),
+                    this.prefs.fast_scroll_sensitivity(),
+                );
+                if lines != 0 {
+                    this.scroll_by(-lines, cx);
                 }
             }))
     }
@@ -12201,6 +12207,20 @@ fn should_zoom_font_on_scroll(
     control_modifier: bool,
 ) -> bool {
     enabled && (platform_modifier || control_modifier)
+}
+
+fn scroll_wheel_line_delta(
+    delta: f32,
+    fast: bool,
+    sensitivity: f32,
+    fast_sensitivity: f32,
+) -> isize {
+    if !delta.is_finite() {
+        return 0;
+    }
+    let scale = if fast { fast_sensitivity } else { sensitivity };
+    let limit = if fast { 32.0 } else { 8.0 };
+    (delta * scale).round().clamp(-limit, limit) as isize
 }
 
 fn notify(cx: &mut App, title: &str, body: &str) {
@@ -12311,6 +12331,15 @@ mod tests {
         assert!(!should_zoom_font_on_scroll(true, false, false));
         assert!(should_zoom_font_on_scroll(true, true, false));
         assert!(should_zoom_font_on_scroll(true, false, true));
+    }
+
+    #[test]
+    fn alt_scroll_uses_its_own_bounded_sensitivity() {
+        assert_eq!(scroll_wheel_line_delta(0.4, false, 1.0, 4.0), 0);
+        assert_eq!(scroll_wheel_line_delta(0.4, true, 1.0, 4.0), 2);
+        assert_eq!(scroll_wheel_line_delta(0.4, false, 2.0, 4.0), 1);
+        assert_eq!(scroll_wheel_line_delta(100.0, true, 1.0, 4.0), 32);
+        assert_eq!(scroll_wheel_line_delta(f32::NAN, false, 1.0, 4.0), 0);
     }
 
     #[gpui::test]

@@ -63,6 +63,8 @@ pub const PROJECT_SETTINGS_WHITELIST: &[(&str, &[&str])] = &[
             "editorIndentWithTabs",
             "editorDragAndDropSelection",
             "editorMouseWheelZoom",
+            "editorScrollSensitivity",
+            "editorFastScrollSensitivity",
             "editorIndentationGuides",
             "editorWhitespace",
             "editorBracketMatching",
@@ -227,7 +229,7 @@ mod tests {
     #[test]
     fn filter_and_parse_keeps_every_whitelisted_leaf() {
         let (content, rejected) = filter_and_parse(
-            r#"{"editor":{"editorTabSize":4,"editorWordWrap":true,"editorGitWordDiff":false,"editorLspDocumentColors":"inline","editorDragAndDropSelection":false,"editorMouseWheelZoom":true}}"#,
+            r#"{"editor":{"editorTabSize":4,"editorWordWrap":true,"editorGitWordDiff":false,"editorLspDocumentColors":"inline","editorDragAndDropSelection":false,"editorMouseWheelZoom":true,"editorScrollSensitivity":1.5,"editorFastScrollSensitivity":6.0}}"#,
         );
         assert!(rejected.is_empty());
         assert_eq!(content.editor.editor_tab_size, Some(4));
@@ -235,6 +237,8 @@ mod tests {
         assert_eq!(content.editor.editor_git_word_diff, Some(false));
         assert_eq!(content.editor.editor_drag_and_drop_selection, Some(false));
         assert_eq!(content.editor.editor_mouse_wheel_zoom, Some(true));
+        assert_eq!(content.editor.editor_scroll_sensitivity, Some(1.5));
+        assert_eq!(content.editor.editor_fast_scroll_sensitivity, Some(6.0));
         assert_eq!(
             content.editor.editor_lsp_document_colors,
             Some(labonair_settings_content::editor::EditorDocumentColorMode::Inline)

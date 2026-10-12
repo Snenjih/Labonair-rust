@@ -92,6 +92,8 @@
     "editorIndentWithTabs": false,
     "editorDragAndDropSelection": true,
     "editorMouseWheelZoom": false,
+    "editorScrollSensitivity": 1.0,
+    "editorFastScrollSensitivity": 4.0,
     "editorIndentationGuides": true,
     "editorWhitespace": "none",
     "editorWhitespaceSpace": "•",

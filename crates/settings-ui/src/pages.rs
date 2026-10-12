@@ -389,6 +389,8 @@ const EDITOR_GROUPS: &[Group] = &[
             "editorScrollBeyondLastLine",
             "editorStickyContext",
             "editorMouseWheelZoom",
+            "editorScrollSensitivity",
+            "editorFastScrollSensitivity",
             "editorHighlightCurrentLine"
         ),
     ),

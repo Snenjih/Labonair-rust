@@ -286,6 +286,8 @@ pub struct EditorContent {
     pub editor_indent_with_tabs: Option<bool>,
     pub editor_drag_and_drop_selection: Option<bool>,
     pub editor_mouse_wheel_zoom: Option<bool>,
+    pub editor_scroll_sensitivity: Option<f32>,
+    pub editor_fast_scroll_sensitivity: Option<f32>,
     pub editor_indentation_guides: Option<bool>,
     pub editor_whitespace: Option<String>,
     pub editor_whitespace_space: Option<String>,
@@ -392,6 +394,8 @@ impl EditorContent {
             editor_indent_with_tabs: Some(false),
             editor_drag_and_drop_selection: Some(true),
             editor_mouse_wheel_zoom: Some(false),
+            editor_scroll_sensitivity: Some(1.0),
+            editor_fast_scroll_sensitivity: Some(4.0),
             editor_indentation_guides: Some(true),
             editor_whitespace: Some("none".to_string()),
             editor_whitespace_space: Some("•".to_string()),
@@ -563,6 +567,21 @@ mod tests {
 
         let value = serde_json::to_value(parsed).expect("serialize editor preferences");
         assert_eq!(value["editorMouseWheelZoom"], true);
+    }
+
+    #[test]
+    fn scroll_sensitivity_settings_parse_and_serialize() {
+        let parsed: EditorContent = serde_json::from_value(serde_json::json!({
+            "editorScrollSensitivity": 1.5,
+            "editorFastScrollSensitivity": 5.0
+        }))
+        .expect("parse editor scroll preferences");
+        assert_eq!(parsed.editor_scroll_sensitivity, Some(1.5));
+        assert_eq!(parsed.editor_fast_scroll_sensitivity, Some(5.0));
+
+        let value = serde_json::to_value(parsed).expect("serialize editor preferences");
+        assert_eq!(value["editorScrollSensitivity"], 1.5);
+        assert_eq!(value["editorFastScrollSensitivity"], 5.0);
     }
 
     #[test]

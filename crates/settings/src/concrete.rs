@@ -30,6 +30,13 @@ use labonair_settings_content::{
 use crate::settings_trait::Settings;
 use crate::RegisterSetting;
 
+fn bounded_finite_float(value: Option<f32>, default: f32, min: f32, max: f32) -> f32 {
+    value
+        .filter(|value| value.is_finite())
+        .unwrap_or(default)
+        .clamp(min, max)
+}
+
 /// `general` area — startup / lifecycle behaviour (app color-mode preference,
 /// update checks, session restore, the startup tab).
 #[derive(Clone, Debug, PartialEq, RegisterSetting)]
@@ -370,6 +377,14 @@ impl EditorSettings {
 
     pub fn mouse_wheel_zoom(&self) -> bool {
         self.0.editor_mouse_wheel_zoom.unwrap_or(false)
+    }
+
+    pub fn scroll_sensitivity(&self) -> f32 {
+        bounded_finite_float(self.0.editor_scroll_sensitivity, 1.0, 0.25, 5.0)
+    }
+
+    pub fn fast_scroll_sensitivity(&self) -> f32 {
+        bounded_finite_float(self.0.editor_fast_scroll_sensitivity, 4.0, 1.0, 20.0)
     }
 
     pub fn tab_size(&self) -> u32 {
@@ -1100,6 +1115,20 @@ mod tests {
         let mut content = SettingsContent::default();
         content.editor.editor_mouse_wheel_zoom = Some(true);
         assert!(EditorSettings::from_settings(&content).mouse_wheel_zoom());
+    }
+
+    #[test]
+    fn editor_scroll_sensitivity_defaults_and_clamps_invalid_values() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert_eq!(defaults.scroll_sensitivity(), 1.0);
+        assert_eq!(defaults.fast_scroll_sensitivity(), 4.0);
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_scroll_sensitivity = Some(0.0);
+        content.editor.editor_fast_scroll_sensitivity = Some(f32::NAN);
+        let settings = EditorSettings::from_settings(&content);
+        assert_eq!(settings.scroll_sensitivity(), 0.25);
+        assert_eq!(settings.fast_scroll_sensitivity(), 4.0);
     }
 
     #[test]
