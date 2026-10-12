@@ -790,6 +790,14 @@ impl WorkspaceSettings {
             .unwrap_or(true)
     }
 
+    pub fn show_nav_history_buttons(&self) -> bool {
+        self.0.show_nav_history_buttons.unwrap_or(true)
+    }
+
+    pub fn show_tab_bar_buttons(&self) -> bool {
+        self.0.show_tab_bar_buttons.unwrap_or(true)
+    }
+
     /// Block the first quit attempt while a terminal/SSH shell is running.
     pub fn confirm_quit_with_active_sessions(&self) -> bool {
         self.0.confirm_quit_with_active_sessions.unwrap_or(true)

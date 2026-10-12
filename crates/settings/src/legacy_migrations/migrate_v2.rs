@@ -389,6 +389,8 @@ fn workspace_from(p: &Preferences) -> WorkspaceContent {
         command_palette_position: Some(p.command_palette_position.clone()),
         command_palette_history_size: Some(p.command_palette_history_size),
         command_palette_close_on_overlay_click: Some(p.command_palette_close_on_overlay_click),
+        show_nav_history_buttons: WorkspaceContent::defaults().show_nav_history_buttons,
+        show_tab_bar_buttons: WorkspaceContent::defaults().show_tab_bar_buttons,
         // No v1 `Preferences` equivalent — inherits the shipped default.
         confirm_quit_with_active_sessions: WorkspaceContent::defaults()
             .confirm_quit_with_active_sessions,

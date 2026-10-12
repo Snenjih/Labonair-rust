@@ -201,6 +201,8 @@
     "commandPalettePosition": "top",
     "commandPaletteHistorySize": 5,
     "commandPaletteCloseOnOverlayClick": true,
+    "showNavHistoryButtons": true,
+    "showTabBarButtons": true,
     // Block the first quit attempt while a terminal/SSH shell is running.
     "confirmQuitWithActiveSessions": true
   },

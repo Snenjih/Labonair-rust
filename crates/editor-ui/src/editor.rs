@@ -4649,6 +4649,14 @@ impl EditorView {
         self.doc.cursor
     }
 
+    pub fn can_navigate_history_back(&self) -> bool {
+        self.navigation_history.can_back()
+    }
+
+    pub fn can_navigate_history_forward(&self) -> bool {
+        self.navigation_history.can_forward()
+    }
+
     pub fn is_dirty(&self) -> bool {
         self.doc.is_dirty()
     }

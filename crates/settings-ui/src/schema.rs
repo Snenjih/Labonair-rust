@@ -1291,6 +1291,20 @@ pub fn all_fields() -> Vec<AnyField> {
             "Dismiss the palette when clicking outside the card."
         ),
         field!(
+            workspace.show_nav_history_buttons,
+            "showNavHistoryButtons",
+            Switch,
+            "Show navigation history buttons",
+            "Show Back and Forward controls before the tab strip."
+        ),
+        field!(
+            workspace.show_tab_bar_buttons,
+            "showTabBarButtons",
+            Switch,
+            "Show tab bar buttons",
+            "Show the Spaces and new-tab controls in the titlebar."
+        ),
+        field!(
             workspace.confirm_quit_with_active_sessions,
             "confirmQuitWithActiveSessions",
             Switch,
@@ -1396,6 +1410,25 @@ mod tests {
         let mut content = SettingsContent::defaults();
         assert!((field.set)(&mut content, Value::String("decimal".into())));
         assert_eq!((field.get)(&content), Some(Value::String("decimal".into())));
+    }
+
+    #[test]
+    fn tab_bar_visibility_settings_are_exposed_switches() {
+        let fields = all_fields();
+        for path in [
+            "workspace.showNavHistoryButtons",
+            "workspace.showTabBarButtons",
+        ] {
+            let field = fields
+                .iter()
+                .find(|field| field.json_path == path)
+                .expect("tab-bar visibility setting");
+            assert!(matches!(field.control, FieldControl::Switch));
+
+            let mut content = SettingsContent::defaults();
+            assert!((field.set)(&mut content, Value::Bool(false)));
+            assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+        }
     }
 
     #[test]

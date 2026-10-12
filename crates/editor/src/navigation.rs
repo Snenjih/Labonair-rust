@@ -81,11 +81,21 @@ impl NavigationHistory {
         self.entries.get(previous).copied()
     }
 
+    pub fn can_back(&self) -> bool {
+        self.cursor.is_some_and(|cursor| cursor > 0)
+    }
+
     pub fn forward(&mut self) -> Option<NavigationLocation> {
         let next = self.cursor?.checked_add(1)?;
         let location = self.entries.get(next).copied()?;
         self.cursor = Some(next);
         Some(location)
+    }
+
+    pub fn can_forward(&self) -> bool {
+        self.cursor
+            .and_then(|cursor| cursor.checked_add(1))
+            .is_some_and(|next| next < self.entries.len())
     }
 
     pub fn clear(&mut self) {
@@ -105,10 +115,15 @@ mod tests {
     #[test]
     fn back_and_forward_restore_cursor_and_viewport_stops() {
         let mut history = NavigationHistory::default();
+        assert!(!history.can_back());
+        assert!(!history.can_forward());
         history.record_transition(location(2), location(12));
         history.record_transition(location(20), location(30));
+        assert!(history.can_back());
+        assert!(!history.can_forward());
 
         assert_eq!(history.back(), Some(location(20)));
+        assert!(history.can_forward());
         assert_eq!(history.back(), Some(location(12)));
         assert_eq!(history.back(), Some(location(2)));
         assert_eq!(history.back(), None);

@@ -141,7 +141,9 @@ use labonair_keymap_ui::KeymapManagementView;
 use labonair_panel_git_graph::GitGraphView;
 use labonair_settings::content::general::StartupTab;
 use labonair_settings::content::terminal::CursorStyle as PrefCursorStyle;
-use labonair_settings::{ConnectionsSettings, GeneralSettings, Settings as _, TerminalSettings};
+use labonair_settings::{
+    ConnectionsSettings, GeneralSettings, Settings as _, TerminalSettings, WorkspaceSettings,
+};
 use labonair_ui_kit::{
     caret, context_menu, divider, h_stack, icon_button_builder, indicator, tab_item, Axis,
     BlinkCursor, ButtonSize, ButtonVariant, IconButtonShape, IconName, IndicatorSize, MenuItem,
@@ -822,6 +824,10 @@ impl Workspace {
         let spaces = cx.new(|_| SpaceStore::new());
         cx.observe(&tabs, |_, _, cx| cx.notify()).detach();
         cx.observe(&spaces, |_, _, cx| cx.notify()).detach();
+        if cx.has_global::<labonair_settings::SettingsStore>() {
+            cx.observe_global::<labonair_settings::SettingsStore>(|_, cx| cx.notify())
+                .detach();
+        }
         cx.subscribe(&tabs, |this, _, ev: &crate::tabs::ActiveTabChanged, cx| {
             if let Some(editor) = this.editors.get(&ev.0).cloned() {
                 editor.update(cx, |e, cx| e.check_external(cx));
@@ -3651,6 +3657,41 @@ impl Workspace {
         self.cycle_tab(forward, window, cx);
     }
 
+    fn active_editor_history_state(&self, cx: &App) -> Option<(bool, bool)> {
+        let tab = self.tabs.read(cx).active()?;
+        if tab.kind != TabKind::Editor {
+            return None;
+        }
+        Some(self.editors.get(&tab.id).map_or((false, false), |editor| {
+            let editor = editor.read(cx);
+            (
+                editor.can_navigate_history_back(),
+                editor.can_navigate_history_forward(),
+            )
+        }))
+    }
+
+    fn navigate_tab_bar(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let editor_id = self
+            .tabs
+            .read(cx)
+            .active()
+            .filter(|tab| tab.kind == TabKind::Editor)
+            .map(|tab| tab.id);
+        if let Some(editor) = editor_id.and_then(|id| self.editors.get(&id).cloned()) {
+            let command = if forward {
+                CommandId::EditorGoForward
+            } else {
+                CommandId::EditorGoBack
+            };
+            editor.update(cx, |editor, cx| {
+                editor.dispatch_registered_command(command, cx);
+            });
+            return;
+        }
+        self.cycle(forward, window, cx);
+    }
+
     fn cycle_from_tab(
         &mut self,
         source_id: u64,
@@ -6363,33 +6404,53 @@ impl Workspace {
         let unpinned_tabs: Vec<Tab> = tabs.iter().filter(|tab| !tab.pinned).cloned().collect();
 
         let active_space = self.spaces.read(cx).active().cloned();
-        let can_navigate = tabs.len() > 1;
+        let (show_nav_history_buttons, show_tab_bar_buttons) = WorkspaceSettings::try_get(cx)
+            .map(|settings| {
+                (
+                    settings.show_nav_history_buttons(),
+                    settings.show_tab_bar_buttons(),
+                )
+            })
+            .unwrap_or((true, true));
+        let editor_history = self.active_editor_history_state(cx);
+        let can_cycle_tabs = tabs.len() > 1;
+        let (can_go_back, can_go_forward) =
+            editor_history.unwrap_or((can_cycle_tabs, can_cycle_tabs));
+        let history_buttons_active = editor_history.is_some();
         let workspace = cx.entity();
         let previous = icon_button_builder("tab-previous", c, IconName::ArrowLeft)
             .size(ButtonSize::IconLg)
             .shape(IconButtonShape::Square)
-            .disabled(!can_navigate)
-            .tooltip("Previous Tab")
+            .disabled(!can_go_back)
+            .tooltip(if history_buttons_active {
+                "Back"
+            } else {
+                "Previous Tab"
+            })
             .render()
-            .when(can_navigate, |button| {
+            .when(can_go_back, |button| {
                 button.on_click({
                     let workspace = workspace.clone();
                     move |_, window, app| {
-                        workspace.update(app, |this, cx| this.cycle(false, window, cx));
+                        workspace.update(app, |this, cx| this.navigate_tab_bar(false, window, cx));
                     }
                 })
             });
         let next = icon_button_builder("tab-next", c, IconName::ArrowRight)
             .size(ButtonSize::IconLg)
             .shape(IconButtonShape::Square)
-            .disabled(!can_navigate)
-            .tooltip("Next Tab")
+            .disabled(!can_go_forward)
+            .tooltip(if history_buttons_active {
+                "Forward"
+            } else {
+                "Next Tab"
+            })
             .render()
-            .when(can_navigate, |button| {
+            .when(can_go_forward, |button| {
                 button.on_click({
                     let workspace = workspace.clone();
                     move |_, window, app| {
-                        workspace.update(app, |this, cx| this.cycle(true, window, cx));
+                        workspace.update(app, |this, cx| this.navigate_tab_bar(true, window, cx));
                     }
                 })
             });
@@ -6408,6 +6469,39 @@ impl Workspace {
                 }),
             );
 
+        let spaces_trigger = div()
+            .id("spaces-trigger")
+            .flex_shrink_0()
+            .flex()
+            .items_center()
+            .gap_1()
+            .h(px(24.0))
+            .px_1p5()
+            .rounded_md()
+            .cursor_pointer()
+            .hover(|s| s.bg(border))
+            .child(IconName::Box.svg(muted).size(px(13.0)))
+            .when_some(active_space, |d, space| {
+                d.child(
+                    div()
+                        .max_w(px(96.0))
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_xs()
+                        .text_color(fg)
+                        .child(space.name),
+                )
+            })
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
+                    this.spaces_menu = Some(point(ev.position.x, px(TITLEBAR_OFFSET)));
+                    this.new_tab_menu = None;
+                    this.context_menu = None;
+                    cx.notify();
+                }),
+            );
+
         div()
             .flex()
             .items_center()
@@ -6416,51 +6510,20 @@ impl Workspace {
             .w_full()
             .flex_shrink_0()
             .bg(c.toolbar_bg)
-            .child(
-                div()
-                    .id("tab-navigation")
-                    .flex()
-                    .items_center()
-                    .h_full()
-                    .border_r_1()
-                    .border_color(border)
-                    .child(previous)
-                    .child(next),
-            )
-            .child(
-                div()
-                    .id("spaces-trigger")
-                    .flex_shrink_0()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .h(px(24.0))
-                    .px_1p5()
-                    .rounded_md()
-                    .cursor_pointer()
-                    .hover(|s| s.bg(border))
-                    .child(IconName::Box.svg(muted).size(px(13.0)))
-                    .when_some(active_space, |d, space| {
-                        d.child(
-                            div()
-                                .max_w(px(96.0))
-                                .overflow_hidden()
-                                .whitespace_nowrap()
-                                .text_xs()
-                                .text_color(fg)
-                                .child(space.name),
-                        )
-                    })
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
-                            this.spaces_menu = Some(point(ev.position.x, px(TITLEBAR_OFFSET)));
-                            this.new_tab_menu = None;
-                            this.context_menu = None;
-                            cx.notify();
-                        }),
-                    ),
-            )
+            .when(show_nav_history_buttons, |bar| {
+                bar.child(
+                    div()
+                        .id("tab-navigation")
+                        .flex()
+                        .items_center()
+                        .h_full()
+                        .border_r_1()
+                        .border_color(border)
+                        .child(previous)
+                        .child(next),
+                )
+            })
+            .when(show_tab_bar_buttons, |bar| bar.child(spaces_trigger))
             .child(
                 div()
                     .id("tab-strip")
@@ -6477,7 +6540,7 @@ impl Workspace {
                     )
                     .children(unpinned_tabs.iter().map(|t| self.render_tab(t, false, cx))),
             )
-            .child(new_tab)
+            .when(show_tab_bar_buttons, |bar| bar.child(new_tab))
     }
 
     /// The vertical tab list shown in the Tabs sidebar panel when
