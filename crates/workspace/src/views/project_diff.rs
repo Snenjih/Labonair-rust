@@ -16,6 +16,7 @@
 //! Repeated `WorkingTree` requests re-point the selection instead of
 //! duplicating; a `Commit` request re-targets the same item at the new commit.
 
+use std::collections::HashSet;
 use std::ops::Range;
 
 use gpui::prelude::FluentBuilder;
@@ -31,6 +32,7 @@ use labonair_git::GitService;
 use labonair_notifications::{notification_center, notify_err, Notification};
 use labonair_panel::{DiffSource, ProjectDiffFile, ProjectDiffMode, ProjectDiffRequest};
 use labonair_settings::{EditorSettings, Settings as _};
+use labonair_ui_kit::{button, ButtonSize, ButtonVariant, Palette};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
@@ -65,6 +67,7 @@ enum DiffRow {
         text: SharedString,
         /// Index into the selected file's `hunks`, for hunk staging.
         hunk_idx: usize,
+        collapsed: bool,
         /// `false` for whole-file (new / deleted) diffs — no per-hunk control.
         per_hunk: bool,
     },
@@ -101,6 +104,8 @@ pub struct ProjectDiffView {
     commit_files: Vec<FileDiff>,
     /// Flattened body of the selected file, rebuilt on select / mode / reload.
     rows: Vec<DiffRow>,
+    /// Hunk indices hidden from the current diff body.
+    collapsed_hunks: HashSet<usize>,
     /// Generation guard so a slow response for a previous selection / commit
     /// cannot overwrite a newer one.
     gen: u64,
@@ -129,6 +134,7 @@ impl ProjectDiffView {
             diff_text: None,
             commit_files: Vec::new(),
             rows: Vec::new(),
+            collapsed_hunks: HashSet::new(),
             gen: 0,
             op_in_progress: false,
         }
@@ -162,6 +168,9 @@ impl ProjectDiffView {
                 if !same_commit {
                     self.load_commit(hash, cx);
                 } else if let Some(sel) = req.selected {
+                    if self.selected.as_deref() != Some(sel.as_str()) {
+                        self.collapsed_hunks.clear();
+                    }
                     self.selected = Some(sel);
                     self.rebuild_rows();
                 }
@@ -175,6 +184,7 @@ impl ProjectDiffView {
             return;
         }
         self.selected = Some(path);
+        self.collapsed_hunks.clear();
         match self.source {
             DiffSource::WorkingTree => self.reload(cx),
             DiffSource::Commit { .. } => self.rebuild_rows(),
@@ -198,6 +208,7 @@ impl ProjectDiffView {
 
     /// `WorkingTree`: fetch the selected file's `git diff`.
     fn reload(&mut self, cx: &mut Context<Self>) {
+        self.collapsed_hunks.clear();
         let (Some(root), Some(file)) = (self.repo_root.clone(), self.current_file().cloned())
         else {
             self.diff_text = None;
@@ -263,6 +274,7 @@ impl ProjectDiffView {
         };
         self.diff_text = None;
         self.commit_files.clear();
+        self.collapsed_hunks.clear();
         self.files.clear();
         self.selected = None;
         self.rows.clear();
@@ -341,7 +353,7 @@ impl ProjectDiffView {
                 let parsed = parse_diff_hunks(text);
                 if let Some(file) = parsed.first() {
                     let per_hunk = !is_whole_file_single_hunk(file);
-                    push_file_rows(&mut rows, file, is_split, per_hunk);
+                    push_file_rows(&mut rows, file, is_split, per_hunk, &self.collapsed_hunks);
                 }
             }
             DiffSource::Commit { .. } => {
@@ -351,11 +363,19 @@ impl ProjectDiffView {
                     .and_then(|s| self.commit_files.iter().find(|f| f.path == s));
                 if let Some(file) = selected_file {
                     // Committed changes are read-only — never a per-hunk control.
-                    push_file_rows(&mut rows, file, is_split, false);
+                    push_file_rows(&mut rows, file, is_split, false, &self.collapsed_hunks);
                 }
             }
         }
         self.rows = rows;
+    }
+
+    fn toggle_hunk(&mut self, hunk_idx: usize, cx: &mut Context<Self>) {
+        if !self.collapsed_hunks.remove(&hunk_idx) {
+            self.collapsed_hunks.insert(hunk_idx);
+        }
+        self.rebuild_rows();
+        cx.notify();
     }
 
     /// Stage (or, if `reverse`, unstage) one hunk of the loaded diff.
@@ -456,13 +476,24 @@ impl ProjectDiffView {
     }
 }
 
-fn push_file_rows(rows: &mut Vec<DiffRow>, file: &FileDiff, is_split: bool, per_hunk: bool) {
+fn push_file_rows(
+    rows: &mut Vec<DiffRow>,
+    file: &FileDiff,
+    is_split: bool,
+    per_hunk: bool,
+    collapsed_hunks: &HashSet<usize>,
+) {
     for (i, hunk) in file.hunks.iter().enumerate() {
+        let collapsed = collapsed_hunks.contains(&i);
         rows.push(DiffRow::HunkHeader {
             text: SharedString::from(hunk.header.clone()),
             hunk_idx: i,
+            collapsed,
             per_hunk,
         });
+        if collapsed {
+            continue;
+        }
         if is_split {
             split_hunk_rows_into(rows, &hunk.lines);
         } else {
@@ -539,7 +570,9 @@ impl Render for ProjectDiffView {
         )
         .entered();
         let c = self.colors(cx);
-        let font = self.theme.read(cx).buffer_font();
+        let theme = self.theme.read(cx);
+        let font = theme.buffer_font();
+        let palette = Palette::from_theme(theme);
         let is_split = matches!(self.mode, ProjectDiffMode::Split);
         let word_diff = EditorSettings::try_get(cx)
             .map(|settings| settings.git_word_diff())
@@ -660,7 +693,7 @@ impl Render for ProjectDiffView {
                 range
                     .map(|i| {
                         diff_row_element(
-                            &rows[i], c, is_split, word_diff, read_only, reverse, &list_view,
+                            &rows[i], c, palette, word_diff, read_only, reverse, &list_view,
                         )
                     })
                     .collect::<Vec<_>>()
@@ -686,7 +719,7 @@ impl Render for ProjectDiffView {
 fn diff_row_element(
     row: &DiffRow,
     c: Colors,
-    _is_split: bool,
+    palette: Palette,
     word_diff: bool,
     read_only: bool,
     reverse: bool,
@@ -696,10 +729,22 @@ fn diff_row_element(
         DiffRow::HunkHeader {
             text,
             hunk_idx,
+            collapsed,
             per_hunk,
         } => {
             let show_action = *per_hunk && !read_only;
             let idx = *hunk_idx;
+            let fold_view = view.clone();
+            let fold_button = button(
+                ("pd-fold-hunk", idx),
+                palette,
+                ButtonVariant::Transparent,
+                ButtonSize::Xs,
+            )
+            .child(if *collapsed { "Expand" } else { "Collapse" })
+            .on_click(move |_, _, cx| {
+                fold_view.update(cx, |this, cx| this.toggle_hunk(idx, cx));
+            });
             let v = view.clone();
             div()
                 .flex()
@@ -708,7 +753,14 @@ fn diff_row_element(
                 .px(px(8.0))
                 .bg(c.info.opacity(0.10))
                 .text_color(c.info)
-                .child(text.clone())
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.0))
+                        .child(text.clone())
+                        .child(fold_button),
+                )
                 .when(show_action, |d| {
                     d.child(
                         div()
@@ -970,5 +1022,37 @@ mod tests {
         };
         assert_eq!(&before[before_range.clone()], "1");
         assert_eq!(&after[after_range.clone()], "42");
+    }
+
+    #[test]
+    fn collapsed_hunks_keep_the_header_and_hide_body_rows() {
+        let file = FileDiff {
+            path: "src/lib.rs".into(),
+            header_lines: Vec::new(),
+            hunks: vec![DiffHunk {
+                header: "@@ -1 +1 @@".into(),
+                old_start: 1,
+                old_lines: 1,
+                new_start: 1,
+                new_lines: 1,
+                lines: vec!["-old".into(), "+new".into()],
+            }],
+            is_new_file: false,
+            is_deleted_file: false,
+        };
+        let mut expanded = Vec::new();
+        push_file_rows(&mut expanded, &file, false, true, &HashSet::new());
+        assert_eq!(expanded.len(), 3);
+
+        let mut collapsed = Vec::new();
+        push_file_rows(&mut collapsed, &file, false, true, &HashSet::from([0]));
+        assert_eq!(collapsed.len(), 1);
+        assert!(matches!(
+            collapsed.first(),
+            Some(DiffRow::HunkHeader {
+                collapsed: true,
+                ..
+            })
+        ));
     }
 }
