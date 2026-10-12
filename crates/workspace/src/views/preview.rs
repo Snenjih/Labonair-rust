@@ -17,7 +17,7 @@
 //!
 //! This is the single documented deviation from 1:1 parity (see `ROADMAP.md`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -105,6 +105,52 @@ fn resolve_markdown_link(base: &str, href: &str) -> Option<MarkdownLinkTarget> {
         Path::new(base).parent()?.join(target)
     };
     Some(MarkdownLinkTarget::Local { path, fragment })
+}
+
+fn resolve_markdown_image_path(base: &str, src: &str) -> Option<PathBuf> {
+    match resolve_markdown_link(base, src)? {
+        MarkdownLinkTarget::Local { path, .. } => Some(path),
+        MarkdownLinkTarget::External(_) | MarkdownLinkTarget::Anchor(_) => None,
+    }
+}
+
+fn markdown_image_sources(blocks: &[MdBlock]) -> Vec<String> {
+    fn append(spans: &[Inline], seen: &mut HashSet<String>, sources: &mut Vec<String>) {
+        for span in spans {
+            if let Inline::Image { src, .. } = span {
+                if seen.insert(src.clone()) {
+                    sources.push(src.clone());
+                }
+            }
+        }
+    }
+
+    let mut seen = HashSet::new();
+    let mut sources = Vec::new();
+    for block in blocks {
+        match block {
+            MdBlock::Heading { spans, .. } | MdBlock::Paragraph(spans) | MdBlock::Quote(spans) => {
+                append(spans, &mut seen, &mut sources)
+            }
+            MdBlock::Bullets(items) => {
+                for item in items {
+                    append(item, &mut seen, &mut sources);
+                }
+            }
+            MdBlock::Ordered(items) => {
+                for (_, item) in items {
+                    append(item, &mut seen, &mut sources);
+                }
+            }
+            MdBlock::Table { headers, rows } => {
+                for cell in headers.iter().chain(rows.iter().flatten()) {
+                    append(cell, &mut seen, &mut sources);
+                }
+            }
+            MdBlock::Code { .. } | MdBlock::Rule => {}
+        }
+    }
+    sources
 }
 
 fn heading_index_for_fragment(blocks: &[MdBlock], fragment: &str) -> Option<usize> {
@@ -272,6 +318,8 @@ pub struct PreviewView {
     load_generation: u64,
     pending_fragment: Option<String>,
     markdown_scroll: ScrollHandle,
+    markdown_images: HashMap<String, PreviewImage>,
+    markdown_source_path: Option<PathBuf>,
     image_scroll: ScrollHandle,
     image_zoom: ImageZoom,
     image_pan: Option<ImagePan>,
@@ -289,6 +337,8 @@ impl PreviewView {
             load_generation: 0,
             pending_fragment: None,
             markdown_scroll: ScrollHandle::new(),
+            markdown_images: HashMap::new(),
+            markdown_source_path: None,
             image_scroll: ScrollHandle::new(),
             image_zoom: ImageZoom::Fit,
             image_pan: None,
@@ -304,6 +354,8 @@ impl PreviewView {
         self.url = url.into();
         self.source_bound = false;
         self.pending_fragment = None;
+        self.markdown_source_path = None;
+        self.markdown_images.clear();
         self.image_zoom = ImageZoom::Fit;
         self.image_pan = None;
         self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
@@ -320,6 +372,8 @@ impl PreviewView {
         self.url = url.into();
         self.source_bound = false;
         self.pending_fragment = fragment;
+        self.markdown_source_path = None;
+        self.markdown_images.clear();
         self.image_zoom = ImageZoom::Fit;
         self.image_pan = None;
         self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
@@ -339,6 +393,10 @@ impl PreviewView {
     ) {
         self.load_generation = self.load_generation.wrapping_add(1);
         self.pending_fragment = None;
+        if self.markdown_source_path != path || language != Language::Markdown {
+            self.markdown_images.clear();
+        }
+        self.markdown_source_path = path.clone();
         self.image_zoom = ImageZoom::Fit;
         self.image_pan = None;
         self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
@@ -352,6 +410,7 @@ impl PreviewView {
         } else {
             Content::Unsupported("The followed editor buffer is not Markdown.".into())
         };
+        self.load_markdown_images(cx);
         cx.notify();
     }
 
@@ -367,6 +426,8 @@ impl PreviewView {
     fn resolve_content(&mut self, cx: &mut Context<Self>) {
         self.load_generation = self.load_generation.wrapping_add(1);
         let generation = self.load_generation;
+        self.markdown_images.clear();
+        self.markdown_source_path = None;
         let url = self.url.clone();
         if url.is_empty() || is_remote_url(&url) {
             self.content = resolve(&url);
@@ -399,9 +460,62 @@ impl PreviewView {
                     });
                 }
                 this.content = content;
+                this.load_markdown_images(cx);
                 if let Some(fragment) = this.pending_fragment.take() {
                     this.scroll_to_heading(&fragment, cx);
                 }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn load_markdown_images(&mut self, cx: &mut Context<Self>) {
+        let Content::Markdown(blocks) = &self.content else {
+            return;
+        };
+        let Some(base) = self
+            .markdown_source_path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .or_else(|| (!self.source_bound).then(|| self.url.clone()))
+        else {
+            return;
+        };
+        let generation = self.load_generation;
+        let referenced_sources = markdown_image_sources(blocks);
+        self.markdown_images
+            .retain(|source, _| referenced_sources.contains(source));
+        let sources = referenced_sources
+            .into_iter()
+            .filter_map(|source| {
+                if self.markdown_images.contains_key(&source) {
+                    return None;
+                }
+                resolve_markdown_image_path(&base, &source).map(|path| (source, path))
+            })
+            .collect::<Vec<_>>();
+        if sources.is_empty() {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let images = cx
+                .background_executor()
+                .spawn(async move {
+                    sources
+                        .into_iter()
+                        .filter_map(|(source, path)| {
+                            let path = path.to_string_lossy().into_owned();
+                            load_image(&path).ok().map(|image| (source, image))
+                        })
+                        .collect::<HashMap<_, _>>()
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.load_generation != generation {
+                    return;
+                }
+                this.markdown_images.extend(images);
                 cx.notify();
             });
         })
@@ -870,23 +984,29 @@ impl Render for PreviewView {
                 };
                 image_body.into_any_element()
             }
-            Content::Markdown(blocks) => div()
-                .id("preview-md")
-                .flex_1()
-                .overflow_y_scroll()
-                .track_scroll(&self.markdown_scroll)
-                .p_4()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .text_color(fg)
-                .text_size(px(13.0))
-                .children(
-                    blocks
-                        .iter()
-                        .map(|b| render_block(b, fg, muted, border, accent, &self.url, cx)),
-                )
-                .into_any_element(),
+            Content::Markdown(blocks) => {
+                let render = MarkdownRenderContext {
+                    foreground: fg,
+                    muted,
+                    border,
+                    accent,
+                    base: &self.url,
+                    images: &self.markdown_images,
+                };
+                div()
+                    .id("preview-md")
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.markdown_scroll)
+                    .p_4()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .text_color(fg)
+                    .text_size(px(13.0))
+                    .children(blocks.iter().map(|block| render_block(block, &render, cx)))
+                    .into_any_element()
+            }
             Content::Table(table) => {
                 let row_status = if table.total_rows > table.rows.len() {
                     format!(
@@ -1129,11 +1249,19 @@ impl Render for PreviewView {
     }
 }
 
+struct MarkdownRenderContext<'a> {
+    foreground: gpui::Hsla,
+    muted: gpui::Hsla,
+    border: gpui::Hsla,
+    accent: gpui::Hsla,
+    base: &'a str,
+    images: &'a HashMap<String, PreviewImage>,
+}
+
 fn render_inlines(
     spans: &[Inline],
-    fg: gpui::Hsla,
-    accent: gpui::Hsla,
-    base: &str,
+    color: gpui::Hsla,
+    render: &MarkdownRenderContext<'_>,
     cx: &mut Context<PreviewView>,
 ) -> gpui::AnyElement {
     use gpui::FontWeight;
@@ -1144,33 +1272,52 @@ fn render_inlines(
         .children(spans.iter().enumerate().map(|(index, span)| {
             match span {
                 Inline::Text(text) => div()
-                    .text_color(fg)
+                    .text_color(color)
                     .whitespace_normal()
                     .child(SharedString::from(text.clone()))
                     .into_any_element(),
                 Inline::Code(text) => div()
                     .font_family("mono")
-                    .text_color(fg)
+                    .text_color(color)
                     .child(SharedString::from(text.clone()))
                     .into_any_element(),
                 Inline::Bold(text) => div()
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(fg)
+                    .text_color(color)
                     .child(SharedString::from(text.clone()))
                     .into_any_element(),
                 Inline::Italic(text) => div()
                     .italic()
-                    .text_color(fg)
+                    .text_color(color)
                     .child(SharedString::from(text.clone()))
                     .into_any_element(),
+                Inline::Image { alt, src } => {
+                    if let Some(image) = render.images.get(src) {
+                        let scale = (640.0 / image.width.max(1) as f32)
+                            .min(480.0 / image.height.max(1) as f32)
+                            .min(1.0);
+                        gpui::img(image.image.clone())
+                            .w(px(image.width as f32 * scale))
+                            .h(px(image.height as f32 * scale))
+                            .max_w_full()
+                            .flex_none()
+                            .into_any_element()
+                    } else {
+                        div()
+                            .italic()
+                            .text_color(color)
+                            .child(SharedString::from(alt.clone()))
+                            .into_any_element()
+                    }
+                }
                 Inline::Link { text, href } => {
                     let href = href.clone();
-                    let base = base.to_string();
+                    let base = render.base.to_string();
                     div()
                         .id(SharedString::from(format!("preview-md-link-{index}")))
                         .cursor_pointer()
                         .underline()
-                        .text_color(accent)
+                        .text_color(render.accent)
                         .child(SharedString::from(text.clone()))
                         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                             this.open_markdown_link(&base, &href, cx);
@@ -1184,14 +1331,13 @@ fn render_inlines(
 
 fn render_block(
     block: &MdBlock,
-    fg: gpui::Hsla,
-    muted: gpui::Hsla,
-    border: gpui::Hsla,
-    accent: gpui::Hsla,
-    base: &str,
+    render: &MarkdownRenderContext<'_>,
     cx: &mut Context<PreviewView>,
 ) -> gpui::AnyElement {
     use gpui::FontWeight;
+    let fg = render.foreground;
+    let muted = render.muted;
+    let border = render.border;
     match block {
         MdBlock::Heading { level, spans } => div()
             .font_weight(FontWeight::SEMIBOLD)
@@ -1202,18 +1348,18 @@ fn render_block(
                 _ => 13.5,
             }))
             .text_color(fg)
-            .child(render_inlines(spans, fg, accent, base, cx))
+            .child(render_inlines(spans, fg, render, cx))
             .into_any_element(),
         MdBlock::Paragraph(spans) => div()
             .whitespace_normal()
-            .child(render_inlines(spans, fg, accent, base, cx))
+            .child(render_inlines(spans, fg, render, cx))
             .into_any_element(),
         MdBlock::Quote(spans) => div()
             .border_l_2()
             .border_color(border)
             .pl_3()
             .text_color(muted)
-            .child(render_inlines(spans, muted, accent, base, cx))
+            .child(render_inlines(spans, muted, render, cx))
             .into_any_element(),
         // T20-001: shared `Divider` primitive.
         MdBlock::Rule => divider(Axis::Horizontal, border).into_any_element(),
@@ -1230,7 +1376,7 @@ fn render_block(
                         div()
                             .flex_1()
                             .whitespace_normal()
-                            .child(render_inlines(it, fg, accent, base, cx)),
+                            .child(render_inlines(it, fg, render, cx)),
                     )
             }))
             .into_any_element(),
@@ -1251,7 +1397,7 @@ fn render_block(
                         div()
                             .flex_1()
                             .whitespace_normal()
-                            .child(render_inlines(it, fg, accent, base, cx)),
+                            .child(render_inlines(it, fg, render, cx)),
                     )
             }))
             .into_any_element(),
@@ -1262,11 +1408,8 @@ fn render_block(
             .border_1()
             .border_color(border)
             .overflow_hidden()
-            .child(table_row(headers, fg, accent, true, base, cx))
-            .children(
-                rows.iter()
-                    .map(|r| table_row(r, fg, accent, false, base, cx)),
-            )
+            .child(table_row(headers, render, true, cx))
+            .children(rows.iter().map(|row| table_row(row, render, false, cx)))
             .into_any_element(),
         MdBlock::Code { text, .. } => div()
             .font_family("mono")
@@ -1283,13 +1426,13 @@ fn render_block(
 
 fn table_row(
     cells: &[Vec<Inline>],
-    fg: gpui::Hsla,
-    accent: gpui::Hsla,
+    render: &MarkdownRenderContext<'_>,
     header: bool,
-    base: &str,
     cx: &mut Context<PreviewView>,
 ) -> gpui::AnyElement {
     use gpui::FontWeight;
+    let fg = render.foreground;
+    let accent = render.accent;
     div()
         .flex()
         .when(header, |d| d.bg(accent))
@@ -1299,7 +1442,7 @@ fn table_row(
                 .px_2()
                 .py_1()
                 .when(header, |d| d.font_weight(FontWeight::SEMIBOLD))
-                .child(render_inlines(c, fg, accent, base, cx))
+                .child(render_inlines(c, fg, render, cx))
         }))
         .into_any_element()
 }
@@ -1478,6 +1621,22 @@ mod tests {
     }
 
     #[test]
+    fn markdown_images_resolve_only_to_local_files() {
+        assert_eq!(
+            resolve_markdown_image_path("/docs/readme.md", "images/diagram.png"),
+            Some(PathBuf::from("/docs/images/diagram.png"))
+        );
+        assert_eq!(
+            resolve_markdown_image_path("/docs/readme.md", "https://example.com/image.png"),
+            None
+        );
+        assert_eq!(
+            resolve_markdown_image_path("/docs/readme.md", "#section"),
+            None
+        );
+    }
+
+    #[test]
     fn heading_fragments_normalize_text_and_distinguish_duplicates() {
         let blocks = parse_markdown("# Hello, World!\n\n## Hello World\n\n### Other");
         assert_eq!(heading_index_for_fragment(&blocks, "hello-world"), Some(0));
@@ -1560,6 +1719,48 @@ mod tests {
                         if spans.iter().any(|span| span.plain() == "Current editor source"))
             ));
             assert!(preview.source_bound);
+        });
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[gpui::test]
+    fn local_markdown_images_load_in_the_background(cx: &mut gpui::TestAppContext) {
+        let dir = std::env::temp_dir().join(format!(
+            "labonair-preview-markdown-image-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("images")).unwrap();
+        let image_path = dir.join("images/diagram.png");
+        let markdown_path = dir.join("readme.md");
+        let mut encoded = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgb8(2, 3)
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .unwrap();
+        std::fs::write(&image_path, encoded.into_inner()).unwrap();
+        std::fs::write(&markdown_path, "![Diagram](images/diagram.png)").unwrap();
+
+        let view = cx.update(|cx| {
+            let theme = cx.new(|_| ThemeStore::new(gpui::WindowAppearance::Light));
+            cx.new(|cx| PreviewView::new(theme, cx))
+        });
+        cx.update(|cx| {
+            view.update(cx, |preview, cx| {
+                preview.set_url(markdown_path.to_string_lossy().into_owned(), cx);
+            });
+        });
+        cx.background_executor.run_until_parked();
+        cx.update(|cx| {
+            let preview = view.read(cx);
+            let image = preview
+                .markdown_images
+                .get("images/diagram.png")
+                .expect("local Markdown image should be decoded");
+            assert_eq!((image.width, image.height), (2, 3));
         });
 
         let _ = std::fs::remove_dir_all(&dir);
