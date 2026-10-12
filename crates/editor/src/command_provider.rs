@@ -46,6 +46,7 @@ pub enum GitEditorCommand {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EditorUiCommand {
     GoToLineColumn,
+    ToggleSearchSelection,
     ToggleBreadcrumb,
     ToggleInlayHints,
     Rewrap,
@@ -112,6 +113,9 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         CommandId::EditorUndoSelection => EditorCommandRoute::Edit(EditIntent::UndoSelection),
         CommandId::EditorRedoSelection => EditorCommandRoute::Edit(EditIntent::RedoSelection),
         CommandId::EditorGoToLineColumn => EditorCommandRoute::Ui(EditorUiCommand::GoToLineColumn),
+        CommandId::EditorToggleSearchSelection => {
+            EditorCommandRoute::Ui(EditorUiCommand::ToggleSearchSelection)
+        }
         CommandId::EditorToggleBreadcrumb => {
             EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb)
         }
@@ -266,6 +270,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorUndoSelection,
     CommandId::EditorRedoSelection,
     CommandId::EditorGoToLineColumn,
+    CommandId::EditorToggleSearchSelection,
     CommandId::EditorToggleBreadcrumb,
     CommandId::EditorToggleInlayHints,
     CommandId::EditorDeleteLine,
@@ -411,6 +416,13 @@ impl CommandProvider for EditorCommandProvider {
             CommandDescriptor::new(CommandId::Find, "Find in Current Pane", "Search")
                 .with_default_binding("cmd-f", None)
                 .with_icon(CommandIcon::Search),
+            CommandDescriptor::new(
+                CommandId::EditorToggleSearchSelection,
+                "Toggle Search Selection",
+                "Search",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_default_binding("cmd-alt-l", Some(CommandContext::Editor)),
             CommandDescriptor::new(CommandId::GoToSymbol, "Go to Symbol…", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_icon(CommandIcon::FileCode)
@@ -871,6 +883,12 @@ mod tests {
             Some(EditorCommandRoute::Edit(EditIntent::SelectNextOccurrence))
         );
         assert_eq!(
+            route_for_command(CommandId::EditorToggleSearchSelection),
+            Some(EditorCommandRoute::Ui(
+                EditorUiCommand::ToggleSearchSelection
+            ))
+        );
+        assert_eq!(
             route_for_command(CommandId::EditorAddCursorAbove),
             Some(EditorCommandRoute::Edit(EditIntent::AddCursorAbove))
         );
@@ -909,6 +927,24 @@ mod tests {
             .iter()
             .any(|command| command.id == CommandId::EditorGoToTypeDefinition
                 && command.title == "Go to Type Definition"));
+    }
+
+    #[test]
+    fn selection_search_toggle_is_editor_owned_with_its_pinned_binding() {
+        let command = EditorCommandProvider
+            .commands()
+            .into_iter()
+            .find(|command| command.id == CommandId::EditorToggleSearchSelection)
+            .expect("selection search command");
+
+        assert_eq!(command.title, "Toggle Search Selection");
+        assert_eq!(command.section, "Search");
+        assert_eq!(command.id.action_name(), "search::ToggleSelection");
+        assert_eq!(command.default_bindings[0].keystrokes, "cmd-alt-l");
+        assert_eq!(
+            command.default_bindings[0].context,
+            Some(CommandContext::Editor)
+        );
     }
 
     #[test]

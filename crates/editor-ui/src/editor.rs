@@ -50,10 +50,11 @@ use labonair_editor::{
     lifecycle::{
         FileCapabilities, FileLifecycleEvent, FileState, LineEnding, ReloadDecision, SaveIntent,
     },
-    next_match_with_wrap, word_at_cursor, Anchor, AnchorAffinity, CancellationToken, DisplayConfig,
-    DisplayMap, DisplayRowKind, DisplaySnapshot, Document, DocumentColor, DocumentColorValue,
-    DocumentVersion, Edit, EditorSessionId, EditorSessionSnapshot, EditorViewSession, FoldRange,
-    FoldingRange, GitDecorationProvider, GitDecorationRequest, GitDiscardPreview, GitEditorCommand,
+    map_range_through_edits, next_match_with_wrap, replace_all_checked, replace_one,
+    word_at_cursor, Anchor, AnchorAffinity, CancellationToken, DisplayConfig, DisplayMap,
+    DisplayRowKind, DisplaySnapshot, Document, DocumentColor, DocumentColorValue, DocumentVersion,
+    Edit, EditorSessionId, EditorSessionSnapshot, EditorViewSession, FoldRange, FoldingRange,
+    GitDecorationProvider, GitDecorationRequest, GitDiscardPreview, GitEditorCommand,
     GitGutterError, GitGutterSnapshot, GitHunkAction, GitHunkActionKind, GitHunkStatus, Helix,
     HelixKey, HelixMode, HunkActionSink, InlayHint, InlayHintKind, KillRing, Language, LanguageId,
     LanguageServiceEditRequest, LanguageServiceEditResponse, LanguageServiceRequest,
@@ -95,6 +96,7 @@ pub enum EditorEvent {
 #[derive(Default)]
 struct EditorSearch {
     query: SearchQuery,
+    selection_seed: Option<TextRange>,
     matches: Vec<Match>,
     active: Option<usize>,
     error: Option<SearchError>,
@@ -1266,6 +1268,9 @@ impl EditorView {
             EditorCommandRoute::Ui(EditorUiCommand::GoToLineColumn) => {
                 self.go_to_line_requested = true;
                 cx.notify();
+            }
+            EditorCommandRoute::Ui(EditorUiCommand::ToggleSearchSelection) => {
+                self.toggle_search_selection_scope(cx);
             }
             EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb) => {
                 self.breadcrumb_visible_override = Some(!self.breadcrumbs_visible());
@@ -2843,11 +2848,17 @@ impl EditorView {
             self.folds = view.folds;
             self.doc.set_selection_set(view.selections);
         }
-        self.search = snapshot.search.map(|query| EditorSearch {
-            query,
-            matches: Vec::new(),
-            active: None,
-            error: None,
+        self.search = snapshot.search.map(|query| {
+            let selection_seed = query
+                .selection_range
+                .or_else(|| self.search_selection_range());
+            EditorSearch {
+                query,
+                selection_seed,
+                matches: Vec::new(),
+                active: None,
+                error: None,
+            }
         });
         self.clamp_scroll();
         self.refresh_matches();
@@ -3716,6 +3727,35 @@ impl EditorView {
         self.doc.selected_text().filter(|s| !s.is_empty())
     }
 
+    /// Byte range of the current primary selection for buffer-search scope.
+    pub fn search_selection_range(&self) -> Option<TextRange> {
+        let (start, end) = self.doc.selection()?;
+        let snapshot = self.doc.snapshot();
+        let range = TextRange::new(
+            snapshot.position_to_byte(start),
+            snapshot.position_to_byte(end),
+        );
+        (!range.is_empty()).then_some(range)
+    }
+
+    /// Toggle selection-limited matching for the active buffer-search query.
+    pub fn toggle_search_selection_scope(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(search) = &self.search else {
+            return false;
+        };
+        let selection_range = if search.query.selection_range.is_some() {
+            None
+        } else {
+            let Some(selection_range) = search.selection_seed else {
+                return false;
+            };
+            Some(selection_range)
+        };
+        let query = search.query.clone().with_selection_range(selection_range);
+        let _ = self.search_set(query, cx);
+        true
+    }
+
     fn copy(&self, cx: &mut Context<Self>) {
         if let Some(text) = self.clipboard_selection_text() {
             cx.write_to_clipboard(ClipboardItem::new_string(text));
@@ -4063,6 +4103,11 @@ impl EditorView {
         cx: &mut Context<Self>,
     ) -> Result<(usize, usize), SearchError> {
         self.project_search.cancel();
+        let selection_seed = self
+            .search
+            .as_ref()
+            .and_then(|search| search.selection_seed)
+            .or_else(|| self.search_selection_range());
         if query.text.is_empty() {
             self.search = None;
             cx.notify();
@@ -4074,6 +4119,7 @@ impl EditorView {
             Err(error) => {
                 self.search = Some(EditorSearch {
                     query,
+                    selection_seed,
                     matches: Vec::new(),
                     active: None,
                     error: Some(error.clone()),
@@ -4085,6 +4131,7 @@ impl EditorView {
         let active = next_match_with_wrap(&result.matches, self.doc.cursor, true, query.wrap);
         self.search = Some(EditorSearch {
             query,
+            selection_seed,
             matches: result.matches,
             active,
             error: None,
@@ -4324,6 +4371,13 @@ impl EditorView {
         }
     }
 
+    /// Current byte range used by selection-scoped buffer search.
+    pub fn search_selection_scope(&self) -> Option<TextRange> {
+        self.search
+            .as_ref()
+            .and_then(|search| search.query.selection_range)
+    }
+
     pub fn search_error(&self) -> Option<&str> {
         self.search
             .as_ref()
@@ -4353,8 +4407,21 @@ impl EditorView {
             return Ok(false);
         };
         let query = search.query.clone();
+        let snapshot = self.doc.snapshot();
+        let edits = replace_one(&snapshot, &query, replacement, active)?
+            .into_iter()
+            .collect::<Vec<_>>();
+        if edits.is_empty() {
+            return Ok(false);
+        }
         let replaced = self.doc.replace_one(&query, replacement, active)?;
         if replaced {
+            if let Some(search) = &mut self.search {
+                search.query.map_selection_range_through_edits(&edits);
+                search.selection_seed = search
+                    .selection_seed
+                    .map(|range| map_range_through_edits(range, &edits));
+            }
             self.refresh_matches();
             if let Some(active) = self.search.as_ref().and_then(|search| search.active) {
                 self.select_search_match(active, cx);
@@ -4374,8 +4441,19 @@ impl EditorView {
             return Ok(0);
         };
         let query = search.query.clone();
+        let snapshot = self.doc.snapshot();
+        let edits = replace_all_checked(&snapshot, &query, replacement)?;
+        if edits.is_empty() {
+            return Ok(0);
+        }
         let count = self.doc.replace_all_checked(&query, replacement)?;
         if count > 0 {
+            if let Some(search) = &mut self.search {
+                search.query.map_selection_range_through_edits(&edits);
+                search.selection_seed = search
+                    .selection_seed
+                    .map(|range| map_range_through_edits(range, &edits));
+            }
             self.refresh_matches();
             if let Some(active) = self.search.as_ref().and_then(|search| search.active) {
                 self.select_search_match(active, cx);

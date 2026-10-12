@@ -90,13 +90,13 @@ pub use runtime::{
     LanguageServiceRuntimeStatus,
 };
 pub use search::{
-    find, find_all, next_match, next_match_with_wrap, plan_project_replace, replace_all,
-    replace_all_checked, replace_one, replace_project_all_checked, word_at_cursor, Match,
-    ProjectBufferCandidate, ProjectReplacePlan, ProjectReplaceRequest, ProjectReplaceResult,
-    ProjectReplaceStatus, ProjectReplaceTarget, ProjectSearchHit, ProjectSearchOptions,
-    ProjectSearchQuery, ProjectSearchRequest, ProjectSearchResult, ProjectSearchSession,
-    ProjectSearchSnapshot, ProjectSearchStatus, SearchCaseMode, SearchError, SearchOptions,
-    SearchQuery, SearchResult, SearchScope,
+    find, find_all, map_range_through_edits, next_match, next_match_with_wrap,
+    plan_project_replace, replace_all, replace_all_checked, replace_one,
+    replace_project_all_checked, word_at_cursor, Match, ProjectBufferCandidate, ProjectReplacePlan,
+    ProjectReplaceRequest, ProjectReplaceResult, ProjectReplaceStatus, ProjectReplaceTarget,
+    ProjectSearchHit, ProjectSearchOptions, ProjectSearchQuery, ProjectSearchRequest,
+    ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot, ProjectSearchStatus,
+    SearchCaseMode, SearchError, SearchOptions, SearchQuery, SearchResult, SearchScope,
 };
 pub use session::{
     decode_session, encode_session, EditorPersistenceEvent, EditorSessionId, EditorSessionSnapshot,

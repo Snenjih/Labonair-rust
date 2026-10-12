@@ -20,7 +20,7 @@ use gpui::{
 };
 use labonair_editor::{
     ProjectReplaceStatus, ProjectSearchOptions, ProjectSearchQuery, ProjectSearchStatus,
-    SearchCaseMode, SearchError, SearchOptions, SearchQuery, SearchScope,
+    SearchCaseMode, SearchError, SearchOptions, SearchQuery, SearchScope, TextRange,
 };
 use labonair_settings::{EditorSettings, Settings as _};
 use labonair_ui_kit::{
@@ -90,6 +90,7 @@ pub struct SearchOverlay {
     target: SearchTarget,
     scope: SearchScope,
     options: SearchOptions,
+    selection_range: Option<TextRange>,
     search_on_type: bool,
     include_ignored: bool,
     only_open_files: bool,
@@ -112,6 +113,9 @@ impl SearchOverlay {
     ) -> Self {
         let search_settings = EditorSettings::try_get(cx).cloned();
         let target = workspace.read(cx).active_search_target(cx);
+        let selection_range = (target == SearchTarget::Editor)
+            .then(|| workspace.read(cx).search_selection_range(cx))
+            .flatten();
         let seed = workspace
             .read(cx)
             .search_seed(cx)
@@ -209,6 +213,7 @@ impl SearchOverlay {
             target,
             scope: SearchScope::CurrentFile,
             options,
+            selection_range,
             search_on_type,
             include_ignored,
             only_open_files: false,
@@ -238,7 +243,8 @@ impl SearchOverlay {
             }
             return;
         }
-        let query = SearchQuery::new(text, self.options);
+        let selection_range = self.workspace.read(cx).search_selection_scope(cx);
+        let query = SearchQuery::new(text, self.options).with_selection_range(selection_range);
         let result = self.workspace.update(cx, |w, cx| w.search_set(query, cx));
         match result {
             Some(Ok(count)) => {
@@ -341,6 +347,15 @@ impl SearchOverlay {
     fn toggle_option(&mut self, option: impl FnOnce(&mut SearchOptions), cx: &mut Context<Self>) {
         option(&mut self.options);
         self.run_search(cx);
+    }
+
+    fn toggle_selection_scope(&mut self, cx: &mut Context<Self>) {
+        let toggled = self.workspace.update(cx, |workspace, cx| {
+            workspace.toggle_search_selection_scope(cx)
+        });
+        if toggled {
+            self.run_search(cx);
+        }
     }
 
     fn toggle_include_ignored(&mut self, cx: &mut Context<Self>) {
@@ -458,6 +473,11 @@ impl Render for SearchOverlay {
         let project_snapshot = (editor && self.scope == SearchScope::Project)
             .then(|| self.workspace.read(cx).project_search_snapshot(cx))
             .flatten();
+        let selection_scoped =
+            editor && self.workspace.read(cx).search_selection_scope(cx).is_some();
+        let buffer_count = (editor && self.scope == SearchScope::CurrentFile)
+            .then(|| self.workspace.read(cx).buffer_search_count(cx))
+            .flatten();
         let project_error = project_snapshot.as_ref().and_then(|snapshot| {
             if let ProjectSearchStatus::Error(message) = &snapshot.status {
                 Some(message.clone())
@@ -471,7 +491,7 @@ impl Render for SearchOverlay {
                 snapshot.hits.len(),
             )
         });
-        let count = project_count.unwrap_or(self.count);
+        let count = project_count.or(buffer_count).unwrap_or(self.count);
         let has_error = self.error.is_some() || project_error.is_some();
         let has_matches = count.1 > 0 && !has_error;
         let can_replace_file = replacement_actions_enabled(
@@ -862,6 +882,30 @@ impl Render for SearchOverlay {
                                     )),
                                 )
                             })
+                            .when(
+                                self.scope == SearchScope::CurrentFile
+                                    && self.selection_range.is_some(),
+                                |d| {
+                                    d.child(
+                                        button(
+                                            "search-selection-scope",
+                                            palette,
+                                            ButtonVariant::Subtle,
+                                            ButtonSize::Xs,
+                                        )
+                                        .child("Selection")
+                                        .when(selection_scoped, |d| {
+                                            d.bg(palette.selected_fill)
+                                                .text_color(palette.selected_accent)
+                                        })
+                                        .on_click(
+                                            cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                                this.toggle_selection_scope(cx)
+                                            }),
+                                        ),
+                                    )
+                                },
+                            )
                             .when(
                                 matches!(
                                     self.scope,

@@ -129,7 +129,7 @@ use labonair_background_host::BackgroundHost;
 use labonair_editor::{
     FileFinderCandidate, FileFinderQuery, FileFinderResult, LanguageServiceRuntime, Position,
     ProjectReplaceResult, ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, SearchError,
-    SearchQuery,
+    SearchQuery, TextRange,
 };
 use labonair_editor_ui::{EditorEvent, EditorView};
 use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
@@ -1882,6 +1882,39 @@ impl Workspace {
     pub fn search_seed(&self, cx: &App) -> Option<String> {
         let id = self.tabs.read(cx).active_id();
         self.editors.get(&id).and_then(|e| e.read(cx).search_seed())
+    }
+
+    /// Original active-buffer selection captured when the search overlay opens.
+    pub fn search_selection_range(&self, cx: &App) -> Option<TextRange> {
+        let id = self.tabs.read(cx).active_id();
+        self.editors
+            .get(&id)
+            .and_then(|editor| editor.read(cx).search_selection_range())
+    }
+
+    /// Active range for the Editor-owned buffer-search selection toggle.
+    pub fn search_selection_scope(&self, cx: &App) -> Option<TextRange> {
+        let id = self.tabs.read(cx).active_id();
+        self.editors
+            .get(&id)
+            .and_then(|editor| editor.read(cx).search_selection_scope())
+    }
+
+    /// Current `(match_index, total)` for the active Editor buffer query.
+    pub fn buffer_search_count(&self, cx: &App) -> Option<(usize, usize)> {
+        let id = self.tabs.read(cx).active_id();
+        self.editors
+            .get(&id)
+            .map(|editor| editor.read(cx).search_count())
+    }
+
+    /// Toggle the Editor-owned buffer-search selection scope.
+    pub fn toggle_search_selection_scope(&mut self, cx: &mut Context<Self>) -> bool {
+        let id = self.tabs.read(cx).active_id();
+        let Some(editor) = self.editors.get(&id).cloned() else {
+            return false;
+        };
+        editor.update(cx, |editor, cx| editor.toggle_search_selection_scope(cx))
     }
 
     /// Start / update the search against whichever surface the active tab owns.

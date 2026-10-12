@@ -7,7 +7,7 @@
 use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
 
-use crate::buffer::{BufferSnapshot, Edit, Position, TextRange};
+use crate::buffer::{Anchor, AnchorAffinity, BufferSnapshot, Edit, Position, TextRange};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SearchOptions {
@@ -106,6 +106,10 @@ pub struct SearchQuery {
     pub multiline: bool,
     pub preserve_case: bool,
     pub wrap: bool,
+    /// Optional byte range that limits buffer matches to one selection.
+    /// This is transient UI state and is deliberately omitted from sessions.
+    #[serde(default, skip_serializing)]
+    pub selection_range: Option<TextRange>,
 }
 
 impl Default for SearchQuery {
@@ -125,7 +129,22 @@ impl SearchQuery {
             multiline: options.multiline,
             preserve_case: options.preserve_case,
             wrap: options.wrap,
+            selection_range: None,
         }
+    }
+
+    /// Limit matches to those fully contained in the selected byte range.
+    pub fn with_selection_range(mut self, range: Option<TextRange>) -> Self {
+        self.selection_range = range.filter(|range| range.start <= range.end);
+        self
+    }
+
+    /// Keep the selection scope attached to its text after replacement edits.
+    pub fn map_selection_range_through_edits(&mut self, edits: &[Edit]) {
+        let Some(range) = self.selection_range else {
+            return;
+        };
+        self.selection_range = Some(map_range_through_edits(range, edits));
     }
 
     pub fn options(&self) -> SearchOptions {
@@ -147,6 +166,26 @@ impl SearchQuery {
     pub fn case_sensitive_for_matching(&self) -> bool {
         self.case_sensitive || (self.smart_case && self.text.chars().any(char::is_uppercase))
     }
+}
+
+/// Map a byte range through ordered, non-overlapping edit coordinates.
+pub fn map_range_through_edits(range: TextRange, edits: &[Edit]) -> TextRange {
+    let mut start = Anchor::new(range.start, AnchorAffinity::Before);
+    let mut end = Anchor::new(range.end, AnchorAffinity::After);
+    let mut delta = 0isize;
+    for edit in edits {
+        let edit_start = if delta.is_negative() {
+            edit.range.start.saturating_sub(delta.unsigned_abs())
+        } else {
+            edit.range.start.saturating_add(delta as usize)
+        };
+        let edit_end = edit_start.saturating_add(edit.range.len());
+        let edit_range = TextRange::new(edit_start, edit_end);
+        start.map_through(edit_range, edit.replacement.len());
+        end.map_through(edit_range, edit.replacement.len());
+        delta = delta.saturating_add(edit.replacement.len() as isize - edit.range.len() as isize);
+    }
+    TextRange::new(start.offset(), end.offset())
 }
 
 /// Options that the filesystem-backed project search can apply safely.
@@ -773,6 +812,12 @@ fn search_hits(
         .captures_iter(text)
         .filter_map(|captures| {
             let matched = captures.get(0)?;
+            if query
+                .selection_range
+                .is_some_and(|range| matched.start() < range.start || matched.end() > range.end)
+            {
+                return None;
+            }
             if !query.multiline
                 && (matched.as_str().contains('\n') || matched.as_str().contains('\r'))
             {
@@ -947,6 +992,33 @@ mod tests {
         assert_eq!(word_at_cursor("café_2 λ", 3).as_deref(), Some("café_2"));
         assert_eq!(word_at_cursor("...", 2), None);
         assert_eq!(word_at_cursor("", 0), None);
+    }
+
+    #[test]
+    fn selection_scope_limits_find_and_replacement_to_fully_contained_matches() {
+        let source = snapshot("one hit\ntwo hit\nthree hit");
+        let scope = TextRange::new(4, 15);
+        let query =
+            SearchQuery::new("hit", SearchOptions::default()).with_selection_range(Some(scope));
+
+        let result = find(&source, &query).expect("valid search");
+        assert_eq!(result.matches.len(), 2);
+        let edits = replace_all_checked(&source, &query, "found").expect("valid replacement");
+        assert_eq!(edits.len(), 2);
+    }
+
+    #[test]
+    fn selection_scope_maps_through_replacement_edits_and_is_not_serialized() {
+        let source = snapshot("hit elsewhere hit");
+        let query = SearchQuery::new("hit", SearchOptions::default())
+            .with_selection_range(Some(TextRange::new(0, 3)));
+        let edits = replace_all_checked(&source, &query, "longer").expect("valid replacement");
+        let mut query = query;
+        query.map_selection_range_through_edits(&edits);
+
+        assert_eq!(query.selection_range, Some(TextRange::new(0, 6)));
+        let encoded = serde_json::to_value(&query).expect("serializes");
+        assert!(encoded.get("selection_range").is_none());
     }
 
     #[test]
