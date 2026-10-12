@@ -375,7 +375,12 @@ const EDITOR_GROUPS: &[Group] = &[
     ),
     (
         "Behaviour",
-        paths!("editor": "editorTabSize", "editorDragAndDropSelection"),
+        paths!("editor":
+            "editorTabSize",
+            "editorAutoCloseBrackets",
+            "editorAutoSurround",
+            "editorDragAndDropSelection"
+        ),
     ),
     ("Indentation", paths!("editor": "editorIndentWithTabs")),
     (

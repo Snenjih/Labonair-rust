@@ -577,6 +577,14 @@ impl EditorSettings {
         self.0.editor_bracket_matching.unwrap_or(true)
     }
 
+    pub fn auto_close_brackets(&self) -> bool {
+        self.0.editor_auto_close_brackets.unwrap_or(true)
+    }
+
+    pub fn auto_surround(&self) -> bool {
+        self.0.editor_auto_surround.unwrap_or(true)
+    }
+
     pub fn cursor_blink(&self) -> bool {
         self.0.editor_cursor_blink.unwrap_or(true)
     }
@@ -1156,6 +1164,20 @@ mod tests {
         let mut content = SettingsContent::default();
         content.editor.editor_bracket_matching = Some(false);
         assert!(!EditorSettings::from_settings(&content).bracket_matching());
+    }
+
+    #[test]
+    fn editor_bracket_input_preferences_default_on_and_can_be_disabled_separately() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(defaults.auto_close_brackets());
+        assert!(defaults.auto_surround());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_auto_close_brackets = Some(false);
+        content.editor.editor_auto_surround = Some(false);
+        let settings = EditorSettings::from_settings(&content);
+        assert!(!settings.auto_close_brackets());
+        assert!(!settings.auto_surround());
     }
 
     #[test]

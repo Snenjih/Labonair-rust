@@ -535,6 +535,20 @@ pub fn all_fields() -> Vec<AnyField> {
             "Use tab characters instead of spaces."
         ),
         field!(
+            editor.editor_auto_close_brackets,
+            "editorAutoCloseBrackets",
+            Switch,
+            "Auto-close brackets",
+            "Insert and skip over matching brackets and quotes while typing."
+        ),
+        field!(
+            editor.editor_auto_surround,
+            "editorAutoSurround",
+            Switch,
+            "Surround selections",
+            "Wrap selected text when typing an opening bracket or quote."
+        ),
+        field!(
             editor.editor_drag_and_drop_selection,
             "editorDragAndDropSelection",
             Switch,
@@ -1613,6 +1627,20 @@ mod tests {
         let mut content = SettingsContent::default();
         assert!((field.set)(&mut content, Value::Bool(false)));
         assert_eq!((field.get)(&content), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn editor_bracket_input_preferences_are_exposed_switches() {
+        for path in [
+            "editor.editorAutoCloseBrackets",
+            "editor.editorAutoSurround",
+        ] {
+            let field = all_fields()
+                .into_iter()
+                .find(|field| field.json_path == path)
+                .unwrap_or_else(|| panic!("missing settings field {path}"));
+            assert!(matches!(field.control, FieldControl::Switch));
+        }
     }
 
     #[test]

@@ -6520,7 +6520,16 @@ impl EditorView {
         {
             self.execute_command(EditorCommand::Edit(EditIntent::TypeTagClose), cx);
         } else if single_character
-            && matches!(character, '(' | '[' | '{' | ')' | ']' | '}' | '\'' | '"')
+            && should_auto_pair_bracket(
+                character,
+                self.doc
+                    .selection_set()
+                    .ranges(&self.doc.snapshot())
+                    .iter()
+                    .any(|range| !range.is_empty()),
+                self.prefs.auto_close_brackets(),
+                self.prefs.auto_surround(),
+            )
         {
             self.execute_command(EditorCommand::Edit(EditIntent::TypeBracket(character)), cx);
         } else {
@@ -12283,6 +12292,21 @@ fn matching_bracket_pair(
     None
 }
 
+fn should_auto_pair_bracket(
+    character: char,
+    has_nonempty_selection: bool,
+    auto_close: bool,
+    auto_surround: bool,
+) -> bool {
+    if matches!(character, '(' | '[' | '{' | '\'' | '"') && has_nonempty_selection {
+        auto_surround
+    } else if matches!(character, '(' | '[' | '{' | ')' | ']' | '}' | '\'' | '"') {
+        auto_close
+    } else {
+        false
+    }
+}
+
 fn notify(cx: &mut App, title: &str, body: &str) {
     let (title, body) = (title.to_string(), body.to_string());
     notification_center(cx).update(cx, |center, cx| {
@@ -12395,6 +12419,17 @@ mod tests {
         assert_eq!(matching_bracket_pair(&buffer.snapshot(), 0), None);
         let buffer = labonair_editor::EditorBuffer::from_text("λ()");
         assert_eq!(matching_bracket_pair(&buffer.snapshot(), 1), None);
+    }
+
+    #[test]
+    fn auto_close_and_auto_surround_settings_gate_bracket_input_independently() {
+        assert!(should_auto_pair_bracket('(', false, true, false));
+        assert!(!should_auto_pair_bracket('(', false, false, true));
+        assert!(should_auto_pair_bracket('(', true, false, true));
+        assert!(!should_auto_pair_bracket('(', true, true, false));
+        assert!(should_auto_pair_bracket(')', false, true, false));
+        assert!(!should_auto_pair_bracket(')', false, false, true));
+        assert!(!should_auto_pair_bracket('x', true, true, true));
     }
 
     #[test]
@@ -12938,6 +12973,61 @@ mod tests {
             view.update(cx, |this, cx| {
                 this.apply_prefs(cx);
                 assert!(this.begin_text_drag(gpui::point(px(10.0), px(0.0)), false, false));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn auto_close_and_auto_surround_preferences_change_typed_bracket_behavior(
+        cx: &mut TestAppContext,
+    ) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            install_editor_prefs(cx, |editor| {
+                editor.editor_auto_close_brackets = Some(false);
+                editor.editor_auto_surround = Some(true);
+            });
+        });
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.apply_prefs(cx);
+                this.doc = Document::from_file("test.rs".into(), "", 1);
+                this.insert_printable("(", cx);
+                assert_eq!(this.doc.text(), "(");
+
+                this.doc = Document::from_file("test.rs".into(), ")", 1);
+                this.doc.set_caret(Position::new(0, 0), false);
+                this.insert_printable(")", cx);
+                assert_eq!(this.doc.text(), "))");
+
+                this.doc = Document::from_file("test.rs".into(), "word", 1);
+                this.doc.set_caret(Position::new(0, 0), false);
+                this.doc.set_caret(Position::new(0, 4), true);
+                this.insert_printable("[", cx);
+                assert_eq!(this.doc.text(), "[word]");
+            });
+        });
+
+        cx.update(|cx| {
+            install_editor_prefs(cx, |editor| {
+                editor.editor_auto_close_brackets = Some(true);
+                editor.editor_auto_surround = Some(false);
+            });
+        });
+        cx.update(|cx| {
+            view.update(cx, |this, cx| {
+                this.apply_prefs(cx);
+                this.doc = Document::from_file("test.rs".into(), "word", 1);
+                this.doc.set_caret(Position::new(0, 0), false);
+                this.doc.set_caret(Position::new(0, 4), true);
+                this.insert_printable("[", cx);
+                assert_eq!(this.doc.text(), "[");
+
+                this.doc = Document::from_file("test.rs".into(), ")", 1);
+                this.doc.set_caret(Position::new(0, 0), false);
+                this.insert_printable(")", cx);
+                assert_eq!(this.doc.text(), ")");
+                assert_eq!(this.doc.cursor, Position::new(0, 1));
             });
         });
     }

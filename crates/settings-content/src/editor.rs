@@ -284,6 +284,8 @@ pub struct EditorContent {
     pub editor_line_numbers: Option<bool>,
     pub editor_relative_line_numbers: Option<bool>,
     pub editor_indent_with_tabs: Option<bool>,
+    pub editor_auto_close_brackets: Option<bool>,
+    pub editor_auto_surround: Option<bool>,
     pub editor_drag_and_drop_selection: Option<bool>,
     pub editor_mouse_wheel_zoom: Option<bool>,
     pub editor_scroll_sensitivity: Option<f32>,
@@ -393,6 +395,8 @@ impl EditorContent {
             editor_line_numbers: Some(true),
             editor_relative_line_numbers: Some(false),
             editor_indent_with_tabs: Some(false),
+            editor_auto_close_brackets: Some(true),
+            editor_auto_surround: Some(true),
             editor_drag_and_drop_selection: Some(true),
             editor_mouse_wheel_zoom: Some(false),
             editor_scroll_sensitivity: Some(1.0),
@@ -596,6 +600,21 @@ mod tests {
 
         let value = serde_json::to_value(parsed).expect("serialize editor preferences");
         assert_eq!(value["editorVerticalScrollMargin"], 6);
+    }
+
+    #[test]
+    fn bracket_input_settings_parse_and_serialize() {
+        let parsed: EditorContent = serde_json::from_value(serde_json::json!({
+            "editorAutoCloseBrackets": false,
+            "editorAutoSurround": true
+        }))
+        .expect("parse bracket input settings");
+        assert_eq!(parsed.editor_auto_close_brackets, Some(false));
+        assert_eq!(parsed.editor_auto_surround, Some(true));
+
+        let value = serde_json::to_value(parsed).expect("serialize editor preferences");
+        assert_eq!(value["editorAutoCloseBrackets"], false);
+        assert_eq!(value["editorAutoSurround"], true);
     }
 
     #[test]

@@ -61,6 +61,8 @@ pub const PROJECT_SETTINGS_WHITELIST: &[(&str, &[&str])] = &[
             "editorTabSize",
             "editorWordWrap",
             "editorIndentWithTabs",
+            "editorAutoCloseBrackets",
+            "editorAutoSurround",
             "editorDragAndDropSelection",
             "editorMouseWheelZoom",
             "editorScrollSensitivity",
@@ -230,12 +232,14 @@ mod tests {
     #[test]
     fn filter_and_parse_keeps_every_whitelisted_leaf() {
         let (content, rejected) = filter_and_parse(
-            r#"{"editor":{"editorTabSize":4,"editorWordWrap":true,"editorGitWordDiff":false,"editorLspDocumentColors":"inline","editorDragAndDropSelection":false,"editorMouseWheelZoom":true,"editorScrollSensitivity":1.5,"editorFastScrollSensitivity":6.0,"editorVerticalScrollMargin":5}}"#,
+            r#"{"editor":{"editorTabSize":4,"editorWordWrap":true,"editorGitWordDiff":false,"editorLspDocumentColors":"inline","editorAutoCloseBrackets":false,"editorAutoSurround":false,"editorDragAndDropSelection":false,"editorMouseWheelZoom":true,"editorScrollSensitivity":1.5,"editorFastScrollSensitivity":6.0,"editorVerticalScrollMargin":5}}"#,
         );
         assert!(rejected.is_empty());
         assert_eq!(content.editor.editor_tab_size, Some(4));
         assert_eq!(content.editor.editor_word_wrap, Some(true));
         assert_eq!(content.editor.editor_git_word_diff, Some(false));
+        assert_eq!(content.editor.editor_auto_close_brackets, Some(false));
+        assert_eq!(content.editor.editor_auto_surround, Some(false));
         assert_eq!(content.editor.editor_drag_and_drop_selection, Some(false));
         assert_eq!(content.editor.editor_mouse_wheel_zoom, Some(true));
         assert_eq!(content.editor.editor_scroll_sensitivity, Some(1.5));

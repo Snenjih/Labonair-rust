@@ -90,6 +90,8 @@
     "editorLineNumbers": true,
     "editorRelativeLineNumbers": false,
     "editorIndentWithTabs": false,
+    "editorAutoCloseBrackets": true,
+    "editorAutoSurround": true,
     "editorDragAndDropSelection": true,
     "editorMouseWheelZoom": false,
     "editorScrollSensitivity": 1.0,
