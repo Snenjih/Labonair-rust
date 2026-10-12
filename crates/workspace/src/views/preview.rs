@@ -15,13 +15,13 @@
 //!
 //! This is the single documented deviation from 1:1 parity (see `ROADMAP.md`).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gpui::prelude::*;
 use gpui::{
     div, img, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, Image, ImageFormat,
-    ObjectFit, SharedString, Window,
+    InteractiveElement, ObjectFit, SharedString, StatefulInteractiveElement, Window,
 };
 
 use labonair_notifications::{notification_center, Notification};
@@ -47,6 +47,48 @@ fn ext_of(target: &str) -> Option<String> {
 
 fn is_remote_url(target: &str) -> bool {
     target.starts_with("http://") || target.starts_with("https://")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum MarkdownLinkTarget {
+    External(String),
+    Local(PathBuf),
+}
+
+fn resolve_markdown_link(base: &str, href: &str) -> Option<MarkdownLinkTarget> {
+    let href = href.trim();
+    if href.is_empty() || href.starts_with('#') {
+        return None;
+    }
+    if let Some((scheme, _)) = href.split_once(':') {
+        let is_scheme = !scheme.is_empty()
+            && scheme.chars().enumerate().all(|(index, character)| {
+                character.is_ascii_alphabetic()
+                    || (index > 0
+                        && (character.is_ascii_digit() || matches!(character, '+' | '.' | '-')))
+            });
+        if is_scheme {
+            return matches!(
+                scheme.to_ascii_lowercase().as_str(),
+                "http" | "https" | "mailto"
+            )
+            .then(|| MarkdownLinkTarget::External(href.to_string()));
+        }
+    }
+    if is_remote_url(base) {
+        return None;
+    }
+    let target = href.split(['?', '#']).next().unwrap_or_default();
+    if target.is_empty() {
+        return None;
+    }
+    let target = Path::new(target);
+    let path = if target.is_absolute() {
+        target.to_path_buf()
+    } else {
+        Path::new(base).parent()?.join(target)
+    };
+    Some(MarkdownLinkTarget::Local(path))
 }
 
 /// Resolved preview payload for the current address.
@@ -117,6 +159,16 @@ impl PreviewView {
     fn open_external(&self) {
         if !self.url.is_empty() {
             open_external(&self.url);
+        }
+    }
+
+    fn open_markdown_link(&mut self, base: &str, href: &str, cx: &mut Context<Self>) {
+        match resolve_markdown_link(base, href) {
+            Some(MarkdownLinkTarget::External(target)) => open_external(&target),
+            Some(MarkdownLinkTarget::Local(path)) => {
+                self.set_url(path.to_string_lossy().into_owned(), cx)
+            }
+            None => {}
         }
     }
 }
@@ -234,7 +286,7 @@ impl Render for PreviewView {
                 .children(
                     blocks
                         .iter()
-                        .map(|b| render_block(b, fg, muted, border, accent)),
+                        .map(|b| render_block(b, fg, muted, border, accent, &self.url, cx)),
                 )
                 .into_any_element(),
             Content::External { why } => div()
@@ -325,8 +377,57 @@ impl Render for PreviewView {
     }
 }
 
-fn inline_string(spans: &[Inline]) -> String {
-    spans.iter().map(Inline::plain).collect::<Vec<_>>().join("")
+fn render_inlines(
+    spans: &[Inline],
+    fg: gpui::Hsla,
+    accent: gpui::Hsla,
+    base: &str,
+    cx: &mut Context<PreviewView>,
+) -> gpui::AnyElement {
+    use gpui::FontWeight;
+    div()
+        .flex()
+        .flex_wrap()
+        .items_baseline()
+        .children(spans.iter().enumerate().map(|(index, span)| {
+            match span {
+                Inline::Text(text) => div()
+                    .text_color(fg)
+                    .whitespace_normal()
+                    .child(SharedString::from(text.clone()))
+                    .into_any_element(),
+                Inline::Code(text) => div()
+                    .font_family("mono")
+                    .text_color(fg)
+                    .child(SharedString::from(text.clone()))
+                    .into_any_element(),
+                Inline::Bold(text) => div()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(fg)
+                    .child(SharedString::from(text.clone()))
+                    .into_any_element(),
+                Inline::Italic(text) => div()
+                    .italic()
+                    .text_color(fg)
+                    .child(SharedString::from(text.clone()))
+                    .into_any_element(),
+                Inline::Link { text, href } => {
+                    let href = href.clone();
+                    let base = base.to_string();
+                    div()
+                        .id(SharedString::from(format!("preview-md-link-{index}")))
+                        .cursor_pointer()
+                        .underline()
+                        .text_color(accent)
+                        .child(SharedString::from(text.clone()))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                            this.open_markdown_link(&base, &href, cx);
+                        }))
+                        .into_any_element()
+                }
+            }
+        }))
+        .into_any_element()
 }
 
 fn render_block(
@@ -335,6 +436,8 @@ fn render_block(
     muted: gpui::Hsla,
     border: gpui::Hsla,
     accent: gpui::Hsla,
+    base: &str,
+    cx: &mut Context<PreviewView>,
 ) -> gpui::AnyElement {
     use gpui::FontWeight;
     match block {
@@ -347,18 +450,18 @@ fn render_block(
                 _ => 13.5,
             }))
             .text_color(fg)
-            .child(SharedString::from(inline_string(spans)))
+            .child(render_inlines(spans, fg, accent, base, cx))
             .into_any_element(),
         MdBlock::Paragraph(spans) => div()
             .whitespace_normal()
-            .child(SharedString::from(inline_string(spans)))
+            .child(render_inlines(spans, fg, accent, base, cx))
             .into_any_element(),
         MdBlock::Quote(spans) => div()
             .border_l_2()
             .border_color(border)
             .pl_3()
             .text_color(muted)
-            .child(SharedString::from(inline_string(spans)))
+            .child(render_inlines(spans, muted, accent, base, cx))
             .into_any_element(),
         // T20-001: shared `Divider` primitive.
         MdBlock::Rule => divider(Axis::Horizontal, border).into_any_element(),
@@ -375,7 +478,7 @@ fn render_block(
                         div()
                             .flex_1()
                             .whitespace_normal()
-                            .child(SharedString::from(inline_string(it))),
+                            .child(render_inlines(it, fg, accent, base, cx)),
                     )
             }))
             .into_any_element(),
@@ -396,7 +499,7 @@ fn render_block(
                         div()
                             .flex_1()
                             .whitespace_normal()
-                            .child(SharedString::from(inline_string(it))),
+                            .child(render_inlines(it, fg, accent, base, cx)),
                     )
             }))
             .into_any_element(),
@@ -407,8 +510,11 @@ fn render_block(
             .border_1()
             .border_color(border)
             .overflow_hidden()
-            .child(table_row(headers, fg, accent, true))
-            .children(rows.iter().map(|r| table_row(r, fg, accent, false)))
+            .child(table_row(headers, fg, accent, true, base, cx))
+            .children(
+                rows.iter()
+                    .map(|r| table_row(r, fg, accent, false, base, cx)),
+            )
             .into_any_element(),
         MdBlock::Code { text, .. } => div()
             .font_family("mono")
@@ -428,6 +534,8 @@ fn table_row(
     fg: gpui::Hsla,
     accent: gpui::Hsla,
     header: bool,
+    base: &str,
+    cx: &mut Context<PreviewView>,
 ) -> gpui::AnyElement {
     use gpui::FontWeight;
     div()
@@ -438,9 +546,8 @@ fn table_row(
                 .flex_1()
                 .px_2()
                 .py_1()
-                .text_color(fg)
                 .when(header, |d| d.font_weight(FontWeight::SEMIBOLD))
-                .child(SharedString::from(inline_string(c)))
+                .child(render_inlines(c, fg, accent, base, cx))
         }))
         .into_any_element()
 }
@@ -466,6 +573,33 @@ mod tests {
         ));
         assert!(matches!(resolve("/tmp/x.html"), Content::External { .. }));
         assert!(matches!(resolve(""), Content::Empty));
+    }
+
+    #[test]
+    fn markdown_links_resolve_relative_files_and_allow_only_known_external_schemes() {
+        assert_eq!(
+            resolve_markdown_link("/docs/readme.md", "guide/next.md#intro"),
+            Some(MarkdownLinkTarget::Local(PathBuf::from(
+                "/docs/guide/next.md"
+            )))
+        );
+        assert_eq!(
+            resolve_markdown_link("/docs/readme.md", "https://example.com/help"),
+            Some(MarkdownLinkTarget::External(
+                "https://example.com/help".into()
+            ))
+        );
+        assert_eq!(
+            resolve_markdown_link("/docs/readme.md", "mailto:docs@example.com"),
+            Some(MarkdownLinkTarget::External(
+                "mailto:docs@example.com".into()
+            ))
+        );
+        assert_eq!(
+            resolve_markdown_link("/docs/readme.md", "javascript:alert(1)"),
+            None
+        );
+        assert_eq!(resolve_markdown_link("/docs/readme.md", "#section"), None);
     }
 
     #[test]
