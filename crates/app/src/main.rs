@@ -1,6 +1,6 @@
 use gpui::{
-    point, prelude::*, px, size, App, Application, Bounds, TitlebarOptions, WindowBounds,
-    WindowOptions,
+    point, prelude::*, px, size, App, Application, Bounds, TitlebarOptions,
+    WindowBackgroundAppearance, WindowBounds, WindowOptions,
 };
 
 use gpui_component::Root;
@@ -80,6 +80,7 @@ fn main() {
             .open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    window_background: WindowBackgroundAppearance::Blurred,
                     titlebar: Some(TitlebarOptions {
                         // Reference uses macOS `titleBarStyle: "Overlay"` +
                         // `hiddenTitle: true`: one transparent overlay titlebar

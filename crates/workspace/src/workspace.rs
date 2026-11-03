@@ -6244,7 +6244,7 @@ impl Workspace {
                     .overflow_y_scroll()
                     .p_2()
                     .rounded_md()
-                    .bg(bg)
+                    .bg(c.card)
                     .border_1()
                     .border_color(border)
                     .font_family("monospace")
@@ -8770,7 +8770,6 @@ impl Render for Workspace {
         }
         self.prompt_shown = want_prompt;
 
-        let bg = self.theme.read(cx).background();
         let content = self.render_content(cx);
         let confirm = self
             .confirm_close
@@ -8842,7 +8841,6 @@ impl Render for Workspace {
             .flex()
             .flex_col()
             .size_full()
-            .bg(bg)
             .on_key_down(cx.listener(Self::on_key_down))
             .child(docked)
             .children(confirm)

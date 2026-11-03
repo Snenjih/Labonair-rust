@@ -21,7 +21,7 @@ use gpui::{
     font, App, AppContext, Context, Entity, Font, FontFallbacks, FontFeatures, FontWeight, Global,
     Hsla, WindowAppearance,
 };
-use labonair_theme_tokens::{ActiveTheme, GlobalActiveTheme, ThemeMetrics};
+use labonair_theme_tokens::{ActiveTheme, GlobalActiveTheme, ThemeMetrics, VibrancyLayer};
 
 pub use crate::import::ThemeFileConversion;
 /// Re-exported from the crate root (they live in `labonair-theme` since T16-004
@@ -692,7 +692,7 @@ impl ThemeStore {
     // --- Convenience accessors for UI components -------------------------
 
     pub fn background(&self) -> Hsla {
-        self.theme().core.background
+        VibrancyLayer::Canvas.apply(self.theme().core.background)
     }
 
     pub fn foreground(&self) -> Hsla {
@@ -700,7 +700,7 @@ impl ThemeStore {
     }
 
     pub fn card(&self) -> Hsla {
-        self.theme().core.card
+        VibrancyLayer::Card.apply(self.theme().core.card)
     }
 
     pub fn muted(&self) -> Hsla {
@@ -712,7 +712,7 @@ impl ThemeStore {
     }
 
     pub fn border(&self) -> Hsla {
-        self.theme().core.border
+        VibrancyLayer::Divider.apply(self.theme().core.border)
     }
 
     pub fn primary(&self) -> Hsla {
@@ -750,27 +750,27 @@ impl ThemeStore {
 
     /// `--toolbar-background` — the window header / titlebar surface.
     pub fn toolbar(&self) -> Hsla {
-        self.theme().surface.toolbar
+        VibrancyLayer::Toolbar.apply(self.theme().surface.toolbar)
     }
 
     /// `--title-bar-background`.
     pub fn title_bar(&self) -> Hsla {
-        self.theme().surface.title_bar
+        VibrancyLayer::Toolbar.apply(self.theme().surface.title_bar)
     }
 
     /// `--status-bar-background` — the bottom status bar surface.
     pub fn status_bar(&self) -> Hsla {
-        self.theme().surface.status_bar
+        VibrancyLayer::Toolbar.apply(self.theme().surface.status_bar)
     }
 
     /// `--sidebar` background.
     pub fn sidebar_bg(&self) -> Hsla {
-        self.theme().sidebar.background
+        VibrancyLayer::Sidebar.apply(self.theme().sidebar.background)
     }
 
     /// `--sidebar-border`.
     pub fn sidebar_border(&self) -> Hsla {
-        self.theme().sidebar.border
+        VibrancyLayer::Divider.apply(self.theme().sidebar.border)
     }
 
     /// `--sidebar-foreground`.
@@ -1097,12 +1097,15 @@ mod tests {
             let store = cx.new(|_| ThemeStore::new(WindowAppearance::Light));
             let s = store.read(cx);
             let t = s.theme();
-            assert_eq!(s.background(), t.core.background);
+            assert_eq!(
+                s.background(),
+                VibrancyLayer::Canvas.apply(t.core.background)
+            );
             assert_eq!(s.foreground(), t.core.foreground);
-            assert_eq!(s.card(), t.core.card);
+            assert_eq!(s.card(), VibrancyLayer::Card.apply(t.core.card));
             assert_eq!(s.muted(), t.core.muted);
             assert_eq!(s.muted_foreground(), t.core.muted_foreground);
-            assert_eq!(s.border(), t.core.border);
+            assert_eq!(s.border(), VibrancyLayer::Divider.apply(t.core.border));
             assert_eq!(s.primary(), t.core.primary);
             assert_eq!(s.accent(), t.core.accent);
             assert_eq!(s.radius(), t.radius);
@@ -1310,7 +1313,10 @@ mod tests {
                 assert_eq!(s.active_theme_id(), "neon/Neon Dark");
                 assert_eq!(crate::to_rgb8(s.primary()), [0x39, 0xff, 0x14]);
                 // Untouched token still the dark default.
-                assert_eq!(s.background(), Theme::dark().core.background);
+                assert_eq!(
+                    s.background(),
+                    VibrancyLayer::Canvas.apply(Theme::dark().core.background)
+                );
 
                 // Switching the resolved mode re-resolves to the light variant.
                 s.set_preference(ThemePreference::Light, cx);

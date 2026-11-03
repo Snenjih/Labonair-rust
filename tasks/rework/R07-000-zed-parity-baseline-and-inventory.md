@@ -8828,3 +8828,46 @@ Next safe task: Continue R07-000 with `vim::HelixJumpToWord` (now in progress); 
 - Documentation-only gates passed after the packet edits: `git diff --check`; `scripts/check_documentation.py` (43 normative docs, 287 Markdown files); `scripts/check_rework_queue.py` (46 tasks, R07-000 active); and `verify.py` scopes `docs`, `agents`, `knowledge`, `settings`, and `queue`. Final checks are rerun after this progress record.
 - No Rust build/tests or native visual check were run for this documentation-only packet. They remain required for the full parity goal. Viewport edge cases, label readability/overlap, alternate keyboard layouts, count/focus lifecycle, platform dispatch, palette, and paired macOS evidence remain open.
 - Next safe task: Continue R07-000 with `vim::HelixKeepNewestSelection`; do not begin R07-001 or R09.
+
+## Pre-change contract — Native vibrancy and surface layers — 2026-11-03
+
+```text
+Request type: Visual and surface styling; no capability, architecture, or layout migration.
+Active task: R07-000, the earliest incomplete queue item. This pass extends its shared UI and native visual work.
+Owner module: Theme owns semantic surface opacity and appearance tokens; Shell owns main-window composition; Settings owns its existing window surface; UI kit consumes the shared palette.
+Canonical crates: labonair-theme-tokens for visual tokens; labonair-theme and labonair-theme-ui for runtime access and GPUI-component theme synchronization; labonair-shell and labonair-settings-ui for the existing windows and surfaces.
+Canonical user entry points: Existing Labonair main window and existing Settings window.
+Public typed contract: Existing Theme/Palette accessors plus GPUI 0.2.2 WindowOptions.window_background. No new command, event, registry, setting, or crate.
+State owner: Existing ThemeStore and theme settings. Appearance continues to follow the active light/dark theme and operating-system appearance.
+Persistence owner: None; the visual treatment is derived and is not stored.
+Commands and keymap entries: None changed.
+Events and registry contributions: None changed.
+Settings: None added or changed.
+Notifications: None changed.
+UI-kit components: Existing shared controls consume derived canvas, toolbar, sidebar, card, popover, control, and divider treatments.
+Allowed dependency changes: None.
+Implementation order: Record contract; add the semantic surface treatment at the theme-token boundary; apply it through existing ThemeStore/Palette accessors and GPUI-component synchronization; enable GPUI's native blurred window background for existing app windows; remove duplicate opaque parent fills while preserving the same bounds and composition; document and verify.
+Tests: Existing theme-token, theme-store, and UI-kit checks plus required workspace gates.
+Visual evidence: Native macOS capture is Pending. This session runs on Linux without DISPLAY/WAYLAND_DISPLAY. `shots/labonair.png` is an earlier SFTP capture and is not evidence for this change.
+Security impact: None.
+Performance impact: No new rendering pass, dependency, or animation; GPUI's existing native blur is used.
+Compatibility/removal condition: None; this introduces no compatibility path.
+```
+
+## Native vibrancy and surface layers — implementation progress — 2026-11-03
+
+- Inspected the current flat SFTP capture and the main shell, Settings window, theme tokens, UI-kit palette, and GPUI-component root.
+- Confirmed against the locked GPUI 0.2.2 source that `WindowOptions.window_background` supports `WindowBackgroundAppearance::Blurred`; on macOS the backend installs an `NSVisualEffectView`. GPUI-component's `Root` paints its global `Theme.background`, which the existing theme adapter synchronizes, so that background must remain clear for the window material to show through.
+- Apple's Materials guidance informed the role-based treatment: use restrained native translucency for window canvas and chrome, stronger surfaces for cards/popovers, and preserve foreground contrast. GPUI currently exposes a single window blur material, so sidebar/card hierarchy remains in the existing semantic color tokens.
+- Keep all current dimensions, spacing, permanent zones, commands, and feature ownership. Native window capture remains Pending until a supported macOS display host is available.
+
+## Native vibrancy and surface layers — verification and handoff — 2026-11-03
+
+- Passed: `cargo fmt --check`; `cargo check --workspace --all-targets`; `cargo clippy --workspace --all-targets -- -D warnings`; focused tests for `labonair-theme-tokens`, `labonair-theme`, `labonair-ui-kit`, and `labonair-theme-ui`; `python3 scripts/check_documentation.py`; `python3 scripts/check_rework_queue.py`; and `git diff --check`.
+- Full `cargo test --workspace` was attempted and failed while linking workspace tests because the project filesystem reached 100% usage (`No space left on device`; `ld` exited with signal 7). No Rust test assertion failed before the link failure.
+- `cargo run -p labonair` was attempted and could not finish rebuilding because the same filesystem had no free space. The host is Linux with both `DISPLAY` and `WAYLAND_DISPLAY` unset, so a native visual launch/capture is unavailable; UI acceptance and macOS material appearance remain Pending.
+- `python3 scripts/verify.py --scope visual` passed. `python3 scripts/verify.py --scope knowledge` stopped at the existing architecture manifest check: `labonair-editor-ui` declares no `labonair-panel` edge while Cargo metadata includes it, and `labonair-shell`'s declared edges omit `labonair-editor-ui` while Cargo metadata includes it. No manifests or dependency edges changed in this visual pass.
+- The canonical `verify.py --scope all` remains blocked: its knowledge sequence stops on that unchanged architecture manifest discrepancy; the Rust test sequence independently hit the full-filesystem linker failure recorded above. `verify.py --scope visual`, the documentation check, and the queue check passed.
+- `shots/labonair.png` remains historical baseline material and was not treated as evidence for this change.
+- Cargo build outputs for the app and the failed OpenSSL/SQLite rebuild were cleaned to recover workspace disk space; source files and Cargo configuration were not removed or changed.
+- Handoff: semantic translucency and root-layer changes are implemented, but this visual pass is not fully accepted until a supported display host captures the main window and Settings window and the full workspace test gate completes with sufficient free disk space.

@@ -1,8 +1,9 @@
 //! Design tokens — the foundation-level visual contract (R08-008).
 //!
-//! The single source of truth for the app's visual design is
-//! `reference-src/src/styles/globals.css`, transcribed into typed Rust data
-//! ([`Theme`]) with all Oklch colours converted to [`gpui::Hsla`].
+//! The reference stylesheet supplies the base light/dark palette, transcribed
+//! into typed Rust data ([`Theme`]) with Oklch colors converted to
+//! [`gpui::Hsla`]. Labonair's native window materials and semantic opacity
+//! layers are defined alongside those palette tokens.
 //!
 //! This crate was split out of `labonair-theme` so `labonair-ui-kit` can build
 //! its primitives against the token contract ([`UiTheme`], [`Theme`],
@@ -30,6 +31,6 @@ pub use metrics::{ActiveTheme, GlobalActiveTheme, ThemeMetrics, UiDensity};
 pub use tokens::{
     Animation, AnsiColors, BorderVariants, CoreColors, CubicBezier, InteractionColors,
     MonoFontWeight, RadiusScale, ShadowLayer, Shadows, SidebarColors, StatusColors, SurfaceColors,
-    TerminalPalette, Theme, Typography, TAB_IN_FROM_SCALE,
+    TerminalPalette, Theme, Typography, VibrancyLayer, TAB_IN_FROM_SCALE,
 };
 pub use ui_theme::{ActiveThemeExt, UiTheme};

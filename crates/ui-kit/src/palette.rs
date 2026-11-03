@@ -16,7 +16,7 @@
 use std::time::Duration;
 
 use gpui::{px, Hsla, Pixels};
-use labonair_theme_tokens::{CubicBezier, RadiusScale};
+use labonair_theme_tokens::{CubicBezier, RadiusScale, VibrancyLayer};
 
 use crate::theme::UiTheme;
 
@@ -115,21 +115,21 @@ impl Palette {
         let core = &theme.theme().core;
         let status = &theme.theme().status;
         Self {
-            bg: core.background,
-            toolbar_bg: theme.theme().surface.toolbar,
+            bg: VibrancyLayer::Canvas.apply(core.background),
+            toolbar_bg: VibrancyLayer::Toolbar.apply(theme.theme().surface.toolbar),
             fg: core.foreground,
             muted: core.muted_foreground,
-            border: core.border,
+            border: VibrancyLayer::Divider.apply(core.border),
             muted_bg: core.muted,
-            input: core.input,
+            input: VibrancyLayer::Control.apply(core.input),
             ring: core.ring,
-            card: core.card,
+            card: VibrancyLayer::Card.apply(core.card),
             card_fg: core.card_foreground,
-            popover: core.popover,
+            popover: VibrancyLayer::Popover.apply(core.popover),
             popover_fg: core.popover_foreground,
-            sidebar: theme.theme().sidebar.background,
+            sidebar: VibrancyLayer::Sidebar.apply(theme.theme().sidebar.background),
             sidebar_fg: theme.theme().sidebar.foreground,
-            sidebar_border: theme.theme().sidebar.border,
+            sidebar_border: VibrancyLayer::Divider.apply(theme.theme().sidebar.border),
             accent: core.accent,
             accent_fg: core.accent_foreground,
             selected_fill: core.primary.opacity(0.16),
@@ -185,8 +185,11 @@ mod tests {
         let theme = TestTheme(Theme::dark());
         let c = Palette::from_theme(&theme);
         assert_eq!(c.fg, theme.0.core.foreground);
-        assert_eq!(c.toolbar_bg, theme.0.surface.toolbar);
-        assert_eq!(c.border, theme.0.core.border);
+        assert_eq!(
+            c.toolbar_bg,
+            VibrancyLayer::Toolbar.apply(theme.0.surface.toolbar)
+        );
+        assert_eq!(c.border, VibrancyLayer::Divider.apply(theme.0.core.border));
         assert_eq!(c.warning, theme.0.status.warning);
         assert_eq!(c.radius.sm, theme.0.radius.sm);
     }

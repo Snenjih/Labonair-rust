@@ -3,14 +3,14 @@
 //! Moved out of `labonair-settings-ui` in R08-005 (mechanical move — no logic
 //! change).
 
-use gpui::{App, Entity};
+use gpui::{transparent_black, App, Entity};
 
 use labonair_settings::content::general::ThemePref;
 use labonair_settings::{
     EditorSettings, GeneralSettings, Settings as _, SettingsStore, TerminalSettings, ThemeSettings,
 };
 use labonair_theme::ThemePreference;
-use labonair_theme::{ThemeMetrics, ThemeStore, UiDensity};
+use labonair_theme::{ThemeMetrics, ThemeStore, UiDensity, VibrancyLayer};
 
 /// Build the [`labonair_theme::FontOverrides`] snapshot from the
 /// typography-relevant settings slices. A blank family / zero size means "keep
@@ -177,15 +177,19 @@ fn sync_gpui_component_theme(theme: &Entity<ThemeStore>, cx: &mut App) {
     t.primary_hover = core.primary;
     t.primary_active = core.primary;
     t.primary_foreground = core.primary_foreground;
-    t.background = core.background;
+    // `gpui_component::Root` paints this color behind the full app tree. Keep
+    // that foundation layer clear so each owned surface reveals GPUI's native
+    // blurred window material exactly once.
+    t.background = transparent_black();
     t.foreground = core.foreground;
-    t.border = core.border;
-    t.input = core.input;
+    t.border = VibrancyLayer::Divider.apply(core.border);
+    t.input = VibrancyLayer::Control.apply(core.input);
     t.ring = core.ring;
     t.muted = core.muted;
     t.muted_foreground = core.muted_foreground;
     t.accent = core.accent;
     t.accent_foreground = core.accent_foreground;
+    t.popover = VibrancyLayer::Popover.apply(core.popover);
     // Input's own colours: caret uses `primary` so it reads as the same
     // "active" colour as a row/tab selection bar elsewhere in the app;
     // selection is `primary` at a stronger alpha than the row-selection fill

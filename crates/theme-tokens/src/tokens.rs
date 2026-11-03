@@ -1,9 +1,9 @@
-//! Design tokens ported 1:1 from `reference-src/src/styles/globals.css`.
+//! Typed design tokens for the Labonair UI.
 //!
-//! Every value here is transcribed directly from that file — the `:root` block
-//! for [`Theme::light`] and the `.dark` block for [`Theme::dark`]. Nothing is
-//! invented or adjusted. Colors are stored as [`gpui::Hsla`], converted once
-//! from their original Oklch notation by [`crate::color::oklch`].
+//! Base palette colors follow the frozen reference stylesheet. Labonair's
+//! native surface opacity and radius choices are maintained here as semantic
+//! tokens. Colors are stored as [`gpui::Hsla`], converted once from their
+//! original Oklch notation by [`crate::color::oklch`].
 
 use std::time::Duration;
 
@@ -76,6 +76,40 @@ pub struct SurfaceColors {
     pub status_bar: Hsla,
 }
 
+/// Role-based opacity for surfaces layered over GPUI's native blurred window
+/// background. Solid theme colors remain the source hue; this scale controls
+/// how much of the platform material remains visible through each surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VibrancyLayer {
+    Canvas,
+    Toolbar,
+    Sidebar,
+    Card,
+    Popover,
+    Control,
+    Divider,
+}
+
+impl VibrancyLayer {
+    /// The foreground material opacity for this semantic surface role.
+    pub const fn opacity(self) -> f32 {
+        match self {
+            Self::Canvas => 0.92,
+            Self::Toolbar => 0.82,
+            Self::Sidebar => 0.86,
+            Self::Card => 0.94,
+            Self::Popover => 0.97,
+            Self::Control => 0.94,
+            Self::Divider => 0.56,
+        }
+    }
+
+    /// Apply this role's opacity without changing the theme color itself.
+    pub fn apply(self, color: Hsla) -> Hsla {
+        color.opacity(self.opacity())
+    }
+}
+
 /// Border variant tokens (`--border-*`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct BorderVariants {
@@ -133,8 +167,8 @@ pub struct TerminalPalette {
     pub selection: Hsla,
 }
 
-/// Corner-radius scale, in physical pixels (derived from `--radius: 0.3125rem`
-/// at a 16px root font size, i.e. 5px, plus the fixed `--window-radius`).
+/// Corner-radius scale in logical pixels. The Labonair defaults use a compact
+/// 6px base while preserving the fixed 12px window radius.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RadiusScale {
     /// `--radius` itself (== `lg`).
@@ -151,8 +185,8 @@ pub struct RadiusScale {
 }
 
 impl RadiusScale {
-    /// Build the scale from the `--radius` base value in pixels, applying the
-    /// `calc()` multipliers from the `@theme inline` block.
+    /// Build the scale from the base value in pixels, applying the semantic
+    /// control multipliers used by the UI kit.
     fn from_base(base: f32) -> Self {
         Self {
             base,
@@ -382,7 +416,8 @@ fn shadow(x: f32, y: f32, blur: f32, spread: f32, alpha: f32) -> ShadowLayer {
 }
 
 impl Theme {
-    /// The default light theme — values from the `:root` block of `globals.css`.
+    /// The default light theme, using the frozen reference's base color palette
+    /// with Labonair's native material, radius, and shadow treatment.
     pub fn light() -> Self {
         Self {
             is_dark: false,
@@ -487,7 +522,7 @@ impl Theme {
                 cursor: oklch(20.9, 0.0, 0.0),
                 selection: oklch_a(79.68, 0.1298, 82.18, 0.13),
             },
-            radius: RadiusScale::from_base(5.0),
+            radius: RadiusScale::from_base(6.0),
             shadows: Shadows {
                 row: vec![shadow(0.0, 1.0, 2.0, 0.0, 0.06)],
                 popover: vec![
@@ -504,7 +539,8 @@ impl Theme {
         }
     }
 
-    /// The default dark theme — values from the `.dark` block of `globals.css`.
+    /// The default dark theme, using the frozen reference's base color palette
+    /// with Labonair's native material, radius, and shadow treatment.
     pub fn dark() -> Self {
         Self {
             is_dark: true,
@@ -608,16 +644,16 @@ impl Theme {
                 cursor: oklch(79.68, 0.1298, 82.18),
                 selection: oklch_a(79.68, 0.1298, 82.18, 0.13),
             },
-            radius: RadiusScale::from_base(5.0),
+            radius: RadiusScale::from_base(6.0),
             shadows: Shadows {
-                row: vec![shadow(0.0, 1.0, 2.0, 0.0, 0.35)],
+                row: vec![shadow(0.0, 1.0, 2.0, 0.0, 0.24)],
                 popover: vec![
-                    shadow(0.0, 4.0, 16.0, -2.0, 0.55),
-                    shadow(0.0, 2.0, 6.0, -2.0, 0.35),
+                    shadow(0.0, 4.0, 16.0, -2.0, 0.38),
+                    shadow(0.0, 2.0, 6.0, -2.0, 0.24),
                 ],
                 modal: vec![
-                    shadow(0.0, 20.0, 48.0, -8.0, 0.65),
-                    shadow(0.0, 6.0, 16.0, -4.0, 0.4),
+                    shadow(0.0, 20.0, 48.0, -8.0, 0.48),
+                    shadow(0.0, 6.0, 16.0, -4.0, 0.30),
                 ],
             },
             animation: Animation::default(),
@@ -635,6 +671,34 @@ mod tests {
         a.iter()
             .zip(b.iter())
             .all(|(x, y)| (*x as i32 - *y as i32).abs() <= tol)
+    }
+
+    #[test]
+    fn vibrancy_layers_keep_a_clear_material_hierarchy() {
+        assert!(VibrancyLayer::Toolbar.opacity() < VibrancyLayer::Canvas.opacity());
+        assert!(VibrancyLayer::Sidebar.opacity() < VibrancyLayer::Card.opacity());
+        assert!(VibrancyLayer::Card.opacity() < VibrancyLayer::Popover.opacity());
+        assert_eq!(VibrancyLayer::Divider.opacity(), 0.56);
+
+        let base = oklch_a(55.0, 0.03, 250.0, 0.5);
+        let material = VibrancyLayer::Card.apply(base);
+        assert_eq!(
+            (material.h, material.s, material.l),
+            (base.h, base.s, base.l)
+        );
+        assert!((material.a - base.a * VibrancyLayer::Card.opacity()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn native_theme_defaults_use_compact_rounding_and_soft_dark_shadows() {
+        for theme in [Theme::light(), Theme::dark()] {
+            assert_eq!(theme.radius.base, 6.0);
+        }
+
+        let dark = Theme::dark();
+        assert!(dark.shadows.row[0].color.a < 0.3);
+        assert!(dark.shadows.popover[0].color.a < 0.4);
+        assert!(dark.shadows.modal[0].color.a < 0.5);
     }
 
     #[test]
@@ -662,10 +726,10 @@ mod tests {
     #[test]
     fn radius_scale_multipliers() {
         let r = Theme::light().radius;
-        assert_eq!(r.base, 5.0);
-        assert_eq!(r.lg, 5.0);
-        assert!((r.sm - 3.0).abs() < 1e-6);
-        assert!((r.xl4 - 13.0).abs() < 1e-6);
+        assert_eq!(r.base, 6.0);
+        assert_eq!(r.lg, 6.0);
+        assert!((r.sm - 3.6).abs() < 1e-6);
+        assert!((r.xl4 - 15.6).abs() < 1e-6);
         assert_eq!(r.window, 12.0);
     }
 
@@ -675,7 +739,7 @@ mod tests {
         assert_eq!(s.row.len(), 1);
         assert_eq!(s.popover.len(), 2);
         assert_eq!(s.modal.len(), 2);
-        assert!((s.modal[0].color.a - 0.65).abs() < 1e-6);
+        assert!((s.modal[0].color.a - 0.48).abs() < 1e-6);
     }
 
     #[test]

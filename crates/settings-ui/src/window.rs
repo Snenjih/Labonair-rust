@@ -12,8 +12,8 @@
 //! / background entities, so the next open rebuilds it losslessly.
 
 use gpui::{
-    point, px, size, App, AppContext, Bounds, Global, SharedString, TitlebarOptions, WindowBounds,
-    WindowHandle, WindowKind, WindowOptions,
+    point, px, size, App, AppContext, Bounds, Global, SharedString, TitlebarOptions,
+    WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions,
 };
 use gpui_component::Root;
 use tokio::runtime::Handle as TokioHandle;
@@ -136,6 +136,7 @@ fn open_settings_target(target: SettingsTarget, cx: &mut App) {
     let opened = cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
+            window_background: WindowBackgroundAppearance::Blurred,
             titlebar: Some(TitlebarOptions {
                 title: Some("Labonair — Settings".into()),
                 appears_transparent: true,

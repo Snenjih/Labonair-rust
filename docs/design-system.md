@@ -5,7 +5,7 @@
 
 ## Visual objective
 
-Labonair should feel dense, calm, precise, and fast. The visual system uses a restrained hierarchy rather than decorative chrome. The pinned Zed build is the observable UI/UX target for clean-room parity; Labonair continues to own its implementation, tokens, and feature contracts.
+Labonair should feel dense, calm, precise, and fast. The visual system uses a restrained hierarchy rather than decorative chrome. The pinned Zed build remains the behavioral reference for clean-room parity; Labonair owns its implementation, tokens, and visual identity. On supported desktop compositors, native window blur and lightly translucent semantic surfaces add depth while preserving the existing workspace geometry and density.
 
 ## Token ownership
 
@@ -17,6 +17,41 @@ The token source is the theme/design-token implementation and its focused
 tests. A view may not introduce a global color, spacing, radius, typography,
 shadow, or state value inline. If a new visual value is genuinely required,
 extend the token source first and record the reason in the owning task.
+
+## Native materials and surface hierarchy
+
+The main window and the existing Settings window use GPUI's
+`WindowBackgroundAppearance::Blurred`. Keep the `gpui-component::Root` and
+shell composition roots clear; each visible product surface paints its own
+material once. A full-window background behind another full-window canvas
+would compound alpha and hide the system backdrop.
+
+`labonair-theme-tokens::VibrancyLayer` owns the semantic surface opacity scale:
+
+| Surface role | Opacity | Use |
+|---|---:|---|
+| Canvas | 0.92 | Workspace and Settings content background |
+| Toolbar | 0.82 | Titlebar and statusbar chrome |
+| Sidebar | 0.86 | Navigation rails and docks |
+| Card | 0.94 | Raised panels and contained surfaces |
+| Control | 0.94 | Input surfaces |
+| Popover | 0.97 | Menus, dropdowns, and floating cards |
+| Divider | 0.56 | Structural borders and hairlines |
+
+These values change alpha while preserving the active light/dark or imported
+theme's color. Keep content text and focus treatment at their existing
+foreground strength. Surfaces with their own opaque pixel renderer, such as
+the terminal grid, may remain opaque to keep dense output legible. GPUI 0.2.2
+provides one native blurred window material rather than per-view AppKit
+materials; semantic role separation is supplied by these shared color tokens.
+On macOS the backend uses `NSVisualEffectView`; other platforms use GPUI's
+available blur path, which can depend on the compositor.
+
+The built-in corner-radius base is 6 logical pixels; the existing 12-pixel
+window radius and all layout dimensions remain unchanged. Dark-mode row,
+popover, and modal shadows stay restrained because native blur already adds
+depth. Do not increase padding, gap, dock width, or window bounds as part of a
+material pass.
 
 ## Default typography
 

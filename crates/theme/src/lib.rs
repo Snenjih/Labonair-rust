@@ -22,8 +22,8 @@ pub use labonair_theme_tokens::{
     ChevronIcons, CoreColors, CubicBezier, DirectoryIcons, GlobalActiveTheme, IconDefinition,
     IconThemeContent, InteractionColors, MonoFontWeight, RadiusScale, ShadowLayer, Shadows,
     SidebarColors, StatusColors, SurfaceColors, TerminalPalette, Theme, ThemeMetrics, Typography,
-    UiDensity, UiTheme, BUILTIN_ICON_THEME_ID, BUILTIN_ICON_THEME_NAME, MONO_FONT_FALLBACKS,
-    MONO_FONT_FAMILY, TAB_IN_FROM_SCALE, UI_FONT_FALLBACKS, UI_FONT_FAMILY,
+    UiDensity, UiTheme, VibrancyLayer, BUILTIN_ICON_THEME_ID, BUILTIN_ICON_THEME_NAME,
+    MONO_FONT_FALLBACKS, MONO_FONT_FAMILY, TAB_IN_FROM_SCALE, UI_FONT_FALLBACKS, UI_FONT_FAMILY,
 };
 
 /// The `contrast` module path is kept for callers that used

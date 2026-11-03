@@ -189,9 +189,9 @@ impl Render for AppShell {
         // `&mut Window`).
         self.sync_updater_modal(window, cx);
 
-        let (bg, ui_font, ui_font_size) = {
+        let (ui_font, ui_font_size) = {
             let t = self.theme.read(cx);
-            (t.background(), t.ui_font(), t.ui_font_size())
+            (t.ui_font(), t.ui_font_size())
         };
         let background_layer = self.background.read(cx).layer(LayerScope::App);
         let show_statusbar = labonair_settings::ThemeSettings::try_get(cx)
@@ -210,7 +210,6 @@ impl Render for AppShell {
             .flex()
             .flex_col()
             .size_full()
-            .bg(bg)
             .font(ui_font)
             .text_size(px(ui_font_size))
             .on_action(cx.listener(Self::act_toggle_fullscreen))

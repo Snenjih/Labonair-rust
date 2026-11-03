@@ -1700,6 +1700,7 @@ impl Render for SettingsView {
             .min_h_0()
             .flex()
             .flex_col()
+            .bg(c.bg)
             .child(header)
             .child(body);
         let content = div()
@@ -1714,7 +1715,6 @@ impl Render for SettingsView {
             .track_focus(&self.focus)
             .key_context("Settings")
             .flex()
-            .bg(c.card)
             .text_color(c.fg)
             .on_key_down(cx.listener(Self::on_key))
             .child(content)
@@ -1738,6 +1738,7 @@ impl Render for SettingsView {
                 card.w(px(820.0))
                     .h(px(560.0))
                     .rounded_lg()
+                    .bg(c.card)
                     .border_1()
                     .border_color(c.border)
                     .overflow_hidden()
