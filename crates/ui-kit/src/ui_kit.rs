@@ -127,8 +127,8 @@ pub use select::{
     selected_label, SelectOption, SelectPopoverAnchor,
 };
 pub use settings_widgets::{
-    category_chip, settings_group, settings_row, slider_row, ChipHue, SettingsGroup, SettingsRow,
-    SETTINGS_ROW_MIN_HEIGHT,
+    category_chip, settings_group, settings_row, slider_control, slider_row, ChipHue,
+    SettingsGroup, SettingsRow, SETTINGS_ROW_MIN_HEIGHT,
 };
 pub use slider::{slider, SliderEvent, SliderState, SliderValue};
 pub use stack::{h_stack, v_stack};

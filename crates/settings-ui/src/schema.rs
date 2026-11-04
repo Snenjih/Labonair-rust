@@ -21,6 +21,7 @@
 //! literal, which Rust coerces to a `fn` pointer automatically.
 
 use labonair_settings_content::SettingsContent;
+use labonair_ui_kit::{ColorSchemeChoice, InterfaceStyleChoice, PaneLayoutStyle, PreviewKind};
 use serde_json::Value;
 
 /// Extra copy/behaviour a rendered field carries beyond title+description
@@ -61,7 +62,95 @@ pub enum FieldControl {
     /// renderer offers a checkbox + reorder control over the fixed set of
     /// columns.
     SftpColumns,
+    /// A short closed choice shown as a segmented control (`(token, label)`
+    /// pairs, like [`Self::Select`]).
+    Segmented(&'static [(&'static str, &'static str)]),
+    /// A bounded number shown as a slider with a value read-out. `step` and the
+    /// range are plain `f64`; `int` fields round to whole numbers.
+    Slider {
+        min: f64,
+        max: f64,
+        step: f64,
+        int: bool,
+    },
+    /// A closed choice shown as radio-style preview tiles (Apple-style).
+    Tiles(&'static [TileOption]),
 }
+
+/// One preview tile of a [`FieldControl::Tiles`] field. `token` is the stored
+/// value (for the interface-style bool: `"classic"` = `false`,
+/// `"glassy"` = `true`, see [`tile_token`]).
+#[derive(Clone, Copy)]
+pub struct TileOption {
+    pub token: &'static str,
+    pub label: &'static str,
+    pub preview: PreviewKind,
+}
+
+/// The tile token a stored value selects. Strings select their own token; the
+/// `translucentSurfaces` bool selects `glassy` (true) or `classic` (false).
+pub fn tile_token(value: &Value) -> Option<&str> {
+    match value {
+        Value::String(token) => Some(token.as_str()),
+        Value::Bool(true) => Some("glassy"),
+        Value::Bool(false) => Some("classic"),
+        _ => None,
+    }
+}
+
+/// The inverse of [`tile_token`] for a field whose stored type is a bool
+/// (interface style) or a string (everything else), decided by `current`.
+pub fn tile_value(current: Option<&Value>, token: &str) -> Value {
+    if matches!(current, Some(Value::Bool(_))) || matches!(token, "classic" | "glassy") {
+        Value::Bool(token == "glassy")
+    } else {
+        Value::String(token.to_owned())
+    }
+}
+
+const COLOR_SCHEME_TILES: &[TileOption] = &[
+    TileOption {
+        token: "system",
+        label: "Auto",
+        preview: PreviewKind::ColorScheme(ColorSchemeChoice::Auto),
+    },
+    TileOption {
+        token: "light",
+        label: "Light",
+        preview: PreviewKind::ColorScheme(ColorSchemeChoice::Light),
+    },
+    TileOption {
+        token: "dark",
+        label: "Dark",
+        preview: PreviewKind::ColorScheme(ColorSchemeChoice::Dark),
+    },
+];
+
+const INTERFACE_STYLE_TILES: &[TileOption] = &[
+    TileOption {
+        token: "classic",
+        label: "Classic",
+        preview: PreviewKind::InterfaceStyle(InterfaceStyleChoice::Classic),
+    },
+    TileOption {
+        token: "glassy",
+        label: "Glassy",
+        preview: PreviewKind::InterfaceStyle(InterfaceStyleChoice::Glassy),
+    },
+];
+
+const PANE_LAYOUT_TILES: &[TileOption] = &[
+    TileOption {
+        token: "comfortable",
+        label: "Comfortable",
+        preview: PreviewKind::PaneLayout(PaneLayoutStyle::Comfortable),
+    },
+    TileOption {
+        token: "compact",
+        label: "Compact",
+        preview: PreviewKind::PaneLayout(PaneLayoutStyle::Compact),
+    },
+];
 
 /// One generated settings row: a stable deep-link path into the merged
 /// `SettingsContent` tree, the widget it renders as, and its copy. `get`/
@@ -155,15 +244,17 @@ macro_rules! field {
 /// Order is declaration order within each Settings area; page layout
 /// (`pages.rs`) decides on-screen placement, not this list.
 pub fn all_fields() -> Vec<AnyField> {
-    use FieldControl::{Float, FontFamily, Int, Select, SftpColumns, Switch, Text};
+    use FieldControl::{
+        Float, FontFamily, Int, Segmented, Select, SftpColumns, Slider, Switch, Text, Tiles,
+    };
     let fields = vec![
         // ── general ─────────────────────────────────────────────────────
         field!(
             general.theme,
             "theme",
-            Select(&[("system", "System"), ("light", "Light"), ("dark", "Dark")]),
-            "Theme",
-            "System, light, or dark appearance."
+            Tiles(COLOR_SCHEME_TILES),
+            "Color scheme",
+            "Auto follows the system appearance; Light and Dark pin it."
         ),
         field!(
             general.restore_window_state,
@@ -200,14 +291,14 @@ pub fn all_fields() -> Vec<AnyField> {
         field!(
             appearance.app_font_size,
             "appFontSize",
-            Int { min: 9, max: 24, step: 1 },
+            Slider { min: 9.0, max: 24.0, step: 1.0, int: true },
             "App font size",
             "Base UI font size in points."
         ),
         field!(
             appearance.app_line_height,
             "appLineHeight",
-            Float { min_centi: 100, max_centi: 200, step_centi: 5 },
+            Slider { min: 1.0, max: 2.0, step: 0.05, int: false },
             "UI line height",
             "Line height multiplier for application text."
         ),
@@ -233,14 +324,14 @@ pub fn all_fields() -> Vec<AnyField> {
         field!(
             appearance.pane_layout,
             "paneLayout",
-            Select(&[("comfortable", "Comfortable"), ("compact", "Compact")]),
+            Tiles(PANE_LAYOUT_TILES),
             "Pane layout",
             "Comfortable shows panes as floating rounded blocks with a gap; compact fills the area edge to edge."
         ),
         field!(
             appearance.ui_density,
             "uiDensity",
-            Select(&[
+            Segmented(&[
                 ("compact", "Compact"),
                 ("default", "Default"),
                 ("comfortable", "Comfortable"),
@@ -251,20 +342,16 @@ pub fn all_fields() -> Vec<AnyField> {
         field!(
             appearance.corner_radius_scale,
             "cornerRadiusScale",
-            Float {
-                min_centi: 50,
-                max_centi: 200,
-                step_centi: 5
-            },
+            Slider { min: 0.5, max: 2.0, step: 0.05, int: false },
             "Corner radius scale",
             "Multiplier applied to the active theme's rounded corners (1.0 = unchanged)."
         ),
         field!(
             appearance.translucent_surfaces,
             "translucentSurfaces",
-            Switch,
-            "Translucent surfaces",
-            "Let window chrome and panels show the blurred desktop behind them (off = opaque)."
+            Tiles(INTERFACE_STYLE_TILES),
+            "Interface style",
+            "Classic keeps surfaces opaque; Glassy lets window chrome and panels show the blurred desktop behind them."
         ),
         field!(
             appearance.buffer_font_family,
@@ -276,7 +363,7 @@ pub fn all_fields() -> Vec<AnyField> {
         field_with_details!(
             appearance.buffer_font_size,
             "bufferFontSize",
-            Int { min: 9, max: 24, step: 1 },
+            Slider { min: 9.0, max: 24.0, step: 1.0, int: true },
             "Editor & terminal font size",
             "Text size for editor and terminal content.",
             "pt",
@@ -285,20 +372,16 @@ pub fn all_fields() -> Vec<AnyField> {
         field!(
             appearance.buffer_line_height,
             "bufferLineHeight",
-            Float {
-                min_centi: 100,
-                max_centi: 200,
-                step_centi: 5
-            },
+            Slider { min: 1.0, max: 2.0, step: 0.05, int: false },
             "Editor & terminal line height",
             "Line-height multiplier for editor and terminal text."
         ),
         field!(
             appearance.tabs_location,
             "tabsLocation",
-            Select(&[("titlebar", "Titlebar"), ("sidebar", "Sidebar")]),
+            Segmented(&[("titlebar", "Titlebar"), ("sidebar", "Sidebar")]),
             "Tab bar location",
-            "Where the tab strip lives."
+            "Where the tab strip lives: in the titlebar above the content, or in the sidebar."
         ),
         field!(
             appearance.zen_mode_show_header,
@@ -474,7 +557,7 @@ pub fn all_fields() -> Vec<AnyField> {
         field_with_details!(
             terminal.terminal_opacity,
             "terminalOpacity",
-            Int { min: 20, max: 100, step: 5 },
+            Slider { min: 20.0, max: 100.0, step: 5.0, int: true },
             "Background opacity",
             "Terminal background opacity (100 = opaque).",
             "%",

@@ -268,6 +268,27 @@ fn explicit_field_location(pages: &[SettingsPage], json_path: &str) -> Option<Fi
     None
 }
 
+/// The page index and section title that host the owner surface `id`.
+pub fn surface_location(
+    pages: &[SettingsPage],
+    id: SettingsSurfaceId,
+) -> Option<(usize, &'static str)> {
+    for (page_index, page) in pages.iter().enumerate() {
+        let PageBody::Generated(items) = &page.body;
+        let mut section = None;
+        for item in items {
+            match item {
+                SettingsPageItem::SectionHeader(label) => section = Some(*label),
+                SettingsPageItem::OwnerSurface(surface) if *surface == id => {
+                    return section.map(|section| (page_index, section));
+                }
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
 fn section_for_path(items: &[SettingsPageItem], json_path: &str) -> Option<&'static str> {
     let mut section = None;
     for item in items {

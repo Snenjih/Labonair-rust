@@ -10,7 +10,7 @@ pub use gpui::{
     canvas, div, list, px, App, AppContext, Bounds, ClickEvent, ClipboardItem, Context, Entity,
     FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, ListAlignment,
     ListOffset, ListState, ParentElement, Pixels, Point, Render, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Window,
+    StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
 pub use serde_json::Value;
 pub use tokio::runtime::Handle as TokioHandle;
@@ -21,10 +21,14 @@ pub use labonair_theme::ThemeStore;
 pub use labonair_ui_kit::{
     button, checkbox, h_stack, icon_button_builder, keybinding_hint, number_field,
     search_clear_button, search_field, search_input, segmented_control, select_popover,
-    select_trigger, select_trigger_disabled, text_field, text_field_surface, text_input, tree_row,
-    v_stack, ButtonSize, ButtonVariant, IconButtonShape, IconName, InputEvent, InputState, Palette,
+    select_trigger, select_trigger_disabled, text_field, text_field_surface, text_input, v_stack,
+    ButtonSize, ButtonVariant, IconButtonShape, IconName, InputEvent, InputState, Palette,
     SegmentSize, SegmentVariant, SelectOption, SelectPopoverAnchor, Switch, TextFieldState,
-    TreeRowState, DISABLED_OPACITY,
+    DISABLED_OPACITY,
+};
+pub use labonair_ui_kit::{
+    category_chip, preview_tile, preview_tile_group, settings_group, settings_row, slider_control,
+    ChipHue, ListItem, SliderEvent, SliderState, SliderValue,
 };
 
 pub(crate) use crate::apply::*;
@@ -35,6 +39,10 @@ pub(crate) use crate::services::{SettingsFileTarget, SettingsServices, SettingsS
 pub(crate) use crate::window::*;
 
 use std::collections::{HashMap, HashSet};
+
+/// How long a slider drag waits for a pause before the value is written to the
+/// settings file. The in-memory value (and the live theme) update immediately.
+const SLIDER_COMMIT_DELAY: std::time::Duration = std::time::Duration::from_millis(120);
 
 const SELECT_MENU_PAGE_SIZE: usize = 10;
 
@@ -236,6 +244,19 @@ pub struct SettingsView {
     /// repaints from creating duplicate notifications while still allowing a
     /// changed problem to be reported again.
     pub(crate) published_diagnostics: Option<String>,
+    // R10-002: grouped cards, sliders, inline owner surfaces, page history.
+    /// One `SliderState` per slider field, created lazily by the renderer.
+    pub(crate) slider_states: HashMap<&'static str, Entity<SliderState>>,
+    pub(crate) _slider_subscriptions: Vec<Subscription>,
+    /// The latest slider value not yet committed to the store.
+    pub(crate) pending_slider: Option<(&'static str, f64)>,
+    pub(crate) slider_commit: Task<()>,
+    /// Embedded views of inline owner surfaces, built once per window. The
+    /// owner keeps all state; these are only the Settings-side handles.
+    pub(crate) inline_views: HashMap<SettingsSurfaceId, gpui::AnyView>,
+    /// Visited `(page, sub-page)` locations for the header's back/forward.
+    pub(crate) visited: Vec<(usize, Option<usize>)>,
+    pub(crate) visited_pos: usize,
 }
 
 pub(crate) struct SelectMenu {
@@ -337,6 +358,13 @@ impl SettingsView {
             highlight_token: 0,
             pending_scroll: None,
             published_diagnostics: None,
+            slider_states: HashMap::new(),
+            _slider_subscriptions: Vec::new(),
+            pending_slider: None,
+            slider_commit: Task::ready(()),
+            inline_views: HashMap::new(),
+            visited: vec![(0, None)],
+            visited_pos: 0,
         }
     }
 
@@ -372,6 +400,7 @@ impl SettingsView {
     /// [`PreferencesStore`] keeps all persistent state so the next open is
     /// instant and lossless.
     pub(crate) fn request_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.commit_pending_slider(cx);
         if self.windowed {
             cx.set_global(SettingsWindowRef { handle: None });
             self.cancel_text_input(cx);
@@ -547,9 +576,45 @@ impl SettingsView {
         let Some((area_idx, sub_idx)) = crate::pages::resolve_slug(&self.pages, slug) else {
             return;
         };
-        self.active_area = area_idx;
-        self.active_subpage = sub_idx;
+        self.navigate(area_idx, sub_idx);
         self.expanded_areas.insert(area_idx);
+    }
+
+    /// Move to `(area, sub_page)`, recording it in the back/forward list.
+    /// Re-entering the current location is a no-op; a new location discards
+    /// any forward entries, like a browser.
+    pub(crate) fn navigate(&mut self, area: usize, sub_page: Option<usize>) {
+        self.active_area = area;
+        self.active_subpage = sub_page;
+        if self.visited.get(self.visited_pos) == Some(&(area, sub_page)) {
+            return;
+        }
+        self.visited.truncate(self.visited_pos + 1);
+        self.visited.push((area, sub_page));
+        self.visited_pos = self.visited.len() - 1;
+    }
+
+    pub(crate) fn can_go_back(&self) -> bool {
+        self.visited_pos > 0
+    }
+
+    pub(crate) fn can_go_forward(&self) -> bool {
+        self.visited_pos + 1 < self.visited.len()
+    }
+
+    /// Step through visited pages (`delta` of -1 = back, +1 = forward).
+    pub(crate) fn step_visited(&mut self, delta: isize, cx: &mut Context<Self>) {
+        let Some(next) = self.visited_pos.checked_add_signed(delta) else {
+            return;
+        };
+        let Some(&(area, sub_page)) = self.visited.get(next) else {
+            return;
+        };
+        self.visited_pos = next;
+        self.active_area = area;
+        self.active_subpage = sub_page;
+        self.search.clear();
+        cx.notify();
     }
 
     /// The active page's own body (main page, or the followed sub-page).
@@ -561,8 +626,7 @@ impl SettingsView {
     }
 
     pub(crate) fn go_to_area(&mut self, i: usize, cx: &mut Context<Self>) {
-        self.active_area = i;
-        self.active_subpage = None;
+        self.navigate(i, None);
         // Root activation selects the page; only its disclosure control opens
         // the section anchors, as in the Settings navigation contract.
         self.search.clear();
@@ -669,8 +733,7 @@ impl SettingsView {
         label: &'static str,
         cx: &mut Context<Self>,
     ) {
-        self.active_area = area;
-        self.active_subpage = None;
+        self.navigate(area, None);
         self.expanded_areas.insert(area);
         self.search.clear();
         self.scroll_to_section = Some(label);
@@ -767,20 +830,25 @@ impl SettingsView {
                 else {
                     return;
                 };
-                self.active_area = location.page_index;
-                self.active_subpage = location.sub_page_slug.and_then(|slug| {
+                let sub_page = location.sub_page_slug.and_then(|slug| {
                     self.pages[location.page_index]
                         .sub_pages
                         .iter()
                         .position(|page| page.slug == slug)
                 });
+                self.navigate(location.page_index, sub_page);
                 self.expanded_areas.insert(location.page_index);
                 self.scroll_to_section = location.section;
                 self.pending_scroll = Some(field.json_path);
                 self.set_highlight(field.json_path, cx);
             }
             SearchTarget::OwnerSurface(surface) => {
-                if let Err(error) = self.services.open_surface(surface, cx) {
+                let inline = self.services.surface(surface).is_some_and(|surface| {
+                    surface.mode == labonair_settings::SettingsSurfaceMode::Inline
+                });
+                if inline {
+                    self.show_surface(surface, cx);
+                } else if let Err(error) = self.services.open_surface(surface, cx) {
                     tracing::error!("could not open Settings surface: {error}");
                 }
             }
@@ -1302,6 +1370,109 @@ impl SettingsView {
         cx.notify();
     }
 
+    // ── sliders (R10-002) ─────────────────────────────────────────────────
+
+    /// The slider entity of `field`, created on first use and re-synced to the
+    /// stored value whenever the user is not mid-drag (a Reset or an external
+    /// edit moves the thumb).
+    pub(crate) fn slider_state(
+        &mut self,
+        field: &AnyField,
+        current: f64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<Entity<SliderState>> {
+        let FieldControl::Slider { min, max, step, .. } = field.control else {
+            return None;
+        };
+        let key = field.json_path;
+        if let Some(state) = self.slider_states.get(key).cloned() {
+            let shown = match state.read(cx).value() {
+                SliderValue::Single(value) => f64::from(value),
+                SliderValue::Range(start, _) => f64::from(start),
+            };
+            if self.pending_slider.is_none() && (shown - current).abs() > step / 2.0 {
+                state.update(cx, |state, cx| state.set_value(current as f32, window, cx));
+            }
+            return Some(state);
+        }
+        let state = cx.new(|_| {
+            SliderState::new()
+                .min(min as f32)
+                .max(max as f32)
+                .step(step as f32)
+                .default_value(current as f32)
+        });
+        let subscription = cx.subscribe(&state, move |this, _, event: &SliderEvent, cx| {
+            if let SliderEvent::Change(SliderValue::Single(value)) = event {
+                this.queue_slider_value(key, f64::from(*value), cx);
+            }
+        });
+        self._slider_subscriptions.push(subscription);
+        self.slider_states.insert(key, state.clone());
+        Some(state)
+    }
+
+    /// Remember the latest dragged value and commit it after a short pause, so
+    /// a drag does not write the settings file on every pixel.
+    fn queue_slider_value(&mut self, key: &'static str, value: f64, cx: &mut Context<Self>) {
+        if let Some((pending_key, _)) = self.pending_slider {
+            if pending_key != key {
+                self.commit_pending_slider(cx);
+            }
+        }
+        self.pending_slider = Some((key, value));
+        self.slider_commit = cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(SLIDER_COMMIT_DELAY).await;
+            let _ = this.update(cx, |this, cx| this.commit_pending_slider(cx));
+        });
+    }
+
+    pub(crate) fn commit_pending_slider(&mut self, cx: &mut Context<Self>) {
+        let Some((key, value)) = self.pending_slider.take() else {
+            return;
+        };
+        self.slider_commit = Task::ready(());
+        self.write_slider_value(key, value, cx);
+    }
+
+    /// Write a slider value through the single field write path, rounding to
+    /// whole numbers for integer fields and to hundredths otherwise.
+    fn write_slider_value(&mut self, key: &'static str, value: f64, cx: &mut Context<Self>) {
+        let Some(FieldControl::Slider { min, max, int, .. }) =
+            self.field_by_path(key).map(|f| f.control)
+        else {
+            return;
+        };
+        let value = value.clamp(min, max);
+        let json = if int {
+            Value::from(value.round() as i64)
+        } else {
+            Value::from((value * 100.0).round() / 100.0)
+        };
+        self.set_field_value(key, json, cx);
+    }
+
+    /// Keyboard adjustment of a focused slider row: one step per arrow press.
+    pub(crate) fn step_slider(
+        &mut self,
+        key: &'static str,
+        direction: f64,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(field) = self.field_by_path(key).copied() else {
+            return;
+        };
+        let FieldControl::Slider { min, step, .. } = field.control else {
+            return;
+        };
+        let current = self
+            .field_value(&field, cx)
+            .and_then(|value| value.as_f64())
+            .unwrap_or(min);
+        self.write_slider_value(key, current + direction * step, cx);
+    }
+
     // ── key handling ──────────────────────────────────────────────────────
 
     pub(crate) fn on_key(
@@ -1312,6 +1483,11 @@ impl SettingsView {
     ) {
         let ks = &ev.keystroke;
         let key = ks.key.as_str();
+        if ks.modifiers.platform && matches!(key, "[" | "]") {
+            self.step_visited(if key == "[" { -1 } else { 1 }, cx);
+            cx.stop_propagation();
+            return;
+        }
         if self.dropdown.is_some() {
             match key {
                 "escape" => {
@@ -1439,11 +1615,27 @@ impl SettingsView {
     }
 }
 
+/// Chip hue and glyph for a sidebar category; owner pages and unknown keys
+/// fall back to a neutral gear.
+fn category_style(key: &str) -> (ChipHue, IconName) {
+    match key {
+        "general" => (ChipHue::GRAY, IconName::Settings),
+        "appearance" => (ChipHue::BLUE, IconName::Sparkles),
+        "themes" => (ChipHue::PINK, IconName::Palette),
+        "editor" => (ChipHue::ORANGE, IconName::Code),
+        "languages-tools" => (ChipHue::GREEN, IconName::ToolHammer),
+        "search-files" => (ChipHue::TEAL, IconName::Search),
+        "terminal" => (ChipHue::INDIGO, IconName::Terminal),
+        "keymap" => (ChipHue::AMBER, IconName::Keyboard),
+        "hosts" => (ChipHue::PURPLE, IconName::Server),
+        _ => (ChipHue::GRAY, IconName::Settings),
+    }
+}
+
 impl SettingsView {
-    /// Render one category tree row plus its optional section scroll anchors.
-    /// The settings window uses the shared UI-kit tree primitive so row density,
-    /// selection, focus and disclosure affordances remain consistent with the
-    /// rest of the native shell.
+    /// Render one category row (colour chip, label, optional disclosure) plus
+    /// its section scroll anchors. Selection is the shared sunken fill with a
+    /// semibold label; the whole row is keyboard focusable.
     fn render_area_navigation(
         &mut self,
         i: usize,
@@ -1459,24 +1651,24 @@ impl SettingsView {
         let view = cx.entity();
         let target = NavigationTarget::area(i);
         let focus_handle = self.navigation_focus_handle(target, cx);
-        let state = TreeRowState {
-            selected: is_active,
-            ..Default::default()
-        };
-        let mut row = tree_row(
+        let (hue, glyph) = category_style(page_key);
+        let ring = c.ring;
+        let muted = c.muted;
+        let palette = *c;
+        let mut row = ListItem::new(
             SharedString::from(format!("settings-area-{}", page_key)),
             *c,
-            page_title,
         )
-        .label_tint(c.sidebar_fg)
-        .state(state)
-        .tab_index(0)
-        .expanded(has_sections.then_some(expanded))
-        .chevron(has_sections.then_some(if expanded {
-            IconName::ChevronDown
-        } else {
-            IconName::ChevronRight
-        }))
+        .selected(is_active)
+        .child(category_chip(*c, hue, glyph))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .child(page_title),
+        )
         .on_click({
             let view = view.clone();
             let focus_handle = focus_handle.clone();
@@ -1484,21 +1676,19 @@ impl SettingsView {
                 window.focus(&focus_handle);
                 view.update(app, |this, cx| this.go_to_area(i, cx));
             }
-        });
-        if has_sections {
-            row = row.on_chevron_click({
-                let view = view.clone();
-                move |_event, _window, app| {
-                    view.update(app, |this, cx| this.toggle_area_expanded(i, cx));
-                }
-            });
-        }
-        row = row.extra({
+        })
+        .extra({
             let view = view.clone();
             let focus_handle = focus_handle.clone();
             move |element| {
-                element.track_focus(&focus_handle).on_key_down(
-                    move |event: &KeyDownEvent, window, app| {
+                element
+                    .h(palette.control_space(32.0))
+                    .border_1()
+                    .border_color(gpui::transparent_black())
+                    .tab_index(0)
+                    .focus(move |style| style.border_color(ring))
+                    .track_focus(&focus_handle)
+                    .on_key_down(move |event: &KeyDownEvent, window, app| {
                         view.update(app, |this, cx| {
                             if this.handle_navigation_key(
                                 target,
@@ -1509,10 +1699,29 @@ impl SettingsView {
                                 cx.stop_propagation();
                             }
                         });
-                    },
-                )
+                    })
             }
         });
+        if has_sections {
+            let chevron = if expanded {
+                IconName::ChevronDown
+            } else {
+                IconName::ChevronRight
+            };
+            row = row.trailing(
+                div()
+                    .id(SharedString::from(format!("settings-disclose-{page_key}")))
+                    .p(palette.space(2.0))
+                    .child(chevron.svg(muted).size(px(12.0)))
+                    .on_click({
+                        let view = view.clone();
+                        move |_event, _window, app| {
+                            view.update(app, |this, cx| this.toggle_area_expanded(i, cx));
+                            app.stop_propagation();
+                        }
+                    }),
+            );
+        }
 
         let sub = if expanded && has_sections {
             let mut section_rows = Vec::new();
@@ -1522,14 +1731,11 @@ impl SettingsView {
                 let view = cx.entity();
                 let click_view = view.clone();
                 section_rows.push(
-                    tree_row(
+                    ListItem::new(
                         SharedString::from(format!("settings-section-{i}-{label}")),
                         *c,
-                        label,
                     )
-                    .depth(1)
-                    .tab_index(0)
-                    .state(TreeRowState::default())
+                    .child(div().text_size(palette.control_space(12.0)).child(label))
                     .on_click({
                         let focus_handle = focus_handle.clone();
                         move |_event, window, app| {
@@ -1540,8 +1746,16 @@ impl SettingsView {
                     .extra({
                         let view = view.clone();
                         move |element| {
-                            element.track_focus(&focus_handle).on_key_down(
-                                move |event: &KeyDownEvent, window, app| {
+                            element
+                                .pl(palette.control_space(38.0))
+                                .min_h(palette.control_space(24.0))
+                                .text_color(palette.muted)
+                                .border_1()
+                                .border_color(gpui::transparent_black())
+                                .tab_index(0)
+                                .focus(move |style| style.border_color(ring))
+                                .track_focus(&focus_handle)
+                                .on_key_down(move |event: &KeyDownEvent, window, app| {
                                     view.update(app, |this, cx| {
                                         if this.handle_navigation_key(
                                             target,
@@ -1552,8 +1766,7 @@ impl SettingsView {
                                             cx.stop_propagation();
                                         }
                                     });
-                                },
-                            )
+                                })
                         }
                     }),
                 );
@@ -1642,11 +1855,15 @@ impl Render for SettingsView {
             .iter()
             .map(|page| (page.key, page.title))
             .collect();
-        let sidebar_items: Vec<_> = sidebar_pages
-            .into_iter()
-            .enumerate()
-            .map(|(i, (key, title))| self.render_area_navigation(i, key, title, &c, cx))
-            .collect();
+        let mut sidebar_items: Vec<gpui::AnyElement> = Vec::new();
+        for (i, (key, title)) in sidebar_pages.into_iter().enumerate() {
+            // Owner pages (Keymap, Hosts) sit below the value categories,
+            // set apart by a gap.
+            if i == labonair_settings::FIRST_OWNER_PAGE_INDEX {
+                sidebar_items.push(div().h(c.space(14.0)).into_any_element());
+            }
+            sidebar_items.push(self.render_area_navigation(i, key, title, &c, cx));
+        }
         let sidebar_body = div()
             .id("settings-sidebar-list")
             .flex()
@@ -1749,44 +1966,65 @@ impl Render for SettingsView {
 }
 
 impl SettingsView {
-    /// Header: a thin chrome strip, not a toolbar. Left edge is padded clear
-    /// of the OS traffic lights; it carries only the sub-page back-arrow +
-    /// breadcrumb (when a `SubPageLink` was followed). The single action —
-    /// "Edit in config.json" — sits at the right edge. No in-window close
-    /// button: the traffic lights close the window
-    /// (`docs/architecture.md` §8.3).
+    /// Header: back/forward through visited pages, the page title, then the
+    /// scope selector and the one JSON action at the right edge. The left edge
+    /// is padded clear of the OS traffic lights; there is no in-window close
+    /// button (`docs/architecture.md` §8.3).
     pub(crate) fn render_header(&self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
         let page = &self.pages[self.active_area];
-        let crumb: Option<gpui::AnyElement> = self.active_subpage.map(|i| {
-            let sub_title = self.pages[self.active_area].sub_pages[i].title;
-            div()
-                .flex()
-                .items_center()
-                .gap_1()
-                .text_color(c.fg)
-                .font_weight(gpui::FontWeight::SEMIBOLD)
-                .text_size(px(12.5))
-                .child(
-                    icon_button_builder("settings-back", *c, IconName::ArrowLeft)
-                        .variant(ButtonVariant::Subtle)
-                        .size(ButtonSize::IconXs)
-                        .shape(IconButtonShape::Square)
-                        .tooltip("Back to settings category")
-                        .render()
-                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                            this.go_back_to_main_page(cx);
-                        }))
-                        .on_key_down(cx.listener(|this, event: &KeyDownEvent, _w, cx| {
-                            if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                                this.go_back_to_main_page(cx);
-                                cx.stop_propagation();
-                            }
-                        })),
-                )
-                .child(SharedString::from(format!(
-                    "{} \u{203A} {}",
-                    page.title, sub_title
-                )))
+        let title = match self.active_subpage {
+            Some(i) => format!("{} \u{203A} {}", page.title, page.sub_pages[i].title),
+            None => page.title.to_string(),
+        };
+        let nav_button =
+            |id: &'static str, icon: IconName, tooltip: &'static str, enabled: bool| {
+                icon_button_builder(id, *c, icon)
+                    .variant(ButtonVariant::Subtle)
+                    .size(ButtonSize::IconXs)
+                    .shape(IconButtonShape::Square)
+                    .disabled(!enabled)
+                    .tooltip(tooltip)
+            };
+        let back = nav_button(
+            "settings-history-back",
+            IconName::ArrowLeft,
+            "Back",
+            self.can_go_back(),
+        )
+        .render();
+        let forward = nav_button(
+            "settings-history-forward",
+            IconName::ArrowRight,
+            "Forward",
+            self.can_go_forward(),
+        )
+        .render();
+        let back = if self.can_go_back() {
+            back.on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.step_visited(-1, cx)))
+        } else {
+            back
+        };
+        let forward = if self.can_go_forward() {
+            forward.on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.step_visited(1, cx)))
+        } else {
+            forward
+        };
+        let up: Option<gpui::AnyElement> = self.active_subpage.map(|_| {
+            icon_button_builder("settings-back", *c, IconName::ArrowUp)
+                .variant(ButtonVariant::Subtle)
+                .size(ButtonSize::IconXs)
+                .shape(IconButtonShape::Square)
+                .tooltip("Back to settings category")
+                .render()
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                    this.go_back_to_main_page(cx);
+                }))
+                .on_key_down(cx.listener(|this, event: &KeyDownEvent, _w, cx| {
+                    if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                        this.go_back_to_main_page(cx);
+                        cx.stop_propagation();
+                    }
+                }))
                 .into_any_element()
         });
         let has_project = cx
@@ -1817,43 +2055,65 @@ impl SettingsView {
             .flex_1()
             .min_w_0()
             .items_center()
-            .gap(c.space(12.0))
-            .child(scope_control)
-            .children(crumb);
+            .gap(c.space(8.0))
+            .child(back)
+            .child(forward)
+            .child(
+                div()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .pl(c.space(4.0))
+                    .text_size(c.control_space(15.0))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(c.fg)
+                    .child(SharedString::from(title)),
+            )
+            .children(up);
 
         div()
-            .h(c.space(44.0))
+            .h(c.space(52.0))
             .flex_shrink_0()
             .flex()
             .items_center()
             .justify_between()
+            .gap(c.space(12.0))
             .pl(c.space(24.0))
             .pr(c.space(24.0))
             .child(left)
             .child(
-                // T20-003: `button()` (`Outline`/`Xs`) — the one header action.
-                button(
-                    "settings-open-json",
-                    *c,
-                    ButtonVariant::Outlined,
-                    ButtonSize::Sm,
-                )
-                .tab_index(0)
-                .focus(|style| style.border_1().border_color(c.ring))
-                .child(json_label)
-                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                    this.services
-                        .open_settings_file(this.scope.file_target(), window, cx);
-                }))
-                .on_key_down(cx.listener(
-                    move |this, event: &KeyDownEvent, window, cx| {
-                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                h_stack()
+                    .items_center()
+                    .gap(c.space(8.0))
+                    .child(scope_control)
+                    .child(
+                        // T20-003: `button()` (`Outline`/`Xs`) — the one header action.
+                        button(
+                            "settings-open-json",
+                            *c,
+                            ButtonVariant::Outlined,
+                            ButtonSize::Sm,
+                        )
+                        .tab_index(0)
+                        .focus(|style| style.border_1().border_color(c.ring))
+                        .child(json_label)
+                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                             this.services
                                 .open_settings_file(this.scope.file_target(), window, cx);
-                            cx.stop_propagation();
-                        }
-                    },
-                )),
+                        }))
+                        .on_key_down(cx.listener(
+                            move |this, event: &KeyDownEvent, window, cx| {
+                                if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                                    this.services.open_settings_file(
+                                        this.scope.file_target(),
+                                        window,
+                                        cx,
+                                    );
+                                    cx.stop_propagation();
+                                }
+                            },
+                        )),
+                    ),
             )
             .into_any_element()
     }

@@ -8,6 +8,7 @@
 
 use crate::view::*;
 use gpui_component::Disableable;
+use labonair_settings::SettingsSurfaceMode;
 use labonair_settings_content::file_manager::{default_sftp_columns, SftpColumn};
 use labonair_ui_kit::icon_button_builder;
 
@@ -254,16 +255,20 @@ impl SettingsView {
     }
 
     fn render_field(
-        &self,
+        &mut self,
         field: &AnyField,
         source: SettingSource,
         value: Option<Value>,
-        decoration: SettingsRowDecoration,
+        window: &mut Window,
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let json_path = field.json_path;
         let field_disabled = field_disabled_in_scope(self.scope, json_path);
+        // Tile groups are wide, so their row puts the control under the title.
+        let mut control_below = false;
+        // Slider read-outs carry their own unit.
+        let mut unit_in_control = false;
         let control = match field.control {
             FieldControl::Switch => {
                 let on = value.as_ref().and_then(|v| v.as_bool()).unwrap_or(false);
@@ -577,8 +582,68 @@ impl SettingsView {
             FieldControl::SftpColumns => {
                 self.render_sftp_columns_control(json_path, value, field_disabled, c, cx)
             }
+            FieldControl::Segmented(opts) => {
+                let current = value
+                    .as_ref()
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_owned();
+                let view = cx.entity();
+                let mut segments =
+                    segmented_control(SharedString::from(format!("seg-{json_path}")), *c, current)
+                        .variant(SegmentVariant::Outline)
+                        .size(SegmentSize::Sm)
+                        .disabled(field_disabled);
+                for (token, label) in opts {
+                    segments = segments.segment(*token, *label);
+                }
+                segments
+                    .on_select(move |token, _window, app| {
+                        let token = token.to_string();
+                        view.update(app, |this, cx| {
+                            this.set_field_value(json_path, Value::String(token), cx);
+                        });
+                    })
+                    .into_any_element()
+            }
+            FieldControl::Slider { min, int, .. } => {
+                unit_in_control = true;
+                let current = value.as_ref().and_then(|v| v.as_f64()).unwrap_or(min);
+                let readout = slider_readout(current, int, field.meta.unit);
+                match self.slider_state(field, current, window, cx) {
+                    Some(state) => {
+                        slider_control(&state, *c, readout, field_disabled).into_any_element()
+                    }
+                    None => div().into_any_element(),
+                }
+            }
+            FieldControl::Tiles(options) => {
+                control_below = true;
+                let current = value
+                    .as_ref()
+                    .and_then(tile_token)
+                    .unwrap_or_default()
+                    .to_owned();
+                let stored = value.clone();
+                let view = cx.entity();
+                let mut group = preview_tile_group(
+                    SharedString::from(format!("tiles-{json_path}")),
+                    *c,
+                    current,
+                )
+                .disabled(field_disabled);
+                for option in options {
+                    group = group.tile(preview_tile(option.token, option.label, option.preview));
+                }
+                group
+                    .on_select(move |token, _window, app| {
+                        let next = tile_value(stored.as_ref(), token);
+                        view.update(app, |this, cx| this.set_field_value(json_path, next, cx));
+                    })
+                    .into_any_element()
+            }
         };
-        let control = if let Some(unit) = field.meta.unit {
+        let control = if let (Some(unit), false) = (field.meta.unit, unit_in_control) {
             div()
                 .flex()
                 .items_center()
@@ -594,64 +659,6 @@ impl SettingsView {
         // T19-007: a search jump briefly pulses the target row so the user
         // can find it among a page's other fields.
         let highlighted = self.highlight == Some(json_path);
-
-        // Ordinary values use one continuous surface. A single bottom
-        // divider keeps the list scannable without turning every section into
-        // a nested card, matching the native settings design direction.
-        let row = div()
-            .id(SharedString::from(format!("field-row-{json_path}")))
-            .group("settings-field-row")
-            .flex()
-            .w_full()
-            .min_w_0()
-            .items_center()
-            .justify_between()
-            .gap(c.space(24.0))
-            .pt(c.control_space(16.0))
-            .pb(c.control_space(if decoration.section_end { 40.0 } else { 16.0 }))
-            .when(decoration.bottom_divider, |row| {
-                row.border_b_1().border_color(c.border)
-            })
-            .when(highlighted, |d| d.bg(c.selected_fill.opacity(0.7)));
-
-        let mut title_row = h_stack().items_center().gap(c.space(6.0)).child(
-            div()
-                .text_color(c.fg)
-                .text_size(px(13.0))
-                .child(SharedString::from(field.meta.title)),
-        );
-        if let Some(modified_in) = modified_in {
-            title_row = title_row
-                .child(
-                    icon_button_builder(
-                        SharedString::from(format!("reset-{json_path}")),
-                        *c,
-                        IconName::Undo,
-                    )
-                    .variant(ButtonVariant::Subtle)
-                    .size(ButtonSize::IconXs)
-                    .shape(IconButtonShape::Square)
-                    .tooltip("Reset to default")
-                    .render()
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        this.reset_field(json_path, cx);
-                    }))
-                    .on_key_down(cx.listener(
-                        move |this, event: &KeyDownEvent, _window, cx| {
-                            if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                                this.reset_field(json_path, cx);
-                                cx.stop_propagation();
-                            }
-                        },
-                    )),
-                )
-                .child(
-                    div()
-                        .text_size(px(11.0))
-                        .text_color(c.muted)
-                        .child(SharedString::from(format!("— Modified in {modified_in}"))),
-                );
-        }
 
         let copied_link = self.last_copied_link_path == Some(json_path);
         let copy_link = icon_button_builder(
@@ -681,46 +688,105 @@ impl SettingsView {
         .invisible()
         .group_hover("settings-field-row", |style| style.visible());
 
-        let mut info = v_stack()
-            .relative()
-            .gap(c.space(4.0))
-            .flex_1()
-            .min_w_0()
-            .max_w(gpui::relative(0.66))
-            .child(
-                div()
-                    .absolute()
-                    .top(px(0.0))
-                    .left(px(-24.0))
-                    .child(copy_link),
-            )
-            .child(title_row)
-            .child(
-                div()
-                    .text_size(px(12.0))
-                    .text_color(c.muted)
-                    .child(SharedString::from(field.meta.description)),
+        // Reset sits beside the control and appears only for overridden values.
+        let mut actions = h_stack().items_center().gap(c.space(2.0)).child(copy_link);
+        if modified_in.is_some() {
+            actions = actions.child(
+                icon_button_builder(
+                    SharedString::from(format!("reset-{json_path}")),
+                    *c,
+                    IconName::Undo,
+                )
+                .variant(ButtonVariant::Subtle)
+                .size(ButtonSize::IconXs)
+                .shape(IconButtonShape::Square)
+                .tooltip("Reset to default")
+                .render()
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    this.reset_field(json_path, cx);
+                }))
+                .on_key_down(cx.listener(
+                    move |this, event: &KeyDownEvent, _window, cx| {
+                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                            this.reset_field(json_path, cx);
+                            cx.stop_propagation();
+                        }
+                    },
+                )),
             );
+        }
+
+        // Secondary notes under the description: hint, override source and the
+        // project-scope explanation.
+        let mut notes = v_stack().gap(c.space(2.0));
         if let Some(hint) = field.meta.hint {
-            info = info.child(
+            notes = notes.child(
                 div()
-                    .text_size(px(11.0))
+                    .text_size(c.control_space(11.0))
                     .text_color(c.muted.opacity(0.85))
                     .child(hint),
             );
         }
-        if field_disabled {
-            info = info.child(
+        if let Some(modified_in) = modified_in {
+            notes = notes.child(
                 div()
-                    .text_size(px(11.0))
+                    .text_size(c.control_space(11.0))
+                    .text_color(c.muted)
+                    .child(SharedString::from(format!("Modified in {modified_in}"))),
+            );
+        }
+        if field_disabled {
+            notes = notes.child(
+                div()
+                    .text_size(c.control_space(11.0))
                     .text_color(c.muted)
                     .child("Unavailable in Project settings."),
             );
         }
 
-        let actions = h_stack().items_center().gap(c.space(8.0)).child(control);
-        row.child(info)
-            .child(div().ml_auto().flex_shrink_0().child(actions))
+        let row = settings_row(
+            SharedString::from(format!("row-{json_path}")),
+            *c,
+            SharedString::from(field.meta.title),
+        )
+        .description(SharedString::from(field.meta.description))
+        .extra(notes)
+        .reset(actions);
+        let content = if control_below {
+            v_stack()
+                .child(row)
+                .child(
+                    div()
+                        .px(c.control_space(16.0))
+                        .pb(c.control_space(16.0))
+                        .child(control),
+                )
+                .into_any_element()
+        } else {
+            row.control(control).into_any_element()
+        };
+
+        let is_slider = matches!(field.control, FieldControl::Slider { .. });
+        div()
+            .id(SharedString::from(format!("field-row-{json_path}")))
+            .group("settings-field-row")
+            .w_full()
+            .min_w_0()
+            .when(highlighted, |d| d.bg(c.selected_fill.opacity(0.7)))
+            .when(is_slider && !field_disabled, |d| {
+                d.tab_index(0)
+                    .focus(|style| style.bg(c.accent))
+                    .on_key_down(cx.listener(move |this, event: &KeyDownEvent, _w, cx| {
+                        let direction = match event.keystroke.key.as_str() {
+                            "left" | "down" => -1.0,
+                            "right" | "up" => 1.0,
+                            _ => return,
+                        };
+                        this.step_slider(json_path, direction, cx);
+                        cx.stop_propagation();
+                    }))
+            })
+            .child(content)
             .into_any_element()
     }
 
@@ -925,21 +991,27 @@ impl SettingsView {
 
     fn render_search_body(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
         let query = self.search.trim().to_owned();
-        let mut content_rows = Vec::new();
+        let mut blocks: Vec<SectionBlock> = Vec::new();
         let mut last_page = None;
         for row in self.search_results.clone() {
             if last_page != Some(row.page_index) {
                 last_page = Some(row.page_index);
-                content_rows.push(ContentRow::Header(row.page_title));
+                blocks.push(SectionBlock {
+                    title: Some(row.page_title),
+                    items: Vec::new(),
+                });
             }
+            let Some(block) = blocks.last_mut() else {
+                continue;
+            };
             match row.target {
                 SearchTarget::Field(index) => {
                     if let Some(field) = self.all_fields.get(index).copied() {
-                        content_rows.push(ContentRow::Field(field));
+                        block.items.push(SectionItem::Field(field));
                     }
                 }
                 SearchTarget::OwnerSurface(surface) => {
-                    content_rows.push(ContentRow::OwnerSurface(surface));
+                    block.items.push(SectionItem::OwnerSurface(surface));
                 }
             }
         }
@@ -949,21 +1021,21 @@ impl SettingsView {
             .pb(c.space(16.0))
             .child(
                 div()
-                    .text_size(px(22.0))
-                    .font_weight(gpui::FontWeight::BOLD)
+                    .text_size(c.control_space(15.0))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(c.fg)
                     .child("Search settings"),
             )
             .child(
                 div()
-                    .text_size(px(12.0))
+                    .text_size(c.control_space(12.0))
                     .text_color(c.muted)
                     .child(SharedString::from(format!(
                         "Results for \u{201C}{query}\u{201D}"
                     ))),
             );
 
-        if content_rows.is_empty() {
+        if blocks.is_empty() {
             self.prepare_content_list("search-empty".to_string(), 0);
             return div()
                 .id("settings-search-scroll")
@@ -980,38 +1052,15 @@ impl SettingsView {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .text_size(px(13.0))
+                        .text_size(c.control_space(13.0))
                         .text_color(c.muted)
                         .child("No setting found for this search."),
                 )
                 .into_any_element();
         }
 
-        self.prepare_content_list(format!("search:{query}"), content_rows.len());
-        let list_state = self.content_list.clone();
-        let rows = content_rows;
-        let view = cx.entity();
-        let palette = *c;
-        let list = list(list_state, move |index, _window, app| {
-            let decoration = settings_row_decoration(&rows, index);
-            match rows[index] {
-                ContentRow::Header(label) => view.update(app, |this, cx| {
-                    this.render_section_header(label, &palette, cx)
-                }),
-                ContentRow::Field(field) => view.update(app, |this, cx| {
-                    let source = this.field_source(&field, cx);
-                    let value = this.field_value(&field, cx);
-                    this.render_field(&field, source, value, decoration, &palette, cx)
-                }),
-                ContentRow::OwnerSurface(surface) => view.update(app, |this, cx| {
-                    this.render_owner_surface_row(surface, decoration, &palette, cx)
-                }),
-                ContentRow::Title(_) => div().into_any_element(),
-            }
-        })
-        .flex_1()
-        .min_h_0();
-
+        self.prepare_content_list(format!("search:{query}"), blocks.len());
+        let list = self.block_list(blocks, false, c, cx);
         div()
             .id("settings-search-scroll")
             .flex_1()
@@ -1025,29 +1074,11 @@ impl SettingsView {
             .into_any_element()
     }
 
-    /// Render the active `PageBody::Generated` page/sub-page: collapsible
-    /// disclosure sections + a scroll-spy jump bar + a trailing "Other"
-    /// fallback for any field not placed by a curated group.
+    /// Render the active page as grouped cards: one `settings_group` card per
+    /// section (title above it), with a trailing "Other" card for any field no
+    /// curated group placed. Each section is one virtualized list item.
     fn render_generated_body(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let page = &self.pages[self.active_area];
         let PageBody::Generated(items) = self.active_body();
-        let items: Vec<SettingsPageItemOwned> =
-            items.iter().map(SettingsPageItemOwned::from).collect();
-        let page_title = self
-            .active_subpage
-            .map(|index| self.pages[self.active_area].sub_pages[index].title)
-            .unwrap_or(page.title);
-        // Direct-child index of each section header within the scroll
-        // container below — this is what `ListState::scroll_to_reveal_item`
-        // addresses, so a sidebar sub-entry click (`scroll_to_section`) or a
-        // search jump can scroll the content to it.
-        let mut section_rows: Vec<(usize, &'static str)> = Vec::new();
-        // T19-007: a search jump asks to land on a specific field's row
-        // (`pending_scroll`) — recorded here so it can be scrolled to once
-        // all rows are built.
-        let pending_scroll = self.pending_scroll;
-        let mut scroll_to_row: Option<usize> = None;
-
         // The trailing "Other" fallback belongs on the category's main page only —
         // a sub-page shows just its own curated groups.
         let leftover: Vec<AnyField> = if self.active_subpage.is_none() {
@@ -1058,60 +1089,23 @@ impl SettingsView {
         } else {
             Vec::new()
         };
+        let blocks = section_blocks(items, &self.all_fields, &leftover);
 
-        // Resolve every placed `Item` key to its `AnyField` once, then batch
-        // the store lookups for all rows (placed + "Other") in a single pass.
-        let placed: Vec<Option<AnyField>> = items
-            .iter()
-            .map(|item| match item {
-                SettingsPageItemOwned::SectionHeader(_)
-                | SettingsPageItemOwned::OwnerSurface(_) => None,
-                SettingsPageItemOwned::Item(path) => self
-                    .all_fields
+        // A sidebar anchor click or a search jump asks to land on a section or
+        // a specific field; both resolve to a block index.
+        let pending_scroll = self.pending_scroll;
+        let scroll_to_block = pending_scroll.and_then(|path| {
+            blocks.iter().position(|block| {
+                block
+                    .items
                     .iter()
-                    .find(|field| field.json_path == *path)
-                    .copied(),
+                    .any(|item| matches!(item, SectionItem::Field(f) if f.json_path == path))
             })
-            .collect();
-        // Resolve headers + fields that actually render into one flat
-        // sequence first so sidebar section anchors and field rows share one
-        // stable scroll order.
-        let mut resolved = vec![ContentRow::Title(page_title)];
-        for (item, field) in items.iter().zip(placed.iter()) {
-            match item {
-                SettingsPageItemOwned::SectionHeader(label) => {
-                    resolved.push(ContentRow::Header(label));
-                }
-                SettingsPageItemOwned::Item(_) => {
-                    if let Some(field) = field {
-                        resolved.push(ContentRow::Field(*field));
-                    }
-                }
-                SettingsPageItemOwned::OwnerSurface(surface) => {
-                    resolved.push(ContentRow::OwnerSurface(*surface));
-                }
-            }
-        }
-        if !leftover.is_empty() {
-            resolved.push(ContentRow::Header("Other"));
-            for field in &leftover {
-                resolved.push(ContentRow::Field(*field));
-            }
-        }
-
-        for (index, entry) in resolved.iter().enumerate() {
-            match entry {
-                ContentRow::Header(label) => {
-                    section_rows.push((index, label));
-                }
-                ContentRow::Field(field) => {
-                    if pending_scroll == Some(field.json_path) {
-                        scroll_to_row = Some(index);
-                    }
-                }
-                ContentRow::Title(_) | ContentRow::OwnerSurface(_) => {}
-            }
-        }
+        });
+        let section_block = self
+            .scroll_to_section
+            .take()
+            .and_then(|target| blocks.iter().position(|block| block.title == Some(target)));
 
         self.prepare_content_list(
             format!(
@@ -1119,48 +1113,17 @@ impl SettingsView {
                 self.active_area,
                 self.active_subpage.unwrap_or(usize::MAX)
             ),
-            resolved.len(),
+            blocks.len(),
         );
-        if let Some(row) = scroll_to_row {
-            self.content_list.scroll_to_reveal_item(row);
+        if let Some(index) = scroll_to_block {
+            self.content_list.scroll_to_reveal_item(index);
             self.pending_scroll = None;
         }
-        if let Some(target) = self.scroll_to_section.take() {
-            if let Some((row, _)) = section_rows.iter().find(|(_, l)| *l == target) {
-                self.content_list.scroll_to_reveal_item(*row);
-            }
+        if let Some(index) = section_block {
+            self.content_list.scroll_to_reveal_item(index);
         }
 
-        let list_state = self.content_list.clone();
-        let rows = resolved;
-        let view = cx.entity();
-        let palette = *c;
-        let list = list(list_state, move |index, _window, app| {
-            let decoration = settings_row_decoration(&rows, index);
-            match rows[index] {
-                ContentRow::Title(title) => div()
-                    .pb(palette.space(20.0))
-                    .text_size(px(22.0))
-                    .font_weight(gpui::FontWeight::BOLD)
-                    .text_color(palette.fg)
-                    .child(SharedString::from(title))
-                    .into_any_element(),
-                ContentRow::Header(label) => view.update(app, |this, cx| {
-                    this.render_section_header(label, &palette, cx)
-                }),
-                ContentRow::Field(field) => view.update(app, |this, cx| {
-                    let source = this.field_source(&field, cx);
-                    let value = this.field_value(&field, cx);
-                    this.render_field(&field, source, value, decoration, &palette, cx)
-                }),
-                ContentRow::OwnerSurface(surface) => view.update(app, |this, cx| {
-                    this.render_owner_surface_row(surface, decoration, &palette, cx)
-                }),
-            }
-        })
-        .flex_1()
-        .min_h_0();
-
+        let list = self.block_list(blocks, true, c, cx);
         div()
             .id("settings-scroll")
             .flex_1()
@@ -1168,9 +1131,35 @@ impl SettingsView {
             .w_full()
             .flex()
             .flex_col()
-            .p(c.space(24.0))
+            .px(c.space(24.0))
+            .pt(c.space(8.0))
             .child(list)
             .into_any_element()
+    }
+
+    /// The virtualized list of section cards. `embed` lets inline owner
+    /// surfaces render their view (normal pages); search results show a link.
+    fn block_list(
+        &mut self,
+        blocks: Vec<SectionBlock>,
+        embed: bool,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let list_state = self.content_list.clone();
+        let view = cx.entity();
+        let palette = *c;
+        list(list_state, move |index, window, app| {
+            let Some(block) = blocks.get(index) else {
+                return div().into_any_element();
+            };
+            view.update(app, |this, cx| {
+                this.render_block(index, block, embed, window, &palette, cx)
+            })
+        })
+        .flex_1()
+        .min_h_0()
+        .into_any_element()
     }
 
     fn prepare_content_list(&mut self, key: String, count: usize) {
@@ -1182,10 +1171,57 @@ impl SettingsView {
         }
     }
 
+    /// One section: a 15px semibold title above a `settings_group` card of rows.
+    fn render_block(
+        &mut self,
+        index: usize,
+        block: &SectionBlock,
+        embed: bool,
+        window: &mut Window,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let mut group = settings_group(
+            SharedString::from(format!("settings-group-{}-{index}", self.active_area)),
+            *c,
+        );
+        for item in &block.items {
+            let row = match item {
+                SectionItem::Field(field) => {
+                    let source = self.field_source(field, cx);
+                    let value = self.field_value(field, cx);
+                    self.render_field(field, source, value, window, c, cx)
+                }
+                SectionItem::OwnerSurface(id) => {
+                    self.render_owner_surface_row(*id, embed, window, c, cx)
+                }
+            };
+            group = group.row(row);
+        }
+        v_stack()
+            .w_full()
+            .gap(c.space(8.0))
+            .pb(c.space(24.0))
+            .children(block.title.map(|title| {
+                div()
+                    .px(c.control_space(4.0))
+                    .text_size(c.control_space(15.0))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(c.fg)
+                    .child(SharedString::from(title))
+            }))
+            .child(group)
+            .into_any_element()
+    }
+
+    /// An owner surface row. Inline surfaces embed the owner's view (the host
+    /// card supplies the surface; the view contributes rows); link surfaces and
+    /// search results show a title, description and one button.
     fn render_owner_surface_row(
-        &self,
+        &mut self,
         id: SettingsSurfaceId,
-        decoration: SettingsRowDecoration,
+        embed: bool,
+        window: &mut Window,
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
@@ -1196,134 +1232,134 @@ impl SettingsView {
             );
             return div().into_any_element();
         };
-        let button_id = SharedString::from(format!("settings-surface-{}", id.as_str()));
-        let button = button(button_id, *c, ButtonVariant::OutlinedGhost, ButtonSize::Xs)
-            .child(surface.action_label)
-            .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                if let Err(error) = this.services.open_surface(id, cx) {
-                    tracing::error!("could not open Settings surface: {error}");
-                    this.notify_error(cx, "Settings", error);
+        let inline = surface.mode == SettingsSurfaceMode::Inline;
+        if embed && inline {
+            if !self.inline_views.contains_key(&id) {
+                if let Some(view) = self.services.inline_surface(id, window, cx) {
+                    self.inline_views.insert(id, view);
                 }
-            }))
+            }
+            if let Some(view) = self.inline_views.get(&id) {
+                return div()
+                    .id(SharedString::from(format!(
+                        "settings-inline-{}",
+                        id.as_str()
+                    )))
+                    .w_full()
+                    .min_w_0()
+                    .child(view.clone())
+                    .into_any_element();
+            }
+        }
+        let button_id = SharedString::from(format!("settings-surface-{}", id.as_str()));
+        let label = if inline { "Show" } else { surface.action_label };
+        let activate = move |this: &mut Self, cx: &mut Context<Self>| {
+            if inline {
+                this.show_surface(id, cx);
+            } else if let Err(error) = this.services.open_surface(id, cx) {
+                tracing::error!("could not open Settings surface: {error}");
+                this.notify_error(cx, "Settings", error);
+            }
+        };
+        let button = button(button_id, *c, ButtonVariant::OutlinedGhost, ButtonSize::Xs)
+            .child(label)
+            .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| activate(this, cx)))
             .on_key_down(cx.listener(move |this, event: &KeyDownEvent, _window, cx| {
                 if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                    if let Err(error) = this.services.open_surface(id, cx) {
-                        tracing::error!("could not open Settings surface: {error}");
-                        this.notify_error(cx, "Settings", error);
-                    }
+                    activate(this, cx);
                     cx.stop_propagation();
                 }
             }));
-
-        div()
-            .id(SharedString::from(format!("settings-row-{}", id.as_str())))
-            .flex()
-            .w_full()
-            .min_w_0()
-            .items_center()
-            .justify_between()
-            .gap(c.space(24.0))
-            .pt(c.control_space(16.0))
-            .pb(c.control_space(if decoration.section_end { 40.0 } else { 16.0 }))
-            .when(decoration.bottom_divider, |row| {
-                row.border_b_1().border_color(c.border)
-            })
-            .child(
-                v_stack()
-                    .gap(c.space(4.0))
-                    .flex_1()
-                    .min_w_0()
-                    .max_w(gpui::relative(0.66))
-                    .child(
-                        div()
-                            .text_color(c.fg)
-                            .text_size(px(13.0))
-                            .child(surface.title),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(12.0))
-                            .text_color(c.muted)
-                            .child(surface.description),
-                    ),
-            )
-            .child(div().ml_auto().flex_shrink_0().child(button))
-            .into_any_element()
+        settings_row(
+            SharedString::from(format!("settings-row-{}", id.as_str())),
+            *c,
+            surface.title,
+        )
+        .description(surface.description)
+        .control(button)
+        .into_any_element()
     }
 
-    /// A static section heading (`docs/architecture.md` §8.3 deviation from
-    /// `settings-guidelines.md` rule 1: no longer a user-collapsible
-    /// disclosure — the section list moved to the sidebar as scroll anchors).
-    /// Whitespace and typography provide the section beat; ordinary values
-    /// remain a continuous, card-free list.
-    fn render_section_header(
-        &self,
-        label: &'static str,
-        c: &Palette,
-        _cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        h_stack()
-            .w_full()
-            .items_center()
-            .gap(c.space(8.0))
-            .child(
-                div()
-                    .text_size(px(13.0))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_color(c.muted)
-                    .child(SharedString::from(label)),
-            )
-            .child(div().h(px(1.0)).flex_1().bg(c.border))
-            .into_any_element()
+    /// Navigate to the page section that hosts `id` (inline surfaces opened
+    /// from a search hit).
+    pub(crate) fn show_surface(&mut self, id: SettingsSurfaceId, cx: &mut Context<Self>) {
+        if let Some((page, section)) = surface_location(&self.pages, id) {
+            self.go_to_section(page, section, cx);
+        }
     }
-
-    // The scroll-spy jump bar that used to sit at the top of every generated
-    // page (image #4's chip row) was removed here per `docs/architecture.md`
-    // §8.3 — section navigation is now the sidebar's expandable sub-entries.
 }
 
-#[derive(Clone, Copy)]
-enum ContentRow {
-    Title(&'static str),
-    Header(&'static str),
+/// One virtualized list item: an optional title and the rows of its card.
+#[derive(Clone)]
+struct SectionBlock {
+    title: Option<&'static str>,
+    items: Vec<SectionItem>,
+}
+
+#[derive(Clone)]
+enum SectionItem {
     Field(AnyField),
     OwnerSurface(SettingsSurfaceId),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct SettingsRowDecoration {
-    bottom_divider: bool,
-    section_end: bool,
-}
-
-fn settings_row_decoration(rows: &[ContentRow], index: usize) -> SettingsRowDecoration {
-    let next_is_row = rows
-        .get(index + 1)
-        .is_some_and(|row| matches!(row, ContentRow::Field(_) | ContentRow::OwnerSurface(_)));
-    SettingsRowDecoration {
-        bottom_divider: next_is_row,
-        section_end: !next_is_row,
+/// Group a page's items into section cards. Rows before the first header form
+/// an untitled card; `leftover` fields become a trailing "Other" card; empty
+/// sections are dropped.
+fn section_blocks(
+    items: &[SettingsPageItem],
+    fields: &[AnyField],
+    leftover: &[AnyField],
+) -> Vec<SectionBlock> {
+    let mut blocks: Vec<SectionBlock> = Vec::new();
+    fn current(blocks: &mut Vec<SectionBlock>) -> &mut SectionBlock {
+        if blocks.is_empty() {
+            blocks.push(SectionBlock {
+                title: None,
+                items: Vec::new(),
+            });
+        }
+        let last = blocks.len() - 1;
+        &mut blocks[last]
     }
-}
-
-/// An owned mirror of `SettingsPageItem` (`&'static str`s only — cheap to
-/// clone out of `self.pages` so the borrow doesn't outlive the loop that
-/// needs `&mut self` for each field's render call).
-enum SettingsPageItemOwned {
-    SectionHeader(&'static str),
-    Item(&'static str),
-    OwnerSurface(SettingsSurfaceId),
-}
-
-impl From<&SettingsPageItem> for SettingsPageItemOwned {
-    fn from(item: &SettingsPageItem) -> Self {
+    for item in items {
         match item {
-            SettingsPageItem::SectionHeader(s) => SettingsPageItemOwned::SectionHeader(s),
-            SettingsPageItem::Item(s) => SettingsPageItemOwned::Item(s),
-            SettingsPageItem::OwnerSurface(surface) => {
-                SettingsPageItemOwned::OwnerSurface(*surface)
+            SettingsPageItem::SectionHeader(label) => blocks.push(SectionBlock {
+                title: Some(label),
+                items: Vec::new(),
+            }),
+            SettingsPageItem::Item(path) => {
+                if let Some(field) = fields.iter().find(|field| field.json_path == *path) {
+                    current(&mut blocks).items.push(SectionItem::Field(*field));
+                }
+            }
+            SettingsPageItem::OwnerSurface(id) => {
+                current(&mut blocks)
+                    .items
+                    .push(SectionItem::OwnerSurface(*id));
             }
         }
+    }
+    if !leftover.is_empty() {
+        blocks.push(SectionBlock {
+            title: Some("Other"),
+            items: leftover.iter().copied().map(SectionItem::Field).collect(),
+        });
+    }
+    blocks.retain(|block| !block.items.is_empty());
+    blocks
+}
+
+/// The read-out next to a slider: whole numbers for integer fields, two
+/// decimals otherwise, followed by the field's unit.
+fn slider_readout(value: f64, int: bool, unit: Option<&str>) -> String {
+    let number = if int {
+        format!("{}", value.round() as i64)
+    } else {
+        format!("{value:.2}")
+    };
+    match unit {
+        Some(unit) => format!("{number} {unit}"),
+        None => number,
     }
 }
 
@@ -1332,27 +1368,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn settings_rows_divide_within_a_section_and_add_space_at_its_end() {
-        let rows = [
-            ContentRow::OwnerSurface(SettingsSurfaceId::new("first")),
-            ContentRow::OwnerSurface(SettingsSurfaceId::new("last")),
-            ContentRow::Header("Next section"),
+    fn sections_become_cards_and_empty_sections_are_dropped() {
+        let fields = crate::schema::all_fields();
+        let items = [
+            SettingsPageItem::SectionHeader("Empty"),
+            SettingsPageItem::SectionHeader("Startup"),
+            SettingsPageItem::Item("general.restoreWindowState"),
+            SettingsPageItem::OwnerSurface(SettingsSurfaceId::new("surface")),
+            SettingsPageItem::Item("general.missing"),
         ];
+        let leftover = [fields[0]];
+        let blocks = section_blocks(&items, &fields, &leftover);
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].title, Some("Startup"));
+        assert_eq!(blocks[0].items.len(), 2);
+        assert_eq!(blocks[1].title, Some("Other"));
+    }
 
-        assert_eq!(
-            settings_row_decoration(&rows, 0),
-            SettingsRowDecoration {
-                bottom_divider: true,
-                section_end: false,
-            }
-        );
-        assert_eq!(
-            settings_row_decoration(&rows, 1),
-            SettingsRowDecoration {
-                bottom_divider: false,
-                section_end: true,
-            }
-        );
+    #[test]
+    fn slider_readouts_format_by_kind() {
+        assert_eq!(slider_readout(13.0, true, Some("pt")), "13 pt");
+        assert_eq!(slider_readout(1.5, false, None), "1.50");
     }
 
     #[test]
