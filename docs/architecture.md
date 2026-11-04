@@ -195,6 +195,45 @@ imports legacy `workspace.sidebar*` and `workspace.dockLayout` values once,
 then removes those keys from `config.json`. Session/tab contents remain owned
 by the workspace session snapshot and are not folded into this layout file.
 
+**Pane model (R10-002, ADR 0005).** A workspace
+tab is a pane group: a `WorkspaceLayout` whose leaves are `PaneId`s of any
+`PaneKind` (`pane_kind.rs`, one-to-one with `TabKind`). The model is pure data,
+split into four modules that carry no GPUI types:
+
+- `pane_kind` — `PaneKind` (icon, label, singleton and split policy),
+  `PaneMeta`, and the `PaneMetaStore` that replaces the per-tab-id maps.
+  Singleton kinds (git graph, diffs, keymap, hosts) cannot split but can move;
+  opening one again focuses the existing pane.
+- `pane_ops` — tree operations added next to the terminal-only API in
+  `pane_group.rs`: strict split, close (survivors keep their ratios), move to a
+  `DropZone`, swap, detach to its own tree, `insert_subtree`, `normalize`
+  (splice same-axis nesting, promote one-member axes, repair flexes, flex
+  floor) and `validate`. Inserting beside a same-axis sibling equalises that
+  axis; `normalize` alone never discards a manual resize.
+- `tiling` — pixel geometry over the tree. `solve` partitions a container into
+  pane rectangles and gap strips (resize handles sit inside the gap).
+  `smart_split` splits along the target's longer side (tie: stacked) and
+  refuses with `SplitRejection::NoRoom` when any pane would drop below
+  240x120 px (a pane already too small and not shrinking never blocks).
+  `neighbor` / `cycle_focus` drive focus moves, `drop_zone` classifies the
+  outer 25 % edge bands vs. centre, and `AxisGeometry::boundary_fraction`
+  turns a pointer position into the fraction `set_boundary` expects, correct
+  with gaps and pixel minimums.
+- `pane_group_naming` — tab label (`"<active> +N"` or the custom title), shared
+  kind icon vs. a generic panes icon, and the hover-list data model.
+
+**Session v3 plan.** `session_v3` defines the next snapshot generation: a tab
+is `{title, tree}` and a leaf is `{kind, state}` with the state kept as opaque
+JSON on the wire and decoded per kind (`PaneState`: terminal, editor, preview,
+SFTP; transient kinds are not persisted). `parse_any` reads v3, v2 and the
+pre-Spaces flat file (v2 terminal layouts become terminal groups, other kinds
+single leaves; `Home` and empty tabs are dropped). `restore_tree` mints fresh
+pane ids, returns the old-to-new remap, drops unknown or invalid leaves
+(and anything the caller's `keep` check rejects), collapses the tree around
+them, and never panics on corrupt input. `session.rs` still owns the live v2
+format until the capture/restore wiring switches over; user file contents are
+never discarded by layout recovery.
+
 The titlebar is a shell surface, not a feature owner. Its single global-menu
 button publishes `TitlebarEvent` intent. The composition root connects that
 intent to Settings, a Command Palette page, or `Workspace::open_keymap_tab` /
