@@ -1226,8 +1226,8 @@ pub struct EditorView {
     scroll_offset_y: f32,
     /// Remaining wheel motion for discrete mouse-wheel events.
     scroll_animation_remaining_y: f32,
-    /// Short frame-based easing task for discrete wheel motion.
-    scroll_animation_task: Option<Task<()>>,
+    /// Timestamp of the last wheel-easing frame; `Some` while animating.
+    scroll_animation_last_frame: Option<std::time::Instant>,
     /// Horizontal display-column offset for long unwrapped lines.
     scroll_left: usize,
     /// Editor-owned folded logical ranges, persisted through the editor session
@@ -1573,7 +1573,7 @@ impl EditorView {
             scroll_visual_top: None,
             scroll_offset_y: 0.0,
             scroll_animation_remaining_y: 0.0,
-            scroll_animation_task: None,
+            scroll_animation_last_frame: None,
             scroll_left: 0,
             folds: Vec::new(),
             server_fold_ranges: Vec::new(),
@@ -4573,7 +4573,7 @@ impl EditorView {
         snapshot: &labonair_editor::BufferSnapshot,
     ) -> labonair_editor::DisplaySnapshot {
         let config = self.display_config();
-        let visible_rows = self.visible_rows().saturating_add(1);
+        let visible_rows = self.visible_rows().saturating_add(2);
         let width_columns = self.wrap_cols().max(self.content_width_columns()).max(1);
         self.display_layout(snapshot, config);
         let scroll_left = self.scroll_left;
@@ -6022,37 +6022,34 @@ impl EditorView {
         let line_height = self.metrics.1.max(1.0);
         let snapshot = self.doc.snapshot();
         let config = self.display_config();
-        self.display_layout(&snapshot, config);
         let saved_scroll_top = self.scroll_top;
         let saved_visual_top = self.scroll_visual_top;
         let visible_rows = self.visible_rows().max(1);
-        let layout = self.display_layout(&snapshot, config);
-        let (previous_visual_top, max_visual_top) = {
-            let max_visual_top = if config.scroll_beyond_last_line {
-                layout.total_rows.saturating_sub(1)
-            } else {
-                layout.total_rows.saturating_sub(visible_rows)
-            };
-            let visual_top = saved_visual_top
-                .unwrap_or_else(|| layout.logical_line_to_visual_row(saved_scroll_top));
-            (visual_top.min(max_visual_top), max_visual_top)
-        };
         let previous_offset = self.scroll_offset_y;
-        self.scroll_offset_y =
-            (self.scroll_offset_y + delta).clamp(-line_height * 8.0, line_height * 32.0);
-
-        let whole_rows = (self.scroll_offset_y / line_height).trunc() as isize;
+        let next_offset = (previous_offset + delta).clamp(-line_height * 8.0, line_height * 32.0);
+        // floor keeps the remainder in [0, line_height) so the row above is
+        // never left as an unpainted gap when scrolling up.
+        let whole_rows = (next_offset / line_height).floor() as isize;
+        let layout = self.display_layout(&snapshot, config);
+        let max_visual_top = if config.scroll_beyond_last_line {
+            layout.total_rows.saturating_sub(1)
+        } else {
+            layout.total_rows.saturating_sub(visible_rows)
+        };
+        let previous_visual_top = saved_visual_top
+            .unwrap_or_else(|| layout.logical_line_to_visual_row(saved_scroll_top))
+            .min(max_visual_top);
         let next_visual_top =
             (previous_visual_top as isize + whole_rows).clamp(0, max_visual_top as isize) as usize;
         let moved_rows = next_visual_top as isize - previous_visual_top as isize;
-        if moved_rows != 0 {
-            let next_line = self
-                .display_layout(&snapshot, config)
-                .display_to_position(next_visual_top, 0)
-                .map_or_else(
-                    || snapshot.line_count().saturating_sub(1),
-                    |position| position.line,
-                );
+        let next_line = (moved_rows != 0).then(|| {
+            layout.display_to_position(next_visual_top, 0).map_or_else(
+                || snapshot.line_count().saturating_sub(1),
+                |position| position.line,
+            )
+        });
+        self.scroll_offset_y = next_offset;
+        if let Some(next_line) = next_line {
             self.scroll_visual_top = Some(next_visual_top);
             self.scroll_top = next_line;
             self.scroll_offset_y -= moved_rows as f32 * line_height;
@@ -6069,55 +6066,57 @@ impl EditorView {
         }
     }
 
-    fn scroll_by_wheel_pixels(&mut self, delta: f32, cx: &mut Context<Self>) {
+    fn scroll_by_wheel_pixels(&mut self, delta: f32, window: &mut Window, cx: &mut Context<Self>) {
         if !delta.is_finite() || delta == 0.0 {
             return;
         }
         let max_pending = self.metrics.1.max(1.0) * 32.0;
         self.scroll_animation_remaining_y =
             (self.scroll_animation_remaining_y + delta).clamp(-max_pending, max_pending);
-        if self.scroll_animation_task.is_some() {
-            return;
+        if self.scroll_animation_last_frame.is_none() {
+            self.scroll_animation_last_frame = Some(std::time::Instant::now());
+            self.schedule_wheel_animation_frame(window, cx);
         }
+    }
 
-        self.scroll_animation_task = Some(cx.spawn(async move |view, cx| loop {
-            cx.background_executor()
-                .timer(std::time::Duration::from_millis(16))
-                .await;
-            let keep_running = view
-                .update(cx, |this, cx| {
-                    let remaining = this.scroll_animation_remaining_y;
-                    let step = eased_scroll_step(remaining);
-                    let before = (
+    /// Advance the wheel easing once per display frame (vsync-driven, with
+    /// time-based decay so the speed does not depend on the frame rate).
+    fn schedule_wheel_animation_frame(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let view = cx.entity();
+        window.on_next_frame(move |window, cx| {
+            view.update(cx, |this, cx| {
+                let now = std::time::Instant::now();
+                let dt = this
+                    .scroll_animation_last_frame
+                    .map_or(0.016, |last| now.duration_since(last).as_secs_f32())
+                    .clamp(0.001, 0.05);
+                this.scroll_animation_last_frame = Some(now);
+                let step = eased_scroll_step(this.scroll_animation_remaining_y, dt);
+                let before = (
+                    this.scroll_top,
+                    this.scroll_visual_top,
+                    this.scroll_offset_y,
+                );
+                this.scroll_by_pixels(step, cx);
+                this.scroll_animation_remaining_y -= step;
+                let moved = before
+                    != (
                         this.scroll_top,
                         this.scroll_visual_top,
                         this.scroll_offset_y,
                     );
-                    this.scroll_by_pixels(step, cx);
-                    this.scroll_animation_remaining_y -= step;
-                    let moved = before
-                        != (
-                            this.scroll_top,
-                            this.scroll_visual_top,
-                            this.scroll_offset_y,
-                        );
-                    if !moved || this.scroll_animation_remaining_y.abs() < 0.25 {
-                        let residual = this.scroll_animation_remaining_y;
-                        if moved && residual != 0.0 {
-                            this.scroll_by_pixels(residual, cx);
-                        }
-                        this.scroll_animation_remaining_y = 0.0;
-                        this.scroll_animation_task = None;
-                        false
-                    } else {
-                        true
+                if moved && this.scroll_animation_remaining_y.abs() >= 0.25 {
+                    this.schedule_wheel_animation_frame(window, cx);
+                } else {
+                    let residual = this.scroll_animation_remaining_y;
+                    if moved && residual != 0.0 {
+                        this.scroll_by_pixels(residual, cx);
                     }
-                })
-                .unwrap_or(false);
-            if !keep_running {
-                break;
-            }
-        }));
+                    this.scroll_animation_remaining_y = 0.0;
+                    this.scroll_animation_last_frame = None;
+                }
+            });
+        });
     }
 
     fn scroll_to_visual_row(&mut self, row: usize, cx: &mut Context<Self>) {
@@ -12525,7 +12524,7 @@ impl Render for EditorView {
                 );
                 if delta_pixels != 0.0 {
                     if discrete_wheel {
-                        this.scroll_by_wheel_pixels(-delta_pixels, cx);
+                        this.scroll_by_wheel_pixels(-delta_pixels, window, cx);
                     } else {
                         this.scroll_by_pixels(-delta_pixels, cx);
                     }
@@ -12587,15 +12586,16 @@ fn scroll_wheel_pixel_delta(
 
 /// Keep discrete wheel input from jumping the viewport by a whole row at once.
 /// High-resolution trackpad events bypass this easing and keep their raw pixel
-/// displacement.
-fn eased_scroll_step(remaining: f32) -> f32 {
+/// displacement. Exponential decay over `dt` seconds keeps the speed
+/// independent of the frame rate.
+fn eased_scroll_step(remaining: f32, dt: f32) -> f32 {
     if !remaining.is_finite() || remaining == 0.0 {
         return 0.0;
     }
     if remaining.abs() <= 0.75 {
         remaining
     } else {
-        (remaining * 0.32).clamp(-24.0, 24.0)
+        remaining * (1.0 - (-dt / 0.06).exp())
     }
 }
 
@@ -12950,11 +12950,12 @@ mod tests {
 
     #[test]
     fn discrete_wheel_motion_eases_in_small_frame_steps() {
-        assert_eq!(eased_scroll_step(0.5), 0.5);
-        assert_eq!(eased_scroll_step(-0.5), -0.5);
-        assert_eq!(eased_scroll_step(8.0), 2.56);
-        assert_eq!(eased_scroll_step(-100.0), -24.0);
-        assert_eq!(eased_scroll_step(f32::NAN), 0.0);
+        assert_eq!(eased_scroll_step(0.5, 0.016), 0.5);
+        assert_eq!(eased_scroll_step(-0.5, 0.016), -0.5);
+        let step = eased_scroll_step(100.0, 0.016);
+        assert!(step > 0.0 && step < 100.0);
+        assert!(eased_scroll_step(100.0, 0.032) > step);
+        assert_eq!(eased_scroll_step(f32::NAN, 0.016), 0.0);
     }
 
     #[gpui::test]
