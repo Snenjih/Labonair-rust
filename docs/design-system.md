@@ -51,21 +51,36 @@ material and paints surfaces with the `labonair-theme-tokens::VibrancyLayer`
 opacities below. Toggling it applies live to every open window
 (`labonair_theme_ui::window_background`).
 
-| Surface role | Opacity (translucent only) | Use |
-|---|---:|---|
-| Canvas | 0.92 | Workspace and Settings content background |
-| Toolbar | 0.82 | Titlebar and statusbar chrome |
-| Sidebar | 0.86 | Navigation rails and docks |
-| Card | 0.94 | Raised panels and contained surfaces |
-| Control | 0.94 | Input surfaces |
-| Popover | 0.97 | Menus, dropdowns, and floating cards |
-| Divider | 0.56 | Structural borders and hairlines |
+| Surface role | Glassy | Image + Classic | Image + Glassy | Use |
+|---|---:|---:|---:|---|
+| Canvas | 0.92 | 0.78 | 0.60 | Workspace, editor and Settings content background |
+| Toolbar | 0.82 | 0.78 | 0.60 | Titlebar and statusbar chrome |
+| Sidebar | 0.86 | 0.78 | 0.60 | Navigation rails and docks |
+| Terminal | 1.00 | 0.74 | 0.55 | Terminal surface fill (its own opacity setting still applies) |
+| Card | 0.94 | 0.86 | 0.74 | Raised panels and contained surfaces |
+| Control | 0.94 | 0.88 | 0.80 | Input surfaces |
+| Popover | 0.97 | 0.97 | 0.94 | Menus, dropdowns, and floating cards |
+| Divider | 0.56 | 0.56 | 0.50 | Structural borders and hairlines |
 
-`VibrancyLayer::resolve(color, translucent)` is the only entry point; with
-`translucent == false` it returns the theme color untouched. Keep the
-`gpui-component::Root` clear only while translucent; opaque mode paints
-`core.background` there. Surfaces with their own opaque renderer, such as the
-terminal grid, stay opaque.
+`appearance.translucentSurfaces` is the Glassy/Classic interface style (Glassy =
+on). While a background image covers the window the shell sets
+`ThemeMetrics::background_active`, and `labonair-theme-tokens::SurfaceMaterial`
+(`Opaque`, `Glassy`, `ImageClassic`, `ImageGlassy`) selects the column above.
+The image layer is the first child of the shell root, beneath all chrome; the
+surfaces above are translucent so it reads through. The image opacity is the
+slider mapped through `slider^0.6` (default 30% renders at about 0.49), and the
+tint opacity is clamped when the tint colour has too little contrast against the
+UI foreground. Popovers stay near opaque so menus are readable on any image.
+
+`VibrancyLayer::resolve(color, material)` is the only entry point (a plain
+`bool` converts to `Opaque`/`Glassy`); with an opaque material it returns the
+theme color untouched. Read the material through `UiTheme::surface_material()`
+or `ThemeStore::surface_material()`, never from `translucent_surfaces` alone.
+Keep the `gpui-component::Root` clear only while Glassy; Classic (with or
+without an image) paints `core.background` there, under the image layer.
+Surfaces with their own opaque renderer (terminal cell backgrounds) must
+consult `ThemeStore::terminal_background()` / the material to stay translucent
+while an image shows.
 
 ### Ciel token map
 

@@ -87,11 +87,57 @@ pub struct SurfaceColors {
     pub action_active: Hsla,
 }
 
+/// How surface fills relate to what is painted behind them.
+///
+/// This is the single switch behind the Classic/Glassy interface style and the
+/// background image: [`VibrancyLayer::resolve`] maps a material plus a semantic
+/// layer to an alpha. `bool` converts for callers that only know the
+/// `appearance.translucentSurfaces` setting (`true` = [`Self::Glassy`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SurfaceMaterial {
+    /// Opaque, fill-contrast Ciel surfaces (Classic, no background image).
+    #[default]
+    Opaque,
+    /// Surfaces over the native window blur (Glassy, no background image).
+    Glassy,
+    /// Classic with a background image: no native blur behind, so the fills
+    /// carry just enough transparency to let the image read through.
+    ImageClassic,
+    /// Glassy with a background image: the image sits over the native blur and
+    /// the fills are the most transparent.
+    ImageGlassy,
+}
+
+impl SurfaceMaterial {
+    /// Pick the material from the two independent inputs.
+    pub fn new(glassy: bool, background_image: bool) -> Self {
+        match (glassy, background_image) {
+            (false, false) => Self::Opaque,
+            (true, false) => Self::Glassy,
+            (false, true) => Self::ImageClassic,
+            (true, true) => Self::ImageGlassy,
+        }
+    }
+
+    /// Whether a background image is showing through the surfaces.
+    pub fn has_image(self) -> bool {
+        matches!(self, Self::ImageClassic | Self::ImageGlassy)
+    }
+}
+
+impl From<bool> for SurfaceMaterial {
+    fn from(glassy: bool) -> Self {
+        Self::new(glassy, false)
+    }
+}
+
 /// Role-based opacity for surfaces layered over GPUI's native blurred window
-/// background. Solid theme colors remain the source hue; this scale controls
-/// how much of the platform material remains visible through each surface.
+/// background and/or the background image. Solid theme colors remain the source
+/// hue; this scale controls how much of the layer behind each surface remains
+/// visible through it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VibrancyLayer {
+    /// Main content surfaces: workspace area, editor.
     Canvas,
     Toolbar,
     Sidebar,
@@ -99,10 +145,14 @@ pub enum VibrancyLayer {
     Popover,
     Control,
     Divider,
+    /// The terminal surface fill (the terminal's own opacity setting governs
+    /// it when no image is showing).
+    Terminal,
 }
 
 impl VibrancyLayer {
-    /// The foreground material opacity for this semantic surface role.
+    /// The foreground material opacity for this semantic surface role over the
+    /// native blur ([`SurfaceMaterial::Glassy`]).
     pub const fn opacity(self) -> f32 {
         match self {
             Self::Canvas => 0.92,
@@ -112,18 +162,49 @@ impl VibrancyLayer {
             Self::Popover => 0.97,
             Self::Control => 0.94,
             Self::Divider => 0.56,
+            Self::Terminal => 1.0,
         }
     }
 
-    /// Resolve the surface color for this role. With `translucent` off (the
+    /// The material opacity for this role in `material`.
+    ///
+    /// With a background image the large surfaces (`Canvas`, `Toolbar`,
+    /// `Sidebar`, `Terminal`) step down to ~0.78 in Classic and ~0.6 in Glassy
+    /// so the image reads through them; floating layers (`Popover`) stay near
+    /// opaque so menus remain readable on any image, and controls/cards keep
+    /// enough fill to hold their text. Dividers do not change.
+    pub const fn opacity_in(self, material: SurfaceMaterial) -> f32 {
+        match material {
+            SurfaceMaterial::Opaque => 1.0,
+            SurfaceMaterial::Glassy => self.opacity(),
+            SurfaceMaterial::ImageClassic => match self {
+                Self::Canvas | Self::Toolbar | Self::Sidebar => 0.78,
+                Self::Terminal => 0.74,
+                Self::Card => 0.86,
+                Self::Popover => 0.97,
+                Self::Control => 0.88,
+                Self::Divider => 0.56,
+            },
+            SurfaceMaterial::ImageGlassy => match self {
+                Self::Canvas | Self::Toolbar | Self::Sidebar => 0.6,
+                Self::Terminal => 0.55,
+                Self::Card => 0.74,
+                Self::Popover => 0.94,
+                Self::Control => 0.8,
+                Self::Divider => 0.5,
+            },
+        }
+    }
+
+    /// Resolve the surface color for this role. With an opaque material (the
     /// Ciel default — fully opaque, fill-contrast surfaces) the theme color is
-    /// returned untouched; with it on, this role's material opacity is applied
-    /// without changing the theme color itself.
-    pub fn resolve(self, color: Hsla, translucent: bool) -> Hsla {
-        if translucent {
-            color.opacity(self.opacity())
-        } else {
-            color
+    /// returned untouched; otherwise this role's material opacity is applied
+    /// without changing the theme color itself. Accepts a plain `bool`
+    /// (`appearance.translucentSurfaces`) or a [`SurfaceMaterial`].
+    pub fn resolve(self, color: Hsla, material: impl Into<SurfaceMaterial>) -> Hsla {
+        match material.into() {
+            SurfaceMaterial::Opaque => color,
+            material => color.opacity(self.opacity_in(material)),
         }
     }
 }
@@ -732,6 +813,34 @@ mod tests {
             (base.h, base.s, base.l)
         );
         assert!((material.a - base.a * VibrancyLayer::Card.opacity()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn background_image_makes_large_surfaces_more_transparent() {
+        use SurfaceMaterial::*;
+        for layer in [
+            VibrancyLayer::Canvas,
+            VibrancyLayer::Toolbar,
+            VibrancyLayer::Sidebar,
+            VibrancyLayer::Terminal,
+        ] {
+            assert!(layer.opacity_in(ImageClassic) < layer.opacity_in(Glassy));
+            assert!(layer.opacity_in(ImageGlassy) < layer.opacity_in(ImageClassic));
+            assert!(layer.opacity_in(ImageClassic) < 1.0);
+        }
+        assert_eq!(VibrancyLayer::Canvas.opacity_in(ImageClassic), 0.78);
+        // Floating layers stay readable on any image.
+        assert!(VibrancyLayer::Popover.opacity_in(ImageGlassy) >= 0.9);
+        // Opaque never changes a color; `bool` keeps the legacy meaning.
+        let base = oklch_a(55.0, 0.03, 250.0, 1.0);
+        assert_eq!(VibrancyLayer::Canvas.resolve(base, Opaque), base);
+        assert_eq!(VibrancyLayer::Canvas.resolve(base, false), base);
+        assert_eq!(
+            VibrancyLayer::Canvas.resolve(base, true).a,
+            VibrancyLayer::Canvas.opacity()
+        );
+        assert!(SurfaceMaterial::new(false, true).has_image());
+        assert!(!SurfaceMaterial::new(true, false).has_image());
     }
 
     #[test]

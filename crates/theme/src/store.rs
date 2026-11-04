@@ -21,7 +21,9 @@ use gpui::{
     font, App, AppContext, Context, Entity, Font, FontFallbacks, FontFeatures, FontWeight, Global,
     Hsla, WindowAppearance,
 };
-use labonair_theme_tokens::{ActiveTheme, GlobalActiveTheme, ThemeMetrics, VibrancyLayer};
+use labonair_theme_tokens::{
+    ActiveTheme, GlobalActiveTheme, SurfaceMaterial, ThemeMetrics, VibrancyLayer,
+};
 
 pub use crate::import::ThemeFileConversion;
 /// Re-exported from the crate root (they live in `labonair-theme` since T16-004
@@ -718,8 +720,22 @@ impl ThemeStore {
         self.active.metrics().translucent_surfaces
     }
 
+    /// The surface material: [`Self::translucent`] combined with whether a
+    /// background image is showing (`ThemeMetrics::background_active`). Every
+    /// surface accessor below resolves through this.
+    pub fn surface_material(&self) -> SurfaceMaterial {
+        let m = self.active.metrics();
+        SurfaceMaterial::new(m.translucent_surfaces, m.background_active)
+    }
+
+    /// The terminal surface fill. Opaque unless a background image shows
+    /// through (the terminal's own opacity setting is applied by the view).
+    pub fn terminal_background(&self) -> Hsla {
+        VibrancyLayer::Terminal.resolve(self.theme().terminal.background, self.surface_material())
+    }
+
     pub fn background(&self) -> Hsla {
-        VibrancyLayer::Canvas.resolve(self.theme().core.background, self.translucent())
+        VibrancyLayer::Canvas.resolve(self.theme().core.background, self.surface_material())
     }
 
     pub fn foreground(&self) -> Hsla {
@@ -727,7 +743,7 @@ impl ThemeStore {
     }
 
     pub fn card(&self) -> Hsla {
-        VibrancyLayer::Card.resolve(self.theme().core.card, self.translucent())
+        VibrancyLayer::Card.resolve(self.theme().core.card, self.surface_material())
     }
 
     pub fn muted(&self) -> Hsla {
@@ -739,7 +755,7 @@ impl ThemeStore {
     }
 
     pub fn border(&self) -> Hsla {
-        VibrancyLayer::Divider.resolve(self.theme().core.border, self.translucent())
+        VibrancyLayer::Divider.resolve(self.theme().core.border, self.surface_material())
     }
 
     pub fn primary(&self) -> Hsla {
@@ -777,27 +793,27 @@ impl ThemeStore {
 
     /// `--toolbar-background` — the window header / titlebar surface.
     pub fn toolbar(&self) -> Hsla {
-        VibrancyLayer::Toolbar.resolve(self.theme().surface.toolbar, self.translucent())
+        VibrancyLayer::Toolbar.resolve(self.theme().surface.toolbar, self.surface_material())
     }
 
     /// `--title-bar-background`.
     pub fn title_bar(&self) -> Hsla {
-        VibrancyLayer::Toolbar.resolve(self.theme().surface.title_bar, self.translucent())
+        VibrancyLayer::Toolbar.resolve(self.theme().surface.title_bar, self.surface_material())
     }
 
     /// `--status-bar-background` — the bottom status bar surface.
     pub fn status_bar(&self) -> Hsla {
-        VibrancyLayer::Toolbar.resolve(self.theme().surface.status_bar, self.translucent())
+        VibrancyLayer::Toolbar.resolve(self.theme().surface.status_bar, self.surface_material())
     }
 
     /// `--sidebar` background.
     pub fn sidebar_bg(&self) -> Hsla {
-        VibrancyLayer::Sidebar.resolve(self.theme().sidebar.background, self.translucent())
+        VibrancyLayer::Sidebar.resolve(self.theme().sidebar.background, self.surface_material())
     }
 
     /// `--sidebar-border`.
     pub fn sidebar_border(&self) -> Hsla {
-        VibrancyLayer::Divider.resolve(self.theme().sidebar.border, self.translucent())
+        VibrancyLayer::Divider.resolve(self.theme().sidebar.border, self.surface_material())
     }
 
     /// `--sidebar-foreground`.

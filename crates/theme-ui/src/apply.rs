@@ -225,6 +225,7 @@ fn sync_gpui_component_theme(theme: &Entity<ThemeStore>, cx: &mut App) {
     }
     let core = theme.read(cx).theme().core.clone();
     let translucent = theme.read(cx).translucent();
+    let material = theme.read(cx).surface_material();
     let t = gpui_component::Theme::global_mut(cx);
     t.primary = core.primary;
     t.primary_hover = core.primary;
@@ -239,14 +240,14 @@ fn sync_gpui_component_theme(theme: &Entity<ThemeStore>, cx: &mut App) {
         core.background
     };
     t.foreground = core.foreground;
-    t.border = VibrancyLayer::Divider.resolve(core.border, translucent);
-    t.input = VibrancyLayer::Control.resolve(core.input, translucent);
+    t.border = VibrancyLayer::Divider.resolve(core.border, material);
+    t.input = VibrancyLayer::Control.resolve(core.input, material);
     t.ring = core.ring;
     t.muted = core.muted;
     t.muted_foreground = core.muted_foreground;
     t.accent = core.accent;
     t.accent_foreground = core.accent_foreground;
-    t.popover = VibrancyLayer::Popover.resolve(core.popover, translucent);
+    t.popover = VibrancyLayer::Popover.resolve(core.popover, material);
     // Input's own colours: caret uses `primary` so it reads as the same
     // "active" colour as a row/tab selection bar elsewhere in the app;
     // selection is `primary` at a stronger alpha than the row-selection fill
