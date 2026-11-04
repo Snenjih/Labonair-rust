@@ -413,11 +413,17 @@ impl ThemeStore {
 
     /// Rescan the user themes directory and rebuild the registry. If the active
     /// family survived the rescan it is re-resolved live; if it vanished the
-    /// store falls back to the built-in themes. Returns non-fatal load warnings.
+    /// store falls back to the built-in themes. Returns the rejected files
+    /// (unreadable, malformed, or missing a light/dark variant) so the caller
+    /// can raise one notification per file.
     ///
     /// Deferred boundary (R08-011): retained under test, not wired to any UI.
-    pub fn reload_user_themes(&mut self, dir: &Path, cx: &mut Context<Self>) -> Vec<String> {
-        let warnings = self.registry.load_user_themes(dir);
+    pub fn reload_user_themes(
+        &mut self,
+        dir: &Path,
+        cx: &mut Context<Self>,
+    ) -> Vec<crate::registry::RejectedTheme> {
+        let rejected = self.registry.load_user_themes(dir);
         if let Some(fam) = self.active_family.clone() {
             if !self.registry.contains(&fam) {
                 self.active_family = None;
@@ -427,7 +433,7 @@ impl ThemeStore {
         }
         self.reresolve_custom();
         cx.notify();
-        warnings
+        rejected
     }
 
     /// The active runtime typography overrides.
@@ -1390,6 +1396,49 @@ mod tests {
                 s.reload_user_themes(&dir, cx);
                 assert_eq!(s.active_theme_id(), "default");
                 assert_eq!(s.primary(), Theme::dark().core.primary);
+            });
+        });
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[gpui::test]
+    fn reload_rejects_a_one_mode_edit_and_reports_it(cx: &mut TestAppContext) {
+        let dir =
+            std::env::temp_dir().join(format!("labonair-store-onemode-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("half.json");
+        std::fs::write(
+            &path,
+            r##"{ "name": "Half", "themes": [
+                { "name": "Half Dark",  "appearance": "dark",  "colors": { "primary": "#111111" } },
+                { "name": "Half Light", "appearance": "light", "colors": { "primary": "#eeeeee" } } ] }"##,
+        )
+        .unwrap();
+
+        cx.update(|cx| {
+            let store = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
+            store.update(cx, |s, cx| {
+                assert!(s.reload_user_themes(&dir, cx).is_empty());
+                s.set_active_theme("Half/Half Dark", cx).unwrap();
+                s.set_preference(ThemePreference::Light, cx);
+                assert_eq!(crate::to_rgb8(s.primary()), [0xee, 0xee, 0xee]);
+
+                // The user deletes the light variant: the file is rejected with
+                // a typed report and the store returns to the built-in theme
+                // instead of showing the dark variant in light mode.
+                std::fs::write(
+                    &path,
+                    r##"{ "name": "Half", "themes": [
+                        { "name": "Half Dark", "appearance": "dark", "colors": { "primary": "#111111" } } ] }"##,
+                )
+                .unwrap();
+                let rejected = s.reload_user_themes(&dir, cx);
+                assert_eq!(rejected.len(), 1);
+                assert!(rejected[0].path.ends_with("half.json"));
+                assert_eq!(s.active_theme_id(), "default");
+                assert_eq!(s.primary(), Theme::light().core.primary);
             });
         });
 
