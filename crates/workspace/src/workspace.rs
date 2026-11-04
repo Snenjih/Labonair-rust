@@ -55,6 +55,7 @@ pub mod status_placements;
 pub mod syntax_theme;
 pub mod tabs;
 pub mod tabs_panel;
+pub mod tiling;
 pub mod views;
 
 /// Re-export shim so `crate::theme::…` paths in the moved modules keep
