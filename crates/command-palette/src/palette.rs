@@ -16,9 +16,9 @@
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, AnimationExt, App, AppContext as _, ClickEvent, Context, DismissEvent, Entity,
-    EventEmitter, FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, KeyDownEvent,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
+    div, px, App, AppContext as _, ClickEvent, Context, DismissEvent, Entity, EventEmitter,
+    FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, KeyDownEvent, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 
 use labonair_settings::content::workspace::PaletteSearchMode as ContentSearchMode;
@@ -27,7 +27,7 @@ use labonair_settings::{
 };
 use labonair_theme::{EditorThemeId, ThemePreference};
 use labonair_ui_kit::{
-    fade_in, kbd, keybinding_hint, search_input, text_field, IconName, InputEvent, InputState,
+    kbd, keybinding_hint, search_input, text_field, IconName, InputEvent, InputState, MotionExt,
     Palette, UiTheme,
 };
 
@@ -1471,7 +1471,7 @@ where
                     .child(header)
                     .child(div().flex().flex_col().min_h_0().child(list))
                     .child(footer)
-                    .with_animation("palette-fade", fade_in(c), |el, delta| el.opacity(delta)),
+                    .motion_fade_in("palette-fade", c),
             )
             .into_any_element()
     }
