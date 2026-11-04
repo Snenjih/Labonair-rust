@@ -40,6 +40,7 @@ pub mod mcp_event_bridge;
 pub mod modal_layer;
 pub mod pane;
 pub mod pane_group;
+pub mod pane_kind;
 pub mod project_search;
 pub mod recent_projects;
 pub mod search_overlay;
