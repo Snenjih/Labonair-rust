@@ -900,7 +900,7 @@ impl Gallery {
             .bg(c.toolbar_bg)
             .rounded(px(c.radius.md))
             .child(
-                block("gf-pinned", "Pinned", IconName::Pin, TabLayout::Horizontal)
+                block("gf-pinned", "Pinned", IconName::File, TabLayout::Horizontal)
                     .pinned(true)
                     .render(),
             )
