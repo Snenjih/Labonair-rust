@@ -8,7 +8,7 @@
 use gpui::{App, Hsla};
 
 use crate::metrics::{ActiveTheme, GlobalActiveTheme, ThemeMetrics};
-use crate::tokens::{RadiusScale, Theme};
+use crate::tokens::{RadiusScale, SurfaceMaterial, Theme};
 
 /// Token accessor the ui-kit primitives build against.
 ///
@@ -37,6 +37,14 @@ pub trait UiTheme {
     /// (`appearance.translucentSurfaces`). Off by default: opaque Ciel fills.
     fn translucent_surfaces(&self) -> bool {
         self.metrics().translucent_surfaces
+    }
+
+    /// The surface material (Classic/Glassy x background image) every
+    /// [`VibrancyLayer::resolve`](crate::VibrancyLayer::resolve) call should
+    /// use, so surfaces turn translucent while a background image is showing.
+    fn surface_material(&self) -> SurfaceMaterial {
+        let m = self.metrics();
+        SurfaceMaterial::new(m.translucent_surfaces, m.background_active)
     }
 
     /// `--muted-foreground`.

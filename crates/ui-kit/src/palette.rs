@@ -132,7 +132,7 @@ impl Palette {
         let t = theme.theme();
         let core = &t.core;
         let status = &t.status;
-        let translucent = theme.translucent_surfaces();
+        let translucent = theme.surface_material();
         Self {
             bg: VibrancyLayer::Canvas.resolve(core.background, translucent),
             toolbar_bg: VibrancyLayer::Toolbar.resolve(t.surface.toolbar, translucent),

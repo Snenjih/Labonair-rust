@@ -52,7 +52,7 @@ use serde_json::{Map, Value};
 use std::path::Path;
 
 use labonair_settings_content::{
-    appearance::AppearanceContent,
+    appearance::{Animations, AppearanceContent},
     editor::{
         EditorContent, EditorDiagnosticMaxSeverity, EditorMinimapCurrentLineHighlight,
         EditorMinimapDisplayIn, EditorMinimapSetting, EditorMinimapThumb, EditorMinimapThumbBorder,
@@ -293,7 +293,9 @@ fn appearance_from(p: &Preferences) -> AppearanceContent {
         app_font_size: Some(p.app_font_size),
         app_line_height: Some(p.app_line_height),
         app_font_family: Some(p.app_font_family.clone()),
-        reduce_motion: Some(p.reduce_motion),
+        // `reduceMotion: true` maps to `animations: "off"`; `false` leaves the
+        // default (`system`). The boolean itself is no longer written.
+        animations: p.reduce_motion.then_some(Animations::Off),
         corner_radius_scale: Some(p.app_corner_radius as f32 / 5.0),
         tabs_location: Some(p.tabs_location.clone()),
         zen_mode_show_header: Some(p.zen_mode_show_header),
@@ -1168,6 +1170,16 @@ mod tests {
             "mcp": { "bridgeEnabled": true, "bridgePort": 51000, "maxCommandTimeoutSecs": 60, "autoRevokeMinutes": 5, "notifyOnActivity": true },
             "statusBarItemPlacements": { "cwd": { "side": "left", "hidden": false } },
         })
+    }
+
+    #[test]
+    fn legacy_reduce_motion_maps_to_animations_off() {
+        let mut prefs = Preferences::default();
+        assert_eq!(appearance_from(&prefs).animations, None);
+        prefs.reduce_motion = true;
+        let appearance = appearance_from(&prefs);
+        assert_eq!(appearance.animations, Some(Animations::Off));
+        assert_eq!(appearance.reduce_motion, None);
     }
 
     #[test]

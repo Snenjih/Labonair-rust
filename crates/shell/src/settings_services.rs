@@ -59,6 +59,18 @@ pub(crate) fn settings_services(
                 main_window,
                 |shell, window, cx| shell.show_background_settings(window, cx),
             ),
+            |message, cx| {
+                labonair_notifications::notification_center(cx).update(cx, |center, cx| {
+                    center.push_action_result(
+                        labonair_notifications::Notification::error(
+                            "Background",
+                            "Operation failed",
+                        )
+                        .details(message),
+                        cx,
+                    );
+                });
+            },
         ),
     );
     log_surface_registration(

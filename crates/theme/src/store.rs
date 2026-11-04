@@ -21,7 +21,9 @@ use gpui::{
     font, App, AppContext, Context, Entity, Font, FontFallbacks, FontFeatures, FontWeight, Global,
     Hsla, WindowAppearance,
 };
-use labonair_theme_tokens::{ActiveTheme, GlobalActiveTheme, ThemeMetrics, VibrancyLayer};
+use labonair_theme_tokens::{
+    ActiveTheme, GlobalActiveTheme, SurfaceMaterial, ThemeMetrics, VibrancyLayer,
+};
 
 pub use crate::import::ThemeFileConversion;
 /// Re-exported from the crate root (they live in `labonair-theme` since T16-004
@@ -202,11 +204,26 @@ impl ThemeStore {
 
     /// Replace the metric layer (settings → live). Rebuilds [`Self::active`]
     /// and re-renders only on a real change.
-    pub fn set_metrics(&mut self, metrics: ThemeMetrics, cx: &mut Context<Self>) {
+    pub fn set_metrics(&mut self, mut metrics: ThemeMetrics, cx: &mut Context<Self>) {
+        // `background_active` is pushed by the background owner, not derived
+        // from settings: a settings re-apply must not reset it.
+        metrics.background_active = self.metrics.background_active;
         if self.metrics == metrics {
             return;
         }
         self.metrics = metrics;
+        self.rebuild_active();
+        cx.notify();
+    }
+
+    /// Whether a background image is currently shown in the window. Surfaces
+    /// then resolve translucent (see [`VibrancyLayer::resolve`]) so the image
+    /// stays visible. Pushed by the shell from the background owner.
+    pub fn set_background_active(&mut self, active: bool, cx: &mut Context<Self>) {
+        if self.metrics.background_active == active {
+            return;
+        }
+        self.metrics.background_active = active;
         self.rebuild_active();
         cx.notify();
     }
@@ -398,11 +415,17 @@ impl ThemeStore {
 
     /// Rescan the user themes directory and rebuild the registry. If the active
     /// family survived the rescan it is re-resolved live; if it vanished the
-    /// store falls back to the built-in themes. Returns non-fatal load warnings.
+    /// store falls back to the built-in themes. Returns the rejected files
+    /// (unreadable, malformed, or missing a light/dark variant) so the caller
+    /// can raise one notification per file.
     ///
     /// Deferred boundary (R08-011): retained under test, not wired to any UI.
-    pub fn reload_user_themes(&mut self, dir: &Path, cx: &mut Context<Self>) -> Vec<String> {
-        let warnings = self.registry.load_user_themes(dir);
+    pub fn reload_user_themes(
+        &mut self,
+        dir: &Path,
+        cx: &mut Context<Self>,
+    ) -> Vec<crate::registry::RejectedTheme> {
+        let rejected = self.registry.load_user_themes(dir);
         if let Some(fam) = self.active_family.clone() {
             if !self.registry.contains(&fam) {
                 self.active_family = None;
@@ -412,7 +435,7 @@ impl ThemeStore {
         }
         self.reresolve_custom();
         cx.notify();
-        warnings
+        rejected
     }
 
     /// The active runtime typography overrides.
@@ -697,8 +720,22 @@ impl ThemeStore {
         self.active.metrics().translucent_surfaces
     }
 
+    /// The surface material: [`Self::translucent`] combined with whether a
+    /// background image is showing (`ThemeMetrics::background_active`). Every
+    /// surface accessor below resolves through this.
+    pub fn surface_material(&self) -> SurfaceMaterial {
+        let m = self.active.metrics();
+        SurfaceMaterial::new(m.translucent_surfaces, m.background_active)
+    }
+
+    /// The terminal surface fill. Opaque unless a background image shows
+    /// through (the terminal's own opacity setting is applied by the view).
+    pub fn terminal_background(&self) -> Hsla {
+        VibrancyLayer::Terminal.resolve(self.theme().terminal.background, self.surface_material())
+    }
+
     pub fn background(&self) -> Hsla {
-        VibrancyLayer::Canvas.resolve(self.theme().core.background, self.translucent())
+        VibrancyLayer::Canvas.resolve(self.theme().core.background, self.surface_material())
     }
 
     pub fn foreground(&self) -> Hsla {
@@ -706,7 +743,7 @@ impl ThemeStore {
     }
 
     pub fn card(&self) -> Hsla {
-        VibrancyLayer::Card.resolve(self.theme().core.card, self.translucent())
+        VibrancyLayer::Card.resolve(self.theme().core.card, self.surface_material())
     }
 
     pub fn muted(&self) -> Hsla {
@@ -718,7 +755,7 @@ impl ThemeStore {
     }
 
     pub fn border(&self) -> Hsla {
-        VibrancyLayer::Divider.resolve(self.theme().core.border, self.translucent())
+        VibrancyLayer::Divider.resolve(self.theme().core.border, self.surface_material())
     }
 
     pub fn primary(&self) -> Hsla {
@@ -756,27 +793,27 @@ impl ThemeStore {
 
     /// `--toolbar-background` — the window header / titlebar surface.
     pub fn toolbar(&self) -> Hsla {
-        VibrancyLayer::Toolbar.resolve(self.theme().surface.toolbar, self.translucent())
+        VibrancyLayer::Toolbar.resolve(self.theme().surface.toolbar, self.surface_material())
     }
 
     /// `--title-bar-background`.
     pub fn title_bar(&self) -> Hsla {
-        VibrancyLayer::Toolbar.resolve(self.theme().surface.title_bar, self.translucent())
+        VibrancyLayer::Toolbar.resolve(self.theme().surface.title_bar, self.surface_material())
     }
 
     /// `--status-bar-background` — the bottom status bar surface.
     pub fn status_bar(&self) -> Hsla {
-        VibrancyLayer::Toolbar.resolve(self.theme().surface.status_bar, self.translucent())
+        VibrancyLayer::Toolbar.resolve(self.theme().surface.status_bar, self.surface_material())
     }
 
     /// `--sidebar` background.
     pub fn sidebar_bg(&self) -> Hsla {
-        VibrancyLayer::Sidebar.resolve(self.theme().sidebar.background, self.translucent())
+        VibrancyLayer::Sidebar.resolve(self.theme().sidebar.background, self.surface_material())
     }
 
     /// `--sidebar-border`.
     pub fn sidebar_border(&self) -> Hsla {
-        VibrancyLayer::Divider.resolve(self.theme().sidebar.border, self.translucent())
+        VibrancyLayer::Divider.resolve(self.theme().sidebar.border, self.surface_material())
     }
 
     /// `--sidebar-foreground`.
@@ -1382,6 +1419,49 @@ mod tests {
     }
 
     #[gpui::test]
+    fn reload_rejects_a_one_mode_edit_and_reports_it(cx: &mut TestAppContext) {
+        let dir =
+            std::env::temp_dir().join(format!("labonair-store-onemode-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("half.json");
+        std::fs::write(
+            &path,
+            r##"{ "name": "Half", "themes": [
+                { "name": "Half Dark",  "appearance": "dark",  "colors": { "primary": "#111111" } },
+                { "name": "Half Light", "appearance": "light", "colors": { "primary": "#eeeeee" } } ] }"##,
+        )
+        .unwrap();
+
+        cx.update(|cx| {
+            let store = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
+            store.update(cx, |s, cx| {
+                assert!(s.reload_user_themes(&dir, cx).is_empty());
+                s.set_active_theme("Half/Half Dark", cx).unwrap();
+                s.set_preference(ThemePreference::Light, cx);
+                assert_eq!(crate::to_rgb8(s.primary()), [0xee, 0xee, 0xee]);
+
+                // The user deletes the light variant: the file is rejected with
+                // a typed report and the store returns to the built-in theme
+                // instead of showing the dark variant in light mode.
+                std::fs::write(
+                    &path,
+                    r##"{ "name": "Half", "themes": [
+                        { "name": "Half Dark", "appearance": "dark", "colors": { "primary": "#111111" } } ] }"##,
+                )
+                .unwrap();
+                let rejected = s.reload_user_themes(&dir, cx);
+                assert_eq!(rejected.len(), 1);
+                assert!(rejected[0].path.ends_with("half.json"));
+                assert_eq!(s.active_theme_id(), "default");
+                assert_eq!(s.primary(), Theme::light().core.primary);
+            });
+        });
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[gpui::test]
     fn icon_theme_activates_and_live_reloads(cx: &mut TestAppContext) {
         let dir = std::env::temp_dir().join(format!("labonair-store-icons-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -1490,6 +1570,20 @@ mod tests {
             );
             assert_eq!(at.animation().dur_base, std::time::Duration::ZERO);
             assert_eq!(cx.global::<GlobalActiveTheme>().0, *at);
+        });
+    }
+
+    #[gpui::test]
+    fn background_active_survives_a_settings_metric_reapply(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = init(WindowAppearance::Dark, cx);
+            store.update(cx, |s, cx| s.set_background_active(true, cx));
+            assert!(store.read(cx).active_theme().metrics().background_active);
+            // A settings re-apply builds metrics with the default `false`.
+            store.update(cx, |s, cx| s.set_metrics(ThemeMetrics::default(), cx));
+            assert!(store.read(cx).active_theme().metrics().background_active);
+            store.update(cx, |s, cx| s.set_background_active(false, cx));
+            assert!(!store.read(cx).active_theme().metrics().background_active);
         });
     }
 

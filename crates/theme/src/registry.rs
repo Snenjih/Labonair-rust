@@ -27,6 +27,11 @@
 //! color values are skipped with a warning — a malformed entry never aborts the
 //! rest of the registry.
 //!
+//! Every family must provide at least one **light and one dark** variant
+//! ([`ThemeFamilyContent::validate`]); the file loader skips incomplete files
+//! and reports them as [`RejectedTheme`]s so the shell can raise a notification
+//! (ADR 0006). No lookup falls back to the other mode.
+//!
 //! Legacy [`crate::ThemeFile`] documents (the `variants: { … }` map format) are
 //! still accepted by [`ThemeRegistry::load_user_themes`] via
 //! [`ThemeFamilyContent::from`], so existing user theme files keep working.
@@ -60,6 +65,80 @@ impl Appearance {
             Appearance::Light => Theme::light(),
             Appearance::Dark => Theme::dark(),
         }
+    }
+}
+
+impl Appearance {
+    fn label(self) -> &'static str {
+        match self {
+            Appearance::Light => "light",
+            Appearance::Dark => "dark",
+        }
+    }
+}
+
+/// Why a [`ThemeFamilyContent`] is not a usable theme family.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ThemeValidationError {
+    /// The family name is empty.
+    EmptyName,
+    /// The family declares no variants.
+    NoVariants,
+    /// The family has no variant of this appearance. Every family must provide
+    /// both a light and a dark variant so switching modes never silently shows
+    /// the wrong one.
+    MissingAppearance(Appearance),
+}
+
+impl std::fmt::Display for ThemeValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyName => write!(f, "theme name must not be empty"),
+            Self::NoVariants => write!(f, "theme must contain at least one variant"),
+            Self::MissingAppearance(a) => write!(
+                f,
+                "theme has no {} variant; a theme must provide both a light and a dark variant",
+                a.label()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ThemeValidationError {}
+
+/// Why a user theme file was skipped by [`ThemeRegistry::load_user_themes`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ThemeRejection {
+    /// The file could not be read.
+    Unreadable(String),
+    /// The file is not a theme document.
+    Malformed(String),
+    /// The document parsed but is not a valid family (for example one mode
+    /// only).
+    Invalid(ThemeValidationError),
+}
+
+impl std::fmt::Display for ThemeRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unreadable(e) | Self::Malformed(e) => write!(f, "{e}"),
+            Self::Invalid(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+/// A user theme file that was skipped, as plain data. The shell turns each
+/// entry into a notification ("Theme `<file>` ignored: `<reason>`", action
+/// "Open themes folder"); this crate has no notification dependency.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RejectedTheme {
+    pub path: std::path::PathBuf,
+    pub reason: ThemeRejection,
+}
+
+impl std::fmt::Display for RejectedTheme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.path.display(), self.reason)
     }
 }
 
@@ -99,6 +178,24 @@ impl ThemeFamilyContent {
 
     pub fn to_json(&self) -> Result<String, String> {
         serde_json::to_string_pretty(self).map_err(|e| format!("failed to serialize theme: {e}"))
+    }
+
+    /// A family needs a name and at least one light **and** one dark variant.
+    /// Both the registry loader and [`ThemeFile::validate`] use this single
+    /// rule.
+    pub fn validate(&self) -> Result<(), ThemeValidationError> {
+        if self.name.trim().is_empty() {
+            return Err(ThemeValidationError::EmptyName);
+        }
+        if self.themes.is_empty() {
+            return Err(ThemeValidationError::NoVariants);
+        }
+        for appearance in [Appearance::Light, Appearance::Dark] {
+            if self.variant_of(appearance).is_none() {
+                return Err(ThemeValidationError::MissingAppearance(appearance));
+            }
+        }
+        Ok(())
     }
 
     /// Build a full-color family document from a pair of renderable themes —
@@ -155,11 +252,11 @@ impl ThemeFamilyContent {
         (theme, warnings)
     }
 
-    fn first_of(&self, appearance: Appearance) -> Option<&ThemeVariantContent> {
-        self.themes
-            .iter()
-            .find(|v| v.appearance == appearance)
-            .or_else(|| self.themes.first())
+    /// The first variant of exactly this appearance. There is deliberately no
+    /// cross-mode fallback: a valid family has both modes
+    /// ([`Self::validate`]).
+    fn variant_of(&self, appearance: Appearance) -> Option<&ThemeVariantContent> {
+        self.themes.iter().find(|v| v.appearance == appearance)
     }
 }
 
@@ -257,10 +354,12 @@ impl ThemeRegistry {
     /// A registry holding only the embedded built-in family. Never fails — a
     /// broken embedded asset falls back to the hardcoded [`Theme`] tokens.
     pub fn builtin() -> Self {
-        let content = ThemeFamilyContent::from_json(BUILTIN_THEME_JSON).unwrap_or_else(|e| {
-            eprintln!("labonair-theme: embedded built-in theme is invalid ({e}); using tokens");
-            ThemeFamilyContent::from_themes(BUILTIN_FAMILY, &Theme::light(), &Theme::dark())
-        });
+        let content = ThemeFamilyContent::from_json(BUILTIN_THEME_JSON)
+            .and_then(|c| c.validate().map(|()| c).map_err(|e| e.to_string()))
+            .unwrap_or_else(|e| {
+                eprintln!("labonair-theme: embedded built-in theme is invalid ({e}); using tokens");
+                ThemeFamilyContent::from_themes(BUILTIN_FAMILY, &Theme::light(), &Theme::dark())
+            });
         Self {
             families: vec![RegisteredFamily {
                 id: BUILTIN_FAMILY_ID.to_string(),
@@ -273,15 +372,18 @@ impl ThemeRegistry {
     /// Replace the non-built-in families with everything valid in `dir`.
     ///
     /// This is an extension adapter, not part of the current static catalog.
-    /// Malformed / unreadable files are skipped and returned as warnings; the
-    /// registry is never left empty (the built-in family always remains).
+    /// Unreadable, malformed, and invalid files (see
+    /// [`ThemeFamilyContent::validate`]: both a light and a dark variant are
+    /// required) are skipped and returned as [`RejectedTheme`]s for the caller
+    /// to surface through the notification center; the registry is never left
+    /// empty (the built-in family always remains).
     ///
     /// Deferred boundary (R08-011): retained under test, not wired to any UI.
-    pub fn load_user_themes(&mut self, dir: &Path) -> Vec<String> {
+    pub fn load_user_themes(&mut self, dir: &Path) -> Vec<RejectedTheme> {
         self.families.retain(|f| f.builtin);
-        let mut warnings = Vec::new();
+        let mut rejected = Vec::new();
         let Ok(rd) = std::fs::read_dir(dir) else {
-            return warnings;
+            return rejected;
         };
         let mut loaded: Vec<RegisteredFamily> = Vec::new();
         for entry in rd.flatten() {
@@ -302,25 +404,34 @@ impl ThemeRegistry {
             let raw = match std::fs::read_to_string(&path) {
                 Ok(r) => r,
                 Err(e) => {
-                    warnings.push(format!("{}: {e}", path.display()));
+                    rejected.push(RejectedTheme {
+                        path,
+                        reason: ThemeRejection::Unreadable(e.to_string()),
+                    });
                     continue;
                 }
             };
             match ThemeFamilyContent::from_json(&raw) {
-                Ok(content) if !content.themes.is_empty() && !content.name.trim().is_empty() => {
-                    loaded.push(RegisteredFamily {
+                Ok(content) => match content.validate() {
+                    Ok(()) => loaded.push(RegisteredFamily {
                         id,
                         content,
                         builtin: false,
-                    });
-                }
-                Ok(_) => warnings.push(format!("{}: no variants", path.display())),
-                Err(e) => warnings.push(format!("{}: {e}", path.display())),
+                    }),
+                    Err(e) => rejected.push(RejectedTheme {
+                        path,
+                        reason: ThemeRejection::Invalid(e),
+                    }),
+                },
+                Err(e) => rejected.push(RejectedTheme {
+                    path,
+                    reason: ThemeRejection::Malformed(e),
+                }),
             }
         }
         loaded.sort_by_key(|f| f.content.name.to_lowercase());
         self.families.extend(loaded);
-        warnings
+        rejected
     }
 
     /// Every selectable variant, built-in family first, then user families by
@@ -367,7 +478,7 @@ impl ThemeRegistry {
     /// - `"Family/Variant"` — that exact variant;
     /// - `"Variant"` — the first variant with that name across all families;
     /// - `"Family"` — that family's first variant of the given `appearance`
-    ///   (falls back to its first variant).
+    ///   (no cross-mode fallback; a family without that mode is not found).
     ///
     /// `appearance` is the mode the caller wants when the id does not pin one.
     pub fn get(&self, id: &str) -> Result<Theme, ThemeNotFoundError> {
@@ -396,7 +507,7 @@ impl ThemeRegistry {
         // Bare name: try a family first (pick its variant by appearance), then a
         // flat variant name across every family.
         if let Some(family) = self.family(id) {
-            let variant = family.first_of(appearance).ok_or_else(not_found)?;
+            let variant = family.variant_of(appearance).ok_or_else(not_found)?;
             return Ok(family.resolve_variant(variant));
         }
         for f in &self.families {
@@ -439,7 +550,7 @@ impl ThemeRegistry {
             }
         }
         let variant = family
-            .first_of(appearance)
+            .variant_of(appearance)
             .ok_or_else(|| ThemeNotFoundError(family_id.to_string()))?;
         Ok(family.resolve_variant(variant))
     }
@@ -580,14 +691,132 @@ mod tests {
         std::fs::write(dir.join("broken.json"), "{ not json").unwrap();
 
         let mut reg = ThemeRegistry::builtin();
-        let warnings = reg.load_user_themes(&dir);
-        assert_eq!(warnings.len(), 1, "{warnings:?}");
-        assert!(warnings[0].contains("broken.json"));
+        let rejected = reg.load_user_themes(&dir);
+        assert_eq!(rejected.len(), 1, "{rejected:?}");
+        assert!(rejected[0].path.ends_with("broken.json"));
+        assert!(matches!(rejected[0].reason, ThemeRejection::Malformed(_)));
         assert!(reg.contains("Good/Good Dark"));
         // Built-in still present.
         assert!(reg.contains("Labonair/Labonair Dark"));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn family(modes: &[Appearance]) -> ThemeFamilyContent {
+        ThemeFamilyContent {
+            name: "Fam".to_string(),
+            author: None,
+            themes: modes
+                .iter()
+                .enumerate()
+                .map(|(i, a)| ThemeVariantContent {
+                    name: format!("Fam {i}"),
+                    appearance: *a,
+                    colors: BTreeMap::new(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn validate_requires_both_light_and_dark() {
+        assert_eq!(
+            family(&[Appearance::Light, Appearance::Dark]).validate(),
+            Ok(())
+        );
+        assert_eq!(
+            family(&[Appearance::Dark]).validate(),
+            Err(ThemeValidationError::MissingAppearance(Appearance::Light))
+        );
+        assert_eq!(
+            family(&[Appearance::Light, Appearance::Light]).validate(),
+            Err(ThemeValidationError::MissingAppearance(Appearance::Dark))
+        );
+        assert_eq!(
+            family(&[]).validate(),
+            Err(ThemeValidationError::NoVariants)
+        );
+        let mut unnamed = family(&[Appearance::Light, Appearance::Dark]);
+        unnamed.name = "  ".to_string();
+        assert_eq!(unnamed.validate(), Err(ThemeValidationError::EmptyName));
+    }
+
+    #[test]
+    fn embedded_builtin_family_is_valid() {
+        let content = ThemeFamilyContent::from_json(BUILTIN_THEME_JSON).unwrap();
+        assert_eq!(content.validate(), Ok(()));
+    }
+
+    #[test]
+    fn loader_rejects_one_mode_files_and_keeps_both_mode_files() {
+        let dir =
+            std::env::temp_dir().join(format!("labonair-themes-modes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("dark-only.json"),
+            r##"{ "name": "DarkOnly", "themes": [
+                { "name": "DarkOnly Dark", "appearance": "dark", "colors": {} } ] }"##,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("both.json"),
+            r##"{ "name": "Both", "themes": [
+                { "name": "Both Dark", "appearance": "dark", "colors": {} },
+                { "name": "Both Light", "appearance": "light", "colors": {} } ] }"##,
+        )
+        .unwrap();
+
+        let mut reg = ThemeRegistry::builtin();
+        let rejected = reg.load_user_themes(&dir);
+        assert_eq!(rejected.len(), 1, "{rejected:?}");
+        assert!(rejected[0].path.ends_with("dark-only.json"));
+        assert_eq!(
+            rejected[0].reason,
+            ThemeRejection::Invalid(ThemeValidationError::MissingAppearance(Appearance::Light))
+        );
+        assert!(!reg.contains("DarkOnly/DarkOnly Dark"));
+        assert!(reg.contains("Both/Both Dark"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn family_id_resolves_each_mode_to_its_own_variant() {
+        let mut reg = ThemeRegistry::builtin();
+        let mut fam = family(&[Appearance::Light, Appearance::Dark]);
+        fam.themes[0]
+            .colors
+            .insert("primary".into(), "#111111".into());
+        fam.themes[1]
+            .colors
+            .insert("primary".into(), "#222222".into());
+        reg.families.push(RegisteredFamily {
+            id: "fam".to_string(),
+            content: fam,
+            builtin: false,
+        });
+        let (light, _) = reg.resolve("Fam", Appearance::Light).unwrap();
+        let (dark, _) = reg.resolve("Fam", Appearance::Dark).unwrap();
+        assert_eq!(to_rgb8(light.core.primary), [0x11, 0x11, 0x11]);
+        assert_eq!(to_rgb8(dark.core.primary), [0x22, 0x22, 0x22]);
+    }
+
+    #[test]
+    fn missing_mode_never_falls_back_to_the_other_mode() {
+        // Bypass the loader on purpose: even a registry holding an invalid
+        // family must not show the wrong mode.
+        let mut reg = ThemeRegistry::builtin();
+        reg.families.push(RegisteredFamily {
+            id: "darkonly".to_string(),
+            content: family(&[Appearance::Dark]),
+            builtin: false,
+        });
+        assert!(reg.resolve("Fam", Appearance::Light).is_err());
+        assert!(reg
+            .resolve_family_variant("Fam", Appearance::Light, None)
+            .is_err());
+        assert!(reg.resolve("Fam", Appearance::Dark).is_ok());
     }
 
     #[test]

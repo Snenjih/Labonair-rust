@@ -157,7 +157,7 @@ mod tests {
                 "App theme",
                 "Choose a color theme and preview its variants.",
                 "Choose theme…",
-                crate::services::SettingsSurfacePage::section("appearance", "Appearance", "Theme"),
+                crate::services::SettingsSurfacePage::section("themes", "Themes", "Color theme"),
             ),
             SettingsSurface::new(
                 SettingsSurfaceId::new("keymap"),
@@ -168,7 +168,7 @@ mod tests {
                     "keymap",
                     "Keymap",
                     "Keyboard shortcuts",
-                    2,
+                    labonair_settings::FIRST_OWNER_PAGE_INDEX,
                 ),
             ),
         ];
@@ -197,6 +197,49 @@ mod tests {
             .iter()
             .any(|r| r.target == SearchTarget::Field(terminal)));
         assert!(rows.iter().any(|r| r.target == SearchTarget::Field(editor)));
+    }
+
+    /// Fields that moved in the page-tree redistribution stay searchable and
+    /// resolve to their new category.
+    #[test]
+    fn moved_fields_are_found_under_their_new_category() {
+        let idx = index();
+        let fields = all_fields();
+        let expect = |query: &str, json_path: &str, page_title: &str| {
+            let field = fields
+                .iter()
+                .position(|field| field.json_path == json_path)
+                .unwrap();
+            let rows = search(&idx, query, 50);
+            assert!(
+                rows.iter()
+                    .any(|row| row.target == SearchTarget::Field(field)
+                        && row.page_title == page_title),
+                "`{query}` did not find `{json_path}` under `{page_title}`"
+            );
+        };
+        expect("tab bar location", "appearance.tabsLocation", "Appearance");
+        expect("zen", "appearance.zenModeShowHeader", "Appearance");
+        expect("restore window", "general.restoreWindowState", "General");
+        expect("git gutter", "editor.editorGitGutter", "Editor");
+        expect("word diff", "editor.editorGitWordDiff", "Editor");
+        expect(
+            "git decorations",
+            "file_manager.explorerGitDecorations",
+            "Search & Files",
+        );
+        expect(
+            "source control file tree",
+            "file_manager.scmFileTree",
+            "Search & Files",
+        );
+        expect(
+            "keepalive",
+            "connections.sshKeepaliveIntervalSecs",
+            "Terminal",
+        );
+        expect("animations", "appearance.animations", "Appearance");
+        expect("pane layout", "appearance.paneLayout", "Appearance");
     }
 
     /// An exact `json_path` query finds exactly that field.

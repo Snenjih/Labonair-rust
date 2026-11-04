@@ -68,14 +68,10 @@ impl BackgroundSettingsView {
         let tint_opacity = cx.new(|_| slider_state(settings.background_tint_opacity));
 
         let mut subscriptions = Vec::new();
+        // Store-level failures (load, decode, save) are reported once, app-wide,
+        // by the shell's `BackgroundEvent` subscription; this view only reports
+        // its own filesystem failures.
         let report_error: ErrorSink = Rc::new(report_error);
-        let event_reporter = report_error.clone();
-        subscriptions.push(cx.subscribe(
-            &store,
-            move |_, _, event: &crate::BackgroundEvent, cx| match event {
-                crate::BackgroundEvent::Error(message) => event_reporter(message.clone(), cx),
-            },
-        ));
         let tint_store = store.clone();
         subscriptions.push(
             cx.subscribe(&tint_input, move |this, input, event, cx| match event {

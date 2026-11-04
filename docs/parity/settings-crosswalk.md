@@ -26,14 +26,14 @@ effect, validation, persistence, and acceptance evidence remain open.
 | 4 | Editor | Editor | Typography, wrapping, line numbers, indentation, Vim, caret and current-line behavior, and format-on-save | Partial; the consumer-backed global format-on-save switch is available under Formatting & Save. The [Workspace save packet](action-classification-workspace-save.md) maps it to the pinned per-language `format_on_save` setting and records missing language modes and one-shot bypass; implement and verify remaining behavior before exposing other values |
 | 5 | Languages & Tools | Editor, Snippets, planned Extensions | Language services, toolchains, formatters, language-specific support | Missing; language-service lifecycle and extension owner are dependencies |
 | 6 | Search & Files | File Finder, Filesystem, Explorer, SFTP | File search, Explorer behavior, SFTP browser presentation | Partial; the [TextFinder action packet](action-classification-text-finder-unbound.md) records that TextFinder explicitly overrides the generic cursor-seed setting with selection-only seeding, so it is not an additional consumer. Map remaining search and Explorer settings, and retain SFTP values with their owning workflow |
-| 7 | Window & Layout | Workspace | Startup/session choices, tab placement, zen presentation, fullscreen mode, and the JSON-only dock resize policy | Partial; the [app/window lifecycle packet](action-classification-app-window-lifecycle.md) records native/simple fullscreen modes; define the universal tab/split/layout setting boundary, dock policy scope, and persistence |
+| 7 | Window & Layout | Workspace | Startup/session choices, tab placement, zen presentation, fullscreen mode, and the JSON-only dock resize policy | Folded into General › Startup and Appearance (Tabs, Zen Mode, Panes); the [app/window lifecycle packet](action-classification-app-window-lifecycle.md) records native/simple fullscreen modes; define the universal tab/split/layout setting boundary, dock policy scope, and persistence |
 | 8 | Panels | Workspace and panel owners | Panel visibility, docking, and panel presentation | Missing as a Settings page; depends on the accepted dock and owner-contribution contract |
 | 9 | Debugger | Planned Debugger | No current debugger settings owner | Missing; debugger capability, protocol, lifecycle, and settings contract come first |
 | 10 | Terminal | Terminal, Workspace | Shell, typography, cursor, scrollback, input, environment, and close behavior | Partial; finish terminal value/effect coverage and visual states |
-| 11 | Version Control | Git, Source Control, Git Graph | Explorer Git decorations and SCM tree preference | Partial; map Git behavior settings and keep repository operations owned by Git |
+| 11 | Version Control | Git, Source Control, Git Graph | Explorer Git decorations and SCM tree preference | Folded into Editor › Git and Search & Files › Explorer & Source Control; map Git behavior settings and keep repository operations owned by Git |
 | 12 | Collaboration | Planned Collaboration | No current collaboration settings owner | Missing; collaboration lifecycle, identity, privacy, and permissions come first |
 | 13 | AI | AI, MCP | AI capabilities and provider/session preferences; credentials remain capability-owned | Partial; define safe non-secret values and compose the AI owner's configuration surface |
-| 14 | Network | SSH, Connections, planned Remote Development | SSH timeout and keep-alive fallbacks | Partial; inventory proxy, transport, and remote workspace behavior with explicit secret boundaries |
+| 14 | Network | SSH, Connections, planned Remote Development | SSH timeout and keep-alive fallbacks | Folded into Terminal › Connection; inventory proxy, transport, and remote workspace behavior with explicit secret boundaries |
 | 15 | Developer | Planned Developer diagnostics and developer tooling | No current Settings value group | Missing; add only values with a live consumer and a defined support workflow |
 
 The current seven `SettingsContent` fields (`general`, `appearance`,
@@ -66,16 +66,17 @@ edit page.
 
 | Current value group | Target page placement | Existing ownership constraint |
 |---|---|---|
-| `general` | General; `theme` is on Appearance and `restoreWindowState` is on Window & Layout | Keep window/session/update values with their live consumers |
-| `appearance` | Appearance; tab and zen presentation values are on Window & Layout | Themes and Backgrounds own catalogs, previews, and their runtime state |
+| `general` | General; `theme` is on Appearance and `restoreWindowState` is on General › Startup | Keep window/session/update values with their live consumers |
+| `appearance` | Appearance (including tabs, panes, motion, and Zen mode) | Themes and Backgrounds own catalogs, previews, and their runtime state; they are hosted on the Themes page |
 | `terminal` | Terminal | Terminal and Workspace consume typed values; credentials stay outside Settings |
-| `editor` | Editor, Languages & Tools, and Version Control | Editor owns document behavior and language-service state |
-| `fileManager` | Search & Files and Version Control | Explorer, Filesystem, Git, and SFTP retain their behavior; do not create a duplicate browser settings store |
-| `workspace` | General for palette/quit values; Window & Layout is the fallback for future owner-backed values | Workspace layout/session state remains runtime state, not a Settings override |
-| `connections` | Network | SSH/Connections own transport behavior; Settings stores only non-secret fallback values |
+| `editor` | Editor (including Git), Languages & Tools, and Search & Files | Editor owns document behavior and language-service state |
+| `fileManager` | Search & Files (including Explorer & Source Control) | Explorer, Filesystem, Git, and SFTP retain their behavior; do not create a duplicate browser settings store |
+| `workspace` | General for palette/quit values and as the fallback for future owner-backed values | Workspace layout/session state remains runtime state, not a Settings override |
+| `connections` | Terminal › Connection | SSH/Connections own transport behavior; Settings stores only non-secret fallback values |
 
-The current runtime exposes ten pages, including the owner-linked Keymap
-page. Panels, Debugger, Collaboration, AI, and Developer stay in the target
+The current runtime exposes eight pages: seven generated categories (General,
+Appearance, Themes, Editor, Languages & Tools, Search & Files, Terminal) and
+the owner-linked Keymap page. Panels, Debugger, Collaboration, AI, and Developer stay in the target
 inventory until their owner-backed Settings contribution or canonical
 embedded surface exists.
 
@@ -105,8 +106,7 @@ other surfaces link to that page.
    groups. Preserve existing JSON keys and migrations while navigation moves
    to stable field IDs.
 3. Finish the pages whose owners and current values already exist: General,
-   Appearance, Editor, Search & Files, Window & Layout, Terminal, Version
-   Control, and Network.
+   Appearance, Themes, Editor, Search & Files, and Terminal.
 4. Route the Keymap page to the canonical Keymap owner surface rather than
    maintaining a second key binding editor in Settings.
 5. Add Languages & Tools, Panels, Debugger, Collaboration, AI, and Developer

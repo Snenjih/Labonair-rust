@@ -69,6 +69,39 @@ impl UiDensity {
     ];
 }
 
+/// The resolved UI motion level (`appearance.animations` after the `system`
+/// choice has been resolved against the OS "Reduce motion" preference).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AnimationLevel {
+    /// All transitions.
+    #[default]
+    Full,
+    /// Fades only; no movement or resize transitions.
+    Reduced,
+    /// No transitions.
+    Off,
+}
+
+impl AnimationLevel {
+    /// Whether motion beyond a plain fade is suppressed.
+    pub fn is_reduced(self) -> bool {
+        self != AnimationLevel::Full
+    }
+}
+
+/// Pane arrangement inside a tab (`appearance.paneLayout`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PaneLayout {
+    /// Floating, rounded panes separated by a gap.
+    #[default]
+    Comfortable,
+    /// Edge-to-edge panes separated by a hairline.
+    Compact,
+}
+
+/// Gap between floating panes (px, before density scaling).
+pub const PANE_GAP_COMFORTABLE: f32 = 6.0;
+
 /// The resolved metric bundle — the "settings" half of [`ActiveTheme`].
 ///
 /// Built from the user's theme-settings by the settings → `ThemeStore` bridge
@@ -94,8 +127,19 @@ pub struct ThemeMetrics {
     pub density: UiDensity,
     /// Multiplier applied to the theme's [`RadiusScale`] (1.0 = unchanged).
     pub corner_radius_scale: f32,
-    /// When `true`, [`ActiveTheme::animation`] reports zero durations.
+    /// Derived from [`Self::animations`] (`animations != Full`) for consumers
+    /// that only need a boolean. When `true` (and the level is not
+    /// [`AnimationLevel::Reduced`]), [`ActiveTheme::animation`] reports zero
+    /// durations.
     pub reduce_motion: bool,
+    /// The resolved motion level; `Reduced` keeps fade durations.
+    pub animations: AnimationLevel,
+    /// Pane arrangement; see [`Self::pane_gap`].
+    pub pane_layout: PaneLayout,
+    /// `true` while a background image is shown in the window. Surface fills
+    /// then resolve to translucent alphas ([`VibrancyLayer::resolve`]) so the
+    /// image stays visible. Set by the shell from the background owner.
+    pub background_active: bool,
     /// When `true`, window chrome and surfaces are painted with the
     /// [`VibrancyLayer`](crate::VibrancyLayer) opacities over the native
     /// blurred window material; `false` (default) keeps Ciel's opaque,
@@ -116,12 +160,24 @@ impl Default for ThemeMetrics {
             density: UiDensity::Default,
             corner_radius_scale: 1.0,
             reduce_motion: false,
+            animations: AnimationLevel::Full,
+            pane_layout: PaneLayout::Comfortable,
+            background_active: false,
             translucent_surfaces: false,
         }
     }
 }
 
 impl ThemeMetrics {
+    /// Gap between panes in px: `0` in the compact layout, the density-scaled
+    /// floating gap otherwise.
+    pub fn pane_gap(&self) -> f32 {
+        match self.pane_layout {
+            PaneLayout::Comfortable => self.space(PANE_GAP_COMFORTABLE),
+            PaneLayout::Compact => 0.0,
+        }
+    }
+
     /// A spacing value (px) scaled by the active density.
     pub fn space(&self, px: f32) -> f32 {
         px * self.density.spacing_scale()
@@ -155,7 +211,7 @@ impl ActiveTheme {
     pub fn new(colors: Theme, metrics: ThemeMetrics) -> Self {
         let radius = metrics.scaled_radius(colors.radius);
         let mut animation = colors.animation;
-        if metrics.reduce_motion {
+        if metrics.reduce_motion && metrics.animations != AnimationLevel::Reduced {
             animation.dur_fast = Duration::ZERO;
             animation.dur_base = Duration::ZERO;
             animation.dur_slow = Duration::ZERO;
@@ -290,6 +346,31 @@ mod tests {
         assert_eq!(reduced.animation().dur_fast, Duration::ZERO);
         assert_eq!(reduced.animation().dur_base, Duration::ZERO);
         assert_eq!(reduced.animation().dur_slow, Duration::ZERO);
+    }
+
+    #[test]
+    fn reduced_level_keeps_fade_durations() {
+        let active = ActiveTheme::new(
+            Theme::dark(),
+            ThemeMetrics {
+                reduce_motion: true,
+                animations: AnimationLevel::Reduced,
+                ..ThemeMetrics::default()
+            },
+        );
+        assert!(active.reduce_motion());
+        assert!(active.animation().dur_base > Duration::ZERO);
+    }
+
+    #[test]
+    fn pane_gap_follows_layout_and_density() {
+        let comfortable = ThemeMetrics::default();
+        assert_eq!(comfortable.pane_gap(), PANE_GAP_COMFORTABLE);
+        let compact = ThemeMetrics {
+            pane_layout: PaneLayout::Compact,
+            ..ThemeMetrics::default()
+        };
+        assert_eq!(compact.pane_gap(), 0.0);
     }
 
     #[test]

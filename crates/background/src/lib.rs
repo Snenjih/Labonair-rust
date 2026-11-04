@@ -11,10 +11,13 @@
 //! frame (see the task's performance warning) — and GPUI's own asset cache
 //! keeps the GPU texture around after that.
 //!
-//! Rendering mirrors the reference implementation: the image sits in an
-//! absolutely-positioned, non-interactive overlay at a halved opacity so the UI
-//! and terminal text stay readable at any slider value. Settings value fields
-//! values, editor, image storage, decoding, and rendering.
+//! The image sits in an absolutely-positioned, non-interactive overlay beneath
+//! the window chrome. While it covers the window the shell reports that to the
+//! theme (`ThemeMetrics::background_active`) so the chrome, main and terminal
+//! fills resolve translucent and the image shows through them; text stays
+//! readable through the translucent fills' own alpha plus the tint clamp
+//! ([`readable_tint_opacity`]). This crate owns values, editor, image storage,
+//! decoding, and rendering.
 
 mod settings_view;
 mod storage;
@@ -46,23 +49,43 @@ pub use storage::{background_read_data_url, BackgroundFit, BackgroundTarget};
 pub use labonair_background_host::{BackgroundHost, BackgroundPulse, LayerScope};
 
 /// Contribute the Background-owned image editor to Settings navigation.
+///
+/// The surface is inline-capable (ADR 0006): the Settings window may embed the
+/// owner's [`BackgroundSettingsView`] in the Themes page. `open_backgrounds`
+/// stays the standalone entry point (the modal) until every host embeds.
+/// `report_error` receives the view's own filesystem failures (store failures
+/// are reported app-wide by the shell); it should raise a notification.
 pub fn register_settings_surfaces(
     registry: &mut labonair_settings::SettingsSurfaceRegistry,
     open_backgrounds: impl Fn(&mut gpui::App) + 'static,
+    report_error: impl Fn(String, &mut gpui::App) + 'static,
 ) -> Result<(), String> {
     use labonair_settings::{
         SettingsSurface, SettingsSurfaceContribution, SettingsSurfaceId, SettingsSurfacePage,
     };
 
-    registry.register(SettingsSurfaceContribution::new(
+    type ErrorReporter = std::rc::Rc<dyn Fn(String, &mut gpui::App)>;
+    let report_error: ErrorReporter = std::rc::Rc::new(report_error);
+    registry.register(SettingsSurfaceContribution::inline(
         SettingsSurface::new(
             SettingsSurfaceId::new("backgrounds"),
             "Background image",
             "Choose a background image and adjust its appearance.",
             "Choose background…",
-            SettingsSurfacePage::section("appearance", "Appearance", "Background"),
+            SettingsSurfacePage::section("themes", "Themes", "Background"),
         ),
         open_backgrounds,
+        move |window, cx| {
+            let store = background_store(cx);
+            let theme = labonair_theme::theme_store(cx);
+            let report_error = report_error.clone();
+            cx.new(|cx| {
+                BackgroundSettingsView::new(store, theme, window, cx, move |message, app| {
+                    report_error(message, app)
+                })
+            })
+            .into()
+        },
     ))
 }
 
@@ -77,10 +100,46 @@ pub enum BackgroundEvent {
 /// texture for a dimmed background.
 const MAX_DIM: u32 = 2560;
 
-/// Rendered opacity is the slider value (0..1) multiplied by this, so the
-/// wallpaper never exceeds 50% and text stays legible (reference:
-/// `BG_OPACITY_RENDER_FACTOR`).
-const OPACITY_RENDER_FACTOR: f32 = 0.5;
+/// Exponent of the slider-to-opacity curve (`rendered = slider^GAMMA`).
+///
+/// The reference halved the slider (`BG_OPACITY_RENDER_FACTOR = 0.5`) because
+/// its chrome was transparent. Here the image sits *under* translucent chrome
+/// fills (about 0.78 alpha, see `VibrancyLayer::opacity_in`), so only a fraction
+/// of the image reaches the eye; halving it made the default 30% a ghost (~3%
+/// of the image). A gamma below 1 lifts the low end so 30% renders at ~0.49
+/// while 0% stays 0 and 100% stays fully opaque; legibility is the chrome
+/// alpha's job, not the slider's.
+const OPACITY_GAMMA: f32 = 0.6;
+
+/// The image layer opacity (0..=1) for a slider value (0..=100).
+fn rendered_opacity(slider: u8) -> f32 {
+    (slider.min(100) as f32 / 100.0).powf(OPACITY_GAMMA)
+}
+
+/// Minimum WCAG contrast the tint colour must keep against the UI foreground
+/// before it may be applied at full strength (large-text / UI-component floor).
+const MIN_TINT_CONTRAST: f64 = 3.0;
+
+/// Largest accepted source file. Bigger files are rejected (with a
+/// notification) instead of being read into memory.
+const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Decoder guard: refuse images whose width or height exceeds this before any
+/// pixel buffer is allocated (decompression bombs, 100k-pixel panoramas).
+const MAX_SOURCE_DIM: u32 = 16_384;
+
+/// Decoder guard: total allocation budget for decoding one image.
+const MAX_DECODE_ALLOC: u64 = 768 * 1024 * 1024;
+
+/// The tint opacity (0..=1) to actually paint: `requested`, scaled down when
+/// the tint colour has too little contrast against the UI foreground `fg`, so
+/// a white tint in a dark theme (or black in a light one) cannot wash text out.
+/// A tint with at least [`MIN_TINT_CONTRAST`] against `fg` is unchanged.
+pub fn readable_tint_opacity(tint: gpui::Hsla, fg: gpui::Hsla, requested: f32) -> f32 {
+    let contrast = labonair_theme::contrast_ratio(labonair_theme::composite_over(tint, fg), fg);
+    let scale = ((contrast - 1.0) / (MIN_TINT_CONTRAST - 1.0)).clamp(0.0, 1.0) as f32;
+    (requested * scale).clamp(0.0, 1.0)
+}
 
 /// Central background-image state. Created once at startup, stored as a GPUI
 /// entity and exposed app-wide via [`GlobalBackground`].
@@ -95,6 +154,9 @@ pub struct BackgroundStore {
     image_epoch: u64,
     save_sequence: Arc<AtomicU64>,
     save_lock: Arc<Mutex<()>>,
+    /// The UI foreground colour, pushed by the shell, that the tint is
+    /// clamped against (see [`readable_tint_opacity`]).
+    text_color: Option<gpui::Hsla>,
 }
 
 impl BackgroundStore {
@@ -117,6 +179,7 @@ impl BackgroundStore {
             image_epoch: 0,
             save_sequence: Arc::new(AtomicU64::new(0)),
             save_lock: Arc::new(Mutex::new(())),
+            text_color: None,
         }
     }
 
@@ -128,6 +191,27 @@ impl BackgroundStore {
     /// Every background image currently in the app-data `backgrounds/` dir.
     pub fn available(&self) -> Vec<BackgroundInfo> {
         self.available_images.clone()
+    }
+
+    /// Whether a decoded image is painted behind the whole window (target
+    /// `App`/`Both`). The shell mirrors this into `ThemeMetrics::background_active`
+    /// so window surfaces turn translucent; a `Terminal`-only image does not
+    /// touch the chrome.
+    pub fn covers_window(&self) -> bool {
+        self.image.is_some()
+            && matches!(
+                self.settings.background_target,
+                BackgroundTarget::App | BackgroundTarget::Both
+            )
+    }
+
+    /// Tell the store which foreground colour the UI draws text with, so the
+    /// tint can be clamped to stay readable. Re-renders only on a change.
+    pub fn set_text_color(&mut self, color: gpui::Hsla, cx: &mut Context<Self>) {
+        if self.text_color != Some(color) {
+            self.text_color = Some(color);
+            cx.notify();
+        }
     }
 
     /// Whether the selected image is currently being decoded or processed.
@@ -267,29 +351,31 @@ impl BackgroundStore {
             return None;
         }
 
-        let rendered_opacity = (s.background_opacity as f32 / 100.0) * OPACITY_RENDER_FACTOR;
+        let rendered_opacity = rendered_opacity(s.background_opacity);
         // GPUI's `img()` has no tiling mode — `Tile` falls back to `Cover`.
         let fit = match s.background_fit {
             BackgroundFit::Cover | BackgroundFit::Tile => ObjectFit::Cover,
             BackgroundFit::Contain => ObjectFit::Contain,
         };
 
-        let mut root = div()
-            .absolute()
-            .inset_0()
-            .overflow_hidden()
-            .opacity(rendered_opacity)
-            .child(img(image).object_fit(fit).size_full());
+        // The image fades on its own; the tint is a sibling so its strength
+        // is not multiplied by the image opacity.
+        let mut root = div().absolute().inset_0().overflow_hidden().child(
+            div()
+                .absolute()
+                .inset_0()
+                .opacity(rendered_opacity)
+                .child(img(image).object_fit(fit).size_full()),
+        );
 
         if s.background_tint_opacity > 0 {
             if let Ok(tint) = labonair_theme::parse_color(&s.background_tint_color) {
-                root = root.child(
-                    div()
-                        .absolute()
-                        .inset_0()
-                        .bg(tint)
-                        .opacity(s.background_tint_opacity as f32 / 100.0),
-                );
+                let requested = s.background_tint_opacity as f32 / 100.0;
+                let tint_opacity = match self.text_color {
+                    Some(fg) => readable_tint_opacity(tint, fg, requested),
+                    None => requested,
+                };
+                root = root.child(div().absolute().inset_0().bg(tint).opacity(tint_opacity));
             }
         }
 
@@ -436,21 +522,20 @@ fn load_processed_image(filename: &str, blur: u8) -> Result<Image, String> {
 
 fn load_processed_from(dir: &Path, filename: &str, blur: u8) -> Result<Image, String> {
     let path = dir.join(filename);
+    let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
+    if size > MAX_FILE_BYTES {
+        return Err(format!(
+            "the file is {} MB; the limit is {} MB",
+            size / (1024 * 1024),
+            MAX_FILE_BYTES / (1024 * 1024)
+        ));
+    }
     let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
 
-    let mut dynimg = match image::load_from_memory(&bytes) {
-        Ok(d) => d,
-        Err(e) => {
-            // Undecodable by the `image` crate (e.g. AVIF): with no processing
-            // requested, let GPUI's own decoder try the untouched bytes.
-            if blur == 0 {
-                if let Some(fmt) = gpui_format_from_path(&path) {
-                    return Ok(Image::from_bytes(fmt, bytes));
-                }
-            }
-            return Err(e.to_string());
-        }
-    };
+    // Every format GPUI can display is decodable here, so a decode failure
+    // means a corrupt or unsupported file: report it instead of handing GPUI
+    // bytes it will silently fail to draw.
+    let mut dynimg = decode_limited(&bytes).map_err(|e| e.to_string())?;
 
     let had_alpha = dynimg.color().has_alpha();
 
@@ -493,6 +578,18 @@ fn load_processed_from(dir: &Path, filename: &str, blur: u8) -> Result<Image, St
             .map_err(|e| e.to_string())?;
         Ok(Image::from_bytes(ImageFormat::Jpeg, out.into_inner()))
     }
+}
+
+/// Decode `bytes` with width/height and allocation limits so a corrupt or
+/// hostile header cannot make the decoder allocate gigabytes.
+fn decode_limited(bytes: &[u8]) -> image::ImageResult<image::DynamicImage> {
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_SOURCE_DIM);
+    limits.max_image_height = Some(MAX_SOURCE_DIM);
+    limits.max_alloc = Some(MAX_DECODE_ALLOC);
+    let mut reader = image::ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
+    reader.limits(limits);
+    reader.decode()
 }
 
 fn gpui_format_from_path(path: &Path) -> Option<ImageFormat> {
@@ -572,12 +669,13 @@ mod tests {
     #[test]
     fn background_settings_surface_is_registered_by_its_owner() {
         let mut registry = labonair_settings::SettingsSurfaceRegistry::default();
-        register_settings_surfaces(&mut registry, |_| {}).unwrap();
+        register_settings_surfaces(&mut registry, |_| {}, |_, _| {}).unwrap();
         let surface = registry
             .surface(labonair_settings::SettingsSurfaceId::new("backgrounds"))
             .unwrap();
-        assert_eq!(surface.page.slug, "appearance");
+        assert_eq!(surface.page.slug, "themes");
         assert_eq!(surface.page.section, "Background");
+        assert_eq!(surface.mode, labonair_settings::SettingsSurfaceMode::Inline);
     }
 
     #[test]
@@ -590,6 +688,54 @@ mod tests {
         assert!(matches!(fit(BackgroundFit::Tile), ObjectFit::Cover));
         assert!(matches!(fit(BackgroundFit::Cover), ObjectFit::Cover));
         assert!(matches!(fit(BackgroundFit::Contain), ObjectFit::Contain));
+    }
+
+    #[test]
+    fn slider_curve_lifts_the_low_end_and_keeps_the_ends() {
+        assert_eq!(rendered_opacity(0), 0.0);
+        assert_eq!(rendered_opacity(100), 1.0);
+        let default = rendered_opacity(30);
+        assert!(default > 0.4 && default < 0.6, "{default}");
+        assert!(rendered_opacity(29) < rendered_opacity(30));
+    }
+
+    #[test]
+    fn tint_without_contrast_against_text_is_faded_out() {
+        let white = labonair_theme::parse_color("#ffffff").unwrap();
+        let black = labonair_theme::parse_color("#000000").unwrap();
+        // White tint under white text would wash it out entirely.
+        assert_eq!(readable_tint_opacity(white, white, 0.8), 0.0);
+        // High-contrast tint is untouched.
+        assert_eq!(readable_tint_opacity(black, white, 0.8), 0.8);
+        // Never exceeds the request, never negative.
+        let grey = labonair_theme::parse_color("#808080").unwrap();
+        let faded = readable_tint_opacity(grey, white, 0.5);
+        assert!((0.0..=0.5).contains(&faded));
+    }
+
+    #[test]
+    fn corrupt_oversized_and_missing_images_are_errors_not_panics() {
+        let dir = std::env::temp_dir().join(format!("labonair-bg-bad-{}", uuid_like()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        std::fs::write(dir.join("corrupt.png"), b"definitely not a png").unwrap();
+        assert!(load_processed_from(&dir, "corrupt.png", 0).is_err());
+        assert!(load_processed_from(&dir, "missing.png", 0).is_err());
+
+        // A sparse file just over the size limit is rejected before reading.
+        let big = std::fs::File::create(dir.join("huge.png")).unwrap();
+        big.set_len(MAX_FILE_BYTES + 1).unwrap();
+        let err = load_processed_from(&dir, "huge.png", 0).unwrap_err();
+        assert!(err.contains("limit"), "{err}");
+
+        // An image wider than the decoder limit is refused.
+        let wide = image::RgbImage::from_pixel(MAX_SOURCE_DIM + 1, 1, image::Rgb([1, 2, 3]));
+        image::DynamicImage::ImageRgb8(wide)
+            .save_with_format(dir.join("wide.png"), image::ImageFormat::Png)
+            .unwrap();
+        assert!(load_processed_from(&dir, "wide.png", 0).is_err());
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

@@ -9,7 +9,7 @@
 //! was retired once every call site moved onto `XSettings::get(cx)`.
 
 use labonair_settings_content::{
-    appearance::AppearanceContent,
+    appearance::{Animations, AppearanceContent, PaneLayout},
     connections::ConnectionsContent,
     editor::{
         EditorContent, EditorCursorStyle, EditorDiagnosticMaxSeverity, EditorDocumentColorMode,
@@ -88,6 +88,10 @@ impl Settings for ThemeSettings {
     fn from_settings(content: &SettingsContent) -> Self {
         let mut merged = AppearanceContent::defaults();
         merged.merge_from(&content.appearance);
+        // Legacy `reduceMotion: true` without an explicit level means "off".
+        if content.appearance.animations.is_none() && merged.reduce_motion == Some(true) {
+            merged.animations = Some(Animations::Off);
+        }
         Self(merged)
     }
 }
@@ -105,8 +109,14 @@ impl ThemeSettings {
         self.0.icon_theme.as_deref().unwrap_or("default")
     }
 
-    pub fn reduce_motion(&self) -> bool {
-        self.0.reduce_motion.unwrap_or(false)
+    /// The configured motion level (`system` is resolved by the theme bridge).
+    pub fn animations(&self) -> Animations {
+        self.0.animations.unwrap_or_default()
+    }
+
+    /// Floating (`comfortable`) or `compact` pane layout.
+    pub fn pane_layout(&self) -> PaneLayout {
+        self.0.pane_layout.unwrap_or_default()
     }
 
     /// Per-theme light/dark variant selection (`themeVariantOverrides`).
@@ -1067,11 +1077,31 @@ mod tests {
     #[test]
     fn theme_settings_reads_appearance_area_with_defaults_fallback() {
         let mut content = SettingsContent::default();
+        content.appearance.app_theme = Some("custom".to_string());
+        let settings = ThemeSettings::from_settings(&content);
+        assert_eq!(settings.app_theme(), "custom");
+        // Untouched leaves resolve to their documented defaults.
+        assert_eq!(settings.animations(), Animations::System);
+        assert_eq!(settings.pane_layout(), PaneLayout::Comfortable);
+    }
+
+    #[test]
+    fn legacy_reduce_motion_true_resolves_to_animations_off() {
+        let mut content = SettingsContent::default();
         content.appearance.reduce_motion = Some(true);
         let settings = ThemeSettings::from_settings(&content);
-        assert!(settings.reduce_motion());
-        // Untouched leaf still resolves to its documented default.
-        assert_eq!(settings.app_theme(), "default");
+        assert_eq!(settings.animations(), Animations::Off);
+
+        // An explicit level wins over the legacy boolean.
+        content.appearance.animations = Some(Animations::Reduced);
+        let settings = ThemeSettings::from_settings(&content);
+        assert_eq!(settings.animations(), Animations::Reduced);
+
+        // `false` never forces a level.
+        let mut content = SettingsContent::default();
+        content.appearance.reduce_motion = Some(false);
+        let settings = ThemeSettings::from_settings(&content);
+        assert_eq!(settings.animations(), Animations::System);
     }
 
     #[test]

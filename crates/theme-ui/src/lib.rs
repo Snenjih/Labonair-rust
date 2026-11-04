@@ -35,7 +35,7 @@ pub fn register_settings_surfaces(
             "App theme",
             "Choose a color theme and preview its variants.",
             "Choose theme…",
-            SettingsSurfacePage::section("appearance", "Appearance", "Theme"),
+            SettingsSurfacePage::section("themes", "Themes", "Color theme"),
         ),
         open_app_themes,
     ))?;
@@ -45,7 +45,7 @@ pub fn register_settings_surfaces(
             "Icon theme",
             "Choose the icon set used throughout the app.",
             "Choose icons…",
-            SettingsSurfacePage::section("appearance", "Appearance", "Theme"),
+            SettingsSurfacePage::section("themes", "Themes", "Icon theme"),
         ),
         open_icon_themes,
     ))
@@ -69,8 +69,6 @@ mod settings_surface_tests {
             surfaces[1].id,
             labonair_settings::SettingsSurfaceId::new("icon-themes")
         );
-        assert!(surfaces
-            .iter()
-            .all(|surface| surface.page.slug == "appearance"));
+        assert!(surfaces.iter().all(|surface| surface.page.slug == "themes"));
     }
 }

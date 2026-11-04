@@ -1,6 +1,6 @@
 //! Capability-owned links contributed to the Settings navigation.
 
-use gpui::App;
+use gpui::{AnyView, App, Window};
 use std::rc::Rc;
 
 /// Stable identity for a capability-owned surface linked from Settings.
@@ -15,6 +15,29 @@ impl SettingsSurfaceId {
     pub const fn as_str(self) -> &'static str {
         self.0
     }
+}
+
+/// Navigation index of the first owner page (Keymap, Hosts): the generated main
+/// categories (General, Appearance, Themes, Editor, Languages & Tools,
+/// Search & Files, Terminal) come first. `labonair-settings-ui`'s page tests pin
+/// this to the number of generated pages.
+pub const FIRST_OWNER_PAGE_INDEX: usize = 7;
+
+/// How the Settings window presents an owner surface.
+///
+/// * [`Self::Link`] (default): the page shows the surface's title and
+///   description with an action button that runs the owner's `open` callback
+///   (the owner opens its own UI elsewhere).
+/// * [`Self::Inline`]: the Settings window embeds the owner's view in the page
+///   section, built on demand by the owner's inline builder
+///   ([`SettingsSurfaceContribution::inline`]). The owner keeps all state and
+///   persistence; Settings only hosts the view (ADR 0006). The `open` callback
+///   stays valid as the fallback for hosts that cannot embed.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SettingsSurfaceMode {
+    #[default]
+    Link,
+    Inline,
 }
 
 /// Placement information contributed with an owner surface.
@@ -60,6 +83,7 @@ pub struct SettingsSurface {
     pub description: &'static str,
     pub action_label: &'static str,
     pub page: SettingsSurfacePage,
+    pub mode: SettingsSurfaceMode,
 }
 
 impl SettingsSurface {
@@ -76,9 +100,20 @@ impl SettingsSurface {
             description,
             action_label,
             page,
+            mode: SettingsSurfaceMode::Link,
         }
     }
+
+    /// Mark the surface as embeddable inline (see [`SettingsSurfaceMode`]).
+    pub const fn inline(mut self) -> Self {
+        self.mode = SettingsSurfaceMode::Inline;
+        self
+    }
 }
+
+/// Builds the owner's view for an inline surface. Called when the Settings
+/// window renders the section; the owner captures whatever entities it needs.
+pub type InlineSurfaceBuilder = Rc<dyn Fn(&mut Window, &mut App) -> AnyView>;
 
 type SettingsSurfaceOpener = Rc<dyn Fn(&mut App)>;
 
@@ -88,6 +123,7 @@ type SettingsSurfaceOpener = Rc<dyn Fn(&mut App)>;
 pub struct SettingsSurfaceContribution {
     pub surface: SettingsSurface,
     open: SettingsSurfaceOpener,
+    inline: Option<InlineSurfaceBuilder>,
 }
 
 impl SettingsSurfaceContribution {
@@ -95,6 +131,21 @@ impl SettingsSurfaceContribution {
         Self {
             surface,
             open: Rc::new(open),
+            inline: None,
+        }
+    }
+
+    /// An inline-capable contribution: `build` produces the owner's view that
+    /// the Settings window embeds, `open` remains the standalone entry point.
+    pub fn inline(
+        surface: SettingsSurface,
+        open: impl Fn(&mut App) + 'static,
+        build: impl Fn(&mut Window, &mut App) -> AnyView + 'static,
+    ) -> Self {
+        Self {
+            surface: surface.inline(),
+            open: Rc::new(open),
+            inline: Some(Rc::new(build)),
         }
     }
 }
@@ -117,6 +168,12 @@ impl SettingsSurfaceRegistry {
             || surface.page.section.trim().is_empty()
         {
             return Err("Settings surface metadata must not be empty".to_owned());
+        }
+        if (surface.mode == SettingsSurfaceMode::Inline) != contribution.inline.is_some() {
+            return Err(format!(
+                "Settings surface `{}` must provide an inline builder exactly when it is inline",
+                surface.id.as_str()
+            ));
         }
         if self
             .contributions
@@ -157,6 +214,23 @@ impl SettingsSurfaceRegistry {
             .map(|contribution| contribution.surface)
     }
 
+    /// Build the embedded view of an inline surface, or `None` when the id is
+    /// unknown or the surface is link-only.
+    pub fn inline_view(
+        &self,
+        id: SettingsSurfaceId,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<AnyView> {
+        let build = self
+            .contributions
+            .iter()
+            .find(|contribution| contribution.surface.id == id)?
+            .inline
+            .clone()?;
+        Some(build(window, cx))
+    }
+
     pub fn open(&self, id: SettingsSurfaceId, cx: &mut App) -> Result<(), String> {
         let contribution = self
             .contributions
@@ -183,6 +257,64 @@ mod tests {
             ),
             |_| {},
         )
+    }
+
+    #[test]
+    fn inline_surfaces_require_a_builder_and_link_surfaces_must_not_have_one() {
+        let surface = SettingsSurface::new(
+            SettingsSurfaceId::new("inline"),
+            "Inline surface",
+            "Test description",
+            "Open…",
+            SettingsSurfacePage::section("themes", "Themes", "Background"),
+        );
+        // `inline()` without a builder is rejected.
+        let mut registry = SettingsSurfaceRegistry::default();
+        let missing_builder = SettingsSurfaceContribution::new(surface.inline(), |_| {});
+        assert!(registry.register(missing_builder).is_err());
+
+        // Plain link surfaces stay link-mode.
+        assert_eq!(surface.mode, SettingsSurfaceMode::Link);
+        registry
+            .register(SettingsSurfaceContribution::new(surface, |_| {}))
+            .unwrap();
+        assert_eq!(registry.surfaces()[0].mode, SettingsSurfaceMode::Link);
+    }
+
+    #[gpui::test]
+    fn inline_contribution_builds_its_view_on_demand(cx: &mut gpui::TestAppContext) {
+        use gpui::{AppContext as _, IntoElement, Render};
+        struct Probe;
+        impl Render for Probe {
+            fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+                gpui::Empty
+            }
+        }
+        let surface = SettingsSurface::new(
+            SettingsSurfaceId::new("inline"),
+            "Inline surface",
+            "Test description",
+            "Open…",
+            SettingsSurfacePage::section("themes", "Themes", "Background"),
+        );
+        let mut registry = SettingsSurfaceRegistry::default();
+        registry
+            .register(SettingsSurfaceContribution::inline(
+                surface,
+                |_| {},
+                |_, cx| cx.new(|_| Probe).into(),
+            ))
+            .unwrap();
+        assert_eq!(registry.surfaces()[0].mode, SettingsSurfaceMode::Inline);
+        let window = cx.add_empty_window();
+        window.update(|window, cx| {
+            assert!(registry
+                .inline_view(SettingsSurfaceId::new("inline"), window, cx)
+                .is_some());
+            assert!(registry
+                .inline_view(SettingsSurfaceId::new("other"), window, cx)
+                .is_none());
+        });
     }
 
     #[test]
