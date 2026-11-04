@@ -68,6 +68,11 @@ impl Density {
         self.s(40.0)
     }
 
+    /// Height of a pane bar (the header of a tiled pane).
+    pub fn pane_bar_height(&self) -> Pixels {
+        self.s(28.0)
+    }
+
     /// Height of the window titlebar (`--titlebar-height`).
     pub fn titlebar_height(&self) -> Pixels {
         self.s(40.0)
