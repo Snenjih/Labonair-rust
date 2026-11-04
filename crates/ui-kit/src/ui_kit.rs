@@ -76,7 +76,10 @@ pub mod theme;
 mod toggle;
 mod tree_row;
 
-pub use animation::fade_in;
+pub use animation::{
+    fade_in, reveal_extent, slide_offset, state_opacity, MotionExt, MotionLevel, MotionPrefs,
+    MOTION_FLOOR,
+};
 pub use banner::{banner, Banner, Severity};
 pub use button::{
     button, button_disabled, button_no_hover, ButtonSize, ButtonVariant, DISABLED_OPACITY,

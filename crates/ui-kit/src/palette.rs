@@ -13,11 +13,10 @@
 //! token-bound (Critical Rule 3) without forcing the borrow gymnastics — a call
 //! site literally cannot pass a hardcoded colour without writing one itself.
 
-use std::time::Duration;
-
 use gpui::{point, px, BoxShadow, Hsla, Pixels};
-use labonair_theme_tokens::{CubicBezier, RadiusScale, VibrancyLayer};
+use labonair_theme_tokens::{RadiusScale, VibrancyLayer};
 
+use crate::animation::MotionPrefs;
 use crate::theme::UiTheme;
 
 /// A per-render snapshot of the design tokens the primitives read.
@@ -121,16 +120,9 @@ pub struct Palette {
     pub density: f32,
     /// UI-font rem scale used by controls whose dimensions track text size.
     pub ui_font_scale: f32,
-    /// The `--dur-fast` entrance-animation duration (see
-    /// [`crate::animation::fade_in`]). Raw, un-clamped — `fade_in` applies the
-    /// reduce-motion floor itself.
-    pub dur_fast: Duration,
-    /// The `--ease-premium` easing curve entrance animations ease with.
-    pub ease_premium: CubicBezier,
-    /// T20-007 reduce-motion metric — when set, [`crate::animation::fade_in`]
-    /// clamps its duration to a near-zero floor instead of skipping the
-    /// animation outright (GPUI divides by the duration each frame).
-    pub reduce_motion: bool,
+    /// Motion tokens: the active [`crate::animation::MotionLevel`], the theme durations and
+    /// easing curves (see [`crate::animation`]).
+    pub motion: MotionPrefs,
 }
 
 impl Palette {
@@ -197,9 +189,7 @@ impl Palette {
             radius: theme.radius(),
             density: theme.metrics().density.spacing_scale(),
             ui_font_scale: theme.metrics().ui_font_size / 16.0,
-            dur_fast: t.animation.dur_fast,
-            ease_premium: t.animation.ease_premium,
-            reduce_motion: theme.metrics().reduce_motion,
+            motion: MotionPrefs::from_theme(theme),
         }
     }
 
