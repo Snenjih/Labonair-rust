@@ -219,11 +219,23 @@ pub fn all_fields() -> Vec<AnyField> {
             "Font used for all application UI text (empty = system default)."
         ),
         field!(
-            appearance.reduce_motion,
-            "reduceMotion",
-            Switch,
-            "Reduce motion",
-            "Minimise animations and transitions."
+            appearance.animations,
+            "animations",
+            Select(&[
+                ("system", "System"),
+                ("full", "Full"),
+                ("reduced", "Reduced (fades only)"),
+                ("off", "Off"),
+            ]),
+            "Animations",
+            "How much the interface animates. System follows the operating system's Reduce motion setting."
+        ),
+        field!(
+            appearance.pane_layout,
+            "paneLayout",
+            Select(&[("comfortable", "Comfortable"), ("compact", "Compact")]),
+            "Pane layout",
+            "Comfortable shows panes as floating rounded blocks with a gap; compact fills the area edge to edge."
         ),
         field!(
             appearance.ui_density,

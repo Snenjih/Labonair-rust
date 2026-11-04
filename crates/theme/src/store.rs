@@ -202,11 +202,26 @@ impl ThemeStore {
 
     /// Replace the metric layer (settings → live). Rebuilds [`Self::active`]
     /// and re-renders only on a real change.
-    pub fn set_metrics(&mut self, metrics: ThemeMetrics, cx: &mut Context<Self>) {
+    pub fn set_metrics(&mut self, mut metrics: ThemeMetrics, cx: &mut Context<Self>) {
+        // `background_active` is pushed by the background owner, not derived
+        // from settings: a settings re-apply must not reset it.
+        metrics.background_active = self.metrics.background_active;
         if self.metrics == metrics {
             return;
         }
         self.metrics = metrics;
+        self.rebuild_active();
+        cx.notify();
+    }
+
+    /// Whether a background image is currently shown in the window. Surfaces
+    /// then resolve translucent (see [`VibrancyLayer::resolve`]) so the image
+    /// stays visible. Pushed by the shell from the background owner.
+    pub fn set_background_active(&mut self, active: bool, cx: &mut Context<Self>) {
+        if self.metrics.background_active == active {
+            return;
+        }
+        self.metrics.background_active = active;
         self.rebuild_active();
         cx.notify();
     }
@@ -1490,6 +1505,20 @@ mod tests {
             );
             assert_eq!(at.animation().dur_base, std::time::Duration::ZERO);
             assert_eq!(cx.global::<GlobalActiveTheme>().0, *at);
+        });
+    }
+
+    #[gpui::test]
+    fn background_active_survives_a_settings_metric_reapply(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = init(WindowAppearance::Dark, cx);
+            store.update(cx, |s, cx| s.set_background_active(true, cx));
+            assert!(store.read(cx).active_theme().metrics().background_active);
+            // A settings re-apply builds metrics with the default `false`.
+            store.update(cx, |s, cx| s.set_metrics(ThemeMetrics::default(), cx));
+            assert!(store.read(cx).active_theme().metrics().background_active);
+            store.update(cx, |s, cx| s.set_background_active(false, cx));
+            assert!(!store.read(cx).active_theme().metrics().background_active);
         });
     }
 

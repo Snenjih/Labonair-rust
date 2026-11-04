@@ -27,7 +27,10 @@ pub use icons::{
     ChevronIcons, DirectoryIcons, IconDefinition, IconThemeContent, BUILTIN_ICON_THEME_ID,
     BUILTIN_ICON_THEME_NAME, DEFAULT_FILE_ICONS, DEFAULT_FILE_STEMS, DEFAULT_FILE_SUFFIXES,
 };
-pub use metrics::{ActiveTheme, GlobalActiveTheme, ThemeMetrics, UiDensity};
+pub use metrics::{
+    ActiveTheme, AnimationLevel, GlobalActiveTheme, PaneLayout, ThemeMetrics, UiDensity,
+    PANE_GAP_COMFORTABLE,
+};
 pub use tokens::{
     Animation, AnsiColors, BorderVariants, CoreColors, CubicBezier, InteractionColors,
     MonoFontWeight, RadiusScale, ShadowLayer, Shadows, SidebarColors, StatusColors, SurfaceColors,

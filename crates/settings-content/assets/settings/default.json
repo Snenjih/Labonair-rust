@@ -27,7 +27,10 @@
     "appFontSize": 13,
     "appLineHeight": 1.5,
     "appFontFamily": "\"Inter Variable\", sans-serif",
-    "reduceMotion": false,
+    // "system" (follow the OS Reduce motion preference) | "full" | "reduced" | "off".
+    "animations": "system",
+    // "comfortable" (floating panes) | "compact".
+    "paneLayout": "comfortable",
     // Editor/terminal text (T20-007 theme_settings layer). Empty family = the
     // theme's own mono font.
     "bufferFontFamily": "",

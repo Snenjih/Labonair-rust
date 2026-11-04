@@ -348,7 +348,8 @@ const APPEARANCE_GROUPS: &[Group] = &[
         paths!("appearance":
             "uiDensity",
             "cornerRadiusScale",
-            "reduceMotion",
+            "animations",
+            "paneLayout",
             "translucentSurfaces"
         ),
     ),

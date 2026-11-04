@@ -5,6 +5,50 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::MergeFrom;
+
+/// How panes are laid out inside a tab (`appearance.paneLayout`).
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum PaneLayout {
+    /// Floating, rounded panes separated by a gap.
+    #[default]
+    Comfortable,
+    /// Edge-to-edge panes separated by a hairline.
+    Compact,
+}
+
+impl MergeFrom for PaneLayout {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
+/// UI motion level (`appearance.animations`).
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum Animations {
+    /// Follow the operating system's "Reduce motion" preference.
+    #[default]
+    System,
+    /// All transitions.
+    Full,
+    /// Fades only; no movement or resizing transitions.
+    Reduced,
+    /// No transitions.
+    Off,
+}
+
+impl MergeFrom for Animations {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
 #[derive(
     Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema, crate::MergeFrom,
 )]
@@ -20,7 +64,16 @@ pub struct AppearanceContent {
     pub app_line_height: Option<f32>,
     /// UI font family (full CSS stack; empty = system default).
     pub app_font_family: Option<String>,
+    /// Legacy boolean superseded by [`Self::animations`]. Still read: `true`
+    /// without an explicit `animations` resolves to `Animations::Off`
+    /// (`ThemeSettings`) and the legacy preferences migrator writes
+    /// `animations` instead. Remove once no v2 `config.json` carries it.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_motion: Option<bool>,
+    /// UI motion level; `system` follows the OS "Reduce motion" preference.
+    pub animations: Option<Animations>,
+    /// Pane layout inside a tab (`comfortable` floating | `compact`).
+    pub pane_layout: Option<PaneLayout>,
     /// Editor/terminal text font family (empty = the theme's own mono family).
     pub buffer_font_family: Option<String>,
     /// Editor/terminal text font size, px (T20-007 `theme_settings` layer).
@@ -53,7 +106,9 @@ impl AppearanceContent {
             app_font_size: Some(13),
             app_line_height: Some(1.5),
             app_font_family: Some("\"Inter Variable\", sans-serif".to_string()),
-            reduce_motion: Some(false),
+            reduce_motion: None,
+            animations: Some(Animations::System),
+            pane_layout: Some(PaneLayout::Comfortable),
             buffer_font_family: Some(String::new()),
             buffer_font_size: Some(13),
             buffer_line_height: Some(1.55),
