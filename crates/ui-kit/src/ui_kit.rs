@@ -132,7 +132,10 @@ pub use settings_widgets::{
 };
 pub use slider::{slider, SliderEvent, SliderState, SliderValue};
 pub use stack::{h_stack, v_stack};
-pub use tab::{tab_item, TabItemBuilder, TabLayout};
+pub use tab::{
+    floating_tab_strip, tab_drop_marker, tab_group_gap, tab_item, TabDropSide, TabItemBuilder,
+    TabLayout, TabStyle,
+};
 pub use text_field::{
     caret, field_input, text_area_surface, text_field, text_field_surface,
     text_field_surface_sized, text_input, BlinkCursor, InputEvent, InputState, TextFieldSize,
