@@ -78,3 +78,11 @@ editor, not a general application-management window.
     `labonair://settings/<json-path>` link. Opening a known link selects the
     owning page, scrolls to the field, and briefly highlights it; an unknown
     path must not open an unrelated Settings page.
+
+18. **Owner surfaces may be embedded inline.** The Themes page hosts the
+    colour-theme, icon-theme and Background owner surfaces
+    ([ADR 0006](adr/0006-settings-hosts-owner-surfaces-inline.md)). A surface
+    registered with `SettingsSurfaceMode::Inline` and an inline builder is
+    embedded by the Settings window; the owner keeps all state, persistence and
+    notifications. Settings gains no feature state, and no other module may add
+    a parallel Settings category.

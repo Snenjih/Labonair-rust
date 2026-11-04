@@ -74,20 +74,30 @@ is part of the pinned Settings taxonomy; missing
 capabilities remain explicit crosswalk work and must not be represented by
 empty or inert placeholder controls.
 
-The current runtime pages are General, Appearance, Keymap, Editor, Languages
-& Tools, Search & Files, Window & Layout, Terminal, Version Control, and
-Network.
+The current runtime pages are General, Appearance, Themes, Editor, Languages
+& Tools, Search & Files, and Terminal, followed by the owner page Keymap
+(`labonair_settings::FIRST_OWNER_PAGE_INDEX` marks where owner pages start).
+Window & Layout, Version Control, and Network were folded into other pages:
+tab placement and Zen mode into Appearance, `restoreWindowState` into General
+› Startup, the editor Git values into Editor › Git, Explorer/SCM Git values
+into Search & Files › Explorer & Source Control, and the SSH defaults into
+Terminal › Connection.
 
-Appearance links to the Theme owner's app-theme and icon-theme pickers and the
-Background owner's image editor from its Theme section. These actions open the
-canonical owner surfaces; Settings does not maintain duplicate catalogs,
-preview state, image state, or persistence paths.
+Appearance holds value fields only (colour scheme, Classic/Glassy interface
+style, tabs, panes, density, typography, motion, Zen mode). Themes hosts the
+Theme owner's colour-theme and icon-theme surfaces and the Background owner's
+image editor in their own sections (ADR 0006). A surface registered with
+`SettingsSurfaceMode::Inline` (and an inline builder) is embedded by the
+Settings window; a `Link` surface shows its action button. The Background
+surface is inline-capable; its modal remains the fallback entry point until
+the Settings view embeds it. Settings never keeps catalogs, preview state,
+image state, or persistence for these surfaces.
 
-`Network` holds global SSH connection-behaviour defaults (handshake timeout,
-keep-alive interval, keep-alive failure tolerance) — the fallback a host
-record falls back to when it doesn't set its own value. It does not manage
-hosts, credentials, or the connection list; that remains the Hosts module's
-surface.
+`Terminal › Connection` holds global SSH connection-behaviour defaults
+(handshake timeout, keep-alive interval, keep-alive failure tolerance) — the
+fallback a host record falls back to when it doesn't set its own value. It
+does not manage hosts, credentials, or the connection list; that remains the
+Hosts module's surface.
 
 Update policy is a General field and is grouped under the General page's
 Updates section; it is not a separate management category.

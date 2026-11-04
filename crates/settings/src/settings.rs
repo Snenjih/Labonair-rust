@@ -40,8 +40,8 @@ pub use store::{
     WorktreeId,
 };
 pub use surfaces::{
-    SettingsSurface, SettingsSurfaceContribution, SettingsSurfaceId, SettingsSurfacePage,
-    SettingsSurfaceRegistry,
+    InlineSurfaceBuilder, SettingsSurface, SettingsSurfaceContribution, SettingsSurfaceId,
+    SettingsSurfaceMode, SettingsSurfacePage, SettingsSurfaceRegistry, FIRST_OWNER_PAGE_INDEX,
 };
 pub use watch::{watch_dir, watch_file};
 

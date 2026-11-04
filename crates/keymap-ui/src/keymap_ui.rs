@@ -53,7 +53,12 @@ pub fn register_settings_surfaces(
             "Keyboard shortcuts",
             "Browse and edit the shortcuts provided by Labonair.",
             "Open keymap editor…",
-            SettingsSurfacePage::new_page("keymap", "Keymap", "Keyboard shortcuts", 2),
+            SettingsSurfacePage::new_page(
+                "keymap",
+                "Keymap",
+                "Keyboard shortcuts",
+                labonair_settings::FIRST_OWNER_PAGE_INDEX,
+            ),
         ),
         open_keymap,
     ))
@@ -1636,7 +1641,10 @@ mod tests {
         register_settings_surfaces(&mut registry, |_| {}).unwrap();
         let surface = registry.surface(SettingsSurfaceId::new("keymap")).unwrap();
         assert_eq!(surface.page.slug, "keymap");
-        assert_eq!(surface.page.insert_at, Some(2));
+        assert_eq!(
+            surface.page.insert_at,
+            Some(labonair_settings::FIRST_OWNER_PAGE_INDEX)
+        );
     }
 
     #[test]

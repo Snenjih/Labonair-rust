@@ -49,23 +49,43 @@ pub use storage::{background_read_data_url, BackgroundFit, BackgroundTarget};
 pub use labonair_background_host::{BackgroundHost, BackgroundPulse, LayerScope};
 
 /// Contribute the Background-owned image editor to Settings navigation.
+///
+/// The surface is inline-capable (ADR 0006): the Settings window may embed the
+/// owner's [`BackgroundSettingsView`] in the Themes page. `open_backgrounds`
+/// stays the standalone entry point (the modal) until every host embeds.
+/// `report_error` receives the view's own filesystem failures (store failures
+/// are reported app-wide by the shell); it should raise a notification.
 pub fn register_settings_surfaces(
     registry: &mut labonair_settings::SettingsSurfaceRegistry,
     open_backgrounds: impl Fn(&mut gpui::App) + 'static,
+    report_error: impl Fn(String, &mut gpui::App) + 'static,
 ) -> Result<(), String> {
     use labonair_settings::{
         SettingsSurface, SettingsSurfaceContribution, SettingsSurfaceId, SettingsSurfacePage,
     };
 
-    registry.register(SettingsSurfaceContribution::new(
+    type ErrorReporter = std::rc::Rc<dyn Fn(String, &mut gpui::App)>;
+    let report_error: ErrorReporter = std::rc::Rc::new(report_error);
+    registry.register(SettingsSurfaceContribution::inline(
         SettingsSurface::new(
             SettingsSurfaceId::new("backgrounds"),
             "Background image",
             "Choose a background image and adjust its appearance.",
             "Choose background…",
-            SettingsSurfacePage::section("appearance", "Appearance", "Background"),
+            SettingsSurfacePage::section("themes", "Themes", "Background"),
         ),
         open_backgrounds,
+        move |window, cx| {
+            let store = background_store(cx);
+            let theme = labonair_theme::theme_store(cx);
+            let report_error = report_error.clone();
+            cx.new(|cx| {
+                BackgroundSettingsView::new(store, theme, window, cx, move |message, app| {
+                    report_error(message, app)
+                })
+            })
+            .into()
+        },
     ))
 }
 
@@ -649,12 +669,13 @@ mod tests {
     #[test]
     fn background_settings_surface_is_registered_by_its_owner() {
         let mut registry = labonair_settings::SettingsSurfaceRegistry::default();
-        register_settings_surfaces(&mut registry, |_| {}).unwrap();
+        register_settings_surfaces(&mut registry, |_| {}, |_, _| {}).unwrap();
         let surface = registry
             .surface(labonair_settings::SettingsSurfaceId::new("backgrounds"))
             .unwrap();
-        assert_eq!(surface.page.slug, "appearance");
+        assert_eq!(surface.page.slug, "themes");
         assert_eq!(surface.page.section, "Background");
+        assert_eq!(surface.mode, labonair_settings::SettingsSurfaceMode::Inline);
     }
 
     #[test]
