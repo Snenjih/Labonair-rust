@@ -47,6 +47,7 @@ pub mod project_search;
 pub mod recent_projects;
 pub mod search_overlay;
 pub mod session;
+pub mod session_v3;
 pub mod spaces;
 pub mod ssh_connection;
 pub mod ssh_event_bridge;
