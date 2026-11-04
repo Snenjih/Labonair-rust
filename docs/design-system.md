@@ -224,6 +224,100 @@ panel to the usable viewport size. Apply this behavior to pointer menus,
 trigger selects, and rich-content popovers; feature owners provide the anchor
 and content, not separate placement math.
 
+## Motion
+
+`ui-kit/src/animation.rs` is the one motion engine. `Palette::motion`
+(`MotionPrefs`) carries the theme durations (`dur_fast` 120 ms, `dur_base`
+160 ms, `dur_slow` 200 ms), the `ease_premium` / `ease_soft` curves, and a
+`MotionLevel`:
+
+| Level | Behaviour |
+|---|---|
+| `Full` | fades, slides and size reveals |
+| `Reduced` | fades only; offsets and reveals snap to their end state |
+| `Off` | every animation collapses to a 10 microsecond floor (instant) |
+
+GPUI divides elapsed time by the animation duration every frame, so no
+duration is ever zero: all durations go through `MotionPrefs::resolve`. The
+level is chosen in a single function (`animation::motion_level`); today it maps
+the legacy `reduceMotion` metric to `Off`, and it is the one place that reads
+the `appearance.animations` setting once it reaches `ThemeMetrics`.
+
+GPUI 0.2.2 has no transforms and no hover transitions, so the engine animates
+only opacity and layout properties. The `MotionExt` element methods are
+`motion_fade_in`, `motion_slide_in_y` (a `top` offset lerp), `motion_reveal`
+(width or height lerp, clipped) and `motion_state_fade` (the state is part of
+the animation id, so it restarts on every flip). Hover stays instant. Animation
+ids must be stable between frames; changing the id restarts the animation.
+
+### Exit state
+
+Popovers, context menus, popover menus, select lists and dialogs can fade out
+before they unmount. The owner keeps a `Presence` (open, closing, closed) next
+to its open state, calls `request_close(now, &c.motion)` from every dismissal
+path, `tick(now, &c.motion)` once per render, and builds the surface while
+`is_mounted()` using the `*_with_exit` variant with `closing = is_closing()`.
+The exit fade is `dur_fast`; repeated close requests (Esc spam) do not restart
+it, re-opening cancels it, `MotionLevel::Off` closes at once, and focus returns
+only when `tick` reports `PresenceStep::JustClosed`. A closing surface swallows
+pointer input so it cannot fire a second action. The original functions
+(`popover`, `context_menu`, `popover_menu`, `select_popover`, `modal_overlay`)
+are unchanged and unmount instantly.
+
+## Pane chrome
+
+`pane_bar` and `pane_frame` (`ui-kit/src/pane_bar.rs`) are generic: they know
+nothing about tabs or pane kinds. The bar is 28 px (`Density::pane_bar_height`)
+with an icon, a title, an optional leading slot (status marker) and trailing
+slot (path, cwd), and four optional actions: split horizontal (new pane to the
+right), split vertical (new pane below), zoom (toggle, restore glyph while
+zoomed) and close, each with a tooltip, an enabled flag and a callback.
+`can_split(false)` disables both split actions and swaps their tooltip. The
+whole bar is the drag handle: `render()` returns a `Stateful<Div>` and the
+caller attaches `on_drag`; action buttons swallow mouse-down so pressing one
+never starts a drag. Double-clicking the bar calls the zoom hook. The active
+bar uses the sunken fill and a semibold title; inactive bars use hover accent
+and show their actions on hover only. A `line_subtle` hairline separates bar
+and body.
+
+`PaneLayoutStyle` mirrors `appearance.paneLayout`. Comfortable panes float with
+`PANE_GAP` (6 px, density scaled) between them in a rounded (`radius.lg`) frame
+with a 1 px `line_subtle` ring (`line_strong` while focused). Compact panes
+have no gap, no rounding and no ring; the dividers belong to the tiling
+container's resize handles.
+
+## Settings widgets
+
+Settings pages group rows into cards (`settings_group`): a `radius.lg` card on
+the `card` fill with `line_subtle` hairlines between rows and an optional
+caption above. `settings_row` places a title and description on the left and a
+control on the right with an optional reset slot (minimum height 44 px, scaled
+by `Palette::control_space`). `slider_row` is a row whose control is the shared
+slider plus a fixed-width value read-out. `category_chip` is the 22 px rounded
+colour badge before a category; its fill derives from a `ChipHue` and the
+light/dark mode and keeps at least 3:1 contrast with its white glyph.
+
+`preview_tile_group` renders radio-style tiles with a mini-window mock drawn
+from theme colours (`TileMock`): colour scheme (auto shows half light, half
+dark), interface style (classic opaque, glassy translucent), pane layout
+(comfortable, compact) and theme (light and dark halves of one theme). The
+selected tile has a 2 px `primary` ring and a bold label; the ring is a
+constant border so selection never shifts layout. Arrow keys move and select
+(Left/Up previous, Right/Down next, wrapping), Enter and Space activate, and
+the owner keeps the selected value.
+
+## Floating tabs
+
+`TabStyle::Floating` (default `Classic`) renders tab items as 28 px blocks with
+`radius.md`: selected is the sunken fill, a 1 px `line_subtle` ring and a
+semibold label; unselected hover is the accent fill; the close button appears
+on hover only. Blocks keep a constant 1 px border so selection does not shift
+layout. `floating_tab_strip` is the container (40 px bar, 6 px padding, 4 px
+gap horizontally; a column with 2 px gaps vertically), `tab_group_gap` replaces
+the pinned/unpinned divider with a larger gap, and `tab_drop_marker` is the
+absolutely positioned 2 px `primary` insertion bar (no border, no layout
+shift).
+
 ## Interaction states
 
 Every interactive component must define normal, hover, pressed, selected, focused, disabled, and error states where applicable. Keyboard focus must remain visually distinguishable.
