@@ -1126,12 +1126,11 @@ where
         let mode = self.search_mode(cx);
 
         let t = self.theme.read(cx);
-        let (fg, muted, border, success, primary) = (
+        let (fg, muted, border, success) = (
             t.foreground(),
             t.muted_foreground(),
             t.border(),
             t.status_success(),
-            t.primary(),
         );
         // T20-001: the shared token snapshot, so the `Kbd` chips below are
         // built from the same `Palette` every other primitive uses.
@@ -1229,18 +1228,16 @@ where
                 .gap(px(12.0))
                 .mx(px(2.0))
                 .my(px(2.0))
-                .px(px(if is_sel { 10.0 } else { 12.0 }))
+                .px(px(12.0))
                 .py(px(8.0))
                 .min_h(px(40.0))
                 .rounded(px(8.0))
-                .border_l_2()
-                .border_color(if is_sel {
-                    primary
-                } else {
-                    gpui::transparent_black()
-                })
                 .text_color(fg)
-                .when(is_sel, |d| d.bg(sel_fill))
+                // Ciel §8: the selected row is a sunken fill + semibold label,
+                // not an accent bar.
+                .when(is_sel, |d| {
+                    d.bg(sel_fill).font_weight(gpui::FontWeight::SEMIBOLD)
+                })
                 .when(actionable && !is_sel, |d| d.hover(|s| s.bg(hover_fill)));
 
             if let Some(icon) = row.icon {

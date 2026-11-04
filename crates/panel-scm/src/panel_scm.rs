@@ -3069,7 +3069,10 @@ impl GitPanelView {
             }
         });
 
-        ListItem::new(SharedString::from(format!("git-branch-{}", name)), c.palette)
+        ListItem::new(
+            SharedString::from(format!("git-branch-{}", name)),
+            c.palette,
+        )
         .child(
             div()
                 .w(px(10.0))
@@ -3305,15 +3308,15 @@ impl GitPanelView {
                 );
             wrap = wrap.child(
                 ListItem::new(SharedString::from(format!("git-tag-{tag}")), c.palette)
-                .child(
-                    div()
-                        .flex_1()
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .child(SharedString::from(tag.clone())),
-                )
-                .trailing(trailing)
-                .extra(|row| row.h(px(20.0)).text_size(px(11.0))),
+                    .child(
+                        div()
+                            .flex_1()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .child(SharedString::from(tag.clone())),
+                    )
+                    .trailing(trailing)
+                    .extra(|row| row.h(px(20.0)).text_size(px(11.0))),
             );
         }
 
@@ -3502,7 +3505,10 @@ impl GitPanelView {
                     )),
                 );
             wrap = wrap.child(
-                ListItem::new(SharedString::from(format!("git-stash-{}", e.index)), c.palette)
+                ListItem::new(
+                    SharedString::from(format!("git-stash-{}", e.index)),
+                    c.palette,
+                )
                 .child(
                     div()
                         .flex_shrink_0()

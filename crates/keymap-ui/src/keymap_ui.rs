@@ -909,60 +909,66 @@ fn render_command_row(
         .items_center()
         .child(
             ListItem::new(("keymap-row", matched_index), palette)
-            .selected(selected)
-            .icon(if conflicted {
-                IconName::Warning
-            } else {
-                IconName::Command
-            })
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w_0()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(6.0))
-                            .text_size(px(12.0))
-                            .child(SharedString::from(row.title.clone()))
-                            .children(status),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(10.0))
-                            .text_color(if conflicted {
-                                palette.warning
-                            } else {
-                                palette.muted
-                            })
-                            .child(SharedString::from(if conflicted {
-                                format!("{subtitle} · overridden by another command")
-                            } else {
-                                subtitle
-                            })),
-                    ),
-            )
-            .trailing(trailing)
-            .on_click(move |event: &ClickEvent, _window, cx| {
-                let position = event.position();
-                view_for_click.update(cx, |this, cx| {
-                    if let Some(snapshot) = this.snapshot.clone() {
-                        if let Some(command_row) = snapshot
-                            .rows
-                            .iter()
-                            .find(|candidate| candidate.command == command)
-                            .cloned()
-                        {
-                            let binding_index =
-                                (!command_row.effective_bindings.is_empty()).then_some(0);
-                            this.begin_edit(&command_row, binding_index, position, &snapshot, cx);
+                .selected(selected)
+                .icon(if conflicted {
+                    IconName::Warning
+                } else {
+                    IconName::Command
+                })
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(6.0))
+                                .text_size(px(12.0))
+                                .child(SharedString::from(row.title.clone()))
+                                .children(status),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(10.0))
+                                .text_color(if conflicted {
+                                    palette.warning
+                                } else {
+                                    palette.muted
+                                })
+                                .child(SharedString::from(if conflicted {
+                                    format!("{subtitle} · overridden by another command")
+                                } else {
+                                    subtitle
+                                })),
+                        ),
+                )
+                .trailing(trailing)
+                .on_click(move |event: &ClickEvent, _window, cx| {
+                    let position = event.position();
+                    view_for_click.update(cx, |this, cx| {
+                        if let Some(snapshot) = this.snapshot.clone() {
+                            if let Some(command_row) = snapshot
+                                .rows
+                                .iter()
+                                .find(|candidate| candidate.command == command)
+                                .cloned()
+                            {
+                                let binding_index =
+                                    (!command_row.effective_bindings.is_empty()).then_some(0);
+                                this.begin_edit(
+                                    &command_row,
+                                    binding_index,
+                                    position,
+                                    &snapshot,
+                                    cx,
+                                );
+                            }
                         }
-                    }
-                });
-            }),
+                    });
+                }),
         )
         .into_any_element()
 }

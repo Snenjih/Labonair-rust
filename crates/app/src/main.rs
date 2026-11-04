@@ -1,6 +1,6 @@
 use gpui::{
-    point, prelude::*, px, size, App, Application, Bounds, TitlebarOptions,
-    WindowBounds, WindowOptions,
+    point, prelude::*, px, size, App, Application, Bounds, TitlebarOptions, WindowBounds,
+    WindowOptions,
 };
 
 use gpui_component::Root;

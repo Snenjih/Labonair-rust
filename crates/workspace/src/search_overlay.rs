@@ -881,30 +881,30 @@ impl Render for SearchOverlay {
                     let detail = hit.text.clone();
                     rows.push(
                         ListItem::new(("project-search-result", index), palette)
-                        .selected(snapshot.selected == Some(index))
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                            let _ = this.workspace.update(cx, |workspace, cx| {
-                                workspace.project_search_move(
-                                    index as isize
-                                        - workspace
-                                            .project_search_snapshot(cx)
-                                            .and_then(|s| s.selected)
-                                            .unwrap_or(0)
-                                            as isize,
-                                    cx,
-                                )
-                            });
-                        }))
-                        .child(
-                            div().flex().flex_col().child(label).child(
-                                div()
-                                    .text_xs()
-                                    .text_color(palette.muted)
-                                    .overflow_hidden()
-                                    .child(detail),
-                            ),
-                        )
-                        .into_any_element(),
+                            .selected(snapshot.selected == Some(index))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                                let _ = this.workspace.update(cx, |workspace, cx| {
+                                    workspace.project_search_move(
+                                        index as isize
+                                            - workspace
+                                                .project_search_snapshot(cx)
+                                                .and_then(|s| s.selected)
+                                                .unwrap_or(0)
+                                                as isize,
+                                        cx,
+                                    )
+                                });
+                            }))
+                            .child(
+                                div().flex().flex_col().child(label).child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(palette.muted)
+                                        .overflow_hidden()
+                                        .child(detail),
+                                ),
+                            )
+                            .into_any_element(),
                     );
                 }
             }

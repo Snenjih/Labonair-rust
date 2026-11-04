@@ -32,10 +32,10 @@ use std::rc::Rc;
 
 use gpui::{
     canvas, deferred, div, point, prelude::FluentBuilder, px, AlignItems, AnimationExt, AnyElement,
-    App, Bounds, ClickEvent, Display, Edges, Element, GlobalElementId, InspectorElementId,
-    FontWeight, InteractiveElement, IntoElement, KeyDownEvent, LayoutId, Length, MouseButton, MouseDownEvent,
-    ParentElement, Pixels, Point, Position, SharedString, Size, StatefulInteractiveElement, Style,
-    Styled, Window,
+    App, Bounds, ClickEvent, Display, Edges, Element, FontWeight, GlobalElementId,
+    InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId, Length,
+    MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Position, SharedString, Size,
+    StatefulInteractiveElement, Style, Styled, Window,
 };
 
 use super::IconName;
@@ -535,7 +535,11 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                 if let Some(h) = handler {
                     row = row
                         .tab_index(0)
-                        .focus(move |s| s.bg(c.sunken).text_color(hover_fg).font_weight(FontWeight::SEMIBOLD))
+                        .focus(move |s| {
+                            s.bg(c.sunken)
+                                .text_color(hover_fg)
+                                .font_weight(FontWeight::SEMIBOLD)
+                        })
                         .on_click(move |ev, w, cx| h(ev, w, cx))
                         .on_key_down(|event, window, cx| match event.keystroke.key.as_str() {
                             "enter" | "space" => cx.stop_propagation(),
@@ -634,7 +638,11 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                     let on_hover = ctrl.on_hover.clone();
                     let on_key = ctrl.on_hover.clone();
                     row.tab_index(0)
-                        .focus(|s| s.bg(c.sunken).text_color(c.accent_fg).font_weight(FontWeight::SEMIBOLD))
+                        .focus(|s| {
+                            s.bg(c.sunken)
+                                .text_color(c.accent_fg)
+                                .font_weight(FontWeight::SEMIBOLD)
+                        })
                         .on_hover(move |h, w, cx| on_hover(SubmenuHoverSource::Trigger, *h, w, cx))
                         .on_key_down(
                             move |event, window, cx| match event.keystroke.key.as_str() {

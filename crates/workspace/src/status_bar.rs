@@ -35,7 +35,7 @@ use crate::theme::ThemeStore;
 use crate::Workspace;
 
 /// Status-bar row height — matches the shell's former `STATUS_H`.
-const STATUS_H: f32 = 32.0;
+const STATUS_H: f32 = 28.0;
 
 /// The per-dock panel-button groups are structural, not ordinary movable
 /// status items. They own their placement (left group at the left edge, bottom

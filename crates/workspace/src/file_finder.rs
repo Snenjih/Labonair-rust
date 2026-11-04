@@ -267,22 +267,22 @@ impl Render for FileFinderView {
             .map(|(index, candidate)| {
                 let candidate = candidate.clone();
                 ListItem::new(("file-finder-row", index), palette)
-                .icon(IconName::File)
-                .selected(snapshot.selected == Some(index))
-                .on_click(cx.listener({
-                    let row_candidate = candidate.clone();
-                    move |this, _: &ClickEvent, window, cx| {
-                        this.open_candidate(row_candidate.clone(), window, cx);
-                    }
-                }))
-                .child(
-                    div()
-                        .min_w_0()
-                        .text_sm()
-                        .overflow_hidden()
-                        .child(candidate.relative_path.clone()),
-                )
-                .into_any_element()
+                    .icon(IconName::File)
+                    .selected(snapshot.selected == Some(index))
+                    .on_click(cx.listener({
+                        let row_candidate = candidate.clone();
+                        move |this, _: &ClickEvent, window, cx| {
+                            this.open_candidate(row_candidate.clone(), window, cx);
+                        }
+                    }))
+                    .child(
+                        div()
+                            .min_w_0()
+                            .text_sm()
+                            .overflow_hidden()
+                            .child(candidate.relative_path.clone()),
+                    )
+                    .into_any_element()
             })
             .collect::<Vec<_>>();
         let has_query = !snapshot.query.text.is_empty();

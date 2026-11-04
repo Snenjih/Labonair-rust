@@ -12,8 +12,8 @@
 //! / background entities, so the next open rebuilds it losslessly.
 
 use gpui::{
-    point, px, size, App, AppContext, Bounds, Global, SharedString, TitlebarOptions,
-    WindowBounds, WindowHandle, WindowKind, WindowOptions,
+    point, px, size, App, AppContext, Bounds, Global, SharedString, TitlebarOptions, WindowBounds,
+    WindowHandle, WindowKind, WindowOptions,
 };
 use gpui_component::Root;
 use tokio::runtime::Handle as TokioHandle;

@@ -10512,11 +10512,13 @@ impl EditorView {
                                     );
                                 }
                                 ListItem::new(("editor-completion-item", index), palette)
-                                .selected(index == selected)
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                                    this.apply_completion_item(index, cx);
-                                }))
-                                .child(content)
+                                    .selected(index == selected)
+                                    .on_click(cx.listener(
+                                        move |this, _: &ClickEvent, _window, cx| {
+                                            this.apply_completion_item(index, cx);
+                                        },
+                                    ))
+                                    .child(content)
                             });
                     overlay = overlay
                         .child(labonair_ui_kit::list_header("Completion", palette.muted))
@@ -10573,11 +10575,11 @@ impl EditorView {
             let rows = targets.iter().enumerate().take(100).map(|(index, target)| {
                 let label = navigation_target_label(target);
                 ListItem::new(("editor-navigation-result", index), palette)
-                .selected(index == selected)
-                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                    this.select_navigation_result(index, window, cx);
-                }))
-                .child(SharedString::from(label))
+                    .selected(index == selected)
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.select_navigation_result(index, window, cx);
+                    }))
+                    .child(SharedString::from(label))
             });
             let mut header = div()
                 .flex()
@@ -10767,17 +10769,18 @@ impl EditorView {
                             let uri = call.item.uri.clone();
                             let position = call.item.selection_range.start;
                             ListItem::new(("editor-call-hierarchy-item", index), palette)
-                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                                this.call_hierarchy_open = false;
-                                if this.language_service_uri.as_deref() == Some(uri.as_str()) {
-                                    this.goto_lsp_position(position, cx);
-                                } else if let Some(navigate) = this.call_hierarchy_navigator.clone()
-                                {
-                                    navigate(uri.clone(), position, window, cx);
-                                }
-                                cx.notify();
-                            }))
-                            .child(SharedString::from(label))
+                                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                    this.call_hierarchy_open = false;
+                                    if this.language_service_uri.as_deref() == Some(uri.as_str()) {
+                                        this.goto_lsp_position(position, cx);
+                                    } else if let Some(navigate) =
+                                        this.call_hierarchy_navigator.clone()
+                                    {
+                                        navigate(uri.clone(), position, window, cx);
+                                    }
+                                    cx.notify();
+                                }))
+                                .child(SharedString::from(label))
                         });
                 overlay = overlay.child(
                     div()

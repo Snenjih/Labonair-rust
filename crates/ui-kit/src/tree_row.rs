@@ -18,9 +18,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, px, AnyElement, App, ClickEvent, Div, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement,
-    MouseButton, MouseDownEvent, ParentElement, SharedString, Stateful, StatefulInteractiveElement,
-    Styled, Window,
+    div, px, AnyElement, App, ClickEvent, Div, ElementId, FontWeight, Hsla, InteractiveElement,
+    IntoElement, MouseButton, MouseDownEvent, ParentElement, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, Window,
 };
 
 use crate::density::Density;

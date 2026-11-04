@@ -1169,14 +1169,14 @@ impl GitGraphView {
                     // `transfers.rs`'s informational-row convention.
                     file_list = file_list.child(
                         ListItem::new(("git-graph-detail-file", i), c.palette)
-                        .child(
-                            div()
-                                .min_w_0()
-                                .truncate()
-                                .child(SharedString::from(f.path.clone())),
-                        )
-                        .trailing(trailing)
-                        .extra(|row| row.cursor_default()),
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .child(SharedString::from(f.path.clone())),
+                            )
+                            .trailing(trailing)
+                            .extra(|row| row.cursor_default()),
                     );
                 }
             }

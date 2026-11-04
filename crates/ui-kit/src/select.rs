@@ -30,8 +30,9 @@ use std::rc::Rc;
 
 use gpui::{
     deferred, div, list, prelude::FluentBuilder, px, AnimationExt, AnyElement, App, ClickEvent,
-    Div, ElementId, FontWeight, InteractiveElement, IntoElement, ListSizingBehavior, ListState, ParentElement,
-    Pixels, Point, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
+    Div, ElementId, FontWeight, InteractiveElement, IntoElement, ListSizingBehavior, ListState,
+    ParentElement, Pixels, Point, SharedString, Stateful, StatefulInteractiveElement, Styled,
+    Window,
 };
 
 use crate::animation::fade_in;

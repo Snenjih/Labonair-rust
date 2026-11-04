@@ -150,7 +150,11 @@ impl Palette {
             muted_bg: core.muted,
             input: core.input,
             field_bg: VibrancyLayer::Control.resolve(
-                if t.is_dark { core.muted } else { core.background },
+                if t.is_dark {
+                    core.muted
+                } else {
+                    core.background
+                },
                 translucent,
             ),
             field_ring: t.border.focused,
@@ -202,7 +206,11 @@ impl Palette {
     /// The floating-layer shadow (`--shadow-popover`): menus, dropdowns,
     /// tooltips and toasts. Dialogs use a `line_strong` border instead.
     pub fn popover_shadow(&self) -> Vec<BoxShadow> {
-        let (a, b) = if self.is_dark { (0.26, 0.18) } else { (0.12, 0.06) };
+        let (a, b) = if self.is_dark {
+            (0.26, 0.18)
+        } else {
+            (0.12, 0.06)
+        };
         let black = |alpha: f32| Hsla {
             h: 0.0,
             s: 0.0,

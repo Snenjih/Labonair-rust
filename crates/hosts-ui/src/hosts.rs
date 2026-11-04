@@ -149,71 +149,71 @@ fn render_host_row(
     };
 
     ListItem::new(SharedString::from(format!("host-item-{id}")), *p)
-    .child(div().child(row.icon.svg(p.muted).size(px(14.0))))
-    .child(
-        div()
-            .flex_1()
-            .min_w_0()
-            .flex()
-            .flex_col()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .when(row.pin_to_top, |d| {
-                        d.child(IconName::Bookmark.svg(p.accent).size(px(9.0)))
-                    })
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(p.fg)
-                            .child(SharedString::from(row.name.clone())),
-                    ),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(p.muted)
-                    .child(SharedString::from(row.subtitle.clone())),
-            ),
-    )
-    .trailing(
-        div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .child(indicator(IndicatorSize::Sm, ping_color))
-            .when(row.status != HostStatus::Disconnected, |d| {
-                d.child(
+        .child(div().child(row.icon.svg(p.muted).size(px(14.0))))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .child(
                     div()
-                        .text_size(px(9.0))
-                        .text_color(if row.status == HostStatus::Failed {
-                            p.fg
-                        } else {
-                            p.accent
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .when(row.pin_to_top, |d| {
+                            d.child(IconName::Bookmark.svg(p.accent).size(px(9.0)))
                         })
-                        .child(row.status.label()),
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(p.fg)
+                                .child(SharedString::from(row.name.clone())),
+                        ),
                 )
-            }),
-    )
-    .on_click(on_click)
-    .hover_style(move |s| s.border_color(accent))
-    .extra(move |list_row| {
-        list_row
-            .py(px(8.0))
-            .rounded_md()
-            .bg(if selected { border } else { card })
-            .border_1()
-            .border_color(if selected { accent } else { border })
-            .on_mouse_down(MouseButton::Right, on_right_click)
-            .on_drag(DraggedHost { id: id.clone() }, |_, _, _, cx| {
-                cx.new(|_| HostDragGhost)
-            })
-            .drag_over::<DraggedHost>(move |style, _, _, _| style.border_color(accent))
-            .on_drop(on_drop)
-    })
-    .into_any_element()
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(p.muted)
+                        .child(SharedString::from(row.subtitle.clone())),
+                ),
+        )
+        .trailing(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(indicator(IndicatorSize::Sm, ping_color))
+                .when(row.status != HostStatus::Disconnected, |d| {
+                    d.child(
+                        div()
+                            .text_size(px(9.0))
+                            .text_color(if row.status == HostStatus::Failed {
+                                p.fg
+                            } else {
+                                p.accent
+                            })
+                            .child(row.status.label()),
+                    )
+                }),
+        )
+        .on_click(on_click)
+        .hover_style(move |s| s.border_color(accent))
+        .extra(move |list_row| {
+            list_row
+                .py(px(8.0))
+                .rounded_md()
+                .bg(if selected { border } else { card })
+                .border_1()
+                .border_color(if selected { accent } else { border })
+                .on_mouse_down(MouseButton::Right, on_right_click)
+                .on_drag(DraggedHost { id: id.clone() }, |_, _, _, cx| {
+                    cx.new(|_| HostDragGhost)
+                })
+                .drag_over::<DraggedHost>(move |style, _, _, _| style.border_color(accent))
+                .on_drop(on_drop)
+        })
+        .into_any_element()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3405,44 +3405,44 @@ impl HostManagerView {
                         .unwrap_or_default(),
                 );
                 ListItem::new(SharedString::from(format!("imp-{alias}")), *p)
-                // T20-001: shared `Checkbox` primitive.
-                .child(checkbox("", *p, checked).box_only())
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .child(div().text_sm().text_color(p.fg).child(SharedString::from(
-                            if exists {
-                                format!("{alias}  (already exists)")
-                            } else {
-                                alias.clone()
-                            },
-                        )))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(p.muted)
-                                .child(SharedString::from(meta)),
-                        ),
-                )
-                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                    if let Some(s) = this.import.as_mut() {
-                        if !s.selected.remove(&alias) {
-                            s.selected.insert(alias.clone());
+                    // T20-001: shared `Checkbox` primitive.
+                    .child(checkbox("", *p, checked).box_only())
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .child(div().text_sm().text_color(p.fg).child(SharedString::from(
+                                if exists {
+                                    format!("{alias}  (already exists)")
+                                } else {
+                                    alias.clone()
+                                },
+                            )))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(p.muted)
+                                    .child(SharedString::from(meta)),
+                            ),
+                    )
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        if let Some(s) = this.import.as_mut() {
+                            if !s.selected.remove(&alias) {
+                                s.selected.insert(alias.clone());
+                            }
                         }
-                    }
-                    cx.notify();
-                }))
-                .extra(move |row| {
-                    row.rounded_md().border_1().border_color(if checked {
-                        p_accent
-                    } else {
-                        p_border
+                        cx.notify();
+                    }))
+                    .extra(move |row| {
+                        row.rounded_md().border_1().border_color(if checked {
+                            p_accent
+                        } else {
+                            p_border
+                        })
                     })
-                })
-                .into_any_element()
+                    .into_any_element()
             })
             .collect();
 
@@ -3589,30 +3589,30 @@ impl HostManagerView {
                 let checked = state.selected.contains(&id);
                 let (p_accent, p_border) = (p.accent, p.border);
                 ListItem::new(SharedString::from(format!("exp-{id}")), *p)
-                // T20-001: shared `Checkbox` primitive.
-                .child(checkbox("", *p, checked).box_only())
-                .child(div().flex_1().min_w_0().text_sm().text_color(p.fg).child(
-                    SharedString::from(format!(
-                        "{}  \u{00b7}  {}@{}:{}",
-                        h.name, h.username, h.host_address, h.port
-                    )),
-                ))
-                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                    if let Some(s) = this.export.as_mut() {
-                        if !s.selected.remove(&id) {
-                            s.selected.insert(id.clone());
+                    // T20-001: shared `Checkbox` primitive.
+                    .child(checkbox("", *p, checked).box_only())
+                    .child(div().flex_1().min_w_0().text_sm().text_color(p.fg).child(
+                        SharedString::from(format!(
+                            "{}  \u{00b7}  {}@{}:{}",
+                            h.name, h.username, h.host_address, h.port
+                        )),
+                    ))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        if let Some(s) = this.export.as_mut() {
+                            if !s.selected.remove(&id) {
+                                s.selected.insert(id.clone());
+                            }
                         }
-                    }
-                    cx.notify();
-                }))
-                .extra(move |row| {
-                    row.rounded_md().border_1().border_color(if checked {
-                        p_accent
-                    } else {
-                        p_border
+                        cx.notify();
+                    }))
+                    .extra(move |row| {
+                        row.rounded_md().border_1().border_color(if checked {
+                            p_accent
+                        } else {
+                            p_border
+                        })
                     })
-                })
-                .into_any_element()
+                    .into_any_element()
             })
             .collect();
 

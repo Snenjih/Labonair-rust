@@ -312,7 +312,7 @@ impl Render for BackgroundSettingsView {
         .w_full()
         .justify_start()
         .when(selected.is_empty(), |row| {
-            row.bg(c.selected_fill).border_color(c.selected_accent)
+            row.bg(c.selected_fill).border_color(c.line_strong)
         })
         .child("None")
         .on_click(cx.listener(|this, _, _, cx| {
@@ -333,7 +333,7 @@ impl Render for BackgroundSettingsView {
             .w_full()
             .justify_start()
             .when(active, |row| {
-                row.bg(c.selected_fill).border_color(c.selected_accent)
+                row.bg(c.selected_fill).border_color(c.line_strong)
             })
             .child(filename)
             .on_click(cx.listener(move |this, _, _window, cx| {

@@ -260,12 +260,12 @@ mod tests {
     }
 
     #[test]
-    fn dark_values_match_globals_css() {
+    fn dark_values_match_ciel_tokens() {
         let c = TerminalColors::from_theme(&Theme::dark());
-        // .dark --terminal-yellow == --primary #E6B450
-        assert!(close(c.normal[3], [0xE6, 0xB4, 0x50], 3));
-        // .dark --terminal-red == --destructive #F26D78
-        assert!(close(c.normal[1], [0xF2, 0x6D, 0x78], 3));
+        // .dark --terminal-ansi-yellow #ff9412
+        assert!(close(c.normal[3], [0xFF, 0x94, 0x12], 2));
+        // .dark --terminal-ansi-red #fd2f3b
+        assert!(close(c.normal[1], [0xFD, 0x2F, 0x3B], 2));
         // --terminal-bright-white / --terminal-bright-foreground == white
         assert!(close(c.bright[7], [0xFF, 0xFF, 0xFF], 2));
         assert!(close(c.bright_foreground, [0xFF, 0xFF, 0xFF], 2));
@@ -282,7 +282,7 @@ mod tests {
     #[test]
     fn selection_alpha_is_carried_separately() {
         let c = TerminalColors::from_theme(&Theme::dark());
-        assert!((c.selection_alpha - 0.13).abs() < 1e-6);
+        assert!((c.selection_alpha - 0.25).abs() < 0.01);
     }
 
     #[test]

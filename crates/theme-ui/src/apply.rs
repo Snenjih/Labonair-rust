@@ -85,7 +85,9 @@ fn apply_window_material(cx: &mut App) {
     let background = window_background(cx);
     for handle in cx.windows() {
         handle
-            .update(cx, |_, window, _| window.set_background_appearance(background))
+            .update(cx, |_, window, _| {
+                window.set_background_appearance(background)
+            })
             .ok();
     }
 }

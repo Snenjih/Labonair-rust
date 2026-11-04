@@ -26,8 +26,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder, px, AnyElement, App, ClickEvent, Div, ElementId, FontWeight,
-    Hsla, InteractiveElement, IntoElement, ParentElement, SharedString, Stateful,
+    div, prelude::FluentBuilder, px, AnyElement, App, ClickEvent, Div, ElementId, FontWeight, Hsla,
+    InteractiveElement, IntoElement, ParentElement, SharedString, Stateful,
     StatefulInteractiveElement, StyleRefinement, Styled, Window,
 };
 

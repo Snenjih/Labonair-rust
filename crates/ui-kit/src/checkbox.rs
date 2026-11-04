@@ -81,11 +81,7 @@ impl Checkbox {
             .rounded(px(c.radius.sm))
             .border_1()
             .border_color(if self.checked { c.primary } else { c.input })
-            .bg(if self.checked {
-                c.primary
-            } else {
-                c.field_bg
-            })
+            .bg(if self.checked { c.primary } else { c.field_bg })
             .when(self.checked, |d| {
                 d.child(IconName::SquareCheck.svg(c.primary_fg).size(px(12.0)))
             })

@@ -4,8 +4,7 @@ use std::rc::Rc;
 
 use gpui::{
     div, prelude::FluentBuilder, px, AnyElement, App, Div, FontWeight, Hsla, InteractiveElement,
-    IntoElement,
-    ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
+    IntoElement, ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
 };
 
 use crate::{
@@ -196,7 +195,7 @@ impl TabItemBuilder {
             .flex_row()
             .items_center()
             .gap(palette.space(if horizontal { 8.0 } else { 6.0 }))
-            .h(palette.space(if horizontal { 32.0 } else { 28.0 }))
+            .h(palette.space(if horizontal { 40.0 } else { 28.0 }))
             .px(palette.space(if horizontal { 12.0 } else { 8.0 }))
             .rounded(if horizontal {
                 px(0.0)
@@ -211,15 +210,14 @@ impl TabItemBuilder {
             // Ciel `EditorTabs variant="flat"`: borderless; the active tab is a
             // fill, never an underline or accent tint.
             .when(horizontal, |row| {
-                row.relative()
-                    .flex_shrink_0()
-                    .max_w(palette.space(240.0))
+                row.relative().flex_shrink_0().max_w(palette.space(240.0))
             })
             .when(selected, |row| {
                 if horizontal {
                     row.bg(palette.bg)
                 } else {
-                    row.bg(palette.selected_fill).font_weight(FontWeight::SEMIBOLD)
+                    row.bg(palette.selected_fill)
+                        .font_weight(FontWeight::SEMIBOLD)
                 }
             })
             .when(!selected && !disabled, |row| {
