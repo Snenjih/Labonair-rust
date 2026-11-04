@@ -338,12 +338,26 @@ mod tests {
     }
 
     #[test]
+    fn popup_rise_only_plays_at_full_motion() {
+        use crate::animation::slide_offset;
+        for (level, start) in [
+            (MotionLevel::Full, POPUP_SLIDE),
+            (MotionLevel::Reduced, px(0.0)),
+            (MotionLevel::Off, px(0.0)),
+        ] {
+            assert_eq!(slide_offset(&motion(level), POPUP_SLIDE, 0.0), start);
+            assert_eq!(slide_offset(&motion(level), POPUP_SLIDE, 1.0), px(0.0));
+        }
+    }
+
+    #[test]
     fn enter_or_exit_builds_in_both_states_and_levels() {
         for level in [MotionLevel::Full, MotionLevel::Reduced, MotionLevel::Off] {
             let mut c = test_palette();
             c.motion.level = level;
             for closing in [false, true] {
                 let _ = enter_or_exit(div(), "surface", c, closing);
+                let _ = enter_or_popup(div(), "popup", c, closing);
             }
         }
         let _ = closing_guard();
