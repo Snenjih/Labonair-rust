@@ -254,9 +254,8 @@ and content, not separate placement math.
 
 GPUI divides elapsed time by the animation duration every frame, so no
 duration is ever zero: all durations go through `MotionPrefs::resolve`. The
-level is chosen in a single function (`animation::motion_level`); today it maps
-the legacy `reduceMotion` metric to `Off`, and it is the one place that reads
-the `appearance.animations` setting once it reaches `ThemeMetrics`.
+level is chosen in a single function (`animation::motion_level`), which maps
+the resolved `ThemeMetrics::animations` (`appearance.animations`) to the level.
 
 GPUI 0.2.2 has no transforms and no hover transitions, so the engine animates
 only opacity and layout properties. The `MotionExt` element methods are

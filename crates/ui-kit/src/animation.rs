@@ -46,7 +46,7 @@
 use std::time::Duration;
 
 use gpui::{px, Animation, AnimationElement, AnimationExt, ElementId, IntoElement, Pixels, Styled};
-use labonair_theme_tokens::{Animation as AnimationTokens, CubicBezier};
+use labonair_theme_tokens::{Animation as AnimationTokens, AnimationLevel, CubicBezier};
 
 use crate::divider::Axis;
 use crate::palette::Palette;
@@ -134,16 +134,18 @@ impl MotionPrefs {
 
 /// Map the theme to a [`MotionLevel`].
 ///
-/// This is the **single place** that decides the level. Today the only input is
-/// the legacy `reduce_motion` metric (`true` maps to `Off`, matching the
-/// settings migration); once the `appearance.animations` setting
-/// (`system | full | reduced | off`) reaches `ThemeMetrics`, switch it here and
-/// nowhere else.
+/// This is the **single place** that decides the level: it reads the resolved
+/// `appearance.animations` choice ([`AnimationLevel`]) off the theme metrics.
 fn motion_level(theme: &impl UiTheme) -> MotionLevel {
-    if theme.metrics().reduce_motion {
-        MotionLevel::Off
-    } else {
-        MotionLevel::Full
+    level_for(theme.metrics().animations)
+}
+
+/// The kit [`MotionLevel`] for a resolved theme [`AnimationLevel`].
+pub fn level_for(level: AnimationLevel) -> MotionLevel {
+    match level {
+        AnimationLevel::Full => MotionLevel::Full,
+        AnimationLevel::Reduced => MotionLevel::Reduced,
+        AnimationLevel::Off => MotionLevel::Off,
     }
 }
 
@@ -328,23 +330,30 @@ mod tests {
     }
 
     #[test]
-    fn legacy_reduce_motion_metric_maps_to_off() {
-        struct Reduced(Theme);
-        impl UiTheme for Reduced {
+    fn animations_metric_maps_to_the_motion_level() {
+        struct Metered(Theme, AnimationLevel);
+        impl UiTheme for Metered {
             fn theme(&self) -> &Theme {
                 &self.0
             }
             fn metrics(&self) -> labonair_theme_tokens::ThemeMetrics {
                 labonair_theme_tokens::ThemeMetrics {
-                    reduce_motion: true,
+                    animations: self.1,
+                    reduce_motion: self.1 != AnimationLevel::Full,
                     ..Default::default()
                 }
             }
         }
-        assert_eq!(
-            MotionPrefs::from_theme(&Reduced(Theme::dark())).level,
-            MotionLevel::Off
-        );
+        for (animations, level) in [
+            (AnimationLevel::Full, MotionLevel::Full),
+            (AnimationLevel::Reduced, MotionLevel::Reduced),
+            (AnimationLevel::Off, MotionLevel::Off),
+        ] {
+            assert_eq!(
+                MotionPrefs::from_theme(&Metered(Theme::dark(), animations)).level,
+                level
+            );
+        }
         assert_eq!(
             MotionPrefs::from_theme(&TestTheme(Theme::dark())).level,
             MotionLevel::Full
