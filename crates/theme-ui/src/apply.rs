@@ -3,7 +3,7 @@
 //! Moved out of `labonair-settings-ui` in R08-005 (mechanical move — no logic
 //! change).
 
-use gpui::{transparent_black, App, Entity};
+use gpui::{transparent_black, App, Entity, WindowBackgroundAppearance};
 
 use labonair_settings::content::general::ThemePref;
 use labonair_settings::{
@@ -65,7 +65,29 @@ pub fn theme_metrics_from_settings(cx: &App) -> Option<ThemeMetrics> {
         density: UiDensity::from_str_or_default(s.ui_density()),
         corner_radius_scale: s.corner_radius_scale(),
         reduce_motion: s.reduce_motion(),
+        translucent_surfaces: s.translucent_surfaces(),
     })
+}
+
+/// The native window material for the `appearance.translucentSurfaces`
+/// setting: the blurred desktop material when on, an opaque window otherwise.
+/// Use for every `WindowOptions::window_background`.
+pub fn window_background(cx: &App) -> WindowBackgroundAppearance {
+    match ThemeSettings::try_get(cx) {
+        Some(s) if s.translucent_surfaces() => WindowBackgroundAppearance::Blurred,
+        _ => WindowBackgroundAppearance::Opaque,
+    }
+}
+
+/// Re-apply [`window_background`] to every open window so toggling the
+/// setting takes effect live.
+fn apply_window_material(cx: &mut App) {
+    let background = window_background(cx);
+    for handle in cx.windows() {
+        handle
+            .update(cx, |_, window, _| window.set_background_appearance(background))
+            .ok();
+    }
 }
 
 /// Push the current [`ThemeMetrics`] (T20-007) into the [`ThemeStore`]. Called
@@ -73,6 +95,7 @@ pub fn theme_metrics_from_settings(cx: &App) -> Option<ThemeMetrics> {
 pub fn apply_theme_metrics(theme: &Entity<ThemeStore>, cx: &mut App) {
     if let Some(metrics) = theme_metrics_from_settings(cx) {
         theme.update(cx, |t, cx| t.set_metrics(metrics, cx));
+        apply_window_material(cx);
     }
 }
 
@@ -172,6 +195,7 @@ fn sync_gpui_component_theme(theme: &Entity<ThemeStore>, cx: &mut App) {
         return;
     }
     let core = theme.read(cx).theme().core.clone();
+    let translucent = theme.read(cx).translucent();
     let t = gpui_component::Theme::global_mut(cx);
     t.primary = core.primary;
     t.primary_hover = core.primary;
@@ -180,16 +204,20 @@ fn sync_gpui_component_theme(theme: &Entity<ThemeStore>, cx: &mut App) {
     // `gpui_component::Root` paints this color behind the full app tree. Keep
     // that foundation layer clear so each owned surface reveals GPUI's native
     // blurred window material exactly once.
-    t.background = transparent_black();
+    t.background = if translucent {
+        transparent_black()
+    } else {
+        core.background
+    };
     t.foreground = core.foreground;
-    t.border = VibrancyLayer::Divider.apply(core.border);
-    t.input = VibrancyLayer::Control.apply(core.input);
+    t.border = VibrancyLayer::Divider.resolve(core.border, translucent);
+    t.input = VibrancyLayer::Control.resolve(core.input, translucent);
     t.ring = core.ring;
     t.muted = core.muted;
     t.muted_foreground = core.muted_foreground;
     t.accent = core.accent;
     t.accent_foreground = core.accent_foreground;
-    t.popover = VibrancyLayer::Popover.apply(core.popover);
+    t.popover = VibrancyLayer::Popover.resolve(core.popover, translucent);
     // Input's own colours: caret uses `primary` so it reads as the same
     // "active" colour as a row/tab selection bar elsewhere in the app;
     // selection is `primary` at a stronger alpha than the row-selection fill

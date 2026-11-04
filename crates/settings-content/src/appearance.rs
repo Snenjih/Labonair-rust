@@ -33,6 +33,9 @@ pub struct AppearanceContent {
     /// Corner-radius multiplier applied to the active theme's radius scale
     /// (`1.0` = unchanged) (T20-007).
     pub corner_radius_scale: Option<f32>,
+    /// Paint window chrome and surfaces translucent over the native window
+    /// blur (`false` = opaque Ciel fills).
+    pub translucent_surfaces: Option<bool>,
     /// `"titlebar"` | `"sidebar"`.
     pub tabs_location: Option<String>,
     /// Zen mode: show the window header bar.
@@ -56,6 +59,7 @@ impl AppearanceContent {
             buffer_line_height: Some(1.55),
             ui_density: Some("default".to_string()),
             corner_radius_scale: Some(1.0),
+            translucent_surfaces: Some(false),
             tabs_location: Some("titlebar".to_string()),
             zen_mode_show_header: Some(true),
             zen_mode_show_statusbar: Some(true),

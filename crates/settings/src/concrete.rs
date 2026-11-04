@@ -176,6 +176,12 @@ impl ThemeSettings {
     pub fn corner_radius_scale(&self) -> f32 {
         self.0.corner_radius_scale.unwrap_or(1.0)
     }
+
+    /// Whether window chrome and surfaces are translucent over the native
+    /// window blur (default `false`: opaque fill-contrast surfaces).
+    pub fn translucent_surfaces(&self) -> bool {
+        self.0.translucent_surfaces.unwrap_or(false)
+    }
 }
 
 /// `terminal` area.

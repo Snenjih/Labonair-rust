@@ -50,6 +50,7 @@ pub use labonair_background::init as init_background;
 pub use labonair_notifications::init as init_notifications;
 pub use labonair_settings::init as init_settings;
 pub use labonair_theme::{init_fonts, init_theme};
+pub use labonair_theme_ui::window_background;
 
 /// Forward native deep-links from the app bootstrap to the owning feature.
 pub fn handle_open_url(url: &str, cx: &mut gpui::App) -> bool {

@@ -691,8 +691,14 @@ impl ThemeStore {
 
     // --- Convenience accessors for UI components -------------------------
 
+    /// `appearance.translucentSurfaces` — whether surfaces use the
+    /// [`VibrancyLayer`] opacities (otherwise opaque Ciel fills).
+    pub fn translucent(&self) -> bool {
+        self.active.metrics().translucent_surfaces
+    }
+
     pub fn background(&self) -> Hsla {
-        VibrancyLayer::Canvas.apply(self.theme().core.background)
+        VibrancyLayer::Canvas.resolve(self.theme().core.background, self.translucent())
     }
 
     pub fn foreground(&self) -> Hsla {
@@ -700,7 +706,7 @@ impl ThemeStore {
     }
 
     pub fn card(&self) -> Hsla {
-        VibrancyLayer::Card.apply(self.theme().core.card)
+        VibrancyLayer::Card.resolve(self.theme().core.card, self.translucent())
     }
 
     pub fn muted(&self) -> Hsla {
@@ -712,7 +718,7 @@ impl ThemeStore {
     }
 
     pub fn border(&self) -> Hsla {
-        VibrancyLayer::Divider.apply(self.theme().core.border)
+        VibrancyLayer::Divider.resolve(self.theme().core.border, self.translucent())
     }
 
     pub fn primary(&self) -> Hsla {
@@ -750,27 +756,27 @@ impl ThemeStore {
 
     /// `--toolbar-background` — the window header / titlebar surface.
     pub fn toolbar(&self) -> Hsla {
-        VibrancyLayer::Toolbar.apply(self.theme().surface.toolbar)
+        VibrancyLayer::Toolbar.resolve(self.theme().surface.toolbar, self.translucent())
     }
 
     /// `--title-bar-background`.
     pub fn title_bar(&self) -> Hsla {
-        VibrancyLayer::Toolbar.apply(self.theme().surface.title_bar)
+        VibrancyLayer::Toolbar.resolve(self.theme().surface.title_bar, self.translucent())
     }
 
     /// `--status-bar-background` — the bottom status bar surface.
     pub fn status_bar(&self) -> Hsla {
-        VibrancyLayer::Toolbar.apply(self.theme().surface.status_bar)
+        VibrancyLayer::Toolbar.resolve(self.theme().surface.status_bar, self.translucent())
     }
 
     /// `--sidebar` background.
     pub fn sidebar_bg(&self) -> Hsla {
-        VibrancyLayer::Sidebar.apply(self.theme().sidebar.background)
+        VibrancyLayer::Sidebar.resolve(self.theme().sidebar.background, self.translucent())
     }
 
     /// `--sidebar-border`.
     pub fn sidebar_border(&self) -> Hsla {
-        VibrancyLayer::Divider.apply(self.theme().sidebar.border)
+        VibrancyLayer::Divider.resolve(self.theme().sidebar.border, self.translucent())
     }
 
     /// `--sidebar-foreground`.
@@ -803,15 +809,15 @@ impl ThemeStore {
     }
 
     /// Canonical selected/active fill for list selection (Explorer rows,
-    /// command-palette results, active tab, active nav item). The primary
-    /// colour at a low alpha so the current item reads as "current" while the
-    /// resting surface stays calm; hover stays neutral ([`Self::hover_fill`]).
+    /// command-palette results, active tab, active nav item): Ciel's
+    /// `--surface-sunken` (§8) — no accent tint; hover stays neutral
+    /// ([`Self::hover_fill`]).
     pub fn selected_fill(&self) -> Hsla {
-        self.primary().opacity(0.16)
+        self.theme().surface.sunken
     }
 
-    /// The solid primary marker that accompanies [`Self::selected_fill`] — the
-    /// 2px active bar / active-pane border.
+    /// The accent (`--accent` blue) marker for genuinely active/changed state
+    /// (toggled icons, search-match highlights) — never a row selection.
     pub fn selected_accent(&self) -> Hsla {
         self.primary()
     }
@@ -1001,11 +1007,11 @@ mod tests {
         cx.update(|cx| {
             let store = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
             let s = store.read(cx);
-            // D1 — hover stays neutral (`focus:bg-accent`); selection is the
-            // primary colour at a low alpha, with a solid primary marker.
+            // D1 — hover stays neutral (`focus:bg-accent`); selection is
+            // Ciel's `--surface-sunken` fill (no accent tint), while the
+            // accent marker stays the primary colour.
             assert_eq!(s.hover_fill(), s.accent());
-            assert_eq!(s.selected_fill().h, s.primary().h);
-            assert!((s.selected_fill().a - 0.16).abs() < 1e-6);
+            assert_eq!(s.selected_fill(), s.theme().surface.sunken);
             assert_eq!(s.selected_accent(), s.primary());
             // D2 — thumb is the foreground at 22% → 34% alpha.
             assert!((s.scrollbar_thumb().a - 0.22).abs() < 1e-6);
@@ -1097,15 +1103,14 @@ mod tests {
             let store = cx.new(|_| ThemeStore::new(WindowAppearance::Light));
             let s = store.read(cx);
             let t = s.theme();
-            assert_eq!(
-                s.background(),
-                VibrancyLayer::Canvas.apply(t.core.background)
-            );
+            // Opaque by default: accessors return the theme colors untouched.
+            assert!(!s.translucent());
+            assert_eq!(s.background(), t.core.background);
             assert_eq!(s.foreground(), t.core.foreground);
-            assert_eq!(s.card(), VibrancyLayer::Card.apply(t.core.card));
+            assert_eq!(s.card(), t.core.card);
             assert_eq!(s.muted(), t.core.muted);
             assert_eq!(s.muted_foreground(), t.core.muted_foreground);
-            assert_eq!(s.border(), VibrancyLayer::Divider.apply(t.core.border));
+            assert_eq!(s.border(), t.core.border);
             assert_eq!(s.primary(), t.core.primary);
             assert_eq!(s.accent(), t.core.accent);
             assert_eq!(s.radius(), t.radius);
@@ -1313,10 +1318,7 @@ mod tests {
                 assert_eq!(s.active_theme_id(), "neon/Neon Dark");
                 assert_eq!(crate::to_rgb8(s.primary()), [0x39, 0xff, 0x14]);
                 // Untouched token still the dark default.
-                assert_eq!(
-                    s.background(),
-                    VibrancyLayer::Canvas.apply(Theme::dark().core.background)
-                );
+                assert_eq!(s.background(), Theme::dark().core.background);
 
                 // Switching the resolved mode re-resolves to the light variant.
                 s.set_preference(ThemePreference::Light, cx);

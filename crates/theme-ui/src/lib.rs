@@ -16,7 +16,7 @@ pub mod command_provider;
 
 pub use apply::{
     activate_app_theme, apply_prefs_to_theme, apply_theme_metrics, preview_app_theme,
-    theme_metrics_from_settings,
+    theme_metrics_from_settings, window_background,
 };
 
 /// Contribute the Theme-owned pickers to Settings navigation.

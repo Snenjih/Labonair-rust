@@ -248,6 +248,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Multiplier applied to the active theme's rounded corners (1.0 = unchanged)."
         ),
         field!(
+            appearance.translucent_surfaces,
+            "translucentSurfaces",
+            Switch,
+            "Translucent surfaces",
+            "Let window chrome and panels show the blurred desktop behind them (off = opaque)."
+        ),
+        field!(
             appearance.buffer_font_family,
             "bufferFontFamily",
             FontFamily,

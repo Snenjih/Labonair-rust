@@ -62,12 +62,29 @@ pub struct Palette {
     pub accent: Hsla,
     /// `--accent-foreground`.
     pub accent_fg: Hsla,
-    /// Canonical selected/active fill — the primary colour at a low alpha, so a
-    /// selected row/tab/nav-item reads as "current" while the resting surface
-    /// stays calm. Hover stays neutral ([`Palette::accent`]).
+    /// `--surface-hover-strong`: hover on an already-hovered fill.
+    pub hover_strong: Hsla,
+    /// `--surface-sunken`: the one selected/active fill (Ciel §8), always paired
+    /// with a semibold label — never an accent tint.
+    pub sunken: Hsla,
+    /// `--line-strong`: popover/dialog hairlines, active segment rings.
+    pub line_strong: Hsla,
+    /// `--line-subtle`: row separators inside a filled group.
+    pub line_subtle: Hsla,
+    /// `--action-surface`: the neutral high-contrast primary-action fill.
+    pub action: Hsla,
+    /// `--action-foreground`.
+    pub action_fg: Hsla,
+    /// `--action-hover`.
+    pub action_hover: Hsla,
+    /// `--action-active`.
+    pub action_active: Hsla,
+    /// `--scrim`: dialog/overlay backdrop.
+    pub scrim: Hsla,
+    /// Canonical selected/active fill — alias of [`Palette::sunken`].
     pub selected_fill: Hsla,
-    /// The solid primary marker for a selection: the 2px active bar/border that
-    /// accompanies [`Palette::selected_fill`].
+    /// The accent (`--accent` blue) marker for genuine "active/changed" state
+    /// (toggled icons, match highlights) — never a row selection.
     pub selected_accent: Hsla,
     /// `--primary`.
     pub primary: Hsla,
@@ -112,27 +129,43 @@ impl Palette {
     /// Snapshot the tokens off any [`UiTheme`] (the runtime `ThemeStore`, or a
     /// bare `Theme` in tests).
     pub fn from_theme(theme: &impl UiTheme) -> Self {
-        let core = &theme.theme().core;
-        let status = &theme.theme().status;
+        let t = theme.theme();
+        let core = &t.core;
+        let status = &t.status;
+        let translucent = theme.translucent_surfaces();
         Self {
-            bg: VibrancyLayer::Canvas.apply(core.background),
-            toolbar_bg: VibrancyLayer::Toolbar.apply(theme.theme().surface.toolbar),
+            bg: VibrancyLayer::Canvas.resolve(core.background, translucent),
+            toolbar_bg: VibrancyLayer::Toolbar.resolve(t.surface.toolbar, translucent),
             fg: core.foreground,
             muted: core.muted_foreground,
-            border: VibrancyLayer::Divider.apply(core.border),
+            border: VibrancyLayer::Divider.resolve(core.border, translucent),
             muted_bg: core.muted,
-            input: VibrancyLayer::Control.apply(core.input),
+            input: VibrancyLayer::Control.resolve(core.input, translucent),
             ring: core.ring,
-            card: VibrancyLayer::Card.apply(core.card),
+            card: VibrancyLayer::Card.resolve(core.card, translucent),
             card_fg: core.card_foreground,
-            popover: VibrancyLayer::Popover.apply(core.popover),
+            popover: VibrancyLayer::Popover.resolve(core.popover, translucent),
             popover_fg: core.popover_foreground,
-            sidebar: VibrancyLayer::Sidebar.apply(theme.theme().sidebar.background),
-            sidebar_fg: theme.theme().sidebar.foreground,
-            sidebar_border: VibrancyLayer::Divider.apply(theme.theme().sidebar.border),
+            sidebar: VibrancyLayer::Sidebar.resolve(t.sidebar.background, translucent),
+            sidebar_fg: t.sidebar.foreground,
+            sidebar_border: VibrancyLayer::Divider.resolve(t.sidebar.border, translucent),
             accent: core.accent,
             accent_fg: core.accent_foreground,
-            selected_fill: core.primary.opacity(0.16),
+            hover_strong: t.surface.hover_strong,
+            sunken: t.surface.sunken,
+            line_strong: t.border.strong,
+            line_subtle: t.border.subtle,
+            action: t.surface.action,
+            action_fg: t.surface.action_foreground,
+            action_hover: t.surface.action_hover,
+            action_active: t.surface.action_active,
+            scrim: Hsla {
+                h: 0.0,
+                s: 0.0,
+                l: 0.0,
+                a: if t.is_dark { 0.55 } else { 0.30 },
+            },
+            selected_fill: t.surface.sunken,
             selected_accent: core.primary,
             primary: core.primary,
             primary_fg: core.primary_foreground,
@@ -146,8 +179,8 @@ impl Palette {
             radius: theme.radius(),
             density: theme.metrics().density.spacing_scale(),
             ui_font_scale: theme.metrics().ui_font_size / 16.0,
-            dur_fast: theme.theme().animation.dur_fast,
-            ease_premium: theme.theme().animation.ease_premium,
+            dur_fast: t.animation.dur_fast,
+            ease_premium: t.animation.ease_premium,
             reduce_motion: theme.metrics().reduce_motion,
         }
     }
@@ -185,11 +218,11 @@ mod tests {
         let theme = TestTheme(Theme::dark());
         let c = Palette::from_theme(&theme);
         assert_eq!(c.fg, theme.0.core.foreground);
-        assert_eq!(
-            c.toolbar_bg,
-            VibrancyLayer::Toolbar.apply(theme.0.surface.toolbar)
-        );
-        assert_eq!(c.border, VibrancyLayer::Divider.apply(theme.0.core.border));
+        // Opaque by default: the theme colors pass through untouched.
+        assert_eq!(c.toolbar_bg, theme.0.surface.toolbar);
+        assert_eq!(c.border, theme.0.core.border);
+        assert_eq!(c.sunken, theme.0.surface.sunken);
+        assert_eq!(c.selected_fill, c.sunken);
         assert_eq!(c.warning, theme.0.status.warning);
         assert_eq!(c.radius.sm, theme.0.radius.sm);
     }

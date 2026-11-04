@@ -33,6 +33,12 @@ pub trait UiTheme {
         ThemeMetrics::default()
     }
 
+    /// Whether surfaces are painted translucent over the native window blur
+    /// (`appearance.translucentSurfaces`). Off by default: opaque Ciel fills.
+    fn translucent_surfaces(&self) -> bool {
+        self.metrics().translucent_surfaces
+    }
+
     /// `--muted-foreground`.
     fn muted_foreground(&self) -> Hsla {
         self.theme().core.muted_foreground
@@ -109,13 +115,14 @@ pub trait UiTheme {
     }
 
     /// Canonical selected/active fill for list selection (Explorer rows,
-    /// command-palette results, active tab, active nav item) — the primary
-    /// colour at a low alpha; hover stays neutral.
+    /// command-palette results, active tab, active nav item): Ciel's
+    /// `--surface-sunken` (§8) — no accent tint; hover stays neutral.
     fn selected_fill(&self) -> Hsla {
-        self.primary().opacity(0.16)
+        self.theme().surface.sunken
     }
 
-    /// The solid primary marker that accompanies [`Self::selected_fill`].
+    /// The accent (`--accent` blue) marker for genuinely "active/changed"
+    /// state — toggled icons, search-match highlights. Never a row selection.
     fn selected_accent(&self) -> Hsla {
         self.primary()
     }

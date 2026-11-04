@@ -96,6 +96,11 @@ pub struct ThemeMetrics {
     pub corner_radius_scale: f32,
     /// When `true`, [`ActiveTheme::animation`] reports zero durations.
     pub reduce_motion: bool,
+    /// When `true`, window chrome and surfaces are painted with the
+    /// [`VibrancyLayer`](crate::VibrancyLayer) opacities over the native
+    /// blurred window material; `false` (default) keeps Ciel's opaque,
+    /// fill-contrast surfaces.
+    pub translucent_surfaces: bool,
 }
 
 impl Default for ThemeMetrics {
@@ -111,6 +116,7 @@ impl Default for ThemeMetrics {
             density: UiDensity::Default,
             corner_radius_scale: 1.0,
             reduce_motion: false,
+            translucent_surfaces: false,
         }
     }
 }
