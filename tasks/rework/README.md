@@ -52,6 +52,7 @@ The active sequence is:
 43. `R09-005-editor-e4-local-language-services.md` — Planned
 44. `R09-006-editor-e5-git-gutter-review-bridge.md` — Planned
 45. `R09-007-editor-e6-persistence-polish-and-p2.md` — Planned
+46. `R10-001-ciel-design-system-adoption.md` — Planned (user-directed; foundation landed, view sweep open)
 
 Phases 0–6 are complete. R02-001 is the first bounded Phase 2 shell task and
 also connects the already-established theme registry to its intended palette

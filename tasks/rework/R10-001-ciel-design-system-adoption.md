@@ -2,7 +2,7 @@
 
 ## Status
 
-`🔄 In Progress`
+`⏳ Planned`
 
 ## Owner
 
