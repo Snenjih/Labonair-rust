@@ -5,7 +5,30 @@
 
 ## Visual objective
 
-Labonair should feel dense, calm, precise, and fast. The visual system uses a restrained hierarchy rather than decorative chrome. The pinned Zed build remains the behavioral reference for clean-room parity; Labonair owns its implementation, tokens, and visual identity. On supported desktop compositors, native window blur and lightly translucent semantic surfaces add depth while preserving the existing workspace geometry and density.
+Labonair adopts **Ciel's design system** (clean-room: measured values and rules,
+no source copied): calm, dense, precise, fast. Surfaces separate by **fill
+contrast**, not by borders and shadows. The pinned Zed build remains the
+behavioral reference for parity; Ciel is the visual reference. Labonair owns
+its implementation, tokens, and identity.
+
+Core rules (Ciel `DESIGN.md` §2, §6–§10):
+
+- **Two surface levels.** Chrome (`surface.toolbar/title_bar/status_bar`,
+  `sidebar.background`) holds the titlebar, statusbar, and docks; the main
+  area is `core.background`. Inside the main area, separate by spacing and at
+  most a `core.card`/`core.muted` fill — never border *and* shadow together,
+  never a card in a card.
+- **Only floating layers carry elevation:** menus, dropdowns, popovers,
+  tooltips use a 1px `border.variant` hairline plus the popover shadow;
+  dialogs use a 1px `border.strong` hairline and no shadow.
+- **One active state.** Selected/active rows, tabs, nav items, and toggles use
+  `surface.sunken` plus a semibold label. Hover is `core.accent`. No accent
+  tint, no side stripe, no underline. The blue `core.primary` accent is for
+  links, toggled markers, and genuine "changed" highlights only.
+- **The primary action is neutral.** `ButtonVariant::Action` uses
+  `surface.action` (dark in light themes, light in dark themes), once per view.
+- **Every button has chrome** (fill or outline) except breadcrumb-style
+  navigation text; icon-only buttons may be ghost.
 
 ## Token ownership
 
@@ -18,17 +41,17 @@ tests. A view may not introduce a global color, spacing, radius, typography,
 shadow, or state value inline. If a new visual value is genuinely required,
 extend the token source first and record the reason in the owning task.
 
-## Native materials and surface hierarchy
+## Surfaces and the optional translucent material
 
-The main window and the existing Settings window use GPUI's
-`WindowBackgroundAppearance::Blurred`. Keep the `gpui-component::Root` and
-shell composition roots clear; each visible product surface paints its own
-material once. A full-window background behind another full-window canvas
-would compound alpha and hide the system backdrop.
+By default every surface is opaque and the window uses
+`WindowBackgroundAppearance::Opaque`. The setting
+`appearance.translucentSurfaces` (Settings › Appearance › Density & Motion,
+default off) switches the main and Settings windows to GPUI's native blurred
+material and paints surfaces with the `labonair-theme-tokens::VibrancyLayer`
+opacities below. Toggling it applies live to every open window
+(`labonair_theme_ui::window_background`).
 
-`labonair-theme-tokens::VibrancyLayer` owns the semantic surface opacity scale:
-
-| Surface role | Opacity | Use |
+| Surface role | Opacity (translucent only) | Use |
 |---|---:|---|
 | Canvas | 0.92 | Workspace and Settings content background |
 | Toolbar | 0.82 | Titlebar and statusbar chrome |
@@ -38,20 +61,33 @@ would compound alpha and hide the system backdrop.
 | Popover | 0.97 | Menus, dropdowns, and floating cards |
 | Divider | 0.56 | Structural borders and hairlines |
 
-These values change alpha while preserving the active light/dark or imported
-theme's color. Keep content text and focus treatment at their existing
-foreground strength. Surfaces with their own opaque pixel renderer, such as
-the terminal grid, may remain opaque to keep dense output legible. GPUI 0.2.2
-provides one native blurred window material rather than per-view AppKit
-materials; semantic role separation is supplied by these shared color tokens.
-On macOS the backend uses `NSVisualEffectView`; other platforms use GPUI's
-available blur path, which can depend on the compositor.
+`VibrancyLayer::resolve(color, translucent)` is the only entry point; with
+`translucent == false` it returns the theme color untouched. Keep the
+`gpui-component::Root` clear only while translucent; opaque mode paints
+`core.background` there. Surfaces with their own opaque renderer, such as the
+terminal grid, stay opaque.
 
-The built-in corner-radius base is 6 logical pixels; the existing 12-pixel
-window radius and all layout dimensions remain unchanged. Dark-mode row,
-popover, and modal shadows stay restrained because native blur already adds
-depth. Do not increase padding, gap, dock width, or window bounds as part of a
-material pass.
+### Ciel token map
+
+| Ciel token | Labonair token |
+|---|---|
+| `--surface` | `core.background`, `core.popover` |
+| `--surface-chrome` | `surface.toolbar/title_bar/status_bar`, `sidebar.background` |
+| `--surface-muted` | `core.card`, `core.muted`, `core.secondary` |
+| `--surface-hover` | `core.accent` |
+| `--surface-hover-strong` | `surface.hover_strong` |
+| `--surface-sunken` (selected) | `surface.sunken` |
+| `--line`, `--line-strong`, `--line-subtle` | `core.border`, `border.strong`, `border.subtle` |
+| `--input` / `--field-bg` / `--field-ring` | `core.input` / `Palette::field_bg` / `border.focused` |
+| `--accent` | `core.primary` |
+| `--action-surface` family | `surface.action`, `action_foreground`, `action_hover`, `action_active` |
+| `--radius-sm/md/lg/xl/3xl/bubble/modal` | `RadiusScale` `sm/md/lg/xl/xl2/xl3/xl4` = 4/8/12/14/20/22/30 |
+| `--dur-fast/base/slow` | `Animation` 120/160/200 ms |
+
+Built-in themes are `Theme::light()` (warm neutral) and `Theme::dark()`
+(neutral dark); the embedded `labonair.json` is regenerated from them
+(`REGEN_BUILTIN_THEME=1 cargo test -p labonair-theme builtin_json`).
+
 
 ## Default typography
 
@@ -95,11 +131,14 @@ content, focus entry and return, dismissal, validation, and action order. A
 dialog placed beside a trigger or at a viewport edge uses `dialog_surface`
 inside its owner-provided positioner rather than introducing another card style.
 
-Buttons share one compact size scale: 16, 18, 22, 28, and 32 logical pixels
-at the reference UI font size. Their dimensions scale with the active UI font
-and density, and their corners use the small radius token. The default
-appearance is subtle; filled, outlined, outlined-ghost, error-tinted, link,
-and transparent treatments are explicit choices. Enabled controls define
+Buttons share Ciel's control scale: 16 (inline), 24 (`Xs`), 28 (`Default`,
+the minimum click target), 32 (`Sm`), and 36 (`Lg`, the standard form button)
+logical pixels at the reference UI font size, with 12/13/13/14 px labels and
+medium weight. Their dimensions scale with the active UI font and density, and
+their corners use the `md` control radius (8). The default appearance is
+subtle (ghost); filled (`secondary`), outlined, outlined-ghost, error-tinted
+(`destructive`), the neutral `Action` primary, link, and transparent
+treatments are explicit choices. Controls in one row share one height. Enabled controls define
 hover, pressed, and visible focus states. Disabled controls preserve
 their geometry, lose their Tab stop, and use disabled foreground treatment.
 
@@ -119,9 +158,9 @@ activation. Workspace keeps tab ordering, drag/drop, persistence, rename, and
 close decisions in its owner; those behaviors extend the shared row instead
 of replacing its styling.
 
-Horizontal titlebar tabs use a flat, contiguous 32-pixel base row with content-
-sized widths, one-pixel separators, muted inactive text, and an active surface
-that joins the workspace below. The bar and inactive tabs use the toolbar
+Horizontal titlebar tabs use a flat, borderless 40-pixel row (the titlebar
+height) with content-sized widths, muted inactive text, a hover fill, and an
+active surface that joins the workspace below. The bar and inactive tabs use the toolbar
 surface; the active tab uses the application background. These are existing
 theme roles captured by `Palette`; the tab view adds no literal colors. The
 horizontal close action appears on tab hover. Vertical tabs retain their
@@ -131,8 +170,11 @@ Reusable controls expose a real disabled state: preserve their normal geometry,
 remove activation and keyboard focus, and use the shared disabled treatment.
 The select trigger and text-field surface have disabled variants alongside
 buttons, checkboxes, segmented controls, and numeric fields.
-Text-field frames provide shared compact (24-pixel) and standard (32-pixel)
-sizes. Their geometry scales with UI font size and density. Standard settings
+Text-field frames provide shared compact (28-pixel) and standard (36-pixel)
+sizes with the `md` radius, an `input` border, the `field_bg` fill, no hover
+chrome, and a `field_ring` border on focus. Select triggers are 32 pixels.
+Menus use 28-pixel rows, the `lg` radius, a hairline, and the popover shadow;
+group labels are uppercase 12 px semibold. Their geometry scales with UI font size and density. Standard settings
 text inputs have a 256-pixel minimum width; the UI kit owns padding, border,
 radius, fill, and focus treatment.
 
