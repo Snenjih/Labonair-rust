@@ -258,11 +258,31 @@ level is chosen in a single function (`animation::motion_level`), which maps
 the resolved `ThemeMetrics::animations` (`appearance.animations`) to the level.
 
 GPUI 0.2.2 has no transforms and no hover transitions, so the engine animates
-only opacity and layout properties. The `MotionExt` element methods are
-`motion_fade_in`, `motion_slide_in_y` (a `top` offset lerp), `motion_reveal`
-(width or height lerp, clipped) and `motion_state_fade` (the state is part of
-the animation id, so it restarts on every flip). Hover stays instant. Animation
-ids must be stable between frames; changing the id restarts the animation.
+only opacity and layout properties. **Hover stays instant on purpose**: GPUI
+resolves `:hover` styles in one frame with no interpolation hook, and faking it
+would need per-element hover state in every row. The `MotionExt` element methods
+are `motion_fade_in`, `motion_slide_in_y` (a `top` offset lerp), `motion_reveal`
+(width or height lerp, clipped), `motion_state_fade` and `motion_state`.
+
+State transitions use `StateTransition`, not an id-keyed animation: the previous
+state lives in element state, so a layer that mounts already in its end state
+(startup, scrolling) does not animate, a flip fades in or out, and a flip
+mid-fade continues from the current amount. Build such layers unconditionally
+(never `when(on, ..)`), as the first child of a positioned parent, so there is
+something to fade out. `motion_state(.., geometry = true, ..)` lerps a layout
+property (switch thumb `left`); `Reduced` and `Off` snap it. `Off` also snaps
+fades and requests no frames. Elements without a `Palette` (disclosure chevrons)
+use `state_fade_ambient`, which reads the level from the active theme.
+
+Where the kit applies state transitions: checkbox fill and tick, `switch`
+(track fade, thumb slide), segmented active pill, tab selected fill and ring
+(classic and floating), `ListItem` and `TreeRow` selection fill (hover stays
+under the fading fill so a click on a hovered row does not dip), `disclosure`
+chevron crossfade (no rotation), and the text-field focus ring when the owner
+passes `TextFieldState::Focused` (GPUI `.focus()` styles cannot be animated).
+Popovers, menus and select lists rise 4 px (`POPUP_SLIDE`, `Full` only) while
+fading in; dialog scrims fade. The tree-row chevron and plain `modal_overlay`
+(returns a `Stateful<Div>`) do not animate; use `modal_overlay_with_exit`.
 
 ### Exit state
 
@@ -276,7 +296,18 @@ it, re-opening cancels it, `MotionLevel::Off` closes at once, and focus returns
 only when `tick` reports `PresenceStep::JustClosed`. A closing surface swallows
 pointer input so it cannot fire a second action. The original functions
 (`popover`, `context_menu`, `popover_menu`, `select_popover`, `modal_overlay`)
-are unchanged and unmount instantly.
+are unchanged and unmount instantly. Kit-owned surfaces use this already: the
+notification dropdown keeps a `Presence` and renders `popover_with_exit`.
+
+Wiring recipe for owners outside the kit (workspace spaces popover, context
+menus opened from the workspace): replace the `Option`/`bool` open flag by a
+`Presence` plus the data the surface needs, `open()` where it was set, route
+every dismissal (Esc, outside click, item click) through
+`request_close(Instant::now(), &c.motion)`, `tick` once at the top of render,
+build while `is_mounted()`, and pass `is_closing()` to the `*_with_exit`
+variant. Dock and sidebar reveal: `motion_reveal(id, c, Axis::Horizontal, from,
+to)` with an id keyed by the open flag, applied only on a flip. Tab-in fade:
+use `motion_fade_in` keyed by the tab id instead of a local `with_animation`.
 
 ## Pane chrome
 
