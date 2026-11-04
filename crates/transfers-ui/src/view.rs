@@ -643,12 +643,7 @@ impl TransfersView {
             );
         }
 
-        let header_row = ListItem::new(
-            SharedString::from(format!("transfer-header-{id}")),
-            c.fg,
-            c.muted,
-            c.border,
-        )
+        let header_row = ListItem::new(SharedString::from(format!("transfer-header-{id}")), c.palette)
         .child(indicator(IndicatorSize::Sm, tint))
         .child(div().text_xs().child(arrow))
         .child(

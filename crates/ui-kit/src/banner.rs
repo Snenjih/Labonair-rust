@@ -109,15 +109,13 @@ impl IntoElement for Banner {
             .gap(c.space(8.0))
             .w_full()
             .px(c.space(12.0))
-            .py(c.space(6.0))
-            .text_size(px(11.0))
+            .py(c.space(8.0))
+            .rounded(px(c.radius.md))
+            .text_size(c.control_space(13.0))
             .text_color(color)
+            // Ciel `Callout`: a flat tint fill, no border or side stripe.
             .when(sev == Severity::Note, |d| d.bg(c.card))
-            .when(sev != Severity::Note, |d| {
-                d.bg(color.opacity(0.1))
-                    .border_b_1()
-                    .border_color(color.opacity(0.5))
-            })
+            .when(sev != Severity::Note, |d| d.bg(color.opacity(0.10)))
             .when_some(sev.icon(), |d, icon| {
                 d.child(div().pt(c.space(1.0)).child(icon.svg(color).size(px(13.0))))
             })

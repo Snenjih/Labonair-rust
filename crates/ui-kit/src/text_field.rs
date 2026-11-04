@@ -93,10 +93,10 @@ pub fn text_field_surface_sized(
     input: impl IntoElement,
 ) -> Stateful<Div> {
     let (height, horizontal_padding, vertical_padding) = match size {
-        TextFieldSize::Compact => (24.0, 6.0, 2.0),
-        TextFieldSize::Standard => (32.0, 8.0, 4.0),
+        TextFieldSize::Compact => (28.0, 8.0, 2.0),
+        TextFieldSize::Standard => (36.0, 12.0, 4.0),
     };
-    text_control_surface(id, c, state, size)
+    text_control_surface(id, c, state)
         .h(c.control_space(height))
         .items_center()
         .px(c.control_space(horizontal_padding))
@@ -114,11 +114,11 @@ pub fn text_area_surface(
     state: TextFieldState,
     input: impl IntoElement,
 ) -> Stateful<Div> {
-    text_control_surface(id, c, state, TextFieldSize::Standard)
+    text_control_surface(id, c, state)
         .flex_1()
         .min_h(c.control_space(96.0))
         .items_start()
-        .px(c.control_space(10.0))
+        .px(c.control_space(12.0))
         .py(c.control_space(8.0))
         .child(input)
 }
@@ -127,28 +127,24 @@ fn text_control_surface(
     id: impl Into<ElementId>,
     c: Palette,
     state: TextFieldState,
-    size: TextFieldSize,
 ) -> Stateful<Div> {
     let (border, background) = match state {
-        TextFieldState::Normal => (c.border, c.input),
-        TextFieldState::Focused => (c.ring, c.input),
-        TextFieldState::Invalid => (c.error, c.input),
-        TextFieldState::Disabled => (c.border, c.muted_bg),
+        TextFieldState::Normal => (c.input, c.field_bg),
+        TextFieldState::Focused => (c.field_ring, c.field_bg),
+        TextFieldState::Invalid => (c.error, c.field_bg),
+        TextFieldState::Disabled => (c.input, c.muted_bg),
     };
 
     div()
         .id(id)
         .min_w_0()
         .flex()
-        .rounded(px(match size {
-            TextFieldSize::Compact => c.radius.sm,
-            TextFieldSize::Standard => c.radius.md,
-        }))
+        .rounded(px(c.radius.md))
         .border_1()
         .border_color(border)
         .bg(background)
         .when(state != TextFieldState::Disabled, |field| {
-            field.focus(|style| style.border_1().border_color(c.ring))
+            field.focus(|style| style.border_1().border_color(c.field_ring))
         })
 }
 

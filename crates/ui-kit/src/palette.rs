@@ -15,7 +15,7 @@
 
 use std::time::Duration;
 
-use gpui::{px, Hsla, Pixels};
+use gpui::{point, px, BoxShadow, Hsla, Pixels};
 use labonair_theme_tokens::{CubicBezier, RadiusScale, VibrancyLayer};
 
 use crate::theme::UiTheme;
@@ -40,8 +40,16 @@ pub struct Palette {
     pub border: Hsla,
     /// `--muted` (the muted *surface*, not the muted text colour).
     pub muted_bg: Hsla,
-    /// `--input` (the resting fill of form controls).
+    /// `--input` (the border of form controls; see [`Palette::field_bg`] for
+    /// their fill).
     pub input: Hsla,
+    /// `--field-bg`: the resting fill of form controls (the surface in light
+    /// themes, the muted surface in dark ones).
+    pub field_bg: Hsla,
+    /// `--field-ring`: the focus border of form controls.
+    pub field_ring: Hsla,
+    /// Whether the active theme is dark (picks shadow strength).
+    pub is_dark: bool,
     /// `--ring` (the focus ring).
     pub ring: Hsla,
     /// `--card` (raised surfaces: cards, panels).
@@ -140,7 +148,13 @@ impl Palette {
             muted: core.muted_foreground,
             border: VibrancyLayer::Divider.resolve(core.border, translucent),
             muted_bg: core.muted,
-            input: VibrancyLayer::Control.resolve(core.input, translucent),
+            input: core.input,
+            field_bg: VibrancyLayer::Control.resolve(
+                if t.is_dark { core.muted } else { core.background },
+                translucent,
+            ),
+            field_ring: t.border.focused,
+            is_dark: t.is_dark,
             ring: core.ring,
             card: VibrancyLayer::Card.resolve(core.card, translucent),
             card_fg: core.card_foreground,
@@ -183,6 +197,32 @@ impl Palette {
             ease_premium: t.animation.ease_premium,
             reduce_motion: theme.metrics().reduce_motion,
         }
+    }
+
+    /// The floating-layer shadow (`--shadow-popover`): menus, dropdowns,
+    /// tooltips and toasts. Dialogs use a `line_strong` border instead.
+    pub fn popover_shadow(&self) -> Vec<BoxShadow> {
+        let (a, b) = if self.is_dark { (0.26, 0.18) } else { (0.12, 0.06) };
+        let black = |alpha: f32| Hsla {
+            h: 0.0,
+            s: 0.0,
+            l: 0.0,
+            a: alpha,
+        };
+        vec![
+            BoxShadow {
+                color: black(a),
+                offset: point(px(0.0), px(12.0)),
+                blur_radius: px(32.0),
+                spread_radius: px(0.0),
+            },
+            BoxShadow {
+                color: black(b),
+                offset: point(px(0.0), px(1.0)),
+                blur_radius: px(4.0),
+                spread_radius: px(0.0),
+            },
+        ]
     }
 
     /// A spacing/size literal (px) scaled by the active UI density (T20-007).

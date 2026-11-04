@@ -57,16 +57,13 @@ pub fn search_field(
         .gap(c.space(6.0))
         .pl(c.space(6.0))
         .pr(c.space(2.0))
-        .rounded(px(c.radius.sm))
+        .rounded(px(c.radius.md))
         .border_1()
-        .border_color(if focused { c.ring } else { c.border })
-        .bg(c.input)
+        .border_color(if focused { c.field_ring } else { c.input })
+        .bg(c.field_bg)
         .child(IconName::Search.svg(c.muted).size(px(14.0)))
         .child(div().flex_1().min_w_0().child(input));
 
-    if !focused {
-        field = field.hover(move |style| style.border_color(c.accent));
-    }
     if let Some(clear) = clear {
         field = field.child(clear);
     }

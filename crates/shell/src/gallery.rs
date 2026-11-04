@@ -430,21 +430,21 @@ impl Gallery {
             .flex_col()
             .w(px(320.0))
             .child(list_header("Section", c.muted))
-            .child(ListItem::new("li-plain", c.fg, c.muted, c.accent).child("Plain row"))
+            .child(ListItem::new("li-plain", c).child("Plain row"))
             .child(
-                ListItem::new("li-icon", c.fg, c.muted, c.accent)
+                ListItem::new("li-icon", c)
                     .icon(IconName::File)
                     .child("With leading icon"),
             )
             .child(
-                ListItem::new("li-sel", c.fg, c.muted, c.accent)
+                ListItem::new("li-sel", c)
                     .icon(IconName::Sparkles)
                     .selected(true)
                     .trailing(kbd_row(["\u{2318}", "K"], c))
                     .child("Selected + trailing kbd"),
             )
             .child(
-                ListItem::new("li-dis", c.fg, c.muted, c.accent)
+                ListItem::new("li-dis", c)
                     .icon(IconName::Lock)
                     .disabled(true)
                     .child("Disabled row"),

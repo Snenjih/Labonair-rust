@@ -266,12 +266,7 @@ impl Render for FileFinderView {
             .enumerate()
             .map(|(index, candidate)| {
                 let candidate = candidate.clone();
-                ListItem::new(
-                    ("file-finder-row", index),
-                    palette.fg,
-                    palette.muted,
-                    palette.selected_fill,
-                )
+                ListItem::new(("file-finder-row", index), palette)
                 .icon(IconName::File)
                 .selected(snapshot.selected == Some(index))
                 .on_click(cx.listener({

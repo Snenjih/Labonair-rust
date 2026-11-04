@@ -248,9 +248,7 @@ impl StatusItem for NotificationsStatusItem {
                         }
                         let row = ListItem::new(
                             SharedString::from(format!("bar-notification-{id}")),
-                            fg,
-                            muted,
-                            border,
+                            palette,
                         )
                         .on_click(move |_: &ClickEvent, _window, cx| {
                             row_view.update(cx, |item, cx| {

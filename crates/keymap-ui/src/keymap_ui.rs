@@ -908,12 +908,7 @@ fn render_command_row(
         .flex()
         .items_center()
         .child(
-            ListItem::new(
-                ("keymap-row", matched_index),
-                palette.fg,
-                palette.muted,
-                palette.selected_fill,
-            )
+            ListItem::new(("keymap-row", matched_index), palette)
             .selected(selected)
             .icon(if conflicted {
                 IconName::Warning

@@ -27,14 +27,14 @@ pub fn dialog_surface(id: impl Into<ElementId>, palette: Palette) -> Stateful<Di
         .min_w_0()
         .flex()
         .flex_col()
-        .gap(palette.space(8.0))
-        .p(palette.space(12.0))
-        .rounded(px(palette.radius.md))
+        .gap(palette.space(12.0))
+        .p(palette.space(24.0))
+        // Ciel dialogs carry a 1px `line-strong` border and no shadow.
+        .rounded(px(palette.radius.xl4))
         .border_1()
-        .border_color(palette.border)
-        .bg(palette.card)
+        .border_color(palette.line_strong)
+        .bg(palette.popover)
         .text_color(palette.fg)
-        .shadow_lg()
 }
 
 #[cfg(test)]

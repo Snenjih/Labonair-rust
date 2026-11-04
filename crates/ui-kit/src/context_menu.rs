@@ -33,7 +33,7 @@ use std::rc::Rc;
 use gpui::{
     canvas, deferred, div, point, prelude::FluentBuilder, px, AlignItems, AnimationExt, AnyElement,
     App, Bounds, ClickEvent, Display, Edges, Element, GlobalElementId, InspectorElementId,
-    InteractiveElement, IntoElement, KeyDownEvent, LayoutId, Length, MouseButton, MouseDownEvent,
+    FontWeight, InteractiveElement, IntoElement, KeyDownEvent, LayoutId, Length, MouseButton, MouseDownEvent,
     ParentElement, Pixels, Point, Position, SharedString, Size, StatefulInteractiveElement, Style,
     Styled, Window,
 };
@@ -462,12 +462,14 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
             .h(px(1.0))
             .bg(c.border)
             .into_any_element(),
+        // Ciel `Eyebrow pad="menu"`: uppercase 12px semibold group label.
         Kind::Label(text) => div()
             .px(c.space(8.0))
             .py(c.space(4.0))
-            .text_size(px(11.0))
+            .text_size(c.control_space(12.0))
+            .font_weight(FontWeight::SEMIBOLD)
             .text_color(c.muted)
-            .child(text)
+            .child(SharedString::from(text.to_uppercase()))
             .into_any_element(),
         Kind::Action {
             id,
@@ -493,10 +495,10 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                 .items_center()
                 .gap_2()
                 .w_full()
+                .h(c.control_space(28.0))
                 .px(c.space(8.0))
-                .py(c.space(6.0))
-                .rounded_sm()
-                .text_size(px(13.0))
+                .rounded(px(c.radius.md))
+                .text_size(c.control_space(13.0))
                 .text_color(text_color)
                 .when(checked || icon.is_some(), |d| {
                     let glyph = if checked {
@@ -533,7 +535,7 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                 if let Some(h) = handler {
                     row = row
                         .tab_index(0)
-                        .focus(move |s| s.bg(c.accent).text_color(hover_fg))
+                        .focus(move |s| s.bg(c.sunken).text_color(hover_fg).font_weight(FontWeight::SEMIBOLD))
                         .on_click(move |ev, w, cx| h(ev, w, cx))
                         .on_key_down(|event, window, cx| match event.keystroke.key.as_str() {
                             "enter" | "space" => cx.stop_propagation(),
@@ -575,11 +577,11 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                     .max_h(c.space(320.0))
                     .overflow_y_scroll()
                     .p(c.space(4.0))
-                    .rounded_md()
+                    .rounded(px(c.radius.lg))
                     .bg(c.popover)
                     .border_1()
                     .border_color(c.border)
-                    .shadow_lg()
+                    .shadow(c.popover_shadow())
                     .children(
                         items
                             .into_iter()
@@ -614,10 +616,10 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                 .items_center()
                 .gap_2()
                 .w_full()
+                .h(c.control_space(28.0))
                 .px(c.space(8.0))
-                .py(c.space(6.0))
-                .rounded_sm()
-                .text_size(px(13.0))
+                .rounded(px(c.radius.md))
+                .text_size(c.control_space(13.0))
                 .text_color(c.popover_fg)
                 .hover(|s| s.bg(c.accent).text_color(c.accent_fg))
                 .when_some(icon, |d, ic| d.child(icon_slot(ic, c.popover_fg)))
@@ -632,7 +634,7 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                     let on_hover = ctrl.on_hover.clone();
                     let on_key = ctrl.on_hover.clone();
                     row.tab_index(0)
-                        .focus(|s| s.bg(c.accent).text_color(c.accent_fg))
+                        .focus(|s| s.bg(c.sunken).text_color(c.accent_fg).font_weight(FontWeight::SEMIBOLD))
                         .on_hover(move |h, w, cx| on_hover(SubmenuHoverSource::Trigger, *h, w, cx))
                         .on_key_down(
                             move |event, window, cx| match event.keystroke.key.as_str() {
@@ -672,11 +674,11 @@ fn menu_card(c: Palette, items: Vec<MenuItem>, flyouts: FlyoutBounds) -> gpui::D
         .min_w(c.space(160.0))
         .max_w(c.space(320.0))
         .p(c.space(4.0))
-        .rounded_md()
+        .rounded(px(c.radius.lg))
         .bg(c.popover)
         .border_1()
         .border_color(c.border)
-        .shadow_lg()
+        .shadow(c.popover_shadow())
         .occlude()
         .children(
             items

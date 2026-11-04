@@ -148,12 +148,7 @@ fn render_host_row(
         Ping::Checking => p.border,
     };
 
-    ListItem::new(
-        SharedString::from(format!("host-item-{id}")),
-        p.fg,
-        p.muted,
-        border,
-    )
+    ListItem::new(SharedString::from(format!("host-item-{id}")), *p)
     .child(div().child(row.icon.svg(p.muted).size(px(14.0))))
     .child(
         div()
@@ -3409,12 +3404,7 @@ impl HostManagerView {
                         .map(|j| format!("  \u{00b7}  via {j}"))
                         .unwrap_or_default(),
                 );
-                ListItem::new(
-                    SharedString::from(format!("imp-{alias}")),
-                    p.fg,
-                    p.muted,
-                    p.border,
-                )
+                ListItem::new(SharedString::from(format!("imp-{alias}")), *p)
                 // T20-001: shared `Checkbox` primitive.
                 .child(checkbox("", *p, checked).box_only())
                 .child(
@@ -3598,12 +3588,7 @@ impl HostManagerView {
                 let id = h.id.clone();
                 let checked = state.selected.contains(&id);
                 let (p_accent, p_border) = (p.accent, p.border);
-                ListItem::new(
-                    SharedString::from(format!("exp-{id}")),
-                    p.fg,
-                    p.muted,
-                    p.border,
-                )
+                ListItem::new(SharedString::from(format!("exp-{id}")), *p)
                 // T20-001: shared `Checkbox` primitive.
                 .child(checkbox("", *p, checked).box_only())
                 .child(div().flex_1().min_w_0().text_sm().text_color(p.fg).child(
@@ -3757,7 +3742,7 @@ impl Render for HostManagerView {
         .on_key_down(cx.listener(Self::on_search_key));
 
         let quick_card = quick.clone().map(|(user, host, port)| {
-            ListItem::new("quick-connect", p.fg, p.muted, p.border)
+            ListItem::new("quick-connect", p)
                 .child(
                     div()
                         .text_xs()

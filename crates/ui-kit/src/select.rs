@@ -30,7 +30,7 @@ use std::rc::Rc;
 
 use gpui::{
     deferred, div, list, prelude::FluentBuilder, px, AnimationExt, AnyElement, App, ClickEvent,
-    Div, ElementId, InteractiveElement, IntoElement, ListSizingBehavior, ListState, ParentElement,
+    Div, ElementId, FontWeight, InteractiveElement, IntoElement, ListSizingBehavior, ListState, ParentElement,
     Pixels, Point, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
 };
 
@@ -108,20 +108,20 @@ fn select_trigger_with_state(
     let mut trigger = div()
         .id(id)
         .min_w(c.space(160.0))
+        .h(c.control_space(32.0))
         .flex()
         .items_center()
         .justify_between()
         .gap_2()
-        .px_2()
-        .py(c.space(4.0))
-        .rounded(px(c.radius.sm))
+        .px(c.control_space(12.0))
+        .rounded(px(c.radius.md))
         .border_1()
-        .border_color(if open { c.accent } else { c.border })
-        .bg(if disabled { c.muted_bg } else { c.bg })
+        .border_color(if open { c.field_ring } else { c.input })
+        .bg(if disabled { c.muted_bg } else { c.field_bg })
         .text_color(if disabled { c.muted } else { c.fg })
-        .text_size(px(11.5))
+        .text_size(px(13.0 * c.ui_font_scale))
         .child(label.into())
-        .child(IconName::ChevronDown.svg(c.muted).size(px(12.0)));
+        .child(IconName::ChevronDown.svg(c.muted).size(px(14.0)));
     trigger = if disabled {
         trigger
             .tab_index(-1)
@@ -131,7 +131,7 @@ fn select_trigger_with_state(
         trigger
             .cursor_pointer()
             .tab_index(0)
-            .focus(|s| s.border_color(c.ring))
+            .focus(|s| s.border_color(c.field_ring))
     };
     trigger
 }
@@ -171,15 +171,20 @@ pub fn select_popover(
         div()
             .id(SharedString::from(format!("{row_id}-opt-{i}")))
             .w_full()
-            .px_2()
-            .py(c.space(4.0))
-            .rounded(px(c.radius.sm))
-            .text_size(px(11.5))
-            .text_color(if on { c.fg } else { c.muted })
+            .h(c.control_space(28.0))
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_2()
+            .px(c.control_space(8.0))
+            .rounded(px(c.radius.md))
+            .text_size(px(13.0 * c.ui_font_scale))
+            .text_color(if on { c.fg } else { c.card_fg })
             .cursor_pointer()
-            .when(on, |d| d.bg(c.accent))
-            .when(!on, |d| d.hover(|s| s.bg(c.border)))
+            .when(on, |d| d.font_weight(FontWeight::SEMIBOLD))
+            .hover(|s| s.bg(c.accent))
             .child(label)
+            .when(on, |d| d.child(IconName::Check.svg(c.fg).size(px(14.0))))
             .on_click(move |_: &ClickEvent, w, cx| {
                 on_select(&token, w, cx);
                 dismiss(w, cx);
@@ -199,12 +204,12 @@ pub fn select_popover(
             .min_w(c.space(180.0))
             .flex()
             .flex_col()
-            .p_1()
-            .rounded(px(c.radius.md))
+            .p(c.space(4.0))
+            .rounded(px(c.radius.lg))
             .bg(c.popover)
             .border_1()
             .border_color(c.border)
-            .shadow_lg()
+            .shadow(c.popover_shadow())
             .child(list)
             .on_mouse_down_out(move |_, window, cx| outside_dismiss(window, cx))
             .with_animation("select-fade", fade_in(c), |el, delta| el.opacity(delta)),

@@ -880,12 +880,7 @@ impl Render for SearchOverlay {
                     let label = format!("{}:{}", hit.relative_path, hit.line);
                     let detail = hit.text.clone();
                     rows.push(
-                        ListItem::new(
-                            ("project-search-result", index),
-                            palette.fg,
-                            palette.muted,
-                            palette.selected_fill,
-                        )
+                        ListItem::new(("project-search-result", index), palette)
                         .selected(snapshot.selected == Some(index))
                         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                             let _ = this.workspace.update(cx, |workspace, cx| {

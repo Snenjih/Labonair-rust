@@ -175,8 +175,8 @@ impl IconButtonBuilder {
         } else if selected && selected_variant.is_none() {
             button_no_hover(id, palette, button_variant, button_size)
                 .bg(palette.selected_fill)
-                .text_color(palette.selected_accent)
-                .hover(move |style| style.bg(palette.accent).text_color(palette.fg))
+                .text_color(palette.fg)
+                .hover(move |style| style.bg(palette.hover_strong).text_color(palette.fg))
         } else {
             button(id, palette, button_variant, button_size)
         };
@@ -189,7 +189,7 @@ impl IconButtonBuilder {
         let color = if disabled {
             palette.muted
         } else if selected {
-            selected_icon_color.unwrap_or(palette.selected_accent)
+            selected_icon_color.unwrap_or(palette.fg)
         } else {
             icon_color.unwrap_or_else(|| default_icon_color(palette, variant))
         }
@@ -271,6 +271,7 @@ fn default_icon_color(c: Palette, variant: ButtonVariant) -> Hsla {
         | ButtonVariant::Outlined
         | ButtonVariant::OutlinedGhost => c.fg,
         ButtonVariant::TintedError => c.error,
+        ButtonVariant::Action => c.action_fg,
         ButtonVariant::Link => c.primary,
         ButtonVariant::Transparent => c.muted,
     }
@@ -291,6 +292,7 @@ mod tests {
                 ButtonVariant::Outlined,
                 ButtonVariant::OutlinedGhost,
                 ButtonVariant::TintedError,
+                ButtonVariant::Action,
                 ButtonVariant::Link,
                 ButtonVariant::Transparent,
             ] {

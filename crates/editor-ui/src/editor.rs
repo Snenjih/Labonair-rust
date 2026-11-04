@@ -10511,12 +10511,7 @@ impl EditorView {
                                             .child(SharedString::from(detail)),
                                     );
                                 }
-                                ListItem::new(
-                                    ("editor-completion-item", index),
-                                    palette.fg,
-                                    palette.muted,
-                                    palette.selected_fill,
-                                )
+                                ListItem::new(("editor-completion-item", index), palette)
                                 .selected(index == selected)
                                 .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                                     this.apply_completion_item(index, cx);
@@ -10577,12 +10572,7 @@ impl EditorView {
                 .min(targets.len().saturating_sub(1));
             let rows = targets.iter().enumerate().take(100).map(|(index, target)| {
                 let label = navigation_target_label(target);
-                ListItem::new(
-                    ("editor-navigation-result", index),
-                    palette.fg,
-                    palette.muted,
-                    palette.selected_fill,
-                )
+                ListItem::new(("editor-navigation-result", index), palette)
                 .selected(index == selected)
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.select_navigation_result(index, window, cx);
@@ -10776,12 +10766,7 @@ impl EditorView {
                             let label = format!("{} · {detail}:{line}", call.item.name);
                             let uri = call.item.uri.clone();
                             let position = call.item.selection_range.start;
-                            ListItem::new(
-                                ("editor-call-hierarchy-item", index),
-                                palette.fg,
-                                palette.muted,
-                                palette.selected_fill,
-                            )
+                            ListItem::new(("editor-call-hierarchy-item", index), palette)
                             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                                 this.call_hierarchy_open = false;
                                 if this.language_service_uri.as_deref() == Some(uri.as_str()) {

@@ -45,17 +45,17 @@ impl Density {
 
     /// Height of an interactive status-bar / toolbar control.
     pub fn control_height(&self) -> Pixels {
-        self.s(22.0)
+        self.s(28.0)
     }
 
     /// Height of one flat tree row (Explorer entry, Git change row).
     pub fn tree_row_height(&self) -> Pixels {
-        self.s(24.0)
+        self.s(28.0)
     }
 
     /// Height of a collapsible section header.
     pub fn section_header_height(&self) -> Pixels {
-        self.s(22.0)
+        self.s(28.0)
     }
 
     /// Gap between a row's icon and its label / between inline row atoms.
@@ -65,6 +65,16 @@ impl Density {
 
     /// Height of a panel-owned tab bar / header strip.
     pub fn panel_header_height(&self) -> Pixels {
+        self.s(40.0)
+    }
+
+    /// Height of the window titlebar (`--titlebar-height`).
+    pub fn titlebar_height(&self) -> Pixels {
+        self.s(40.0)
+    }
+
+    /// Height of the workspace statusbar (`--statusbar-height`).
+    pub fn statusbar_height(&self) -> Pixels {
         self.s(28.0)
     }
 
@@ -131,8 +141,8 @@ mod tests {
     fn built_from_palette_matches_multiplier() {
         let mut c = test_palette();
         c.density = 1.0;
-        assert_eq!(c.density_tokens().tree_row_height(), px(24.0));
+        assert_eq!(c.density_tokens().tree_row_height(), px(28.0));
         c.density = 0.85;
-        assert_eq!(Density::from_palette(&c).tree_row_height(), px(24.0 * 0.85));
+        assert_eq!(Density::from_palette(&c).tree_row_height(), px(28.0 * 0.85));
     }
 }

@@ -1168,12 +1168,7 @@ impl GitGraphView {
                     // the `ListItem` default hover/pointer chrome, matching
                     // `transfers.rs`'s informational-row convention.
                     file_list = file_list.child(
-                        ListItem::new(
-                            ("git-graph-detail-file", i),
-                            c.fg.opacity(0.8),
-                            c.muted,
-                            c.accent.opacity(0.12),
-                        )
+                        ListItem::new(("git-graph-detail-file", i), c.palette)
                         .child(
                             div()
                                 .min_w_0()

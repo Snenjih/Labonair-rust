@@ -18,7 +18,7 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, px, AnyElement, App, ClickEvent, Div, ElementId, Hsla, InteractiveElement, IntoElement,
+    div, px, AnyElement, App, ClickEvent, Div, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement,
     MouseButton, MouseDownEvent, ParentElement, SharedString, Stateful, StatefulInteractiveElement,
     Styled, Window,
 };
@@ -297,11 +297,12 @@ impl IntoElement for TreeRow {
                     .border_color(c.primary),
             );
         } else if st.selected {
-            row = row.bg(c.selected_fill);
+            // Ciel §8: sunken fill + semibold label, no accent tint.
+            row = row.bg(c.selected_fill).font_weight(FontWeight::SEMIBOLD);
         } else if st.marked {
             row = row.bg(c.selected_fill.opacity(0.6));
         } else {
-            let hover = c.accent.opacity(0.5);
+            let hover = c.accent;
             row = row.hover(move |s| s.bg(hover));
         }
 

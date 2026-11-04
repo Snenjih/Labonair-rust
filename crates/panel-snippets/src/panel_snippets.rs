@@ -1727,12 +1727,7 @@ impl SnippetsView {
         // `selected_fill` == the row's own resting background so `ListItem`'s
         // built-in hover tint is a no-op — this card never had a row-level
         // hover affordance, only its individual buttons did.
-        ListItem::new(
-            SharedString::from(format!("snip-row-{}", s.id)),
-            c.fg,
-            c.muted,
-            card,
-        )
+        ListItem::new(SharedString::from(format!("snip-row-{}", s.id)), c.palette)
         .child(body)
         .extra(move |row| {
             row.flex_col()
@@ -2047,12 +2042,7 @@ impl SnippetsView {
             let hid = h.id.clone();
             let is_sel = selected == h.id;
             rows = rows.child(
-                ListItem::new(
-                    SharedString::from(format!("snip-hp-{}", h.id)),
-                    c.fg,
-                    c.muted,
-                    c.accent,
-                )
+                ListItem::new(SharedString::from(format!("snip-hp-{}", h.id)), c.palette)
                 .selected(is_sel)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                     if let Some(hp) = this.host_picker.as_mut() {
@@ -2187,12 +2177,7 @@ impl SnippetsView {
                 RunStatus::Error => "\u{25B2}",
             };
             tabs = tabs.child(
-                ListItem::new(
-                    SharedString::from(format!("snip-log-tab-{}", l.run_id)),
-                    c.fg,
-                    c.muted,
-                    c.accent,
-                )
+                ListItem::new(SharedString::from(format!("snip-log-tab-{}", l.run_id)), c.palette)
                 .selected(active)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                     this.selected_run = Some(rid.clone());

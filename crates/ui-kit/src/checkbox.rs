@@ -80,15 +80,11 @@ impl Checkbox {
             .justify_center()
             .rounded(px(c.radius.sm))
             .border_1()
-            .border_color(if self.checked {
-                c.primary
-            } else {
-                gpui::transparent_black()
-            })
+            .border_color(if self.checked { c.primary } else { c.input })
             .bg(if self.checked {
                 c.primary
             } else {
-                c.input.opacity(0.9)
+                c.field_bg
             })
             .when(self.checked, |d| {
                 d.child(IconName::SquareCheck.svg(c.primary_fg).size(px(12.0)))

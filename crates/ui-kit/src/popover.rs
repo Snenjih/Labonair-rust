@@ -201,11 +201,11 @@ pub fn popover(
             .w(width)
             .flex()
             .flex_col()
-            .rounded_md()
+            .rounded(px(c.radius.lg))
             .bg(card_bg)
             .border_1()
             .border_color(border)
-            .shadow_lg()
+            .shadow(c.popover_shadow())
             .child(content)
             .on_mouse_down_out(move |_, window, cx| dismiss_outside(window, cx))
             .on_key_down(

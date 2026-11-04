@@ -3,7 +3,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder, px, AnyElement, App, Div, Hsla, InteractiveElement, IntoElement,
+    div, prelude::FluentBuilder, px, AnyElement, App, Div, FontWeight, Hsla, InteractiveElement,
+    IntoElement,
     ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
 };
 
@@ -207,27 +208,22 @@ impl TabItemBuilder {
             .when(layout == TabLayout::Vertical, |row| {
                 row.w_full().flex_shrink_0()
             })
+            // Ciel `EditorTabs variant="flat"`: borderless; the active tab is a
+            // fill, never an underline or accent tint.
             .when(horizontal, |row| {
                 row.relative()
                     .flex_shrink_0()
                     .max_w(palette.space(240.0))
-                    .border_b_1()
-                    .border_r_1()
-                    .border_color(palette.border)
             })
             .when(selected, |row| {
                 if horizontal {
-                    row.bg(palette.bg).border_color(palette.bg)
+                    row.bg(palette.bg)
                 } else {
-                    row.bg(palette.selected_fill)
+                    row.bg(palette.selected_fill).font_weight(FontWeight::SEMIBOLD)
                 }
             })
             .when(!selected && !disabled, |row| {
-                if horizontal {
-                    row
-                } else {
-                    row.hover(|style| style.bg(palette.border))
-                }
+                row.hover(|style| style.bg(palette.accent))
             })
             .when(!disabled, |row| {
                 row.cursor_pointer()

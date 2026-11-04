@@ -26,13 +26,14 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder, px, AnyElement, App, ClickEvent, Div, ElementId, Hsla,
-    InteractiveElement, IntoElement, ParentElement, SharedString, Stateful,
+    div, prelude::FluentBuilder, px, AnyElement, App, ClickEvent, Div, ElementId, FontWeight,
+    Hsla, InteractiveElement, IntoElement, ParentElement, SharedString, Stateful,
     StatefulInteractiveElement, StyleRefinement, Styled, Window,
 };
 
 use crate::divider::{divider, Axis};
 use crate::icon::IconName;
+use crate::palette::Palette;
 
 /// A small, muted section heading above a group of [`ListItem`]s.
 pub fn list_header(label: impl Into<SharedString>, muted: Hsla) -> Div {
@@ -58,9 +59,7 @@ pub struct ListItem {
     trailing: Option<AnyElement>,
     selected: bool,
     disabled: bool,
-    fg: Hsla,
-    muted: Hsla,
-    selected_fill: Hsla,
+    c: Palette,
     children: Vec<AnyElement>,
     #[allow(clippy::type_complexity)]
     on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
@@ -71,16 +70,14 @@ pub struct ListItem {
 }
 
 impl ListItem {
-    pub fn new(id: impl Into<ElementId>, fg: Hsla, muted: Hsla, selected_fill: Hsla) -> Self {
+    pub fn new(id: impl Into<ElementId>, c: Palette) -> Self {
         Self {
             id: id.into(),
             icon: None,
             trailing: None,
             selected: false,
             disabled: false,
-            fg,
-            muted,
-            selected_fill,
+            c,
             children: Vec::new(),
             on_click: None,
             hover: None,
@@ -148,19 +145,22 @@ impl IntoElement for ListItem {
     type Element = Stateful<Div>;
 
     fn into_element(self) -> Self::Element {
-        let text_color = if self.disabled { self.muted } else { self.fg };
+        let c = self.c;
+        let text_color = if self.disabled { c.muted } else { c.fg };
         let mut row = div()
             .id(self.id)
             .flex()
             .items_center()
-            .gap_2()
+            .gap(c.space(8.0))
             .w_full()
-            .px(px(8.0))
-            .py(px(6.0))
-            .rounded_sm()
-            .text_size(px(12.0))
+            .min_h(c.control_space(28.0))
+            .px(c.space(8.0))
+            .rounded(px(c.radius.md))
+            .text_size(c.control_space(13.0))
             .text_color(text_color)
-            .when(self.selected, |d| d.bg(self.selected_fill))
+            .when(self.selected, |d| {
+                d.bg(c.selected_fill).font_weight(FontWeight::SEMIBOLD)
+            })
             .when_some(self.icon, |d, icon| {
                 d.child(icon.svg(text_color).size(px(14.0)))
             })
@@ -172,7 +172,7 @@ impl IntoElement for ListItem {
             if let Some(hover) = self.hover {
                 row = row.hover(hover);
             } else if !self.selected {
-                let hover_fill = self.selected_fill;
+                let hover_fill = c.accent;
                 row = row.hover(move |s| s.bg(hover_fill));
             }
             if let Some(h) = self.on_click {
@@ -192,6 +192,7 @@ impl IntoElement for ListItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::test_palette;
     use gpui::black;
 
     #[test]
@@ -202,7 +203,7 @@ mod tests {
 
     #[test]
     fn extra_hook_runs_after_the_builder() {
-        let _ = ListItem::new("row", black(), black(), black())
+        let _ = ListItem::new("row", test_palette())
             .child("Label")
             .extra(|row| row.opacity(0.5))
             .into_element();
@@ -212,7 +213,7 @@ mod tests {
     fn item_builds_in_every_state() {
         for selected in [true, false] {
             for disabled in [true, false] {
-                let _ = ListItem::new("row", black(), black(), black())
+                let _ = ListItem::new("row", test_palette())
                     .icon(IconName::File)
                     .trailing("⌘K")
                     .selected(selected)
