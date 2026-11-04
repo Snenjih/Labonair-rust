@@ -65,9 +65,11 @@ mod palette;
 mod pane_bar;
 mod popover;
 mod presence;
+mod preview_tile;
 mod search_field;
 mod segmented;
 mod select;
+mod settings_widgets;
 mod slider;
 mod stack;
 mod tab;
@@ -114,11 +116,19 @@ pub use palette::Palette;
 pub use pane_bar::{pane_bar, pane_frame, PaneAction, PaneBar, PaneLayoutStyle, PANE_GAP};
 pub use popover::{popover, popover_with_exit};
 pub use presence::{exit_duration, exit_fade, Presence, PresenceStep};
+pub use preview_tile::{
+    preview_tile, preview_tile_group, selected_index, step_selection, ColorSchemeChoice,
+    InterfaceStyleChoice, PreviewKind, PreviewTile, PreviewTileGroup, TileMock,
+};
 pub use search_field::{search_clear_button, search_field, search_input};
 pub use segmented::{segmented_control, SegmentSize, SegmentVariant, SegmentedControl};
 pub use select::{
     select_popover, select_popover_with_exit, select_trigger, select_trigger_disabled,
     selected_label, SelectOption, SelectPopoverAnchor,
+};
+pub use settings_widgets::{
+    category_chip, settings_group, settings_row, slider_row, ChipHue, SettingsGroup, SettingsRow,
+    SETTINGS_ROW_MIN_HEIGHT,
 };
 pub use slider::{slider, SliderEvent, SliderState, SliderValue};
 pub use stack::{h_stack, v_stack};

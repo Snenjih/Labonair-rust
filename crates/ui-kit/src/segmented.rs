@@ -271,7 +271,7 @@ impl IntoElement for SegmentedControl {
     }
 }
 
-fn adjacent_segment_index(index: usize, len: usize, forward: bool) -> Option<usize> {
+pub(crate) fn adjacent_segment_index(index: usize, len: usize, forward: bool) -> Option<usize> {
     if len == 0 || index >= len {
         return None;
     }
