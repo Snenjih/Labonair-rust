@@ -20,22 +20,29 @@
 //! `labonair-shell` in R08-008 (it holds an `Entity<ThemeStore>`, a runtime
 //! type the foundation crate no longer sees).
 
+use std::time::Instant;
+
 use gpui::{
-    div, point, prelude::FluentBuilder, px, size, App, AppContext, Bounds, Context, Entity,
-    FontWeight, Global, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, TitlebarOptions, Window, WindowBounds, WindowHandle,
-    WindowKind, WindowOptions,
+    div, point, prelude::FluentBuilder, px, size, App, AppContext, Bounds, ClickEvent, Context,
+    Entity, FontWeight, Global, InteractiveElement, IntoElement, ParentElement, Pixels, Point,
+    Render, SharedString, StatefulInteractiveElement, Styled, TitlebarOptions, Window,
+    WindowBounds, WindowHandle, WindowKind, WindowOptions,
 };
 use gpui_component::Root;
 
 use labonair_theme::{theme_store, ThemePreference, ThemeStore};
 
 use labonair_ui_kit::{
-    banner, button, checkbox, disclosure, divider, h_stack, icon_button, icon_toggle_button,
-    indicator, kbd_row, keybinding_hint, list_header, menu_card_preview, number_field,
-    segmented_control, select_trigger, slider, tab_item, toggle_base, Axis, ButtonSize,
-    ButtonVariant, IconButtonShape, IconName, IndicatorSize, ListItem, MenuItem, Palette,
-    SegmentSize, SegmentVariant, Severity, SliderState, TabLayout, ToggleSize, ToggleVariant,
+    banner, button, category_chip, checkbox, context_menu_with_exit, dialog_surface, disclosure,
+    divider, floating_tab_strip, h_stack, icon_button, icon_toggle_button, indicator, kbd_row,
+    keybinding_hint, list_header, menu_card_preview, modal_overlay_with_exit, number_field,
+    pane_bar, pane_frame, preview_tile, preview_tile_group, segmented_control, select_trigger,
+    settings_group, settings_row, slider, slider_row, tab_drop_marker, tab_group_gap, tab_item,
+    toggle_base, Axis, ButtonSize, ButtonVariant, ChipHue, ColorSchemeChoice, IconButtonShape,
+    IconName, IndicatorSize, InterfaceStyleChoice, ListItem, MenuItem, MotionExt, MotionLevel,
+    MotionPrefs, Palette, PaneAction, PaneLayoutStyle, Presence, PresenceStep, PreviewKind,
+    SegmentSize, SegmentVariant, Severity, SliderState, TabDropSide, TabLayout, TabStyle, TileMock,
+    ToggleSize, ToggleVariant,
 };
 
 fn noop_tab_activate(_: &mut Window, _: &mut App) {}
@@ -54,6 +61,20 @@ pub struct Gallery {
     number: f64,
     checkbox_on: bool,
     slider: Entity<SliderState>,
+    /// Overrides the palette's motion level for the whole page (Motion demo).
+    motion_level: MotionLevel,
+    tile_scheme: SharedString,
+    tile_style: SharedString,
+    tile_layout: SharedString,
+    tile_theme: SharedString,
+    pane_zoomed: bool,
+    /// Bumped by the Motion demo's replay buttons to restart animations.
+    motion_nonce: u32,
+    reveal_open: bool,
+    state_on: bool,
+    menu_anchor: Point<Pixels>,
+    menu_presence: Presence,
+    dialog_presence: Presence,
 }
 
 impl Gallery {
@@ -73,6 +94,18 @@ impl Gallery {
             number: 12.0,
             checkbox_on: true,
             slider,
+            motion_level: MotionLevel::Full,
+            tile_scheme: "auto".into(),
+            tile_style: "classic".into(),
+            tile_layout: "comfortable".into(),
+            tile_theme: "labonair".into(),
+            pane_zoomed: false,
+            motion_nonce: 0,
+            reveal_open: true,
+            state_on: false,
+            menu_anchor: Point::default(),
+            menu_presence: Presence::new(),
+            dialog_presence: Presence::new(),
         }
     }
 }
@@ -124,13 +157,77 @@ fn row(label: &str, c: Palette, body: impl IntoElement) -> impl IntoElement {
 
 impl Render for Gallery {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let c = Palette::from_theme(self.theme.read(cx));
+        let mut c = Palette::from_theme(self.theme.read(cx));
+        c.motion.level = self.motion_level;
+
+        // Exit-state demos: advance the presence machines once per frame.
+        let now = Instant::now();
+        // (Focus return would key off `PresenceStep::JustClosed` here.)
+        let _: PresenceStep = self.menu_presence.tick(now, &c.motion);
+        let _: PresenceStep = self.dialog_presence.tick(now, &c.motion);
+        let view = cx.entity();
+        let close_menu = {
+            let view = view.clone();
+            move |_: &mut Window, cx: &mut App| {
+                view.update(cx, |this, cx| this.close_menu(cx));
+            }
+        };
 
         div()
             .id("gallery-root")
             .size_full()
             .bg(c.bg)
             .text_color(c.fg)
+            .when(self.menu_presence.is_mounted(), |root| {
+                let item = |id: &'static str, label: &'static str| {
+                    let view = view.clone();
+                    MenuItem::new(id, label).on_click(move |_, _, cx| {
+                        view.update(cx, |this, cx| this.close_menu(cx));
+                    })
+                };
+                root.child(context_menu_with_exit(
+                    self.menu_anchor,
+                    c,
+                    self.menu_presence.is_closing(),
+                    close_menu,
+                    vec![
+                        item("gm-a", "Fade out on pick"),
+                        item("gm-b", "Second item"),
+                    ],
+                ))
+            })
+            .when(self.dialog_presence.is_mounted(), |root| {
+                let view = view.clone();
+                root.child(modal_overlay_with_exit(
+                    "gallery-dialog",
+                    c,
+                    self.dialog_presence.is_closing(),
+                    dialog_surface("gallery-dialog-card", c)
+                        .w(px(320.0))
+                        .child(
+                            div()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child("Exit animation"),
+                        )
+                        .child(
+                            div()
+                                .text_color(c.muted)
+                                .child("The scrim and card fade out over 120 ms, then unmount."),
+                        )
+                        .child(
+                            button(
+                                "gallery-dialog-close",
+                                c,
+                                ButtonVariant::Outlined,
+                                ButtonSize::Sm,
+                            )
+                            .child("Close")
+                            .on_click(move |_, _, cx| {
+                                view.update(cx, |this, cx| this.close_dialog(cx));
+                            }),
+                        ),
+                ))
+            })
             .child(
                 div()
                     .id("gallery-scroll")
@@ -150,6 +247,10 @@ impl Render for Gallery {
                             .child(self.render_disclosure(c, cx))
                             .child(self.render_segmented(c, cx))
                             .child(self.render_tabs(c))
+                            .child(self.render_floating_tabs(c))
+                            .child(self.render_panes(c, cx))
+                            .child(self.render_settings_widgets(c, cx))
+                            .child(self.render_motion(c, cx))
                             .child(self.render_number(c, cx))
                             .child(self.render_slider(c))
                             .child(self.render_select(c))
@@ -760,6 +861,490 @@ impl Gallery {
                 .gap_3()
                 .child(row("divider", c, dividers))
                 .child(row("indicator", c, dots)),
+        )
+    }
+}
+
+/// R10-002 foundation demos: floating tabs, pane chrome, Settings widgets and
+/// the motion engine.
+impl Gallery {
+    fn motion(&self, cx: &Context<Self>) -> MotionPrefs {
+        let mut motion = Palette::from_theme(self.theme.read(cx)).motion;
+        motion.level = self.motion_level;
+        motion
+    }
+
+    fn close_menu(&mut self, cx: &mut Context<Self>) {
+        let motion = self.motion(cx);
+        self.menu_presence.request_close(Instant::now(), &motion);
+        cx.notify();
+    }
+
+    fn close_dialog(&mut self, cx: &mut Context<Self>) {
+        let motion = self.motion(cx);
+        self.dialog_presence.request_close(Instant::now(), &motion);
+        cx.notify();
+    }
+
+    fn render_floating_tabs(&self, c: Palette) -> impl IntoElement {
+        let block = |id: &'static str, label: &'static str, icon: IconName, layout: TabLayout| {
+            tab_item(id, c, label)
+                .style(TabStyle::Floating)
+                .layout(layout)
+                .leading(icon)
+                .on_activate(noop_tab_activate)
+                .on_navigate(noop_tab_navigate)
+                .on_close(noop_tab_close)
+        };
+        let horizontal = floating_tab_strip("gf-strip-h", c, TabLayout::Horizontal)
+            .bg(c.toolbar_bg)
+            .rounded(px(c.radius.md))
+            .child(
+                block("gf-pinned", "Pinned", IconName::Pin, TabLayout::Horizontal)
+                    .pinned(true)
+                    .render(),
+            )
+            .child(tab_group_gap(c, TabLayout::Horizontal))
+            .child(
+                block(
+                    "gf-selected",
+                    "src/main.rs",
+                    IconName::SquarePen,
+                    TabLayout::Horizontal,
+                )
+                .selected(true)
+                .dirty(true)
+                .render(),
+            )
+            .child(
+                block(
+                    "gf-drop",
+                    "drop target",
+                    IconName::File,
+                    TabLayout::Horizontal,
+                )
+                .render()
+                .child(tab_drop_marker(
+                    c,
+                    TabLayout::Horizontal,
+                    TabDropSide::Before,
+                )),
+            )
+            .child(
+                block(
+                    "gf-terminal",
+                    "Terminal",
+                    IconName::ToolTerminal,
+                    TabLayout::Horizontal,
+                )
+                .busy(true)
+                .render(),
+            )
+            .child(
+                block(
+                    "gf-disabled",
+                    "Unavailable",
+                    IconName::File,
+                    TabLayout::Horizontal,
+                )
+                .disabled(true)
+                .render(),
+            );
+        let vertical = floating_tab_strip("gf-strip-v", c, TabLayout::Vertical)
+            .w(px(280.0))
+            .bg(c.sidebar)
+            .rounded(px(c.radius.md))
+            .child(
+                block(
+                    "gf-v-selected",
+                    "src/main.rs",
+                    IconName::SquarePen,
+                    TabLayout::Vertical,
+                )
+                .selected(true)
+                .dirty(true)
+                .render(),
+            )
+            .child(
+                block(
+                    "gf-v-terminal",
+                    "Terminal",
+                    IconName::ToolTerminal,
+                    TabLayout::Vertical,
+                )
+                .render()
+                .child(tab_drop_marker(c, TabLayout::Vertical, TabDropSide::After)),
+            )
+            .child(
+                block(
+                    "gf-v-readme",
+                    "README.md",
+                    IconName::FileText,
+                    TabLayout::Vertical,
+                )
+                .render(),
+            );
+        section(
+            "Floating tabs",
+            c,
+            div()
+                .flex()
+                .flex_col()
+                .gap_3()
+                .child(row("horizontal", c, div().w_full().child(horizontal)))
+                .child(row("vertical", c, vertical)),
+        )
+    }
+
+    fn render_panes(&self, c: Palette, cx: &mut Context<Self>) -> impl IntoElement {
+        let zoomed = self.pane_zoomed;
+        let view = cx.entity();
+        let demo = |style: PaneLayoutStyle, tag: &'static str| {
+            let gap = style.gap(&c);
+            let bar = |id: String, icon: IconName, title: &'static str, active: bool| {
+                pane_bar(id, c, icon, title).layout(style).active(active)
+            };
+            let toggle_zoom = {
+                let view = view.clone();
+                move |_: &mut Window, cx: &mut App| {
+                    view.update(cx, |this, cx| {
+                        this.pane_zoomed = !this.pane_zoomed;
+                        cx.notify();
+                    });
+                }
+            };
+            let focused = bar(format!("gp-{tag}-a"), IconName::ToolTerminal, "zsh", true)
+                .trailing("~/Developer/Labonair")
+                .split_horizontal(PaneAction::new("Split right").on_click(|_, _| {}))
+                .split_vertical(PaneAction::new("Split down").on_click(|_, _| {}))
+                .zoom(
+                    PaneAction::new(if zoomed { "Restore pane" } else { "Zoom pane" })
+                        .on_click(toggle_zoom.clone()),
+                )
+                .zoomed(zoomed)
+                .close(PaneAction::new("Close pane").on_click(|_, _| {}))
+                .on_double_click(toggle_zoom)
+                .render();
+            let singleton = bar(
+                format!("gp-{tag}-b"),
+                IconName::GitGraph,
+                "Git Graph",
+                false,
+            )
+            .leading(indicator(IndicatorSize::Xs, c.warning))
+            .can_split(false)
+            .split_horizontal(PaneAction::new("Split right").on_click(|_, _| {}))
+            .split_vertical(PaneAction::new("Split down").on_click(|_, _| {}))
+            .close(PaneAction::new("Close pane").on_click(|_, _| {}))
+            .render();
+            div()
+                .flex()
+                .flex_row()
+                .gap(gap)
+                .p(gap)
+                .w_full()
+                .h(px(120.0))
+                .bg(c.toolbar_bg)
+                .child(
+                    pane_frame(SharedString::from(format!("gp-{tag}-fa")), c, style, true)
+                        .flex_1()
+                        .child(focused)
+                        .child(div().p_2().text_color(c.muted).child("Focused pane")),
+                )
+                .child(
+                    pane_frame(SharedString::from(format!("gp-{tag}-fb")), c, style, false)
+                        .flex_1()
+                        .child(singleton)
+                        .child(
+                            div()
+                                .p_2()
+                                .text_color(c.muted)
+                                .child("Singleton (no split)"),
+                        ),
+                )
+        };
+        section(
+            "Pane bar + frame",
+            c,
+            div()
+                .flex()
+                .flex_col()
+                .gap_3()
+                .child(row(
+                    "comfortable",
+                    c,
+                    div()
+                        .w_full()
+                        .child(demo(PaneLayoutStyle::Comfortable, "comfortable")),
+                ))
+                .child(row(
+                    "compact",
+                    c,
+                    div()
+                        .w_full()
+                        .child(demo(PaneLayoutStyle::Compact, "compact")),
+                )),
+        )
+    }
+
+    fn render_settings_widgets(&self, c: Palette, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        let select = |field: fn(&mut Gallery) -> &mut SharedString| {
+            let view = view.clone();
+            move |key: &SharedString, _: &mut Window, cx: &mut App| {
+                let key = key.clone();
+                view.update(cx, |this, cx| {
+                    *field(this) = key;
+                    cx.notify();
+                });
+            }
+        };
+        let schemes = preview_tile_group("gs-scheme", c, self.tile_scheme.clone())
+            .tile(preview_tile(
+                "auto",
+                "Auto",
+                PreviewKind::ColorScheme(ColorSchemeChoice::Auto),
+            ))
+            .tile(preview_tile(
+                "light",
+                "Light",
+                PreviewKind::ColorScheme(ColorSchemeChoice::Light),
+            ))
+            .tile(preview_tile(
+                "dark",
+                "Dark",
+                PreviewKind::ColorScheme(ColorSchemeChoice::Dark),
+            ))
+            .on_select(select(|g| &mut g.tile_scheme));
+        let styles = preview_tile_group("gs-style", c, self.tile_style.clone())
+            .tile(preview_tile(
+                "classic",
+                "Classic",
+                PreviewKind::InterfaceStyle(InterfaceStyleChoice::Classic),
+            ))
+            .tile(preview_tile(
+                "glassy",
+                "Glassy",
+                PreviewKind::InterfaceStyle(InterfaceStyleChoice::Glassy),
+            ))
+            .on_select(select(|g| &mut g.tile_style));
+        let layouts = preview_tile_group("gs-layout", c, self.tile_layout.clone())
+            .tile(preview_tile(
+                "comfortable",
+                "Comfortable",
+                PreviewKind::PaneLayout(PaneLayoutStyle::Comfortable),
+            ))
+            .tile(preview_tile(
+                "compact",
+                "Compact",
+                PreviewKind::PaneLayout(PaneLayoutStyle::Compact),
+            ))
+            .on_select(select(|g| &mut g.tile_layout));
+        let active = TileMock::from_palette(&c);
+        let themes = preview_tile_group("gs-theme", c, self.tile_theme.clone())
+            .tile(preview_tile("labonair", "Labonair", PreviewKind::Theme))
+            .tile(preview_tile("active", "Current", PreviewKind::Theme).colors(active, active))
+            .on_select(select(|g| &mut g.tile_theme));
+
+        let chips = h_stack().gap_2().flex_wrap().children(
+            [
+                ChipHue::RED,
+                ChipHue::ORANGE,
+                ChipHue::AMBER,
+                ChipHue::GREEN,
+                ChipHue::TEAL,
+                ChipHue::BLUE,
+                ChipHue::INDIGO,
+                ChipHue::PURPLE,
+                ChipHue::PINK,
+                ChipHue::GRAY,
+            ]
+            .map(|hue| category_chip(c, hue, IconName::Settings)),
+        );
+
+        let group = settings_group("gs-group", c)
+            .title("Appearance")
+            .row(
+                settings_row("gs-row-a", c, "Interface density")
+                    .description("Spacing of rows, tabs and controls.")
+                    .control(
+                        segmented_control("gs-density", c, "default")
+                            .segments([("compact", "Compact"), ("default", "Default")])
+                            .variant(SegmentVariant::Solid)
+                            .size(SegmentSize::Sm),
+                    ),
+            )
+            .row(slider_row(
+                "gs-row-b",
+                c,
+                "Corner radius",
+                &self.slider,
+                "42 px",
+            ))
+            .row(
+                settings_row("gs-row-c", c, "Background opacity")
+                    .reset(
+                        button("gs-reset", c, ButtonVariant::Subtle, ButtonSize::Xs).child("Reset"),
+                    )
+                    .control(number_field("gs-opacity", c, 30.0, 0.0, 100.0, 1.0).track(false)),
+            )
+            .row(settings_row("gs-row-d", c, "Row without a control"));
+
+        section(
+            "Settings widgets",
+            c,
+            div()
+                .flex()
+                .flex_col()
+                .gap_3()
+                .child(row("group + rows", c, div().w_full().child(group)))
+                .child(row("color scheme", c, schemes))
+                .child(row("interface style", c, styles))
+                .child(row("pane layout", c, layouts))
+                .child(row("theme", c, themes))
+                .child(row("category chips", c, chips)),
+        )
+    }
+
+    fn render_motion(&self, c: Palette, cx: &mut Context<Self>) -> impl IntoElement {
+        let nonce = self.motion_nonce;
+        let level = segmented_control(
+            "gm-level",
+            c,
+            match self.motion_level {
+                MotionLevel::Full => "full",
+                MotionLevel::Reduced => "reduced",
+                MotionLevel::Off => "off",
+            },
+        )
+        .segments([("full", "Full"), ("reduced", "Reduced"), ("off", "Off")])
+        .variant(SegmentVariant::Solid)
+        .size(SegmentSize::Sm)
+        .on_select(
+            cx.listener(|this: &mut Gallery, key: &SharedString, _w, cx| {
+                this.motion_level = match key.as_ref() {
+                    "reduced" => MotionLevel::Reduced,
+                    "off" => MotionLevel::Off,
+                    _ => MotionLevel::Full,
+                };
+                cx.notify();
+            }),
+        );
+
+        let replay = button("gm-replay", c, ButtonVariant::Outlined, ButtonSize::Sm)
+            .child("Replay fade + slide")
+            .on_click(cx.listener(|this: &mut Gallery, _: &ClickEvent, _w, cx| {
+                this.motion_nonce = this.motion_nonce.wrapping_add(1);
+                cx.notify();
+            }));
+        let sample = |label: &'static str| {
+            div()
+                .px_3()
+                .py_2()
+                .rounded(px(c.radius.md))
+                .bg(c.sunken)
+                .border_1()
+                .border_color(c.line_subtle)
+                .child(label)
+        };
+
+        let reveal_open = self.reveal_open;
+        let reveal = button("gm-reveal", c, ButtonVariant::Outlined, ButtonSize::Sm)
+            .child(if reveal_open { "Collapse" } else { "Expand" })
+            .on_click(cx.listener(|this: &mut Gallery, _: &ClickEvent, _w, cx| {
+                this.reveal_open = !this.reveal_open;
+                cx.notify();
+            }));
+        let (from, to) = if reveal_open {
+            (px(0.0), px(200.0))
+        } else {
+            (px(200.0), px(0.0))
+        };
+
+        let on = self.state_on;
+        let state_toggle = button("gm-state", c, ButtonVariant::Outlined, ButtonSize::Sm)
+            .child("Flip state")
+            .on_click(cx.listener(|this: &mut Gallery, _: &ClickEvent, _w, cx| {
+                this.state_on = !this.state_on;
+                cx.notify();
+            }));
+        let glyph = |icon: IconName, id: &'static str, show: bool| {
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .child(icon.svg(c.fg).size(px(16.0)))
+                .motion_state_fade(id, c, show)
+        };
+
+        let open_menu = button("gm-menu", c, ButtonVariant::Outlined, ButtonSize::Sm)
+            .child("Open menu")
+            .on_click(cx.listener(|this: &mut Gallery, ev: &ClickEvent, _w, cx| {
+                this.menu_anchor = ev.position();
+                this.menu_presence.open();
+                cx.notify();
+            }));
+        let open_dialog = button("gm-dialog", c, ButtonVariant::Outlined, ButtonSize::Sm)
+            .child("Open dialog")
+            .on_click(cx.listener(|this: &mut Gallery, _: &ClickEvent, _w, cx| {
+                this.dialog_presence.open();
+                cx.notify();
+            }));
+
+        section(
+            "Motion",
+            c,
+            div()
+                .flex()
+                .flex_col()
+                .gap_3()
+                .child(row("level (whole page)", c, level))
+                .child(row(
+                    "fade / slide",
+                    c,
+                    h_stack()
+                        .gap_3()
+                        .child(replay)
+                        .child(sample("fade in").motion_fade_in(("gm-fade", nonce), c))
+                        .child(sample("slide in").motion_slide_in_y(
+                            ("gm-slide", nonce),
+                            c,
+                            px(10.0),
+                        )),
+                ))
+                .child(row(
+                    "reveal size",
+                    c,
+                    h_stack().gap_3().child(reveal).child(
+                        div()
+                            .h(px(28.0))
+                            .rounded(px(c.radius.md))
+                            .bg(c.sunken)
+                            .motion_reveal(
+                                ("gm-reveal-box", reveal_open as u32),
+                                c,
+                                Axis::Horizontal,
+                                from,
+                                to,
+                            ),
+                    ),
+                ))
+                .child(row(
+                    "state fade",
+                    c,
+                    h_stack().gap_3().child(state_toggle).child(
+                        div()
+                            .relative()
+                            .size(px(16.0))
+                            .child(glyph(IconName::Check, "gm-glyph-on", on))
+                            .child(glyph(IconName::Close, "gm-glyph-off", !on)),
+                    ),
+                ))
+                .child(row(
+                    "exit (closing)",
+                    c,
+                    h_stack().gap_3().child(open_menu).child(open_dialog),
+                )),
         )
     }
 }
