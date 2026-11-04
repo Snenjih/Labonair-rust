@@ -392,6 +392,8 @@ fn window_mock(
     layout: Option<PaneLayoutStyle>,
 ) -> Div {
     let glassy = style == Some(InterfaceStyleChoice::Glassy);
+    // GPUI clips to rectangles, so the mock rounds its own outer corners.
+    let corner = px((c.radius.md - 1.0).max(0.0));
     // Glassy surfaces let a tinted backdrop show through.
     let surface = |color: Hsla| if glassy { color.opacity(0.55) } else { color };
     let line = |w: f32, color: Hsla| {
@@ -409,6 +411,7 @@ fn window_mock(
         .flex_shrink_0()
         .h(c.space(11.0))
         .px(c.space(5.0))
+        .rounded_t(corner)
         .bg(surface(colors.chrome))
         .children((0..3).map(|_| {
             div()
@@ -423,6 +426,7 @@ fn window_mock(
         .gap(c.space(4.0))
         .w(c.space(28.0))
         .p(c.space(5.0))
+        .rounded_bl(corner)
         .bg(surface(colors.sidebar))
         .child(line(16.0, colors.fg.opacity(0.55)))
         .child(line(12.0, colors.muted.opacity(0.5)))
@@ -471,6 +475,7 @@ fn window_mock(
         .flex_col()
         .w(width)
         .h(height)
+        .rounded(corner)
         .bg(if glassy {
             colors.accent.opacity(0.35)
         } else {
@@ -483,7 +488,7 @@ fn window_mock(
                 .flex_row()
                 .flex_1()
                 .child(sidebar)
-                .child(content),
+                .child(content.rounded_br(corner)),
         )
 }
 

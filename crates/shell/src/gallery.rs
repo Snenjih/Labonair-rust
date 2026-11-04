@@ -1197,7 +1197,16 @@ impl Gallery {
                 .flex()
                 .flex_col()
                 .gap_3()
-                .child(row("group + rows", c, div().w_full().child(group)))
+                .child(row(
+                    "group + rows",
+                    c,
+                    div()
+                        .w_full()
+                        .p_3()
+                        .rounded(px(c.radius.md))
+                        .bg(c.bg)
+                        .child(group),
+                ))
                 .child(row("color scheme", c, schemes))
                 .child(row("interface style", c, styles))
                 .child(row("pane layout", c, layouts))
