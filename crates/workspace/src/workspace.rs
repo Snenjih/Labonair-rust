@@ -41,10 +41,14 @@ pub mod modal_layer;
 pub mod pane;
 pub mod pane_group;
 pub mod project_multibuffer;
+pub mod pane_group_naming;
+pub mod pane_kind;
+pub mod pane_ops;
 pub mod project_search;
 pub mod recent_projects;
 pub mod search_overlay;
 pub mod session;
+pub mod session_v3;
 pub mod spaces;
 pub mod ssh_connection;
 pub mod ssh_event_bridge;
@@ -53,6 +57,7 @@ pub mod status_items;
 pub mod status_placements;
 pub mod tabs;
 pub mod tabs_panel;
+pub mod tiling;
 pub mod views;
 
 /// Re-export shim so `crate::theme::…` paths in the moved modules keep
