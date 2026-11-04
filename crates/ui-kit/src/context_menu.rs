@@ -31,18 +31,18 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gpui::{
-    canvas, deferred, div, point, prelude::FluentBuilder, px, AlignItems, AnimationExt, AnyElement,
-    App, Bounds, ClickEvent, Display, Edges, Element, FontWeight, GlobalElementId,
-    InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId, Length,
-    MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Position, SharedString, Size,
-    StatefulInteractiveElement, Style, Styled, Window,
+    canvas, deferred, div, point, prelude::FluentBuilder, px, AlignItems, AnyElement, App, Bounds,
+    ClickEvent, Display, Edges, Element, FontWeight, GlobalElementId, InspectorElementId,
+    InteractiveElement, IntoElement, KeyDownEvent, LayoutId, Length, MouseButton, MouseDownEvent,
+    ParentElement, Pixels, Point, Position, SharedString, Size, StatefulInteractiveElement, Style,
+    Styled, Window,
 };
 
 use super::IconName;
-use crate::animation::fade_in;
 use crate::kbd::kbd_row;
 use crate::palette::Palette;
 use crate::popover::anchored_popup;
+use crate::presence::{closing_guard, enter_or_exit};
 
 type Handler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
@@ -712,6 +712,19 @@ pub fn context_menu(
     dismiss: impl Fn(&mut Window, &mut App) + 'static,
     items: Vec<MenuItem>,
 ) -> AnyElement {
+    context_menu_with_exit(anchor, c, false, dismiss, items)
+}
+
+/// [`context_menu`] with an exit state: while `closing` the card plays the exit
+/// fade and ignores pointer input. Drive `closing` from a
+/// [`crate::Presence`]; see [`crate::presence`] for the wiring.
+pub fn context_menu_with_exit(
+    anchor: Point<Pixels>,
+    c: Palette,
+    closing: bool,
+    dismiss: impl Fn(&mut Window, &mut App) + 'static,
+    items: Vec<MenuItem>,
+) -> AnyElement {
     let dismiss = Rc::new(dismiss);
     let d2 = dismiss.clone();
     let d3 = dismiss.clone();
@@ -737,7 +750,7 @@ pub fn context_menu(
     // e.g. a 20px status-bar item) element opened the menu, so `inset_0` does
     // not actually cover the window and a click next to the menu would leave it
     // stuck open. The card, by contrast, always knows its own bounds.
-    let card = anchored_popup(anchor, c).child(
+    let card = anchored_popup(anchor, c).child(enter_or_exit(
         menu_card(c, items, flyouts)
             .on_mouse_down_out(move |ev, w, cx| {
                 if !in_flyout(&fb_out, ev.position) {
@@ -752,10 +765,11 @@ pub fn context_menu(
                     }
                 },
             )
-            .with_animation("context-menu-fade", fade_in(c), |el, delta| {
-                el.opacity(delta)
-            }),
-    );
+            .when(closing, |card| card.child(closing_guard())),
+        "context-menu-fade",
+        c,
+        closing,
+    ));
 
     deferred(
         div()
@@ -806,6 +820,17 @@ pub fn popover_menu(
     dismiss: impl Fn(&mut Window, &mut App) + 'static,
     items: Vec<MenuItem>,
 ) -> AnyElement {
+    popover_menu_with_exit(anchor, c, false, dismiss, items)
+}
+
+/// [`popover_menu`] with an exit state; see [`context_menu_with_exit`].
+pub fn popover_menu_with_exit(
+    anchor: Point<Pixels>,
+    c: Palette,
+    closing: bool,
+    dismiss: impl Fn(&mut Window, &mut App) + 'static,
+    items: Vec<MenuItem>,
+) -> AnyElement {
     let dismiss = Rc::new(dismiss);
     let d_out = dismiss.clone();
     let d_escape = dismiss.clone();
@@ -814,7 +839,7 @@ pub fn popover_menu(
     let fb_out = flyouts.clone();
     let fb_bd = flyouts.clone();
 
-    let card = anchored_popup(anchor, c).child(
+    let card = anchored_popup(anchor, c).child(enter_or_exit(
         menu_card(c, items, flyouts)
             .on_mouse_down_out(move |ev, w, cx| {
                 if !in_flyout(&fb_out, ev.position) {
@@ -829,10 +854,11 @@ pub fn popover_menu(
                     }
                 },
             )
-            .with_animation("popover-menu-fade", fade_in(c), |el, delta| {
-                el.opacity(delta)
-            }),
-    );
+            .when(closing, |card| card.child(closing_guard())),
+        "popover-menu-fade",
+        c,
+        closing,
+    ));
 
     deferred(
         div()

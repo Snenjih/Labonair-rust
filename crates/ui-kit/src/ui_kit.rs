@@ -63,6 +63,7 @@ mod list;
 mod number_field;
 mod palette;
 mod popover;
+mod presence;
 mod search_field;
 mod segmented;
 mod select;
@@ -89,9 +90,12 @@ pub use checkbox::{checkbox, Checkbox};
 /// `labonair-shell`).
 #[cfg(any(debug_assertions, feature = "gallery"))]
 pub use context_menu::menu_card_preview;
-pub use context_menu::{context_menu, popover_menu, MenuClick, MenuItem, SubmenuHoverSource};
+pub use context_menu::{
+    context_menu, context_menu_with_exit, popover_menu, popover_menu_with_exit, MenuClick,
+    MenuItem, SubmenuHoverSource,
+};
 pub use density::Density;
-pub use dialog::{dialog_surface, modal_overlay};
+pub use dialog::{dialog_surface, modal_overlay, modal_overlay_with_exit};
 pub use disclosure::disclosure;
 pub use divider::{divider, Axis};
 pub use empty_state::empty_state;
@@ -106,12 +110,13 @@ pub use kbd::{kbd, kbd_row, keybinding_hint};
 pub use list::{list_header, list_separator, ListItem};
 pub use number_field::{number_field, step_value, NumberField};
 pub use palette::Palette;
-pub use popover::popover;
+pub use popover::{popover, popover_with_exit};
+pub use presence::{exit_duration, exit_fade, Presence, PresenceStep};
 pub use search_field::{search_clear_button, search_field, search_input};
 pub use segmented::{segmented_control, SegmentSize, SegmentVariant, SegmentedControl};
 pub use select::{
-    select_popover, select_trigger, select_trigger_disabled, selected_label, SelectOption,
-    SelectPopoverAnchor,
+    select_popover, select_popover_with_exit, select_trigger, select_trigger_disabled,
+    selected_label, SelectOption, SelectPopoverAnchor,
 };
 pub use slider::{slider, SliderEvent, SliderState, SliderValue};
 pub use stack::{h_stack, v_stack};

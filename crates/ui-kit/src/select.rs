@@ -29,16 +29,15 @@
 use std::rc::Rc;
 
 use gpui::{
-    deferred, div, list, prelude::FluentBuilder, px, AnimationExt, AnyElement, App, ClickEvent,
-    Div, ElementId, FontWeight, InteractiveElement, IntoElement, ListSizingBehavior, ListState,
-    ParentElement, Pixels, Point, SharedString, Stateful, StatefulInteractiveElement, Styled,
-    Window,
+    deferred, div, list, prelude::FluentBuilder, px, AnyElement, App, ClickEvent, Div, ElementId,
+    FontWeight, InteractiveElement, IntoElement, ListSizingBehavior, ListState, ParentElement,
+    Pixels, Point, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
 };
 
-use crate::animation::fade_in;
 use crate::icon::IconName;
 use crate::palette::Palette;
 use crate::popover::anchored_popup;
+use crate::presence::{closing_guard, enter_or_exit};
 use crate::DISABLED_OPACITY;
 
 /// One `(token, label)` pair — the token is what gets stored, the label what is
@@ -152,6 +151,21 @@ pub fn select_popover(
     dismiss: impl Fn(&mut Window, &mut App) + 'static,
     on_select: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
+    select_popover_with_exit(anchor, c, options, selected, false, dismiss, on_select)
+}
+
+/// [`select_popover`] with an exit state: while `closing` the list plays the
+/// exit fade and ignores pointer input. Drive `closing` from a
+/// [`crate::Presence`]; see [`crate::presence`] for the wiring.
+pub fn select_popover_with_exit(
+    anchor: SelectPopoverAnchor,
+    c: Palette,
+    options: &[SelectOption],
+    selected: &str,
+    closing: bool,
+    dismiss: impl Fn(&mut Window, &mut App) + 'static,
+    on_select: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
+) -> AnyElement {
     let SelectPopoverAnchor {
         id,
         position,
@@ -198,7 +212,7 @@ pub fn select_popover(
     .w_full();
 
     let outside_dismiss = dismiss.clone();
-    let list = anchored_popup(position, c).child(
+    let list = anchored_popup(position, c).child(enter_or_exit(
         div()
             .id(SharedString::from(format!("{id}-list")))
             .occlude()
@@ -213,8 +227,11 @@ pub fn select_popover(
             .shadow(c.popover_shadow())
             .child(list)
             .on_mouse_down_out(move |_, window, cx| outside_dismiss(window, cx))
-            .with_animation("select-fade", fade_in(c), |el, delta| el.opacity(delta)),
-    );
+            .when(closing, |card| card.child(closing_guard())),
+        "select-fade",
+        c,
+        closing,
+    ));
 
     deferred(list).with_priority(200).into_any_element()
 }

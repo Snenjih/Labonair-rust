@@ -10,14 +10,14 @@
 //! ancestor clipping, and the card owns outside-click dismissal.
 
 use gpui::{
-    deferred, div, point, px, size, AnimationExt, AnyElement, App, Bounds, Display, Element,
-    GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId,
-    Length, ParentElement, Pixels, Point, Position, Size, Style, Styled, Window,
+    deferred, div, point, prelude::FluentBuilder, px, size, AnyElement, App, Bounds, Display,
+    Element, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent,
+    LayoutId, Length, ParentElement, Pixels, Point, Position, Size, Style, Styled, Window,
 };
 use std::rc::Rc;
 
-use crate::animation::fade_in;
 use crate::palette::Palette;
+use crate::presence::{closing_guard, enter_or_exit};
 
 /// Position one or more popup children after measuring their actual bounds.
 /// This keeps flip/clamp decisions consistent for menus, selects, and rich
@@ -190,12 +190,26 @@ pub fn popover(
     dismiss: impl Fn(&mut Window, &mut App) + 'static,
     content: AnyElement,
 ) -> AnyElement {
+    popover_with_exit(anchor, width, c, false, dismiss, content)
+}
+
+/// [`popover`] with an exit state: while `closing` the card plays the exit
+/// fade and ignores pointer input. Drive `closing` from a
+/// [`crate::Presence`]; see [`crate::presence`] for the wiring.
+pub fn popover_with_exit(
+    anchor: Point<Pixels>,
+    width: Pixels,
+    c: Palette,
+    closing: bool,
+    dismiss: impl Fn(&mut Window, &mut App) + 'static,
+    content: AnyElement,
+) -> AnyElement {
     let (card_bg, border) = (c.popover, c.border);
     let dismiss = Rc::new(dismiss);
     let dismiss_outside = dismiss.clone();
     let dismiss_escape = dismiss.clone();
 
-    let card = anchored_popup(anchor, c).child(
+    let card = anchored_popup(anchor, c).child(enter_or_exit(
         div()
             .occlude()
             .w(width)
@@ -216,8 +230,11 @@ pub fn popover(
                     }
                 },
             )
-            .with_animation("popover-fade", fade_in(c), |el, delta| el.opacity(delta)),
-    );
+            .when(closing, |card| card.child(closing_guard())),
+        "popover-fade",
+        c,
+        closing,
+    ));
 
     deferred(card).with_priority(200).into_any_element()
 }
