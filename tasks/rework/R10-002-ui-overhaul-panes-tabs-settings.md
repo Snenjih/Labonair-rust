@@ -73,21 +73,34 @@ Gates run by the orchestrator after every wave.
 
 ## Acceptance criteria
 
-- [ ] WS1 Panes: all kinds tile; pane bar; zoom; keybinds; session v3.
-- [ ] WS1 DnD: tab<->pane, reorder, group tab name/icon, hover list.
-- [ ] WS2 Spaces dropdown restyled, no colour badges.
-- [ ] WS3 Floating tab blocks (horizontal and sidebar).
-- [ ] WS4 Motion engine, `animations` setting, exit animations for overlays.
-- [ ] WS5 Settings: cards, tiles, new tree, Appearance, Themes, inline background.
-- [ ] WS5 Themes require light+dark; backgrounds visible.
-- [ ] Focused tests pass; docs/ADRs/inventory/catalog updated.
-- [ ] `cargo fmt --check`, `cargo check --workspace --all-targets` pass.
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes (known
-      pre-existing lint at `workspace.rs:3602` reported separately).
+- [x] WS1 Panes: all kinds tile; pane bar; zoom; keybinds; session v3.
+- [x] WS1 DnD: tab<->pane, reorder, group tab name/icon, hover list.
+- [x] WS2 Spaces dropdown restyled, no colour badges.
+- [x] WS3 Floating tab blocks (horizontal and sidebar).
+- [x] WS4 Motion engine, `animations` setting, exit animations for overlays.
+- [x] WS5 Settings: cards, tiles, new tree, Appearance, Themes, inline background.
+- [x] WS5 Themes require light+dark; backgrounds visible.
+- [x] Focused tests pass; docs/ADRs/inventory/catalog updated.
+- [x] `cargo fmt --check`, `cargo check --workspace --all-targets` pass.
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` passes.
 - [ ] `cargo test --workspace` passes (known 2 `project_multibuffer` failures
       reported separately).
 - [ ] `scripts/check-crate-deps.sh` and `git diff --check` pass.
 
 ## Notes and follow-ups
 
-See the approved plan for edge cases per workstream.
+- Checked boxes mean implemented, compiled and unit-tested. **No wave was
+  verified visually or interactively** (screenshots were black in the agent
+  environment): run [`../../docs/qa/r10-002-visual-checklist.md`](../../docs/qa/r10-002-visual-checklist.md)
+  before closing this task.
+- Editor panes: only the focused pane of a document is interactive; other
+  panes of the same document are read-only mirrors until clicked (two
+  `EditorView`s cannot share a `Document`). A shared-document editor refactor
+  is a separate task.
+- `appearance.animations = system` currently behaves like `full` (needs an
+  `objc2-app-kit` edge in `theme-ui`; owner decision).
+- Editor panes shadow `cmd-alt-up/down` and `cmd-[ ]`; SSH/SFTP split opens a
+  new connection.
+- Pre-existing, unrelated: 2 failing `project_multibuffer` tests, 2 crate-deps
+  violations (`editor-ui`->`panel`, `shell`->`editor-ui`), ~60 undocumented
+  `CommandId`s in `commands.toml`, `check_crate_deps.py` metadata decode.
