@@ -371,6 +371,62 @@ the pinned/unpinned divider with a larger gap, and `tab_drop_marker` is the
 absolutely positioned 2 px `primary` insertion bar (no border, no layout
 shift).
 
+The workspace renders every tab as a floating block, in the titlebar strip and
+in the vertical Tabs sidebar (`workspace/src/tab_strip.rs`). Everything a block
+shows comes from `tab_display` (label, tooltip, kind icon, status markers), the
+single seam tab rendering reads through. The strip is shrinkable and scrolls
+horizontally; the selected tab is scrolled into view once per selection change
+so manual scrolling is not fought. Pinned and unpinned tabs are separated by
+`tab_group_gap`, in the sidebar too. Long titles truncate and show the full
+title in a tooltip; the dirty dot and status markers sit after the title and
+the close button appears on hover only. The drag-over indicator is the kit's
+`tab_drop_marker` on the hovered block, on the side the reorder would land
+(`drop_side` mirrors `TabStore::reorder`); it is hidden for rejected drops
+(pinned onto unpinned, other Space). Menus anchored to the strip drop from
+`Density::titlebar_height()`, not a hard-coded offset. New blocks fade in with
+`motion_fade_in` keyed by the tab id.
+
+Deviation: the selected ring is `line_subtle` as specified, but that token is
+almost invisible against the sunken fill in both Dark (3.5 % white) and Light
+(`#edece7` on `#d8d0ba`); the sunken fill and the semibold label carry the
+selection, the ring only adds a hairline.
+
+## Spaces popover
+
+`render_spaces_popover` (`workspace/src/spaces_ui.rs`) is a 300 px
+`popover_with_exit`. A `list_header` "Spaces" row with a plus button sits above
+a `line_subtle` hairline; each Space is a 28 px `ListItem` (collapse chevron,
+name or inline rename field, muted tab count as trailing) and the active Space
+uses the selected fill with a semibold label. There is no colour badge and no
+`SpaceColor` any more; old session files that still carry `color` load and the
+field is dropped on the next write. Tab rows under a Space are indented
+`ListItem`s with a 14 px kind icon (muted, the active tab in the foreground
+colour). Recent Projects is a collapsible section with a chevron and a
+`list_header` label over indented folder rows with a hover-only remove button.
+The pinned footer holds "New space" and "Open Local Folder" rows. The former
+hover buttons (new tab, rename, close) are one hover-only "..." button per
+Space that opens a `context_menu_with_exit` (New Tab, Rename, Close Space; the
+Default Space cannot be closed). While that menu is up an outside click does
+not dismiss the popover, so Rename can reach the inline field. Dismissing the
+popover while a rename is open commits the typed name; Esc inside the rename
+field cancels only the rename. The sidebar uses the same header rows.
+
+Workspace-owned surfaces (Spaces popover, per-Space menu, tab context menu,
+new-tab menu, sidebar new-space dropdown) each live in a `PresenceSlot` (kit):
+the surface data plus its `Presence`. Every dismissal calls `close`, `tick`
+runs once at the top of `Workspace::render`, and focus returns to the active
+pane only when a surface just unmounted, and not while an inline rename or
+another menu is still up. The explorer delete confirmation and the SFTP
+permissions and properties dialogs use the same recipe with
+`modal_overlay_with_exit`. The snippets modal keeps `modal_overlay` (its open
+state is spread over several fields, so it has no single flag to key a
+`Presence` on).
+
+Docks reveal on a flip of their open flag (`workspace/src/dock_reveal.rs`): an
+open grows the dock with `motion_reveal`, a close keeps it mounted for
+`dur_slow` while it shrinks and fades; the startup state never animates, a
+zoomed dock and `Off` motion snap.
+
 ## Interaction states
 
 Every interactive component must define normal, hover, pressed, selected, focused, disabled, and error states where applicable. Keyboard focus must remain visually distinguishable.
