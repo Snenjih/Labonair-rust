@@ -6,8 +6,8 @@
 //! focus moves, divider drag) can re-solve the same tree against the measured
 //! pane area. Resize handles sit inside the gap strips. A single pane renders
 //! full-bleed without frame or bar; from two panes on every pane gets a
-//! [`pane_frame`] and a [`pane_bar`]. Zoom paints one pane as an overlay while
-//! the tree underneath keeps its layout, so no terminal is resized by zoom.
+//! [`pane_frame`] and a [`pane_bar`]. Zoom paints only the zoomed pane; the
+//! rest of the tree keeps its layout state but is not rendered until zoom ends.
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -151,13 +151,20 @@ impl Workspace {
             active: layout.active,
             zoomed,
         };
-        let tree = self.render_member(&root, &ctx, window, cx);
+        // Culling: while a pane is zoomed the rest of the tree is not rendered
+        // (the panes live on in their layout and items, only the elements go).
+        let tree = match zoomed {
+            Some(_) => None,
+            None => Some(self.render_member(&root, &ctx, window, cx)),
+        };
+        // `occlude` keeps pointer events away from anything painted below.
         let overlay = zoomed.map(|pane| {
-            let frame = self.render_pane_frame(pane, &ctx, true, window, cx);
+            let frame = self.render_pane_frame(pane, &ctx, window, cx);
             div()
                 .absolute()
                 .inset_0()
                 .bg(c.bg)
+                .occlude()
                 .child(frame)
                 .into_any_element()
         });
@@ -167,7 +174,7 @@ impl Workspace {
             .min_w_0()
             .min_h_0()
             .child(probe)
-            .child(tree)
+            .children(tree)
             .children(overlay)
             .on_drag_move(
                 cx.listener(move |this, ev: &DragMoveEvent<PaneResize>, _window, cx| {
@@ -229,7 +236,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         match node {
-            Member::Pane(pane) => self.render_pane_frame(*pane, ctx, false, window, cx),
+            Member::Pane(pane) => self.render_pane_frame(*pane, ctx, window, cx),
             Member::Axis(axis) => {
                 let row = axis.axis == SplitAxis::Horizontal;
                 let axis_id = axis.id;
@@ -310,14 +317,11 @@ impl Workspace {
             .into_any_element()
     }
 
-    /// One pane: frame, bar and body. `overlay` paints the zoomed copy; the
-    /// tree slot of a zoomed pane stays an empty frame so its siblings keep
-    /// their size.
+    /// One pane: frame, bar and body.
     fn render_pane_frame(
         &mut self,
         pane: PaneId,
         ctx: &TreeCtx,
-        overlay: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -325,13 +329,8 @@ impl Workspace {
         let spec = self.pane_spec(pane, cx);
         let focused = ctx.active == Some(pane);
         let is_zoomed = ctx.zoomed == Some(pane);
-        let hidden_by_zoom = is_zoomed && !overlay;
-        let body = if hidden_by_zoom {
-            div().size_full().into_any_element()
-        } else {
-            let body = self.pane_body(pane, window, cx);
-            Self::pane_context(body).into_any_element()
-        };
+        let body = self.pane_body(pane, window, cx);
+        let body = Self::pane_context(body).into_any_element();
         let tab_id = ctx.tab_id;
         let ws = cx.entity();
 

@@ -181,6 +181,11 @@ impl Workspace {
         if let Some(layout) = self.layouts.get_mut(&tab) {
             layout.set_active(pane);
         }
+        // Focusing a pane other than the zoomed one (focus-move keys) ends the
+        // zoom, so the active pane is always the visible one.
+        if self.zoom.zoomed(tab).is_some_and(|z| z != pane) {
+            self.zoom.clear(tab);
+        }
         if self.tabs.read(cx).active_id() != tab {
             self.tabs.update(cx, |s, cx| s.set_active(tab, cx));
         }
