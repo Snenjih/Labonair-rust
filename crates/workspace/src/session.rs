@@ -16,6 +16,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::session_v3::SpacesSnapshotV3;
 use serde::{Deserialize, Serialize};
 
 use crate::context::WorkspaceIdentity;
@@ -515,13 +516,13 @@ fn snapshot_path() -> PathBuf {
 /// version does not match (a stale file is deleted). A pre-Spaces flat file
 /// is migrated into a single `Default` space rather than discarded — see
 /// [`load_from`].
-pub fn load_snapshot() -> Option<SpacesSnapshot> {
+pub fn load_snapshot() -> Option<SpacesSnapshotV3> {
     load_from(&snapshot_path())
 }
 
 /// Persist `snapshot` (best-effort; failures are logged, never propagated —
 /// losing the session must not block quitting).
-pub fn save_snapshot(snapshot: &SpacesSnapshot) {
+pub fn save_snapshot(snapshot: &SpacesSnapshotV3) {
     save_to(&snapshot_path(), snapshot);
 }
 
@@ -530,31 +531,15 @@ pub fn clear_snapshot() {
     let _ = std::fs::remove_file(snapshot_path());
 }
 
-pub(crate) fn load_from(path: &Path) -> Option<SpacesSnapshot> {
+/// Read a session file of any supported generation (v3, v2, or the pre-Spaces
+/// flat file) as v3. An unreadable or unsupported file yields `None` and is
+/// left untouched.
+pub(crate) fn load_from(path: &Path) -> Option<SpacesSnapshotV3> {
     let raw = std::fs::read_to_string(path).ok()?;
-    if let Ok(snap) = serde_json::from_str::<SpacesSnapshot>(&raw) {
-        if snap.version != SNAPSHOT_VERSION {
-            let _ = std::fs::remove_file(path);
-            return None;
-        }
-        return Some(snap);
-    }
-    // Not a `SpacesSnapshot` — try the pre-Spaces flat shape (T20-008) so an
-    // upgrading user's restored tabs aren't silently lost. Wrapped into one
-    // `Default` space, matching `SpaceStore::new()`'s own seeded space.
-    let legacy: SessionSnapshot = serde_json::from_str(&raw).ok()?;
-    Some(SpacesSnapshot {
-        version: SNAPSHOT_VERSION,
-        active_space_index: 0,
-        spaces: vec![SpaceEntry {
-            name: "Default".to_string(),
-            color: SpaceColor::default(),
-            session: legacy,
-        }],
-    })
+    crate::session_v3::parse_any(&raw)
 }
 
-pub(crate) fn save_to(path: &Path, snapshot: &SpacesSnapshot) {
+pub(crate) fn save_to(path: &Path, snapshot: &SpacesSnapshotV3) {
     if let Some(dir) = path.parent() {
         if let Err(err) = std::fs::create_dir_all(dir) {
             tracing::warn!(%err, "failed to create session-state dir");
@@ -704,7 +689,8 @@ mod tests {
     fn zero_tab_snapshot_round_trips_on_disk() {
         let dir = tmp_dir();
         let path = dir.join("session.json");
-        let snap = wrap_default(SessionSnapshot::new(Vec::new(), 0));
+        let snap =
+            crate::session_v3::migrate_spaces(&wrap_default(SessionSnapshot::new(Vec::new(), 0)));
         save_to(&path, &snap);
         assert_eq!(load_from(&path), Some(snap));
     }
@@ -748,16 +734,14 @@ mod tests {
         std::fs::write(&path, legacy).unwrap();
 
         let loaded = load_from(&path).expect("legacy file migrates instead of being discarded");
-        assert_eq!(loaded.version, SNAPSHOT_VERSION);
+        assert_eq!(loaded.version, crate::session_v3::SNAPSHOT_VERSION);
         assert_eq!(loaded.active_space_index, 0);
         assert_eq!(loaded.spaces.len(), 1);
         assert_eq!(loaded.spaces[0].name, "Default");
-        assert_eq!(
-            loaded.spaces[0].session.tabs,
-            vec![TabSnapshot::Preview(PreviewTabSnapshot {
-                url: "https://x".to_string()
-            })]
-        );
+        // The flat file's preview tab became a one-leaf preview pane group.
+        let tabs = &loaded.spaces[0].session.tabs;
+        assert_eq!(tabs.len(), 1);
+        assert_eq!(tabs[0].tree.leaf_count(), 1);
     }
 
     #[test]
@@ -786,22 +770,31 @@ mod tests {
     }
 
     #[test]
-    fn load_rejects_version_mismatch_and_deletes_file() {
+    fn unsupported_or_corrupt_files_load_as_none_and_are_kept() {
         let dir = tmp_dir();
         let path = dir.join("session.json");
-        let mut snap = wrap_default(sample());
-        snap.version = SNAPSHOT_VERSION + 1;
-        save_to(&path, &snap);
-        assert!(path.exists());
+        std::fs::write(&path, r#"{"version":99,"spaces":[]}"#).unwrap();
         assert_eq!(load_from(&path), None);
-        assert!(!path.exists(), "stale snapshot is removed");
+        std::fs::write(&path, "{ not json").unwrap();
+        assert_eq!(load_from(&path), None);
+        assert!(path.exists(), "an unreadable snapshot is never removed");
+    }
+
+    #[test]
+    fn v2_file_on_disk_migrates_to_v3_on_load() {
+        let dir = tmp_dir();
+        let path = dir.join("session.json");
+        let v2 = wrap_default(sample());
+        std::fs::write(&path, serde_json::to_string(&v2).unwrap()).unwrap();
+        let loaded = load_from(&path).expect("v2 file migrates");
+        assert_eq!(loaded, crate::session_v3::migrate_spaces(&v2));
     }
 
     #[test]
     fn save_then_load_round_trips_on_disk() {
         let dir = tmp_dir();
         let path = dir.join("nested/session.json");
-        let snap = wrap_default(sample());
+        let snap = crate::session_v3::migrate_spaces(&wrap_default(sample()));
         save_to(&path, &snap);
         assert_eq!(load_from(&path), Some(snap));
     }

@@ -506,6 +506,21 @@ impl TabStore {
         });
     }
 
+    /// Bind a restored terminal tab to its first session.
+    pub fn set_session(
+        &mut self,
+        id: u64,
+        session_id: SessionId,
+        cwd: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.with_tab(id, cx, |t| {
+            t.data.session_id = Some(session_id);
+            t.data.cwd = cwd;
+            true
+        });
+    }
+
     /// Re-point a tab at the kind of its first pane (pane groups).
     pub fn set_kind(&mut self, id: u64, kind: TabKind, cx: &mut Context<Self>) {
         self.with_tab(id, cx, |t| {

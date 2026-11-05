@@ -222,16 +222,60 @@ split into four modules that carry no GPUI types:
 - `pane_group_naming` — tab label (`"<active> +N"` or the custom title), shared
   kind icon vs. a generic panes icon, and the hover-list data model.
 
-**Session v3 plan.** `session_v3` defines the next snapshot generation: a tab
-is `{title, tree}` and a leaf is `{kind, state}` with the state kept as opaque
-JSON on the wire and decoded per kind (`PaneState`: terminal, editor, preview,
-SFTP; transient kinds are not persisted). `parse_any` reads v3, v2 and the
-pre-Spaces flat file (v2 terminal layouts become terminal groups, other kinds
-single leaves; `Home` and empty tabs are dropped). `restore_tree` mints fresh
-pane ids, returns the old-to-new remap, drops unknown or invalid leaves
-(and anything the caller's `keep` check rejects), collapses the tree around
-them, and never panics on corrupt input. `session.rs` still owns the live v2
-format until the capture/restore wiring switches over; user file contents are
+**Pane integration (live).** `Workspace` keeps one `WorkspaceLayout` per tab
+(a non-terminal tab is a single pane whose id is the tab id) and a
+`PaneMetaStore`; tab, pane and axis ids come from one process-wide counter
+(`pane::next_id`). The former per-tab maps (`panes`, `editors`, `previews`,
+`sftp_views`, `sftp_sessions`, `remote_edits`, ...) are keyed by pane id, so
+moving a pane between tabs moves its resources with it. New modules:
+
+- `pane_items/{terminal,editor,preview,sftp,singleton}` - one adapter per kind:
+  `pane_spec` (title, icon, dirty, bar slot), `pane_body`, `focus_pane`,
+  `spawn_pane_clone` (`split_clone`), teardown. Terminal clone: new shell in the
+  same cwd; an SSH pane opens a new connection to the same host (the SSH
+  service has no channel multiplexing, so password hosts ask again; failures
+  are reported through the notification center, never a silent local fallback).
+  Editor clone: a second *view group* of the same editor-owned document
+  (`EditorView::add_group`): shared buffer, history and dirty state, independent
+  selection, scroll and folds. The pane whose group is the editor's focused one
+  hosts the interactive text area, the others a read-only mirror
+  (`EditorView::mirror_element`, no syntax colours) until clicked; focusing a
+  mirror swaps the roles. Preview / SFTP clone: a new instance at the same
+  location. Singletons are not splittable and reopening focuses the existing
+  pane (`find_singleton_tab`).
+- `pane_view` - renders the tree with flex (siblings share `extent - gaps` by
+  their flexes, identical to `tiling::solve`), gap-aware resize handles whose
+  drag uses `AxisGeometry::boundary_fraction`, `pane_frame` + `pane_bar` from
+  two panes on (a single pane stays full-bleed, no bar),
+  the zoom overlay, and the `DraggedPane` payload (the bar is the drag source
+  with a mini-chip ghost; drop handling is DnD work). Each pane is wrapped in the
+  key context `Pane`.
+- `pane_actions` - split (`Right`/`Down` fall back to the other axis when the
+  requested one has no room, `Left`/`Up` do not), close (last pane closes the
+  tab; a dirty editor asks only when it is the last view of its document;
+  focus goes to the spatial neighbour), focus by direction / cycle, zoom, move
+  (swap), `sync_tab_kind` (a tab's kind follows its first pane).
+- `zoom` - runtime-only per-tab zoom state.
+- `session_io` - session v3 capture / restore (below).
+
+Zoom keeps the tree laid out and replaces the zoomed pane's slot with an empty
+frame; the pane is painted once, as an overlay, so siblings never resize. GPUI
+clips to rectangles, so the pane body is inset by the frame corner's sagitta in
+the comfortable layout to keep square content inside the rounded frame.
+
+**Session v3.** `session_v3` defines the snapshot: a tab is `{title, tree}` and
+a leaf is `{kind, state}` with the state kept as opaque JSON on the wire and
+decoded per kind (`PaneState`: terminal, editor, preview, SFTP; transient
+kinds are not persisted). `session::load_snapshot` reads v3, v2 and the
+pre-Spaces flat file through `parse_any` (v2 terminal layouts become terminal
+groups, other kinds single leaves) and `save_snapshot` writes v3; an
+unreadable file is left untouched. `restore_tree` mints fresh pane ids, drops
+unknown or invalid leaves and anything the caller's `keep` check rejects (a
+missing file or host) and collapses the tree around them. Editor panes of one
+file inside one tab restore as one document with several view groups, and every
+editor pane carries its editor-owned recovery payload, so a dirty editor in a
+background tab survives a window close. SSH panes reconnect eagerly on restore,
+one connection per pane behind its own loading screen. User file contents are
 never discarded by layout recovery.
 
 The titlebar is a shell surface, not a feature owner. Its single global-menu

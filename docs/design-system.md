@@ -325,7 +325,7 @@ bar uses the sunken fill and a semibold title; inactive bars use hover accent
 and show their actions on hover only. A `line_subtle` hairline separates bar
 and body.
 
-`PaneLayoutStyle` mirrors `appearance.paneLayout`. Comfortable panes float with
+The workspace shows a pane bar only from two panes on (a single pane is full-bleed). Because GPUI clips to rectangles, the pane body is inset by `radius.lg * 0.3` in the comfortable layout so square content stays inside the rounded frame; divider hit areas are 6 px wider than the gap. `PaneLayoutStyle` mirrors `appearance.paneLayout`. Comfortable panes float with
 `PANE_GAP` (6 px, density scaled) between them in a rounded (`radius.lg`) frame
 with a 1 px `line_subtle` ring (`line_strong` while focused). Compact panes
 have no gap, no rounding and no ring; the dividers belong to the tiling

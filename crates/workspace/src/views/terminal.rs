@@ -357,8 +357,12 @@ impl Render for TerminalView {
             .max(1.0);
         let cell_h = (font_px * line_height).ceil().max(1.0);
 
-        let opacity = (terminal_opacity(cx) as f32 / 100.0).clamp(0.05, 1.0);
-        let translucent = opacity < 1.0;
+        // The terminal surface goes translucent while a background image shows
+        // through (`ThemeStore::terminal_background` carries that alpha), on
+        // top of the user's own `terminalOpacity`.
+        let surface_alpha = store.terminal_background().a;
+        let opacity = ((terminal_opacity(cx) as f32 / 100.0) * surface_alpha).clamp(0.05, 1.0);
+        let mut translucent = opacity < 1.0;
         let default_bg = colors.background;
         let bg = to_hsla(colors.background, opacity);
         let fg = to_hsla(colors.foreground, 1.0);
@@ -413,6 +417,9 @@ impl Render for TerminalView {
         // Background image overlay (only when the target is Terminal-only;
         // App/Both is painted window-wide by the app root instead).
         let background_layer = self.background.layer(cx, LayerScope::Terminal);
+        // Default-background cells would hide that layer, so they paint
+        // nothing while it is present.
+        translucent |= background_layer.is_some();
 
         let runs = batch_runs(&screen);
         let bold_font = {

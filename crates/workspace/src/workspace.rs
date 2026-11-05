@@ -51,6 +51,7 @@ pub mod project_search;
 pub mod recent_projects;
 pub mod search_overlay;
 pub mod session;
+pub mod session_io;
 pub mod session_v3;
 pub mod spaces;
 pub mod ssh_connection;
@@ -123,11 +124,6 @@ use crate::editor_git_bridge::{EditorGitContext, WorkspaceGitBridge};
 use crate::live_bridge::LiveCommand;
 use crate::pane::{PaneId, SplitDirection, WorkspaceLayout};
 use crate::project_search::root_safe_path;
-use crate::session::{
-    plan_restore, PaneSessionKind, PaneSessionSnapshot, RestoreAction, RestoreResult,
-    SerializedLayout, SessionSnapshot, SpaceEntry, SpacesSnapshot, TabSnapshot,
-    WorkspaceTabSnapshot,
-};
 use crate::spaces::{Space, SpaceId, SpaceStore, DEFAULT_SPACE_ID};
 use crate::ssh_connection::{
     ConnStage, ConnectionKind, ConnectionState, ConnectionStatusStore, StageStatus,
@@ -485,7 +481,7 @@ struct ScrollbackCapture {
 }
 
 struct SessionCapture {
-    snapshot: SpacesSnapshot,
+    snapshot: crate::session_v3::SpacesSnapshotV3,
     scrollbacks: Vec<ScrollbackCapture>,
 }
 
@@ -889,7 +885,7 @@ impl Workspace {
         agent_access: Entity<AgentAccessStore>,
         host_view: HostView,
         hosts: Entity<HostManagerView>,
-        restore: Option<SpacesSnapshot>,
+        restore: Option<crate::session_v3::SpacesSnapshotV3>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -1122,7 +1118,7 @@ impl Workspace {
                         s.restore_entry(
                             index == 0,
                             entry.name.clone(),
-                            entry.color,
+                            crate::spaces::SpaceColor::default(),
                             entry.session.identity.clone(),
                             cx,
                         )
@@ -1173,7 +1169,7 @@ impl Workspace {
 
     /// Snapshot every Space, each with its persistable tabs + every workspace
     /// tab's split-pane tree (T20-008 Spaces).
-    pub fn session_snapshot(&self, cx: &App) -> SpacesSnapshot {
+    pub fn session_snapshot(&self, cx: &App) -> crate::session_v3::SpacesSnapshotV3 {
         let capture = self.session_capture(cx);
         persist_scrollback_captures(&labonair_filesystem::paths::data_dir(), capture.scrollbacks);
         capture.snapshot
@@ -1186,121 +1182,6 @@ impl Workspace {
             snapshot,
             scrollbacks,
         }
-    }
-
-    fn session_snapshot_collect(
-        &self,
-        cx: &App,
-        scrollbacks: &mut Vec<ScrollbackCapture>,
-    ) -> SpacesSnapshot {
-        let store = self.tabs.read(cx);
-        let space_store = self.spaces.read(cx);
-        let active_id = store.active_id();
-        let active_space_id = space_store.active_id();
-        let mut entries = Vec::with_capacity(space_store.len());
-        let mut active_space_index = 0;
-        for (index, space) in space_store.spaces().iter().enumerate() {
-            if space.id == active_space_id {
-                active_space_index = index;
-            }
-            let mut tabs = Vec::new();
-            let mut active_index = 0;
-            for tab in store.tabs_in_space(space.id) {
-                let snap = match tab.kind {
-                    TabKind::Workspace => self.snapshot_workspace_tab(tab, cx, scrollbacks),
-                    TabKind::Editor => tab
-                        .data
-                        .path
-                        .clone()
-                        .filter(|_| tab.data.host_id.is_none())
-                        .map(|path| {
-                            TabSnapshot::Editor(crate::session::EditorTabSnapshot {
-                                state: self
-                                    .editors
-                                    .get(&tab.id)
-                                    .map(|view| view.read(cx).session_snapshot()),
-                                path,
-                            })
-                        }),
-                    TabKind::Preview => tab.data.url.clone().map(|url| {
-                        TabSnapshot::Preview(crate::session::PreviewTabSnapshot { url })
-                    }),
-                    TabKind::Sftp => tab.data.host_id.clone().map(|host_id| {
-                        TabSnapshot::Sftp(crate::session::SftpTabSnapshot {
-                            host_id,
-                            title: tab.custom_title.clone(),
-                        })
-                    }),
-                    // Transient kinds — never persisted.
-                    TabKind::AiDiff
-                    | TabKind::GitGraph
-                    | TabKind::Diff
-                    | TabKind::CommitDiff
-                    | TabKind::Keymap
-                    | TabKind::Hosts => None,
-                };
-                if let Some(snap) = snap {
-                    if tab.id == active_id {
-                        active_index = tabs.len();
-                    }
-                    tabs.push(snap);
-                }
-            }
-            entries.push(SpaceEntry {
-                name: space.name.clone(),
-                color: space.color,
-                session: SessionSnapshot::with_identity(space.identity.clone(), tabs, active_index),
-            });
-        }
-        SpacesSnapshot::new(entries, active_space_index)
-    }
-
-    fn snapshot_workspace_tab(
-        &self,
-        tab: &Tab,
-        cx: &App,
-        scrollbacks: &mut Vec<ScrollbackCapture>,
-    ) -> Option<TabSnapshot> {
-        let layout = self.layouts.get(&tab.id)?.clone();
-        let ts = terminal_settings(cx);
-        let max_lines = ts.session_scrollback_lines();
-        let max_bytes = Some(ts.scrollback_max_bytes());
-        let sessions = layout
-            .leaves()
-            .iter()
-            .map(|leaf| {
-                let entry = self.panes.get(leaf);
-                let ssh = entry.and_then(|e| self.ssh_tabs.get(&e.session_id));
-                let is_local = ssh.is_none();
-                // Persist this local pane's scrollback so the restored shell
-                // shows its prior history above the fresh prompt (T14-002).
-                let scrollback_id = entry.filter(|_| is_local).map(|e| {
-                    if let Some(ansi) = e.view.read(cx).handle().serialize_scrollback(max_lines) {
-                        scrollbacks.push(ScrollbackCapture {
-                            session_id: e.scrollback_id.clone(),
-                            ansi,
-                            max_bytes,
-                        });
-                    }
-                    e.scrollback_id.clone()
-                });
-                PaneSessionSnapshot {
-                    kind: if is_local {
-                        PaneSessionKind::Local
-                    } else {
-                        PaneSessionKind::Ssh
-                    },
-                    cwd: entry.and_then(|e| e.view.read(cx).cwd()),
-                    host_id: ssh.map(|s| s.host_id.clone()),
-                    scrollback_id,
-                }
-            })
-            .collect();
-        Some(TabSnapshot::Workspace(WorkspaceTabSnapshot {
-            title: tab.custom_title.clone(),
-            layout: SerializedLayout::from_layout(&layout),
-            sessions,
-        }))
     }
 
     /// Scrollback-file UUIDs of every currently-open local pane.
@@ -1337,128 +1218,6 @@ impl Workspace {
                 })
                 .detach();
         }
-    }
-
-    /// Replay `snapshot`, recreating tabs and the active selection.
-    pub fn restore_session(
-        &mut self,
-        snapshot: &SessionSnapshot,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> RestoreResult {
-        let known_hosts: std::collections::HashSet<String> =
-            self.host_view.host_ids(cx).into_iter().collect();
-        let actions = plan_restore(
-            snapshot,
-            |h| known_hosts.contains(h),
-            |f| std::path::Path::new(f).is_file(),
-            crate::pane::next_id,
-        );
-
-        let mut result = RestoreResult::default();
-        let mut created: Vec<Option<u64>> = Vec::with_capacity(actions.len());
-        for action in actions {
-            let tab_id = match action {
-                // Legacy snapshots (pre-T17-009) carried a "home" tab. That
-                // tab kind no longer exists — skip the slot silently, as if it
-                // had held nothing.
-                RestoreAction::Home => None,
-                RestoreAction::LocalWorkspace {
-                    layout,
-                    cwds,
-                    scrollback_ids,
-                } => self.restore_local_workspace(layout, cwds, scrollback_ids, window, cx),
-                RestoreAction::SshWorkspace { host_id, title } => {
-                    self.connect_host(host_id, window, cx);
-                    let id = self.tabs.read(cx).active_id();
-                    if let Some(title) = title {
-                        self.tabs
-                            .update(cx, |s, cx| s.set_custom_title(id, Some(title), cx));
-                    }
-                    Some(id)
-                }
-                RestoreAction::Editor { path, state } => {
-                    self.open_file(path, false, window, cx);
-                    if let Some(state) = state {
-                        let id = self.tabs.read(cx).active_id();
-                        if let Some(view) = self.editors.get(&self.editor_slot_for_tab(id)).cloned()
-                        {
-                            view.update(cx, |editor, _| editor.set_pending_session(state));
-                        }
-                    }
-                    Some(self.tabs.read(cx).active_id())
-                }
-                RestoreAction::Preview { url } => {
-                    self.open_preview(url, window, cx);
-                    Some(self.tabs.read(cx).active_id())
-                }
-                RestoreAction::Sftp { host_id, .. } => {
-                    self.open_sftp(host_id, window, cx);
-                    Some(self.tabs.read(cx).active_id())
-                }
-                RestoreAction::Skip { title, reason } => {
-                    result.failed.push((title, reason));
-                    None
-                }
-            };
-            if tab_id.is_some() {
-                result.restored += 1;
-            }
-            created.push(tab_id);
-        }
-
-        // Re-activate the previously-active tab (fall back to the first that
-        // came back if it was dropped).
-        let target = created
-            .get(snapshot.active_tab_index)
-            .copied()
-            .flatten()
-            .or_else(|| created.iter().find_map(|c| *c));
-        if let Some(id) = target {
-            self.select_tab(id, window, cx);
-        }
-        result
-    }
-
-    /// Re-spawn a local terminal workspace tab from a remapped layout.
-    fn restore_local_workspace(
-        &mut self,
-        layout: WorkspaceLayout,
-        cwds: Vec<Option<String>>,
-        scrollback_ids: Vec<Option<String>>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Option<u64> {
-        let leaves = layout.leaves();
-        // Spawn one session per leaf; bail if the very first cannot start.
-        let mut spawned: Vec<(PaneId, SessionId, SessionHandle, String)> = Vec::new();
-        for (i, (leaf, cwd)) in leaves.iter().zip(cwds.iter()).enumerate() {
-            let replay_id = scrollback_ids.get(i).and_then(|s| s.as_deref());
-            match self.spawn_session(cwd.clone(), replay_id, cx) {
-                Some((sid, handle, sb_id)) => spawned.push((*leaf, sid, handle, sb_id)),
-                None if spawned.is_empty() => return None,
-                None => {}
-            }
-        }
-        let (_, first_sid, _, _) = spawned.first()?;
-        let first_cwd = cwds.first().cloned().flatten();
-        let tab_id = self
-            .tabs
-            .update(cx, |s, cx| s.open_workspace(*first_sid, first_cwd, cx));
-        for (leaf, sid, handle, scrollback_id) in spawned {
-            let view = self.new_terminal_view(handle, window, cx);
-            self.panes.insert(
-                leaf,
-                PaneEntry {
-                    session_id: sid,
-                    view,
-                    scrollback_id,
-                },
-            );
-        }
-        // Keep only the leaves that actually got a pane (should be all).
-        self.layouts.insert(tab_id, layout);
-        Some(tab_id)
     }
 
     /// The tab store (for later phases / command palette wiring).
@@ -8554,7 +8313,6 @@ impl Workspace {
         if self.confirm_close.is_some() && ks.key == "escape" {
             self.cancel_pending_close(window, cx);
             cx.stop_propagation();
-            return;
         }
     }
 }

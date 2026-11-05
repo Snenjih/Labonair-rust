@@ -66,6 +66,16 @@ impl Workspace {
         Ok(())
     }
 
+    /// Session restore: a second pane of an already restored document.
+    pub(crate) fn clone_editor_pane_for_restore(
+        &mut self,
+        owner: PaneId,
+        new_id: PaneId,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        self.clone_editor_pane(owner, new_id, cx).is_ok()
+    }
+
     /// Drop a pane's view group; the document goes with its last pane.
     pub(super) fn retire_editor_pane(&mut self, pane: PaneId, cx: &mut Context<Self>) {
         if let Some(binding) = self.editor_aliases.remove(&pane) {
