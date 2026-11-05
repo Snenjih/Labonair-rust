@@ -62,6 +62,7 @@ pub mod ssh_event_bridge;
 pub mod status_bar;
 pub mod status_items;
 pub mod status_placements;
+pub(crate) mod tab_hover;
 pub mod tab_strip;
 pub mod tabs;
 pub mod tabs_panel;
@@ -684,6 +685,8 @@ pub struct Workspace {
     pub(crate) editor_aliases: HashMap<PaneId, crate::pane_items::EditorBinding>,
     /// Per-tab zoom overlay (runtime only).
     pub(crate) zoom: crate::zoom::ZoomState,
+    /// Hover list of a pane-group tab (one shared popover).
+    pub(crate) tab_hover: crate::tab_hover::TabHover,
     /// Pane area of the active tab in window coordinates, measured during
     /// paint and read by split / focus / resize logic.
     pub(crate) pane_area: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
@@ -1033,6 +1036,7 @@ impl Workspace {
             pane_meta: crate::pane_kind::PaneMetaStore::new(),
             editor_aliases: HashMap::new(),
             zoom: crate::zoom::ZoomState::default(),
+            tab_hover: crate::tab_hover::TabHover::default(),
             pane_area: std::rc::Rc::new(std::cell::Cell::new(None)),
             following_markdown_preview: None,
             following_markdown_editor: None,
@@ -6580,6 +6584,7 @@ impl Render for Workspace {
                 self.render_new_tab_menu(pos, closing, cx)
                     .into_any_element()
             });
+        let tab_hover = self.render_tab_hover(cx);
         let spaces_menu = self
             .spaces_menu
             .mounted()
@@ -6645,6 +6650,7 @@ impl Render for Workspace {
             .children(confirm)
             .children(context_menu)
             .children(new_tab_menu)
+            .children(tab_hover)
             .children(spaces_menu)
             .children(space_actions_menu)
             .children(new_space_menu)

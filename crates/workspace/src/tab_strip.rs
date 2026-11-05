@@ -245,11 +245,20 @@ impl Workspace {
             .map(|(_, side)| tab_drop_marker(c, layout, side));
         tab_item
             .render()
-            .when(!renaming, |row| {
+            .when(!renaming && display.pane_count < 2, |row| {
                 let tooltip = display.tooltip.clone();
                 row.tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
             })
             .children(marker)
+            .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
+                let pos = window.mouse_position();
+                let anchor = if sidebar {
+                    point(pos.x, pos.y + px(14.0))
+                } else {
+                    point(pos.x - px(12.0), titlebar_offset)
+                };
+                this.tab_hover_changed(id, *hovered, anchor, cx);
+            }))
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
