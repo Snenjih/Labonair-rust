@@ -21,6 +21,7 @@ use labonair_ui_kit::{
     MenuItem, MotionExt, Palette, SubmenuHoverSource, TabDropSide, TabLayout, TabStyle, Tooltip,
 };
 
+use crate::pane_group_naming::group_label;
 use crate::tabs::{Tab, TabDiagnosticStatus, TabGitStatus, TabKind};
 use crate::{relative_path_under_root, DraggedTab, NewTabSubmenu, TabDragPreview, Workspace};
 
@@ -38,13 +39,34 @@ pub(crate) struct TabDisplay {
     pub status_color: Option<Hsla>,
     /// Diagnostics marker of an editor tab, when enabled in settings.
     pub diagnostic_color: Option<Hsla>,
+    /// Number of panes in the tab (`1` for a plain tab). From two on the label
+    /// and icon describe the group and the hover list is available.
+    pub pane_count: usize,
+    /// Unsaved-changes marker: an editor tab, or a group holding a dirty editor.
+    pub dirty: bool,
 }
 
 /// Resolve how `tab` is displayed. Reads settings and the theme, never mutates.
 pub(crate) fn tab_display(tab: &Tab, workspace: &Workspace, cx: &App) -> TabDisplay {
     let c = Palette::from_theme(workspace.theme.read(cx));
-    let label = SharedString::from(tab.label());
-    let editor = tab.kind == TabKind::Editor;
+    // A pane group names itself after its panes (R10-002 "Tab-Name/Icon einer
+    // Gruppe"); a single pane keeps the tab's own label and kind icon.
+    let panes = workspace.tab_pane_ids(tab.id);
+    let group = (panes.len() > 1).then(|| {
+        let active = workspace.layouts.get(&tab.id).and_then(|l| l.active);
+        group_label(
+            &panes,
+            &workspace.pane_meta,
+            active,
+            tab.custom_title.as_deref(),
+        )
+    });
+    let pane_count = panes.len();
+    let label = SharedString::from(match &group {
+        Some(g) => g.title.clone(),
+        None => tab.label(),
+    });
+    let editor = tab.kind == TabKind::Editor && group.is_none();
     let status_color = (editor
         && WorkspaceSettings::try_get(cx)
             .is_some_and(|settings| settings.show_editor_tab_git_status()))
@@ -67,9 +89,11 @@ pub(crate) fn tab_display(tab: &Tab, workspace: &Workspace, cx: &App) -> TabDisp
     TabDisplay {
         tooltip: label.clone(),
         label,
-        icon: tab.kind.indicator(),
+        icon: group.map_or_else(|| tab.kind.indicator(), |g| g.icon),
         status_color,
         diagnostic_color,
+        pane_count,
+        dirty: tab.dirty && (tab.kind == TabKind::Editor || pane_count > 1),
     }
 }
 
@@ -170,14 +194,14 @@ impl Workspace {
 
         let view = cx.entity();
         let mut tab_item = tab_item(format!("workspace-tab-{id}"), c, label.clone());
-        if sidebar || tab.kind != TabKind::Editor {
+        if sidebar || tab.kind != TabKind::Editor || display.pane_count > 1 {
             tab_item = tab_item.leading(display.icon);
         }
         tab_item = tab_item
             .style(TabStyle::Floating)
             .layout(layout)
             .selected(active)
-            .dirty(tab.kind == TabKind::Editor && tab.dirty)
+            .dirty(display.dirty)
             .peek(tab.kind == TabKind::Editor && tab.peek)
             .pinned(tab.pinned)
             .status_color(display.status_color)
