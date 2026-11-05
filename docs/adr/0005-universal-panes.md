@@ -49,6 +49,14 @@ close) shared across kinds.
    collapses; user file contents are never discarded by layout recovery.
 9. Split and focus commands are `pane::*` contributions with stable IDs in the
    canonical command and keymap registries, valid in every pane kind.
+10. Tabs and panes are interchangeable by drag and drop: a pane can be dropped
+    on a pane zone (move or swap), a tab block (join that group) or empty
+    strip space (new tab); a whole tab merges into a pane zone as a nested
+    group. Smart tiling (longer axis, 240 x 120 px minimum) decides the split;
+    a drop without room is rejected and reported. Drops stay inside one Space,
+    never merge a pinned tab away, and are disabled while the target tab is
+    zoomed. A pane group names itself after its panes and lists them in a hover
+    popover (see `docs/architecture.md`, "Drag and drop" and "Hover list").
 
 ## Consequences
 

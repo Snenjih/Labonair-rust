@@ -48,6 +48,7 @@ pub mod pane_group;
 pub mod pane_group_naming;
 pub mod pane_items;
 pub mod pane_kind;
+pub(crate) mod pane_menu;
 pub mod pane_ops;
 pub mod pane_view;
 pub mod project_multibuffer;

@@ -1079,6 +1079,8 @@ impl Workspace {
                 }),
         );
         items.push(MenuItem::separator());
+        items.extend(self.pane_menu_items(id, &view, cx));
+        items.push(MenuItem::separator());
         // T20-001: `MenuItem::keybind` renders the item's live binding as
         // `Kbd` chips, resolved through the user's `keymap.json` overrides.
         let close_keys = cx

@@ -386,6 +386,26 @@ the close button appears on hover only. The drag-over indicator is the kit's
 `Density::titlebar_height()`, not a hard-coded offset. New blocks fade in with
 `motion_fade_in` keyed by the tab id.
 
+A tab that is a pane group names itself after its panes: the user's rename
+wins, otherwise "<active pane title> +N"; same-kind panes show the kind icon,
+mixed kinds the generic Panes icon, and a dirty editor in the group marks the
+tab. The count lives in the label, there is no extra chrome. Hovering such a
+tab (active or not, strip or sidebar) opens, after 350 ms, a 240 px
+`popover_with_exit` list of its panes (`ListItem`: icon, title, check on the
+active one); a click focuses the pane. It never opens over a context menu,
+another popover, a rename or a drag, and it replaces the tooltip.
+
+Drag and drop. A dragged tab or pane shows the shared mini chip (`PaneDragChip`:
+icon and title on a `popover` surface, offset 12 px from the pointer). Over a
+pane area the drop zone is a `primary` highlight (18 % fill, 1 px 70 % ring)
+over the half the pane would occupy (the whole pane for a swap), absolutely
+positioned and faded in with `motion_fade_in`, so it never shifts layout and
+respects the `animations` level. A pane dragged over a tab block highlights the
+block the same way (it joins that group); over empty strip space it shows the
+`tab_drop_marker` after the last tab of its Space (a new tab will be created
+there). Rejected targets (other Space, a tab onto itself, pinned merges, a
+zoomed tab) show nothing. Esc cancels; the strips scroll near their ends.
+
 Deviation: the selected ring is `line_subtle` as specified, but that token is
 almost invisible against the sunken fill in both Dark (3.5 % white) and Light
 (`#edece7` on `#d8d0ba`); the sunken fill and the semibold label carry the

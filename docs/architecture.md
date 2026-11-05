@@ -248,14 +248,70 @@ moving a pane between tabs moves its resources with it. New modules:
   drag uses `AxisGeometry::boundary_fraction`, `pane_frame` + `pane_bar` from
   two panes on (a single pane stays full-bleed, no bar),
   the zoom overlay, and the `DraggedPane` payload (the bar is the drag source
-  with a mini-chip ghost; drop handling is DnD work). Each pane is wrapped in the
-  key context `Pane`.
+  with a mini-chip ghost, `PaneDragChip`, shared with tab drags). Each pane is
+  wrapped in the key context `Pane`.
+- `pane_dnd` / `pane_drop` / `pane_menu` - tab and pane drag and drop (below)
+  and the pane entries of the tab context menu.
+- `tab_hover` - the hover list of a pane-group tab (below).
 - `pane_actions` - split (`Right`/`Down` fall back to the other axis when the
   requested one has no room, `Left`/`Up` do not), close (last pane closes the
   tab; a dirty editor asks only when it is the last view of its document;
   focus goes to the spatial neighbour), focus by direction / cycle, zoom, move
   (swap), `sync_tab_kind` (a tab's kind follows its first pane).
 - `zoom` - runtime-only per-tab zoom state.
+
+**Drag and drop (`pane_dnd`, `pane_drop`).** `pane_dnd` is pure: zone
+hit-testing on the solved pane rectangles (`tiling::pane_drop_target`; a point
+in a gap hits nothing, the pane bar always counts as the centre zone), the
+highlight rectangle (`tiling::drop_preview`, the half the dropped pane will
+occupy), the guard (`drop_allowed`: same Space only, no tab onto itself, a
+pinned tab is never merged away) and the plans, each computed on clones so a
+rejection changes nothing:
+
+| Payload | Target | Result |
+|---|---|---|
+| pane | pane zone, same tab, edge | `move_pane` semantics: re-inserted next to the target, `NoRoom` checked |
+| pane | pane zone or bar, same tab, centre | the two panes swap |
+| pane | tab block of another tab | detached (source tab closes only if it had one pane), smart split of that tab's focused pane |
+| pane | empty strip / sidebar area | detached into a new tab at the end of its Space (`plan_detach`); a lone pane is a no-op |
+| tab | pane zone, edge | whole pane group merged as a nested axis (`insert_subtree`), source tab removed |
+| tab | pane zone or bar, centre | same, along the target's longer axis, other axis as fallback |
+| tab | tab block | reorder (`TabStore::reorder`, pinned and Space guards unchanged) |
+
+`pane_drop` owns the hover state (`PaneDnd`), registers the typed handlers
+(`on_drag_move` / `on_drop` for `DraggedPane` and `DraggedTab` on the pane
+area, `DraggedPane` on tab blocks and the strip), paints the zone overlay and
+applies a plan: layouts of both tabs, `SshTab.tab_id` of the moved panes,
+`sync_tab_kind` / `sync_tab_dirty` for both tabs (a lone non-terminal pane also
+sets the tab title and path), zoom of both tabs cleared, then the target tab is
+selected and the moved pane focused. Resources keyed by pane id (views,
+sessions, editor bindings, dirty state) need no move; an emptied source tab is
+removed without retiring any pane. A rejected move (no room for the 240 x 120
+px minimum) is reported through the notification center. Handlers are typed,
+carry no occluding hitbox and the overlay is input-transparent, so
+`ExternalPaths` / `DraggedPaths` drops still reach terminals and editors. Esc
+during a drag is handled in the capture phase on the workspace root
+(`cancel_drag_on_escape`: `stop_active_drag` and state reset); GPUI 0.2.2
+itself only cancels on mouse-up. Tab strips scroll while a drag is near an end
+(`edge_scroll`, driven by pointer moves, not a timer). While a tab is zoomed
+its pane area accepts no drops (the zoomed pane covers the zones).
+
+**Hover list (`tab_hover`).** `HoverIntent` is a generation counter: each
+enter/leave bumps it and a delayed open (350 ms, 80 ms when another list is
+already open) or close (220 ms grace so the pointer can reach the list) acts
+only if its generation is still current. The one shared `PresenceSlot` renders
+a `popover_with_exit` of `ListItem` rows (`pane_group_naming::pane_list`);
+a click runs `activate_pane`. It is suppressed through `hover_list_allowed`
+while a context menu, popover, rename, dialog or drag is active and closed as
+soon as one appears. Tabs with two or more panes show it instead of the
+tooltip.
+
+**Tab context menu.** `pane_menu` adds Split Right, Split Down (disabled with
+the reason for singleton kinds), Move Pane to New Tab and Close Other Panes.
+They call the same methods as the `pane::SplitRight`, `pane::SplitDown`,
+`pane::MoveToNewTab` and `pane::CloseOthers` commands (the last two are new
+`CommandId`s registered by the workspace provider). Close Other Panes keeps a
+pane that is the last view of a dirty document and says so.
 - `session_io` - session v3 capture / restore (below).
 
 Zoom keeps the tree laid out and replaces the zoomed pane's slot with an empty

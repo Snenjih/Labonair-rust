@@ -54,6 +54,9 @@ pub(crate) struct PaneDnd {
     pub hover: Option<DropHover>,
     /// A pane dragged over this tab block (it would join the group).
     pub tab_join: Option<u64>,
+    /// The tab block under a dragged pane, whether or not it accepts the
+    /// drop: the strip's new-tab marker only shows between blocks.
+    pub over_block: Option<u64>,
     /// A pane dragged over empty strip space: the tab after which the new
     /// tab would appear (the last tab of the pane's Space).
     pub strip_end: Option<u64>,
@@ -278,15 +281,20 @@ impl Workspace {
             pane: drag.pane_id,
             tab: drag.tab_id,
         };
-        let next = if hovered {
-            (drag.tab_id != tab && self.payload_allowed(payload, tab, cx)).then_some(tab)
-        } else if self.pane_dnd.tab_join == Some(tab) {
-            None
+        let (join, over) = if hovered {
+            let join =
+                (drag.tab_id != tab && self.payload_allowed(payload, tab, cx)).then_some(tab);
+            (join, Some(tab))
         } else {
-            return;
+            let clear = |current: Option<u64>| if current == Some(tab) { None } else { current };
+            (
+                clear(self.pane_dnd.tab_join),
+                clear(self.pane_dnd.over_block),
+            )
         };
-        if next != self.pane_dnd.tab_join {
-            self.pane_dnd.tab_join = next;
+        if join != self.pane_dnd.tab_join || over != self.pane_dnd.over_block {
+            self.pane_dnd.tab_join = join;
+            self.pane_dnd.over_block = over;
             cx.notify();
         }
     }
@@ -625,13 +633,63 @@ impl Workspace {
         cx.notify();
     }
 
+    /// `pane::MoveToNewTab`: detach the focused pane of the active tab.
+    pub fn move_focused_pane_to_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some((_, pane)) = self.active_pane(cx) {
+            self.detach_pane_to_new_tab(pane, window, cx);
+        }
+    }
+
+    /// `pane::CloseOthers` for the focused pane of the active tab.
+    pub fn close_other_panes_of_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some((_, pane)) = self.active_pane(cx) {
+            self.close_other_panes(pane, window, cx);
+        }
+    }
+
+    /// Close every pane of `keep`'s tab except `keep`. An editor pane that is
+    /// the last view of a dirty document is kept (closing it would lose
+    /// edits; close it on its own to get the usual confirmation) and the
+    /// user is told how many stayed.
+    pub(crate) fn close_other_panes(
+        &mut self,
+        keep: PaneId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab) = self.tab_of_pane(keep) else {
+            return;
+        };
+        let others: Vec<PaneId> = self
+            .tab_pane_ids(tab)
+            .into_iter()
+            .filter(|p| *p != keep)
+            .collect();
+        let mut kept = 0;
+        for pane in others {
+            if self.pane_close_needs_confirmation(pane, cx) {
+                kept += 1;
+            } else {
+                self.do_close_pane(pane, window, cx);
+            }
+        }
+        if kept > 0 {
+            self.notify_pane_problem(
+                "Some panes were kept",
+                &format!("{kept} pane(s) with unsaved changes were not closed."),
+                cx,
+            );
+        }
+        self.activate_pane(keep, window, cx);
+    }
+
     /// The tab marker state for block `id` while a drag is active:
     /// `(join highlight, end-of-strip marker)`.
     pub(crate) fn tab_drop_hints(&self, id: u64, cx: &App) -> (bool, bool) {
         let dragging = cx.has_active_drag();
         let join = dragging && self.pane_dnd.tab_join == Some(id);
         let end =
-            dragging && self.pane_dnd.tab_join.is_none() && self.pane_dnd.strip_end == Some(id);
+            dragging && self.pane_dnd.over_block.is_none() && self.pane_dnd.strip_end == Some(id);
         (join, end)
     }
 }
