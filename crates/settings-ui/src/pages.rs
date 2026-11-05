@@ -342,9 +342,17 @@ const APPEARANCE_GROUPS: &[Group] = &[
         paths!("appearance": "translucentSurfaces"),
     ),
     ("Tabs", paths!("appearance": "tabsLocation")),
+    ("Tab Behavior", paths!("appearance": "tabFillSpace")),
     (
         "Panes",
-        paths!("appearance": "paneLayout", "cornerRadiusScale"),
+        paths!("appearance":
+            "paneLayout",
+            "paneHighlight",
+            "paneHighlightColor",
+            "paneHighlightOpacity",
+            "dimInactivePanes",
+            "cornerRadiusScale"
+        ),
     ),
     ("Density", paths!("appearance": "uiDensity")),
     (

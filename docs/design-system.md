@@ -225,7 +225,8 @@ with a keyboard-operable numeric control when the range must also support
 precise keyboard adjustment.
 
 Select popovers use a caller-owned GPUI `ListState` and render option rows
-virtually, with a 320 logical-pixel maximum viewport. While open, Settings
+virtually. Their height follows the number of rows and is capped at 320
+logical pixels, avoiding empty space in short lists. While open, Settings
 supports arrow navigation, Home/End, Page Up/Down, Enter/Space to choose, and
 Escape to dismiss; moving the highlight scrolls the selected row into view.
 Anchored rich-content popovers and menu cards invoke their owner-provided

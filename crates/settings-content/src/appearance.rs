@@ -76,6 +76,12 @@ pub struct AppearanceContent {
     pub animations: Option<Animations>,
     /// Pane layout inside a tab (`comfortable` floating | `compact`).
     pub pane_layout: Option<PaneLayout>,
+    /// Outline the active pane.
+    pub pane_highlight: Option<bool>,
+    /// Outline colour of the active pane as a hex string (`#rrggbb`).
+    pub pane_highlight_color: Option<String>,
+    /// Opacity of the active-pane outline, percent (0–100).
+    pub pane_highlight_opacity: Option<u32>,
     /// Editor/terminal text font family (empty = the theme's own mono family).
     pub buffer_font_family: Option<String>,
     /// Editor/terminal text font size, px (T20-007 `theme_settings` layer).
@@ -93,6 +99,10 @@ pub struct AppearanceContent {
     pub translucent_surfaces: Option<bool>,
     /// `"titlebar"` | `"sidebar"`.
     pub tabs_location: Option<String>,
+    /// Tabs share the whole strip equally instead of sizing to their title.
+    pub tab_fill_space: Option<bool>,
+    /// Darken inactive panes so the active one stands out.
+    pub dim_inactive_panes: Option<bool>,
     /// Zen mode: show the window header bar.
     pub zen_mode_show_header: Option<bool>,
     /// Zen mode: show the bottom status bar.
@@ -111,6 +121,9 @@ impl AppearanceContent {
             reduce_motion: None,
             animations: Some(Animations::System),
             pane_layout: Some(PaneLayout::Comfortable),
+            pane_highlight: Some(false),
+            pane_highlight_color: Some("#3b82f6".to_string()),
+            pane_highlight_opacity: Some(100),
             buffer_font_family: Some(String::new()),
             buffer_font_size: Some(13),
             buffer_line_height: Some(1.55),
@@ -118,6 +131,8 @@ impl AppearanceContent {
             corner_radius_scale: Some(1.0),
             translucent_surfaces: Some(false),
             tabs_location: Some("titlebar".to_string()),
+            tab_fill_space: Some(false),
+            dim_inactive_panes: Some(false),
             zen_mode_show_header: Some(true),
             zen_mode_show_statusbar: Some(true),
         }

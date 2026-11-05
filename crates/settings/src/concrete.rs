@@ -119,6 +119,21 @@ impl ThemeSettings {
         self.0.pane_layout.unwrap_or_default()
     }
 
+    /// Whether the active pane is outlined.
+    pub fn pane_highlight(&self) -> bool {
+        self.0.pane_highlight.unwrap_or(false)
+    }
+
+    /// Active-pane outline colour (hex).
+    pub fn pane_highlight_color(&self) -> &str {
+        self.0.pane_highlight_color.as_deref().unwrap_or("")
+    }
+
+    /// Active-pane outline opacity, percent (0–100).
+    pub fn pane_highlight_opacity(&self) -> u32 {
+        self.0.pane_highlight_opacity.unwrap_or(100).min(100)
+    }
+
     /// Per-theme light/dark variant selection (`themeVariantOverrides`).
     pub fn theme_variant_overrides(&self) -> std::collections::BTreeMap<String, serde_json::Value> {
         self.0.theme_variant_overrides.clone().unwrap_or_default()
@@ -127,6 +142,16 @@ impl ThemeSettings {
     /// Where the tab strip is drawn (`"titlebar"` | `"sidebar"` | …).
     pub fn tabs_location(&self) -> &str {
         self.0.tabs_location.as_deref().unwrap_or("titlebar")
+    }
+
+    /// Tabs split the whole strip equally.
+    pub fn tab_fill_space(&self) -> bool {
+        self.0.tab_fill_space.unwrap_or(false)
+    }
+
+    /// Inactive panes are darkened.
+    pub fn dim_inactive_panes(&self) -> bool {
+        self.0.dim_inactive_panes.unwrap_or(false)
     }
 
     /// Zen mode keeps the app header visible.

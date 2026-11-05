@@ -30,6 +30,8 @@ pub use labonair_ui_kit::{
     ChipHue, ListItem, SliderEvent, SliderState, SliderValue,
 };
 
+pub use gpui_component::color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState};
+
 pub(crate) use crate::apply::*;
 pub(crate) use crate::pages::*;
 pub(crate) use crate::schema::*;
@@ -247,6 +249,9 @@ pub struct SettingsView {
     /// One `SliderState` per slider field, created lazily by the renderer.
     pub(crate) slider_states: HashMap<&'static str, Entity<SliderState>>,
     pub(crate) _slider_subscriptions: Vec<Subscription>,
+    /// One `ColorPickerState` per colour field, created lazily by the renderer.
+    pub(crate) color_states: HashMap<&'static str, Entity<ColorPickerState>>,
+    pub(crate) _color_subscriptions: Vec<Subscription>,
     /// The latest slider value not yet committed to the store.
     pub(crate) pending_slider: Option<(&'static str, f64)>,
     pub(crate) slider_commit: Task<()>,
@@ -359,6 +364,8 @@ impl SettingsView {
             published_diagnostics: None,
             slider_states: HashMap::new(),
             _slider_subscriptions: Vec::new(),
+            color_states: HashMap::new(),
+            _color_subscriptions: Vec::new(),
             pending_slider: None,
             slider_commit: Task::ready(()),
             inline_views: HashMap::new(),
@@ -1367,6 +1374,41 @@ impl SettingsView {
         self.number_input_key = None;
         self._number_input_subscription = None;
         cx.notify();
+    }
+
+    /// The colour-picker entity of `json_path`, created on first use and kept
+    /// in sync with the stored hex string (a Reset or file edit moves it).
+    pub(crate) fn color_state(
+        &mut self,
+        json_path: &'static str,
+        stored: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<ColorPickerState> {
+        let color = labonair_theme::parse_color(stored).ok();
+        if let Some(state) = self.color_states.get(json_path).cloned() {
+            if state.read(cx).value() != color {
+                if let Some(color) = color {
+                    state.update(cx, |state, cx| state.set_value(color, window, cx));
+                }
+            }
+            return state;
+        }
+        let state = cx.new(|cx| {
+            let mut state = ColorPickerState::new(window, cx);
+            if let Some(color) = color {
+                state = state.default_value(color);
+            }
+            state
+        });
+        let subscription = cx.subscribe(&state, move |this, _, event: &ColorPickerEvent, cx| {
+            let ColorPickerEvent::Change(color) = event;
+            let hex = color.map(labonair_theme::to_hex).unwrap_or_default();
+            this.set_field_value(json_path, Value::String(hex), cx);
+        });
+        self._color_subscriptions.push(subscription);
+        self.color_states.insert(json_path, state.clone());
+        state
     }
 
     // ── sliders (R10-002) ─────────────────────────────────────────────────

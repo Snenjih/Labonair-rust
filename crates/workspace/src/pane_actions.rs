@@ -153,6 +153,7 @@ impl Workspace {
         }
         self.layouts.insert(tab, candidate);
         self.zoom.clear(tab);
+        self.fresh_pane = Some(new_id);
         self.sync_tab_kind(tab, cx);
         self.focus_pane(new_id, window, cx);
         cx.notify();

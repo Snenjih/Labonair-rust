@@ -606,6 +606,11 @@ impl SettingsView {
                     None => div().into_any_element(),
                 }
             }
+            FieldControl::Color => {
+                let stored = value.as_ref().and_then(|v| v.as_str()).unwrap_or("");
+                let picker = self.color_state(json_path, stored, window, cx);
+                ColorPicker::new(&picker).into_any_element()
+            }
             FieldControl::Tiles(options) => {
                 control_below = true;
                 let current = value

@@ -75,6 +75,8 @@ pub enum FieldControl {
     },
     /// A closed choice shown as radio-style preview tiles (Apple-style).
     Tiles(&'static [TileOption]),
+    /// A colour stored as a hex string, edited with a colour picker.
+    Color,
 }
 
 /// One preview tile of a [`FieldControl::Tiles`] field. `token` is the stored
@@ -245,7 +247,8 @@ macro_rules! field {
 /// (`pages.rs`) decides on-screen placement, not this list.
 pub fn all_fields() -> Vec<AnyField> {
     use FieldControl::{
-        Float, FontFamily, Int, Segmented, Select, SftpColumns, Slider, Switch, Text, Tiles,
+        Color, Float, FontFamily, Int, Segmented, Select, SftpColumns, Slider, Switch, Text,
+        Tiles,
     };
     let fields = vec![
         // ── general ─────────────────────────────────────────────────────
@@ -329,6 +332,29 @@ pub fn all_fields() -> Vec<AnyField> {
             "Comfortable shows panes as floating rounded blocks with a gap; compact fills the area edge to edge."
         ),
         field!(
+            appearance.pane_highlight,
+            "paneHighlight",
+            Switch,
+            "Highlight active pane",
+            "Outline the active pane so it stands out from the others."
+        ),
+        field!(
+            appearance.pane_highlight_color,
+            "paneHighlightColor",
+            Color,
+            "Highlight color",
+            "Outline color of the active pane."
+        ),
+        field_with_details!(
+            appearance.pane_highlight_opacity,
+            "paneHighlightOpacity",
+            Slider { min: 0.0, max: 100.0, step: 1.0, int: true },
+            "Highlight opacity",
+            "How opaque the active pane outline is.",
+            "%",
+            "0% is invisible, 100% is fully opaque."
+        ),
+        field!(
             appearance.ui_density,
             "uiDensity",
             Segmented(&[
@@ -382,6 +408,20 @@ pub fn all_fields() -> Vec<AnyField> {
             Segmented(&[("titlebar", "Titlebar"), ("sidebar", "Sidebar")]),
             "Tab bar location",
             "Where the tab strip lives: in the titlebar above the content, or in the sidebar."
+        ),
+        field!(
+            appearance.tab_fill_space,
+            "tabFillSpace",
+            Switch,
+            "Fill available space",
+            "Tabs share the whole tab strip equally. Off sizes each tab to its title, up to a maximum."
+        ),
+        field!(
+            appearance.dim_inactive_panes,
+            "dimInactivePanes",
+            Switch,
+            "Dim inactive panes",
+            "Darken panes that are not active so the active one stands out."
         ),
         field!(
             appearance.zen_mode_show_header,

@@ -9,6 +9,7 @@
 //! [`pane_frame`] and a [`pane_bar`]. Zoom paints only the zoomed pane; the
 //! rest of the tree keeps its layout state but is not rendered until zoom ends.
 
+use labonair_settings::Settings as _;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     canvas, div, px, AnyElement, AppContext, ClickEvent, Context, DragMoveEvent,
@@ -89,6 +90,11 @@ struct TreeCtx {
     gap: f32,
     active: Option<PaneId>,
     zoomed: Option<PaneId>,
+    fresh: Option<PaneId>,
+    /// `appearance.dimInactivePanes`: darken every pane but the active one.
+    dim_inactive: bool,
+    /// `appearance.paneHighlightColor`: outline drawn around the active pane.
+    highlight: Option<gpui::Hsla>,
 }
 
 /// A flex child that takes `weight` of the free space (basis 0, no shrink).
@@ -150,6 +156,10 @@ impl Workspace {
             gap: metrics.gap,
             active: layout.active,
             zoomed,
+            fresh: self.fresh_pane,
+            dim_inactive: labonair_settings::ThemeSettings::try_get(cx)
+                .is_some_and(|settings| settings.dim_inactive_panes()),
+            highlight: self.theme.read(cx).metrics().pane_highlight,
         };
         // Culling: while a pane is zoomed the rest of the tree is not rendered
         // (the panes live on in their layout and items, only the elements go).
@@ -423,7 +433,7 @@ impl Workspace {
             .pb(inset)
             .child(body);
 
-        pane_frame(("pane-frame", pane), c, ctx.style, focused)
+        let frame = pane_frame(("pane-frame", pane), c, ctx.style, focused)
             .size_full()
             .on_mouse_down(
                 MouseButton::Left,
@@ -435,7 +445,34 @@ impl Workspace {
             )
             .child(bar)
             .child(body)
-            .motion_fade_in(("pane-in", pane), c)
-            .into_any_element()
+            .when(ctx.dim_inactive && !focused, |frame| {
+                let radius = if ctx.style.is_framed() { c.radius.lg } else { 0.0 };
+                frame.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .rounded(px(radius))
+                        .bg(c.bg.opacity(0.45)),
+                )
+            })
+            // An overlay, not a border: the outline must not shift the content.
+            .when_some(ctx.highlight.filter(|_| focused), |frame, color| {
+                let radius = if ctx.style.is_framed() { c.radius.lg } else { 0.0 };
+                frame.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .rounded(px(radius))
+                        .border_2()
+                        .border_color(color),
+                )
+            });
+        // Only the new pane fades in; fading the split source would blank it
+        // for a frame (it is first mounted as a frame here, at opacity 0).
+        if ctx.fresh == Some(pane) {
+            frame.motion_fade_in(("pane-in", pane), c).into_any_element()
+        } else {
+            frame.into_any_element()
+        }
     }
 }
