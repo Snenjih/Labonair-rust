@@ -799,6 +799,14 @@ impl SftpView {
         &self.session_id
     }
 
+    pub fn host_id(&self) -> &str {
+        &self.host_id
+    }
+
+    pub fn host_label(&self) -> SharedString {
+        self.host_label.clone()
+    }
+
     pub fn sftp_handle(&self) -> Option<SftpSessionHandle> {
         self.sftp_handle.clone()
     }

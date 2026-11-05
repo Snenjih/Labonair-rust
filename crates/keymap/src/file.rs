@@ -930,13 +930,13 @@ mod tests {
     }
 
     #[test]
-    fn shipped_workspace_keymap_binds_left_and_up_pane_splits() {
+    fn shipped_workspace_keymap_binds_pane_splits_in_the_pane_context() {
         let file = parse_keymap_jsonc(default_asset()).expect("default keymap parses");
         let terminal = file
             .0
             .iter()
-            .find(|block| block.context.as_deref() == Some("Terminal"))
-            .expect("terminal keymap block");
+            .find(|block| block.context.as_deref() == Some("Pane"))
+            .expect("pane keymap block");
         let chord_prefix = if cfg!(target_os = "macos") {
             "cmd-k"
         } else {
@@ -945,6 +945,10 @@ mod tests {
         for (keystrokes, action) in [
             (format!("{chord_prefix} left"), "pane::SplitLeft"),
             (format!("{chord_prefix} up"), "pane::SplitUp"),
+            (
+                format!("{}-\\", &chord_prefix[..chord_prefix.len() - 2]),
+                "pane::SplitRight",
+            ),
         ] {
             assert!(terminal
                 .bindings

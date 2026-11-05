@@ -506,6 +506,15 @@ impl TabStore {
         });
     }
 
+    /// Re-point a tab at the kind of its first pane (pane groups).
+    pub fn set_kind(&mut self, id: u64, kind: TabKind, cx: &mut Context<Self>) {
+        self.with_tab(id, cx, |t| {
+            let changed = t.kind != kind;
+            t.kind = kind;
+            changed
+        });
+    }
+
     pub fn set_dirty(&mut self, id: u64, dirty: bool, cx: &mut Context<Self>) {
         self.with_tab(id, cx, |t| {
             let changed = t.dirty != dirty;

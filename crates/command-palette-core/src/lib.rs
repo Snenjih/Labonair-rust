@@ -24,6 +24,9 @@ pub enum CommandContext {
     Sftp,
     Home,
     SshTerminal,
+    /// Any pane of a tab's pane group (every pane kind); the key context
+    /// `Pane` wraps each pane, so `pane::*` bindings work in any of them.
+    Pane,
 }
 
 /// Stable identity of a built-in command.
@@ -95,6 +98,16 @@ pub enum CommandId {
     NewSshConnection,
     NewQuickSsh,
     FocusNextPane,
+    FocusPrevPane,
+    FocusPaneLeft,
+    FocusPaneRight,
+    FocusPaneUp,
+    FocusPaneDown,
+    TogglePaneZoom,
+    MovePaneLeft,
+    MovePaneRight,
+    MovePaneUp,
+    MovePaneDown,
     SelectTab1,
     SelectTab2,
     SelectTab3,
@@ -568,6 +581,16 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::ResetPaneSizes, "pane::ResetPaneSizes"),
     (CommandId::ClosePane, "pane::Close"),
     (CommandId::FocusNextPane, "pane::FocusNext"),
+    (CommandId::FocusPrevPane, "pane::FocusPrev"),
+    (CommandId::FocusPaneLeft, "pane::FocusLeft"),
+    (CommandId::FocusPaneRight, "pane::FocusRight"),
+    (CommandId::FocusPaneUp, "pane::FocusUp"),
+    (CommandId::FocusPaneDown, "pane::FocusDown"),
+    (CommandId::TogglePaneZoom, "pane::ToggleZoom"),
+    (CommandId::MovePaneLeft, "pane::MoveLeft"),
+    (CommandId::MovePaneRight, "pane::MoveRight"),
+    (CommandId::MovePaneUp, "pane::MoveUp"),
+    (CommandId::MovePaneDown, "pane::MoveDown"),
     (CommandId::ClearTerminal, "terminal::Clear"),
     (CommandId::Find, "search::Toggle"),
     (CommandId::OpenFile, "editor::OpenFile"),

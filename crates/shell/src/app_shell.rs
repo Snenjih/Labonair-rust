@@ -198,7 +198,7 @@ impl Render for AppShell {
         let show_statusbar = labonair_settings::ThemeSettings::try_get(cx)
             .map(|s| s.zen_mode_show_statusbar())
             .unwrap_or(true);
-        let can_split = self.workspace.read(cx).active_is_terminal(cx);
+        let can_split = self.workspace.read(cx).active_can_split(cx);
         let has_split = self.workspace.read(cx).active_has_split(cx);
 
         // The shell root carries only the three genuine window actions; every

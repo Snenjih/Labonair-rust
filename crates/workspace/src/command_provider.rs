@@ -88,6 +88,18 @@ pub fn register_hosts_handler(
 
 struct WorkspaceTerminalCommandTarget(Entity<Workspace>);
 
+/// Surfaces that live in a pane: the `pane::*` commands are offered in all of
+/// them (the key context `Pane` wraps every pane).
+const PANE_CONTEXTS: &[CommandContext] = &[
+    CommandContext::Terminal,
+    CommandContext::SshTerminal,
+    CommandContext::Editor,
+    CommandContext::EditorVim,
+    CommandContext::EditorHelix,
+    CommandContext::Preview,
+    CommandContext::Sftp,
+];
+
 impl TerminalCommandTarget for WorkspaceTerminalCommandTarget {
     fn clear_active_terminal(&self, cx: &mut gpui::App) {
         self.0
@@ -190,6 +202,44 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
     let workspace_handle = workspace.clone();
     register!(CommandId::FocusNextPane, move |window, cx| {
         workspace_handle.update(cx, |workspace, cx| workspace.focus_next_pane(window, cx));
+    });
+
+    for (id, dir) in [
+        (CommandId::FocusPaneLeft, crate::pane::SplitDirection::Left),
+        (
+            CommandId::FocusPaneRight,
+            crate::pane::SplitDirection::Right,
+        ),
+        (CommandId::FocusPaneUp, crate::pane::SplitDirection::Up),
+        (CommandId::FocusPaneDown, crate::pane::SplitDirection::Down),
+    ] {
+        let workspace_handle = workspace.clone();
+        register!(id, move |window, cx| {
+            workspace_handle.update(cx, |workspace, cx| {
+                workspace.focus_pane_dir(dir, window, cx)
+            });
+        });
+    }
+    for (id, dir) in [
+        (CommandId::MovePaneLeft, crate::pane::SplitDirection::Left),
+        (CommandId::MovePaneRight, crate::pane::SplitDirection::Right),
+        (CommandId::MovePaneUp, crate::pane::SplitDirection::Up),
+        (CommandId::MovePaneDown, crate::pane::SplitDirection::Down),
+    ] {
+        let workspace_handle = workspace.clone();
+        register!(id, move |window, cx| {
+            workspace_handle.update(cx, |workspace, cx| workspace.move_pane_dir(dir, window, cx));
+        });
+    }
+    let workspace_handle = workspace.clone();
+    register!(CommandId::FocusPrevPane, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.focus_pane_cycle(false, window, cx)
+        });
+    });
+    let workspace_handle = workspace.clone();
+    register!(CommandId::TogglePaneZoom, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.toggle_zoom(window, cx));
     });
 
     for (id, index) in [
@@ -515,12 +565,17 @@ impl CommandProvider for WorkspaceCommandProvider {
                 .with_icon(CommandIcon::Close),
             CommandDescriptor::new(CommandId::NextTab, "Next Tab", "Tab Actions")
                 .with_default_binding("ctrl-tab", None)
+                .with_default_binding("cmd-shift-]", None)
                 .with_icon(CommandIcon::ChevronRight),
             CommandDescriptor::new(CommandId::PrevTab, "Previous Tab", "Tab Actions")
                 .with_default_binding("ctrl-shift-tab", None)
+                .with_default_binding("cmd-shift-[", None)
                 .with_icon(CommandIcon::ChevronRight),
             CommandDescriptor::new(CommandId::FocusNextPane, "Focus Next Pane", "Layout")
                 .with_default_binding("cmd-]", None)
+                .with_icon(CommandIcon::ChevronRight),
+            CommandDescriptor::new(CommandId::FocusPrevPane, "Focus Previous Pane", "Layout")
+                .with_default_binding("cmd-[", None)
                 .with_icon(CommandIcon::ChevronRight),
             CommandDescriptor::new(CommandId::SwitchTab, "Switch Tab…", "Layout")
                 .with_icon(CommandIcon::Terminal)
@@ -571,25 +626,54 @@ impl CommandProvider for WorkspaceCommandProvider {
 
         commands.extend([
             CommandDescriptor::new(CommandId::SplitLeft, "Split Pane Left", "Layout")
-                .with_contexts(&[CommandContext::Terminal])
-                .with_default_binding("cmd-k left", Some(CommandContext::Terminal)),
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-k left", Some(CommandContext::Pane)),
             CommandDescriptor::new(CommandId::SplitRight, "Split Pane Right", "Layout")
-                .with_contexts(&[CommandContext::Terminal])
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-\\", Some(CommandContext::Pane))
                 .with_default_binding("cmd-d", Some(CommandContext::Terminal))
                 .with_icon(CommandIcon::ChevronRight),
             CommandDescriptor::new(CommandId::SplitUp, "Split Pane Up", "Layout")
-                .with_contexts(&[CommandContext::Terminal])
-                .with_default_binding("cmd-k up", Some(CommandContext::Terminal)),
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-k up", Some(CommandContext::Pane)),
             CommandDescriptor::new(CommandId::SplitDown, "Split Pane Down", "Layout")
-                .with_contexts(&[CommandContext::Terminal])
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-shift-\\", Some(CommandContext::Pane))
                 .with_default_binding("cmd-shift-d", Some(CommandContext::Terminal))
                 .with_icon(CommandIcon::ChevronDown),
             CommandDescriptor::new(CommandId::ResetPaneSizes, "Reset Pane Sizes", "Layout")
-                .with_contexts(&[CommandContext::Terminal]),
+                .with_contexts(PANE_CONTEXTS),
             CommandDescriptor::new(CommandId::ClosePane, "Close Active Pane", "Layout")
-                .with_contexts(&[CommandContext::Terminal])
-                .with_default_binding("cmd-shift-w", Some(CommandContext::Terminal))
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-shift-w", Some(CommandContext::Pane))
                 .with_icon(CommandIcon::Close),
+            CommandDescriptor::new(CommandId::FocusPaneLeft, "Focus Pane Left", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-left", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::FocusPaneRight, "Focus Pane Right", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-right", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::FocusPaneUp, "Focus Pane Up", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-up", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::FocusPaneDown, "Focus Pane Down", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-down", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::TogglePaneZoom, "Toggle Pane Zoom", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-shift-enter", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::MovePaneLeft, "Move Pane Left", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-shift-left", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::MovePaneRight, "Move Pane Right", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-shift-right", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::MovePaneUp, "Move Pane Up", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-shift-up", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::MovePaneDown, "Move Pane Down", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-shift-down", Some(CommandContext::Pane)),
         ]);
 
         commands
@@ -626,21 +710,54 @@ mod tests {
     #[test]
     fn workspace_split_commands_expose_all_four_directions() {
         let commands = WorkspaceCommandProvider.commands();
-        for (id, title, binding) in [
-            (CommandId::SplitLeft, "Split Pane Left", "cmd-k left"),
-            (CommandId::SplitRight, "Split Pane Right", "cmd-d"),
-            (CommandId::SplitUp, "Split Pane Up", "cmd-k up"),
-            (CommandId::SplitDown, "Split Pane Down", "cmd-shift-d"),
+        for (id, title, binding, context) in [
+            (
+                CommandId::SplitLeft,
+                "Split Pane Left",
+                "cmd-k left",
+                CommandContext::Pane,
+            ),
+            (
+                CommandId::SplitRight,
+                "Split Pane Right",
+                "cmd-\\",
+                CommandContext::Pane,
+            ),
+            (
+                CommandId::SplitRight,
+                "Split Pane Right",
+                "cmd-d",
+                CommandContext::Terminal,
+            ),
+            (
+                CommandId::SplitUp,
+                "Split Pane Up",
+                "cmd-k up",
+                CommandContext::Pane,
+            ),
+            (
+                CommandId::SplitDown,
+                "Split Pane Down",
+                "cmd-shift-\\",
+                CommandContext::Pane,
+            ),
+            (
+                CommandId::SplitDown,
+                "Split Pane Down",
+                "cmd-shift-d",
+                CommandContext::Terminal,
+            ),
         ] {
             let command = commands
                 .iter()
                 .find(|command| command.id == id)
                 .expect("workspace split descriptor");
             assert_eq!(command.title, title);
-            assert_eq!(command.contexts, vec![CommandContext::Terminal]);
+            // Offered in every pane kind, not only terminals.
+            assert!(command.contexts.contains(&CommandContext::Editor));
+            assert!(command.contexts.contains(&CommandContext::Terminal));
             assert!(command.default_bindings.iter().any(|candidate| {
-                candidate.keystrokes == binding
-                    && candidate.context == Some(CommandContext::Terminal)
+                candidate.keystrokes == binding && candidate.context == Some(context)
             }));
         }
         let reset = commands
@@ -648,7 +765,7 @@ mod tests {
             .find(|command| command.id == CommandId::ResetPaneSizes)
             .expect("reset pane sizes descriptor");
         assert_eq!(reset.title, "Reset Pane Sizes");
-        assert_eq!(reset.contexts, vec![CommandContext::Terminal]);
+        assert!(reset.contexts.contains(&CommandContext::Preview));
         assert!(reset.default_bindings.is_empty());
     }
 

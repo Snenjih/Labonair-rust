@@ -39,10 +39,13 @@ pub mod markdown;
 pub mod mcp_event_bridge;
 pub mod modal_layer;
 pub mod pane;
+pub mod pane_actions;
 pub mod pane_group;
 pub mod pane_group_naming;
+pub mod pane_items;
 pub mod pane_kind;
 pub mod pane_ops;
+pub mod pane_view;
 pub mod project_multibuffer;
 pub mod project_search;
 pub mod recent_projects;
@@ -59,6 +62,9 @@ pub mod tabs;
 pub mod tabs_panel;
 pub mod tiling;
 pub mod views;
+pub mod zoom;
+
+pub use pane_view::{DraggedPane, PaneDragChip};
 
 /// Re-export shim so `crate::theme::…` paths in the moved modules keep
 /// resolving. The runtime theme store lives in `labonair_theme::store`
@@ -88,10 +94,10 @@ use crate::mcp_event_bridge::McpEventBridge;
 use crate::ssh_event_bridge::SshEventBridge;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, point, px, relative, Animation, AnimationExt, App, AppContext, ClickEvent, ClipboardItem,
-    Context, DragMoveEvent, Entity, EventEmitter, ExternalPaths, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Task, Window,
+    div, point, px, Animation, AnimationExt, App, AppContext, ClickEvent, ClipboardItem, Context,
+    DragMoveEvent, Entity, EventEmitter, ExternalPaths, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
 use labonair_command_palette_core::CommandId;
 use labonair_git::{GitGraphService, GitService};
@@ -115,7 +121,7 @@ use tokio::runtime::Handle as TokioHandle;
 use crate::dock::{position_slug, RESIZE_HANDLE_SIZE};
 use crate::editor_git_bridge::{EditorGitContext, WorkspaceGitBridge};
 use crate::live_bridge::LiveCommand;
-use crate::pane::{CloseOutcome, Member, PaneId, SplitAxis, SplitDirection, WorkspaceLayout};
+use crate::pane::{PaneId, SplitDirection, WorkspaceLayout};
 use crate::project_search::root_safe_path;
 use crate::session::{
     plan_restore, PaneSessionKind, PaneSessionSnapshot, RestoreAction, RestoreResult,
@@ -372,6 +378,8 @@ pub(crate) struct SshTab {
     pub(crate) host_id: String,
     pub(crate) feed: RemoteFeed,
     pub(crate) tab_id: u64,
+    /// The terminal pane showing this session.
+    pub(crate) pane_id: PaneId,
 }
 
 struct WorkspaceSshEventSink(RemoteFeed);
@@ -492,8 +500,6 @@ fn persist_scrollback_captures(data_dir: &Path, captures: Vec<ScrollbackCapture>
     }
 }
 
-/// Thickness of a split-divider resize handle.
-const HANDLE: f32 = 6.0;
 /// Height of `AppShell`'s titlebar. The tab strip lives inside it, so the
 /// tab / new-tab menus (rendered via the window-anchored `context_menu`
 /// primitive) drop from the bar's bottom edge instead of the pointer's `y`.
@@ -677,6 +683,16 @@ pub struct Workspace {
     pub(crate) layouts: HashMap<u64, WorkspaceLayout>,
     /// Content view + session per pane id (pane ids are process-unique).
     pub(crate) panes: HashMap<PaneId, PaneEntry>,
+    /// Kind / title / dirty metadata of every pane (the pure half of the
+    /// `PaneId`-keyed store; the views live in the maps below).
+    pub(crate) pane_meta: crate::pane_kind::PaneMetaStore,
+    /// Editor panes that are not the first pane of their document.
+    pub(crate) editor_aliases: HashMap<PaneId, crate::pane_items::EditorBinding>,
+    /// Per-tab zoom overlay (runtime only).
+    pub(crate) zoom: crate::zoom::ZoomState,
+    /// Pane area of the active tab in window coordinates, measured during
+    /// paint and read by split / focus / resize logic.
+    pub(crate) pane_area: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
     /// Editor view per `Editor` tab id.
     pub(crate) editors: HashMap<u64, Entity<EditorView>>,
     /// Editor tab whose Editor-owned project search session is currently shown.
@@ -693,15 +709,9 @@ pub struct Workspace {
     pub(crate) markdown_previews: HashMap<u64, u64>,
     /// SVG preview tabs that follow edits from their source editor tab.
     pub(crate) svg_previews: HashMap<u64, u64>,
-    /// A PreviewView embedded in one Editor split group per source tab.
-    pub(crate) editor_side_previews: HashMap<
-        u64,
-        (
-            labonair_editor::EditorGroupId,
-            EditorSidePreviewKind,
-            Entity<PreviewView>,
-        ),
-    >,
+    /// Preview pane opened beside an editor document (`Open Preview to the
+    /// Side`), keyed by the editor slot; the view lives in `previews`.
+    pub(crate) editor_side_previews: HashMap<u64, (PaneId, EditorSidePreviewKind)>,
     /// Single preview tab that follows whichever editor was last activated.
     pub(crate) following_markdown_preview: Option<u64>,
     pub(crate) following_markdown_editor: Option<u64>,
@@ -892,7 +902,7 @@ impl Workspace {
                 .detach();
         }
         cx.subscribe(&tabs, |this, _, ev: &crate::tabs::ActiveTabChanged, cx| {
-            if let Some(editor) = this.editors.get(&ev.0).cloned() {
+            if let Some(editor) = this.editors.get(&this.editor_slot_for_tab(ev.0)).cloned() {
                 editor.update(cx, |e, cx| e.check_external(cx));
                 if this.following_markdown_preview.is_some() {
                     this.update_following_markdown_preview_for_editor(ev.0, cx);
@@ -1021,6 +1031,10 @@ impl Workspace {
             markdown_previews: HashMap::new(),
             svg_previews: HashMap::new(),
             editor_side_previews: HashMap::new(),
+            pane_meta: crate::pane_kind::PaneMetaStore::new(),
+            editor_aliases: HashMap::new(),
+            zoom: crate::zoom::ZoomState::default(),
+            pane_area: std::rc::Rc::new(std::cell::Cell::new(None)),
             following_markdown_preview: None,
             following_markdown_editor: None,
             following_svg_preview: None,
@@ -1367,7 +1381,8 @@ impl Workspace {
                     self.open_file(path, false, window, cx);
                     if let Some(state) = state {
                         let id = self.tabs.read(cx).active_id();
-                        if let Some(view) = self.editors.get(&id).cloned() {
+                        if let Some(view) = self.editors.get(&self.editor_slot_for_tab(id)).cloned()
+                        {
                             view.update(cx, |editor, _| editor.set_pending_session(state));
                         }
                     }
@@ -1905,7 +1920,7 @@ impl Workspace {
             return None;
         }
         self.editors
-            .get(&active.id)?
+            .get(&self.editor_slot_for_tab(active.id))?
             .read(cx)
             .path()
             .map(|p| p.to_string_lossy().into_owned())
@@ -1919,7 +1934,9 @@ impl Workspace {
         if active.kind != TabKind::Editor {
             return None;
         }
-        self.editors.get(&active.id).cloned()
+        self.editors
+            .get(&self.editor_slot_for_tab(active.id))
+            .cloned()
     }
 
     /// Symbols from every editor tab in the active space, for the Editor-owned
@@ -1941,7 +1958,7 @@ impl Workspace {
 
         let mut rows = Vec::new();
         for (tab_id, file_label) in editors {
-            let Some(editor) = self.editors.get(&tab_id) else {
+            let Some(editor) = self.editors.get(&self.editor_slot_for_tab(tab_id)) else {
                 continue;
             };
             rows.extend(
@@ -1979,7 +1996,7 @@ impl Workspace {
 
         let mut rows = Vec::new();
         for (tab_id, file_label) in editors {
-            let Some(editor) = self.editors.get(&tab_id) else {
+            let Some(editor) = self.editors.get(&self.editor_slot_for_tab(tab_id)) else {
                 continue;
             };
             rows.extend(editor.read(cx).diagnostics().into_iter().map(|diagnostic| {
@@ -2013,7 +2030,7 @@ impl Workspace {
         }
 
         self.reveal_tab(tab_id, window, cx);
-        if let Some(editor) = self.editors.get(&tab_id) {
+        if let Some(editor) = self.editors.get(&self.editor_slot_for_tab(tab_id)) {
             editor.update(cx, |editor, cx| editor.goto_line(line0, cx));
         }
     }
@@ -2050,8 +2067,7 @@ impl Workspace {
 
     /// Number of panes in the active workspace tab (0 for non-workspace tabs).
     pub fn active_pane_count(&self, cx: &App) -> usize {
-        self.active_ws_tab(cx)
-            .and_then(|id| self.layouts.get(&id))
+        self.active_layout(cx)
             .map(WorkspaceLayout::len)
             .unwrap_or(0)
     }
@@ -2069,8 +2085,7 @@ impl Workspace {
     /// Which surface the `Cmd+F` search overlay (T18-002) targets for the
     /// active tab.
     pub fn active_search_target(&self, cx: &App) -> SearchTarget {
-        let id = self.tabs.read(cx).active_id();
-        if self.editors.contains_key(&id) {
+        if self.active_editor_slot(cx).is_some() {
             SearchTarget::Editor
         } else if self.active_pane_view(cx).is_some() {
             SearchTarget::Terminal
@@ -2082,14 +2097,16 @@ impl Workspace {
     /// One-line pre-fill for the search overlay (editor selection only).
     pub fn search_seed(&self, cx: &App) -> Option<String> {
         let id = self.tabs.read(cx).active_id();
-        self.editors.get(&id).and_then(|e| e.read(cx).search_seed())
+        self.editors
+            .get(&self.editor_slot_for_tab(id))
+            .and_then(|e| e.read(cx).search_seed())
     }
 
     /// Original active-buffer selection captured when the search overlay opens.
     pub fn search_selection_range(&self, cx: &App) -> Option<TextRange> {
         let id = self.tabs.read(cx).active_id();
         self.editors
-            .get(&id)
+            .get(&self.editor_slot_for_tab(id))
             .and_then(|editor| editor.read(cx).search_selection_range())
     }
 
@@ -2097,7 +2114,7 @@ impl Workspace {
     pub fn search_selection_scope(&self, cx: &App) -> Option<TextRange> {
         let id = self.tabs.read(cx).active_id();
         self.editors
-            .get(&id)
+            .get(&self.editor_slot_for_tab(id))
             .and_then(|editor| editor.read(cx).search_selection_scope())
     }
 
@@ -2105,14 +2122,14 @@ impl Workspace {
     pub fn buffer_search_count(&self, cx: &App) -> Option<(usize, usize)> {
         let id = self.tabs.read(cx).active_id();
         self.editors
-            .get(&id)
+            .get(&self.editor_slot_for_tab(id))
             .map(|editor| editor.read(cx).search_count())
     }
 
     /// Toggle the Editor-owned buffer-search selection scope.
     pub fn toggle_search_selection_scope(&mut self, cx: &mut Context<Self>) -> bool {
         let id = self.tabs.read(cx).active_id();
-        let Some(editor) = self.editors.get(&id).cloned() else {
+        let Some(editor) = self.editors.get(&self.editor_slot_for_tab(id)).cloned() else {
             return false;
         };
         editor.update(cx, |editor, cx| editor.toggle_search_selection_scope(cx))
@@ -2127,7 +2144,7 @@ impl Workspace {
     ) -> Option<Result<(usize, usize), SearchError>> {
         self.project_search_task.take();
         let id = self.tabs.read(cx).active_id();
-        if let Some(e) = self.editors.get(&id).cloned() {
+        if let Some(e) = self.editors.get(&self.editor_slot_for_tab(id)).cloned() {
             return Some(e.update(cx, |e, cx| e.search_set(query, cx)));
         }
         let view = self.active_pane_view(cx)?;
@@ -2145,7 +2162,7 @@ impl Workspace {
             .tabs_in_space(active_space)
             .into_iter()
             .filter(|tab| tab.kind == TabKind::Editor)
-            .filter_map(|tab| self.editors.get(&tab.id))
+            .filter_map(|tab| self.editors.get(&self.editor_slot_for_tab(tab.id)))
             .filter_map(|editor| editor.read(cx).path())
             .collect()
     }
@@ -2161,7 +2178,10 @@ impl Workspace {
     ) -> Option<()> {
         self.project_search_task.take();
         let tab_id = self.tabs.read(cx).active_id();
-        let editor = self.editors.get(&tab_id).cloned()?;
+        let editor = self
+            .editors
+            .get(&self.editor_slot_for_tab(tab_id))
+            .cloned()?;
         self.project_search_owner = Some(tab_id);
         let request = editor.update(cx, |editor, cx| editor.begin_project_search(query, cx));
         if request.query.text.is_empty() {
@@ -2286,7 +2306,7 @@ impl Workspace {
     pub fn project_search_snapshot(&self, cx: &App) -> Option<ProjectSearchSnapshot> {
         let id = self.project_search_owner?;
         self.editors
-            .get(&id)
+            .get(&self.editor_slot_for_tab(id))
             .map(|editor| editor.read(cx).project_search_snapshot())
     }
 
@@ -2296,13 +2316,17 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> Option<ProjectSearchHit> {
         let id = self.project_search_owner?;
-        self.editors.get(&id).cloned().and_then(|editor| {
-            let result = editor.update(cx, |editor, _| editor.move_project_search_selection(delta));
-            if result.is_some() {
-                cx.notify();
-            }
-            result
-        })
+        self.editors
+            .get(&self.editor_slot_for_tab(id))
+            .cloned()
+            .and_then(|editor| {
+                let result =
+                    editor.update(cx, |editor, _| editor.move_project_search_selection(delta));
+                if result.is_some() {
+                    cx.notify();
+                }
+                result
+            })
     }
 
     /// Open a selected project result through the canonical file route and
@@ -2330,7 +2354,7 @@ impl Workspace {
         };
         self.open_file(path.to_string_lossy().into_owned(), false, window, cx);
         let id = self.tabs.read(cx).active_id();
-        if let Some(editor) = self.editors.get(&id).cloned() {
+        if let Some(editor) = self.editors.get(&self.editor_slot_for_tab(id)).cloned() {
             editor.update(cx, |editor, cx| {
                 editor.goto_position(
                     Position::new(hit.line.saturating_sub(1) as usize, hit.start_column),
@@ -2347,7 +2371,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> Option<Result<(usize, usize), SearchError>> {
         let id = self.tabs.read(cx).active_id();
-        if let Some(e) = self.editors.get(&id).cloned() {
+        if let Some(e) = self.editors.get(&self.editor_slot_for_tab(id)).cloned() {
             return Some(e.update(cx, |e, cx| e.search_step(forward, cx)));
         }
         let view = self.active_pane_view(cx)?;
@@ -2362,7 +2386,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> Option<Result<bool, SearchError>> {
         let id = self.tabs.read(cx).active_id();
-        let editor = self.editors.get(&id).cloned()?;
+        let editor = self.editors.get(&self.editor_slot_for_tab(id)).cloned()?;
         Some(editor.update(cx, |editor, cx| editor.search_replace_one(replacement, cx)))
     }
 
@@ -2372,7 +2396,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> Option<Result<usize, SearchError>> {
         let id = self.tabs.read(cx).active_id();
-        let editor = self.editors.get(&id).cloned()?;
+        let editor = self.editors.get(&self.editor_slot_for_tab(id)).cloned()?;
         Some(editor.update(cx, |editor, cx| editor.search_replace_all(replacement, cx)))
     }
 
@@ -2386,7 +2410,10 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> Option<Result<ProjectReplaceResult, SearchError>> {
         let search_owner = self.project_search_owner?;
-        let active_editor = self.editors.get(&search_owner).cloned()?;
+        let active_editor = self
+            .editors
+            .get(&self.editor_slot_for_tab(search_owner))
+            .cloned()?;
         let request = match active_editor.update(cx, |editor, cx| {
             editor.begin_project_replace(replacement.to_string(), cx)
         }) {
@@ -2450,7 +2477,7 @@ impl Workspace {
     pub fn search_can_replace(&self, cx: &App) -> bool {
         let id = self.tabs.read(cx).active_id();
         self.editors
-            .get(&id)
+            .get(&self.editor_slot_for_tab(id))
             .is_some_and(|editor| editor.read(cx).search_can_replace())
     }
 
@@ -2459,11 +2486,17 @@ impl Workspace {
         self.project_search_task.take();
         let active_id = self.tabs.read(cx).active_id();
         let search_owner = self.project_search_owner.take();
-        if let Some(e) = search_owner.and_then(|id| self.editors.get(&id).cloned()) {
+        if let Some(e) =
+            search_owner.and_then(|id| self.editors.get(&self.editor_slot_for_tab(id)).cloned())
+        {
             e.update(cx, |e, cx| e.search_close(cx));
         }
         if search_owner != Some(active_id) {
-            if let Some(e) = self.editors.get(&active_id).cloned() {
+            if let Some(e) = self
+                .editors
+                .get(&self.editor_slot_for_tab(active_id))
+                .cloned()
+            {
                 e.update(cx, |e, cx| e.search_close(cx));
             }
         }
@@ -2643,14 +2676,21 @@ impl Workspace {
         let existing = self.editors.iter().find_map(|(tab_id, view)| {
             (view.read(cx).path().as_deref() == Some(pathbuf.as_path())).then_some(*tab_id)
         });
-        if let Some(tab_id) = existing {
-            self.tabs.update(cx, |s, cx| {
-                if !peek {
-                    s.set_peek(tab_id, false, cx);
-                }
-                s.set_active(tab_id, cx);
-            });
-            self.focus_active(window, cx);
+        if let Some(slot) = existing {
+            let pane = self
+                .layouts
+                .values()
+                .flat_map(|l| l.leaves())
+                .find(|p| self.editor_slot_of_pane(*p) == Some(slot))
+                .unwrap_or(slot);
+            if let Some(tab_id) = self.tab_of_pane(pane).or(Some(slot)) {
+                self.tabs.update(cx, |s, cx| {
+                    if !peek {
+                        s.set_peek(tab_id, false, cx);
+                    }
+                });
+            }
+            self.activate_pane(pane, window, cx);
             return;
         }
 
@@ -2691,7 +2731,7 @@ impl Workspace {
             tab_id
         };
 
-        let view = self.editors.get(&tab_id).cloned();
+        let view = self.editors.get(&self.editor_slot_for_tab(tab_id)).cloned();
         if let Some(view) = view {
             view.update(cx, |e, cx| e.open_path(pathbuf, cx));
         }
@@ -3052,39 +3092,6 @@ impl Workspace {
         cx.notify();
     }
 
-    /// `Open Preview to the Side`: until pane splitting hosts the preview next
-    /// to the editor, open the matching preview in its own tab.
-    fn open_editor_preview_to_side(
-        &mut self,
-        editor_tab_id: u64,
-        content: EditorSidePreviewContent,
-        cx: &mut Context<Self>,
-    ) {
-        match content {
-            EditorSidePreviewContent::Markdown(source) => {
-                self.open_markdown_preview_for_editor(editor_tab_id, source, cx)
-            }
-            EditorSidePreviewContent::Svg(source) => {
-                self.open_svg_preview_for_editor(editor_tab_id, source, cx)
-            }
-            EditorSidePreviewContent::Tabular(source) => {
-                if let Some(path) = source.path {
-                    self.activate_preview_target(path.to_string_lossy().into_owned(), cx);
-                    self.pending_preview_focus = true;
-                }
-            }
-        }
-        cx.notify();
-    }
-
-    fn on_editor_group_focused(
-        &mut self,
-        _slot: u64,
-        _group: labonair_editor::EditorGroupId,
-        _cx: &mut Context<Self>,
-    ) {
-    }
-
     fn set_editor_side_preview_content(
         preview: &Entity<PreviewView>,
         content: EditorSidePreviewContent,
@@ -3184,7 +3191,11 @@ impl Workspace {
         editor_tab_id: u64,
         cx: &mut Context<Self>,
     ) {
-        let Some(editor) = self.editors.get(&editor_tab_id).cloned() else {
+        let Some(editor) = self
+            .editors
+            .get(&self.editor_slot_for_tab(editor_tab_id))
+            .cloned()
+        else {
             return;
         };
         self.following_svg_editor = Some(editor_tab_id);
@@ -3320,7 +3331,11 @@ impl Workspace {
         editor_tab_id: u64,
         cx: &mut Context<Self>,
     ) {
-        let Some(editor) = self.editors.get(&editor_tab_id).cloned() else {
+        let Some(editor) = self
+            .editors
+            .get(&self.editor_slot_for_tab(editor_tab_id))
+            .cloned()
+        else {
             return;
         };
         let source = editor.read(cx).buffer_snapshot();
@@ -3401,7 +3416,7 @@ impl Workspace {
     /// Save the active editor tab (`Cmd-S`).
     pub fn save_active(&mut self, cx: &mut Context<Self>) {
         let id = self.tabs.read(cx).active_id();
-        if let Some(view) = self.editors.get(&id).cloned() {
+        if let Some(view) = self.editors.get(&self.editor_slot_for_tab(id)).cloned() {
             view.update(cx, |e, cx| e.save(cx));
         }
     }
@@ -3415,7 +3430,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> EditorCommandDispatchResult {
         let tab_id = self.tabs.read(cx).active_id();
-        let Some(editor) = self.editors.get(&tab_id).cloned() else {
+        let Some(editor) = self.editors.get(&self.editor_slot_for_tab(tab_id)).cloned() else {
             return EditorCommandDispatchResult::NoActiveEditor;
         };
         if editor.update(cx, |editor, cx| editor.dispatch_registered_command(id, cx)) {
@@ -3569,11 +3584,16 @@ impl Workspace {
 
         cx.subscribe(view, move |this, view, ev: &EditorEvent, cx| {
             if matches!(ev, EditorEvent::CloseRequested) {
-                // Vim `:q` / `:wq` — close this editor's tab.
-                this.markdown_previews.remove(&tab_id);
-                if let Some(removed) = this.tabs.update(cx, |s, cx| s.close(tab_id, cx)) {
-                    this.retire_tab(&removed, cx);
-                }
+                // Vim `:q` / `:wq` — close the pane that shows this editor
+                // (the tab when it is the last pane). Needs a window, so it is
+                // drained from `render`.
+                let pane = this
+                    .layouts
+                    .values()
+                    .flat_map(|l| l.leaves())
+                    .find(|p| this.editor_slot_of_pane(*p) == Some(tab_id))
+                    .unwrap_or(tab_id);
+                this.pending_tab_close.push(pane);
                 cx.notify();
                 return;
             }
@@ -3631,20 +3651,35 @@ impl Workspace {
                     if this.following_svg_editor == Some(tab_id) {
                         this.update_following_svg_preview_source(source.clone(), cx);
                     }
-                    if let Some((_, kind, preview)) =
-                        this.editor_side_previews.get(&tab_id).cloned()
+                    if let Some((preview_pane, kind)) =
+                        this.editor_side_previews.get(&tab_id).copied()
                     {
-                        Self::update_editor_side_preview_for_source(
-                            &preview,
-                            kind,
-                            source.clone(),
-                            cx,
-                        );
+                        if let Some(preview) = this.previews.get(&preview_pane).cloned() {
+                            Self::update_editor_side_preview_for_source(
+                                &preview,
+                                kind,
+                                source.clone(),
+                                cx,
+                            );
+                        }
                     }
                 }
                 _ => {}
             }
             let dirty = view.read(cx).is_dirty();
+            let showing: Vec<u64> = this
+                .layouts
+                .iter()
+                .filter(|(_, l)| {
+                    l.leaves()
+                        .iter()
+                        .any(|p| this.editor_slot_of_pane(*p) == Some(tab_id))
+                })
+                .map(|(tab, _)| *tab)
+                .collect();
+            for tab in showing {
+                this.sync_tab_dirty(tab, cx);
+            }
             let is_remote_edit = this.remote_edits.contains_key(&tab_id);
             this.tabs.update(cx, |s, cx| {
                 s.set_dirty(tab_id, dirty, cx);
@@ -3692,16 +3727,14 @@ impl Workspace {
         .detach();
     }
 
-    /// Split the active workspace pane in `dir`.
+    /// Split the focused pane of the active tab in `dir` (`pane::Split*`).
     pub fn split(&mut self, dir: SplitDirection, window: &mut Window, cx: &mut Context<Self>) {
-        self.split_active(dir, window, cx);
+        self.split_focused(dir, window, cx);
     }
 
-    /// Evenly redistribute every divider in the active workspace layout.
+    /// Evenly redistribute every divider in the active tab's pane tree.
     pub fn reset_pane_sizes(&mut self, cx: &mut Context<Self>) {
-        let Some(tab_id) = self.active_ws_tab(cx) else {
-            return;
-        };
+        let tab_id = self.tabs.read(cx).active_id();
         if self
             .layouts
             .get_mut(&tab_id)
@@ -3711,14 +3744,14 @@ impl Workspace {
         }
     }
 
-    /// `Close Tab`: close the active pane if the tab is split, else the tab.
+    /// `Close Tab`: close the focused pane if the tab is split, else the tab.
     pub fn close_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.close_active_pane_or_tab(window, cx);
     }
 
-    /// `Close Pane`: close just the active pane.
+    /// `Close Pane`: close just the focused pane.
     pub fn close_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.close_active_pane(window, cx);
+        self.close_focused_pane(window, cx);
     }
 
     /// Cycle to the next (`forward`) or previous tab.
@@ -3731,13 +3764,17 @@ impl Workspace {
         if tab.kind != TabKind::Editor {
             return None;
         }
-        Some(self.editors.get(&tab.id).map_or((false, false), |editor| {
-            let editor = editor.read(cx);
-            (
-                editor.can_navigate_history_back(),
-                editor.can_navigate_history_forward(),
-            )
-        }))
+        Some(
+            self.editors
+                .get(&self.editor_slot_for_tab(tab.id))
+                .map_or((false, false), |editor| {
+                    let editor = editor.read(cx);
+                    (
+                        editor.can_navigate_history_back(),
+                        editor.can_navigate_history_forward(),
+                    )
+                }),
+        )
     }
 
     fn navigate_tab_bar(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
@@ -3747,7 +3784,9 @@ impl Workspace {
             .active()
             .filter(|tab| tab.kind == TabKind::Editor)
             .map(|tab| tab.id);
-        if let Some(editor) = editor_id.and_then(|id| self.editors.get(&id).cloned()) {
+        if let Some(editor) =
+            editor_id.and_then(|id| self.editors.get(&self.editor_slot_for_tab(id)).cloned())
+        {
             let command = if forward {
                 CommandId::EditorGoForward
             } else {
@@ -3786,24 +3825,25 @@ impl Workspace {
         }
     }
 
-    /// Cycle focus to the next split leaf of the active workspace tab. No-op on
-    /// a single-pane tab or a non-workspace tab. Port of `pane.focusNext`
-    /// (`collectLeafIds` → next index, wrap) (T13-005).
+    /// Cycle focus to the next pane of the active tab (`pane::FocusNext`).
     pub fn focus_next_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((leaves, active)) = self.active_layout(cx).map(|l| (l.leaves(), l.active)) else {
-            return;
-        };
-        if leaves.len() <= 1 {
-            return;
-        }
-        let current = active.and_then(|a| leaves.iter().position(|&p| p == a));
-        let next = leaves[current.map_or(0, |i| (i + 1) % leaves.len())];
-        self.set_pane_active(next, window, cx);
+        self.focus_pane_cycle(true, window, cx);
     }
 
-    /// Whether the active tab is a workspace tab whose layout is split.
+    /// Whether the active tab holds two or more panes.
     pub fn active_has_split(&self, cx: &App) -> bool {
         self.active_layout(cx).map(|l| l.len() > 1).unwrap_or(false)
+    }
+
+    /// Whether the focused pane can be split (gates the split menu items).
+    pub fn active_can_split(&self, cx: &App) -> bool {
+        self.active_pane(cx)
+            .is_some_and(|(_, pane)| self.pane_can_split(pane, cx))
+    }
+
+    /// Whether the focused pane is a terminal.
+    pub fn active_focus_is_terminal(&self, cx: &App) -> bool {
+        self.active_pane_view(cx).is_some()
     }
 
     fn theme_colors(&self, cx: &App) -> TerminalColors {
@@ -3900,133 +3940,51 @@ impl Workspace {
                 scrollback_id,
             },
         );
+        self.register_pane(pane_id, crate::pane_kind::PaneKind::Terminal);
         self.layouts.insert(tab_id, WorkspaceLayout::new(pane_id));
         self.focus_active(window, cx);
     }
 
-    /// Split the active pane of the active workspace tab, spawning a new
-    /// terminal in the same cwd.
-    fn split_active(&mut self, dir: SplitDirection, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(tab_id) = self.active_ws_tab(cx) else {
-            return;
-        };
-        let cwd = self.terminal_spawn_cwd(cx);
-        let Some((session_id, handle, scrollback_id)) = self.spawn_session(cwd, None, cx) else {
-            return;
-        };
-        let axis_id = self.alloc_pane();
-        let new_pane = self.alloc_pane();
-        if let Some(layout) = self.layouts.get_mut(&tab_id) {
-            layout.split(axis_id, new_pane, dir);
-        }
-        let view = self.new_terminal_view(handle, window, cx);
-        self.panes.insert(
-            new_pane,
-            PaneEntry {
-                session_id,
-                view,
-                scrollback_id,
-            },
-        );
-        self.focus_active(window, cx);
-        cx.notify();
-    }
-
-    /// `Cmd-W`: close the active pane if the tab is split, otherwise close the
-    /// whole tab.
+    /// `Cmd-W`: close the focused pane if the tab is split, otherwise close
+    /// the whole tab.
     fn close_active_pane_or_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(tab_id) = self.active_ws_tab(cx) {
-            let multi = self
-                .layouts
-                .get(&tab_id)
-                .map(WorkspaceLayout::len)
-                .unwrap_or(0)
-                > 1;
-            if multi {
-                self.close_active_pane(window, cx);
-                return;
-            }
+        if self.active_has_split(cx) {
+            self.close_focused_pane(window, cx);
+            return;
         }
         let id = self.tabs.read(cx).active_id();
         self.request_close(id, window, cx);
     }
 
-    fn close_active_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(tab_id) = self.active_ws_tab(cx) else {
-            return;
-        };
-        let Some(pane) = self.layouts.get(&tab_id).and_then(|l| l.active) else {
-            return;
-        };
-        let outcome = self
-            .layouts
-            .get_mut(&tab_id)
-            .map(|l| l.close(pane))
-            .unwrap_or(CloseOutcome::NotFound);
-        match outcome {
-            CloseOutcome::LastPane => self.request_close(tab_id, window, cx),
-            CloseOutcome::Closed { .. } => {
-                self.retire_pane(pane);
-                self.focus_active(window, cx);
+    pub(crate) fn reset_axis(&mut self, axis_id: PaneId, cx: &mut Context<Self>) {
+        let tab_id = self.tabs.read(cx).active_id();
+        if let Some(layout) = self.layouts.get_mut(&tab_id) {
+            if layout.reset_axis(axis_id) {
                 cx.notify();
-            }
-            CloseOutcome::NotFound => {}
-        }
-    }
-
-    fn set_pane_active(&mut self, pane_id: PaneId, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(tab_id) = self.active_ws_tab(cx) {
-            if let Some(layout) = self.layouts.get_mut(&tab_id) {
-                if layout.set_active(pane_id) {
-                    cx.notify();
-                }
-            }
-        }
-        self.focus_active(window, cx);
-    }
-
-    fn resize_axis(&mut self, axis_id: PaneId, boundary: usize, frac: f32, cx: &mut Context<Self>) {
-        if let Some(tab_id) = self.active_ws_tab(cx) {
-            if let Some(layout) = self.layouts.get_mut(&tab_id) {
-                if layout.set_boundary(axis_id, boundary, frac) {
-                    cx.notify();
-                }
-            }
-        }
-    }
-
-    fn reset_axis(&mut self, axis_id: PaneId, cx: &mut Context<Self>) {
-        if let Some(tab_id) = self.active_ws_tab(cx) {
-            if let Some(layout) = self.layouts.get_mut(&tab_id) {
-                if layout.reset_axis(axis_id) {
-                    cx.notify();
-                }
             }
         }
     }
 
     // ── Lookups ─────────────────────────────────────────────────────────────
 
-    fn active_ws_tab(&self, cx: &App) -> Option<u64> {
-        let tab = self.tabs.read(cx).active()?;
-        (tab.space_id == self.spaces.read(cx).active_id() && tab.kind == TabKind::Workspace)
-            .then_some(tab.id)
-    }
-
     fn active_layout<'a>(&'a self, cx: &App) -> Option<&'a WorkspaceLayout> {
-        self.layouts.get(&self.active_ws_tab(cx)?)
+        let (tab, _) = self.active_pane(cx)?;
+        self.layouts.get(&tab)
     }
 
+    /// The terminal view of the focused pane, when the focused pane is one.
     fn active_pane_view(&self, cx: &App) -> Option<Entity<TerminalView>> {
-        let pane = self.active_layout(cx)?.active?;
+        let (_, pane) = self.active_pane(cx)?;
         self.panes.get(&pane).map(|e| e.view.clone())
     }
 
     /// The active editor / terminal selection, tagged with its source label,
     /// for "Ask AI about Selection".
     pub fn active_selection(&self, cx: &App) -> Option<(&'static str, String)> {
-        let active_id = self.tabs.read(cx).active_id();
-        if let Some(editor) = self.editors.get(&active_id) {
+        if let Some(editor) = self
+            .active_editor_slot(cx)
+            .and_then(|slot| self.editors.get(&slot))
+        {
             return editor.read(cx).selected_text().map(|t| ("editor", t));
         }
         self.active_pane_view(cx)
@@ -4043,24 +4001,9 @@ impl Workspace {
     }
 
     fn focus_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let active_id = self.tabs.read(cx).active_id();
-        let active_kind = self.tabs.read(cx).active().map(|tab| tab.kind);
-        if let Some(editor) = self.editors.get(&active_id) {
-            editor.read(cx).focus(window);
-        } else if let Some(preview) = self.previews.get(&active_id) {
-            window.focus(&preview.read(cx).focus_handle(cx));
-        } else if active_kind == Some(TabKind::Keymap) {
-            if let Some(view) = &self.keymap {
-                window.focus(&view.read(cx).focus_handle(cx));
-            } else {
-                window.focus(&self.focus_handle);
-            }
-        } else if active_kind == Some(TabKind::Hosts) {
-            window.focus(&self.hosts.read(cx).focus_handle(cx));
-        } else if let Some(view) = self.active_pane_view(cx) {
-            view.read(cx).focus(window);
-        } else {
-            window.focus(&self.focus_handle);
+        match self.active_pane(cx) {
+            Some((_, pane)) => self.focus_pane(pane, window, cx),
+            None => window.focus(&self.focus_handle),
         }
     }
 
@@ -4082,14 +4025,24 @@ impl Workspace {
     }
 
     fn close_requires_confirmation(&self, id: u64, cx: &App) -> bool {
-        let kind = self.tabs.read(cx).get(id).map(|tab| tab.kind);
-        self.tabs
-            .read(cx)
-            .get(id)
-            .map(Tab::needs_close_confirm)
-            .unwrap_or(false)
-            || (kind == Some(TabKind::Workspace)
-                && terminal_settings(cx).confirm_close_terminal_tab()
+        // Unsaved edits are per document: any editor document shown by this
+        // tab that no pane outside the tab keeps alive asks first.
+        let panes = self.tab_pane_ids(id);
+        let dirty_document = panes.iter().any(|pane| {
+            self.editor_slot_of_pane(*pane).is_some_and(|slot| {
+                self.editors
+                    .get(&slot)
+                    .is_some_and(|e| e.read(cx).is_dirty())
+                    && !self
+                        .layouts
+                        .iter()
+                        .filter(|(tab, _)| **tab != id)
+                        .flat_map(|(_, l)| l.leaves())
+                        .any(|p| self.editor_slot_of_pane(p) == Some(slot))
+            })
+        });
+        dirty_document
+            || (terminal_settings(cx).confirm_close_terminal_tab()
                 && self.tab_has_running_shell(id, cx))
     }
 
@@ -4114,7 +4067,11 @@ impl Workspace {
     }
 
     fn confirm_close(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        self.do_close(id, window, cx);
+        if self.tabs.read(cx).get(id).is_some() {
+            self.do_close(id, window, cx);
+        } else {
+            self.do_close_pane(id, window, cx);
+        }
         self.advance_pending_close(window, cx);
     }
 
@@ -4269,9 +4226,13 @@ impl Workspace {
     /// The `CommandContext` the active tab exposes, driving which
     /// context-scoped palette commands are offered.
     pub fn active_context(&self, cx: &App) -> Option<labonair_command_palette::CommandContext> {
-        let active = self.tabs.read(cx).active()?;
-        let is_ssh = self.ssh_tabs.values().any(|t| t.tab_id == active.id);
-        labonair_command_palette::context_of(palette_tab_kind(active.kind), is_ssh)
+        let (_, pane) = self.active_pane(cx)?;
+        let kind = self.pane_kind(pane, cx).tab_kind();
+        let is_ssh = self
+            .panes
+            .get(&pane)
+            .is_some_and(|entry| self.ssh_tabs.contains_key(&entry.session_id));
+        labonair_command_palette::context_of(palette_tab_kind(kind), is_ssh)
     }
 
     /// Canonical rows for every known host — feeds palette host choices.
@@ -4729,13 +4690,7 @@ impl Workspace {
     pub fn open_git_graph_tab(&mut self, cx: &mut Context<Self>) {
         let view = self.ensure_git_graph_view(cx);
         view.update(cx, |graph, cx| graph.clear_file_history(cx));
-        let existing = self
-            .tabs
-            .read(cx)
-            .tabs()
-            .iter()
-            .find(|t| t.kind == TabKind::GitGraph)
-            .map(|t| t.id);
+        let existing = self.find_singleton_tab(crate::pane_kind::PaneKind::GitGraph, cx);
         self.tabs.update(cx, |s, cx| {
             let id = match existing {
                 Some(id) => {
@@ -4760,13 +4715,7 @@ impl Workspace {
             .and_then(|name| name.to_str())
             .map(|name| format!("History · {name}"))
             .unwrap_or_else(|| "File History".to_string());
-        let existing = self
-            .tabs
-            .read(cx)
-            .tabs()
-            .iter()
-            .find(|tab| tab.kind == TabKind::GitGraph)
-            .map(|tab| tab.id);
+        let existing = self.find_singleton_tab(crate::pane_kind::PaneKind::GitGraph, cx);
         self.tabs.update(cx, |tabs, cx| {
             let id = match existing {
                 Some(id) => {
@@ -4813,13 +4762,7 @@ impl Workspace {
             );
             self.keymap = Some(view);
         }
-        let existing = self
-            .tabs
-            .read(cx)
-            .tabs()
-            .iter()
-            .find(|t| t.kind == TabKind::Keymap)
-            .map(|t| t.id);
+        let existing = self.find_singleton_tab(crate::pane_kind::PaneKind::Keymap, cx);
         self.tabs.update(cx, |s, cx| match existing {
             Some(id) => s.set_active(id, cx),
             None => {
@@ -4833,13 +4776,7 @@ impl Workspace {
     /// the composition root builds it eagerly (it's also the live host-data
     /// hub used regardless of tab visibility) — this only manages the tab.
     pub fn open_hosts_tab(&mut self, cx: &mut Context<Self>) {
-        let existing = self
-            .tabs
-            .read(cx)
-            .tabs()
-            .iter()
-            .find(|t| t.kind == TabKind::Hosts)
-            .map(|t| t.id);
+        let existing = self.find_singleton_tab(crate::pane_kind::PaneKind::Hosts, cx);
         self.tabs.update(cx, |s, cx| match existing {
             Some(id) => s.set_active(id, cx),
             None => {
@@ -4873,13 +4810,7 @@ impl Workspace {
         };
         view.update(cx, |v, cx| v.apply_request(req, cx));
 
-        let existing = self
-            .tabs
-            .read(cx)
-            .tabs()
-            .iter()
-            .find(|t| t.kind == TabKind::Diff)
-            .map(|t| t.id);
+        let existing = self.find_singleton_tab(crate::pane_kind::PaneKind::Diff, cx);
         self.tabs.update(cx, |s, cx| match existing {
             Some(id) => s.set_active(id, cx),
             None => {
@@ -4930,7 +4861,8 @@ impl Workspace {
         }
     }
 
-    /// Tear down a removed tab's whole pane tree.
+    /// Tear down a removed tab's whole pane tree: every pane retires its own
+    /// session, view, document binding and connection.
     fn retire_tab(&mut self, tab: &Tab, cx: &mut Context<Self>) {
         // Closing a tab revokes any agent-access grant that followed it —
         // backend (so the bridge stops exposing the session) and local mirror.
@@ -4947,104 +4879,48 @@ impl Workspace {
                 );
             });
         }
-        if let Some(layout) = self.layouts.remove(&tab.id) {
-            for leaf in layout.leaves() {
-                self.retire_pane(leaf);
-            }
+        self.zoom.clear(tab.id);
+        let panes = self
+            .layouts
+            .remove(&tab.id)
+            .map(|layout| layout.leaves())
+            .unwrap_or_else(|| vec![tab.id]);
+        for pane in panes {
+            self.retire_any_pane(pane, cx);
         }
-        if self.project_search_owner == Some(tab.id) {
-            self.project_search_owner = None;
-            self.project_search_task.take();
-        }
-        if let Some(editor) = self.editors.remove(&tab.id) {
-            editor.update(cx, |editor, _cx| editor.prepare_for_close());
-        }
-        self.previews.remove(&tab.id);
-        self.editor_side_previews.remove(&tab.id);
-        if self.following_markdown_preview == Some(tab.id) {
-            self.following_markdown_preview = None;
-            self.following_markdown_editor = None;
-        } else if self.following_markdown_editor == Some(tab.id) {
-            self.following_markdown_editor = None;
-        }
-        if self.following_svg_preview == Some(tab.id) {
-            self.following_svg_preview = None;
-            self.following_svg_editor = None;
-        } else if self.following_svg_editor == Some(tab.id) {
-            self.following_svg_editor = None;
-        }
-        self.markdown_previews.remove(&tab.id);
-        self.markdown_previews
-            .retain(|_, preview_tab_id| *preview_tab_id != tab.id);
-        self.svg_previews.remove(&tab.id);
-        self.svg_previews
-            .retain(|_, preview_tab_id| *preview_tab_id != tab.id);
+    }
 
-        // SFTP browser tab: drop the view and close its SFTP/SSH session.
-        let sftp_handle = self
-            .sftp_views
-            .get(&tab.id)
-            .and_then(|view| view.read(cx).sftp_handle());
-        self.sftp_views.remove(&tab.id);
-        if let Some(session_id) = self.sftp_sessions.remove(&tab.id) {
-            self.ssh_connection
-                .update(cx, |s, cx| s.remove(&session_id, cx));
-            let sftp = self.sftp_session.clone();
-            let ssh = self.ssh.clone();
-            self.tokio.spawn(async move {
-                if let Some(handle) = sftp_handle {
-                    let _ = sftp.close(handle).await;
-                }
-                let _ = ssh.disconnect(SshSessionId::new(session_id)).await;
-            });
-        }
-
-        // Editor tab backed by a remote-edit temp copy: clean the temp file.
-        if let Some(re) = self.remote_edits.remove(&tab.id) {
-            let temp = re.temp_path;
-            let service = self.ssh_remote_file.clone();
-            self.tokio.spawn(async move {
-                let _ = service.cleanup_remote_edit_temp(temp).await;
-            });
-        }
-
-        // Disconnect any SSH session owned by this tab.
-        let dead: Vec<SessionId> = self
-            .ssh_tabs
-            .iter()
-            .filter(|(_, t)| t.tab_id == tab.id)
-            .map(|(k, _)| *k)
-            .collect();
-        for sid in dead {
-            if let Some(t) = self.ssh_tabs.remove(&sid) {
-                self.ssh_connection
-                    .update(cx, |s, cx| s.remove(&t.ssh_id, cx));
-                let mcp_access = self.mcp_access.clone();
-                let ssh = self.ssh.clone();
-                let tunnels = self.ssh_tunnels.clone();
-                let ssh_id = t.ssh_id.clone();
-                let host_id = t.host_id.clone();
-                let tab_key = t.tab_id.to_string();
-                self.tokio.spawn(async move {
-                    // Closing a tab revokes any MCP bridge grant that followed it.
-                    let _ = mcp_access
-                        .set_session_grant(SessionGrantRequest {
-                            tab_id: tab_key,
-                            session_id: String::new(),
-                            granted: false,
-                            label: String::new(),
-                            kind: SessionKind::Ssh,
-                            host_id: None,
-                        })
-                        .await;
-                    let _ = ssh.disconnect(SshSessionId::new(ssh_id)).await;
-                    let _ = tunnels.stop(host_id).await;
-                });
-                if let Some(p) = &self.ssh_prompt {
-                    if p.ssh_id() == t.ssh_id {
-                        self.ssh_prompt = None;
-                    }
-                }
+    /// Disconnect the SSH connection that backs terminal session `session`.
+    pub(crate) fn disconnect_ssh_session(&mut self, session: SessionId, cx: &mut Context<Self>) {
+        let Some(t) = self.ssh_tabs.remove(&session) else {
+            return;
+        };
+        self.ssh_connection
+            .update(cx, |s, cx| s.remove(&t.ssh_id, cx));
+        let mcp_access = self.mcp_access.clone();
+        let ssh = self.ssh.clone();
+        let tunnels = self.ssh_tunnels.clone();
+        let ssh_id = t.ssh_id.clone();
+        let host_id = t.host_id.clone();
+        let tab_key = t.tab_id.to_string();
+        self.tokio.spawn(async move {
+            // Closing a tab revokes any MCP bridge grant that followed it.
+            let _ = mcp_access
+                .set_session_grant(SessionGrantRequest {
+                    tab_id: tab_key,
+                    session_id: String::new(),
+                    granted: false,
+                    label: String::new(),
+                    kind: SessionKind::Ssh,
+                    host_id: None,
+                })
+                .await;
+            let _ = ssh.disconnect(SshSessionId::new(ssh_id)).await;
+            let _ = tunnels.stop(host_id).await;
+        });
+        if let Some(p) = &self.ssh_prompt {
+            if p.ssh_id() == t.ssh_id {
+                self.ssh_prompt = None;
             }
         }
     }
@@ -5093,25 +4969,7 @@ impl Workspace {
                 cx,
             );
         });
-        let view = cx.new(|cx| {
-            SftpView::new(
-                self.ssh.clone(),
-                self.ssh_remote.clone(),
-                self.sftp_session.clone(),
-                self.sftp_browser.clone(),
-                self.tokio.clone(),
-                self.theme.clone(),
-                session_id.clone(),
-                host_id,
-                label,
-                cx,
-            )
-        });
-        cx.observe(&view, |_, _, cx| cx.notify()).detach();
-        cx.subscribe(&view, |this, _view, ev: &SftpEvent, cx| {
-            this.on_sftp_event(ev, cx)
-        })
-        .detach();
+        let view = self.new_sftp_view(session_id.clone(), host_id, label, cx);
         self.sftp_views.insert(tab_id, view);
         self.sftp_sessions.insert(tab_id, session_id);
         self.focus_active(window, cx);
@@ -5423,6 +5281,50 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<String> {
+        let (ssh_id, session_id, feed, handle) = self.new_ssh_session(&host_id, cx)?;
+        let (host_label, jump_label) = (
+            self.host_view
+                .host_name(&host_id, cx)
+                .unwrap_or_else(|| host_id.clone()),
+            self.host_view.jump_host_label(&host_id, cx),
+        );
+        let tab_title = ssh_tab_title(&host_label, jump_label.as_deref());
+        let pane_id = self.alloc_pane();
+        let tab_id = self.tabs.update(cx, |s, cx| {
+            let id = s.open(
+                TabKind::Workspace,
+                TabData {
+                    session_id: Some(session_id),
+                    host_id: Some(host_id.clone()),
+                    ..TabData::default()
+                },
+                cx,
+            );
+            s.set_custom_title(id, Some(tab_title.clone()), cx);
+            id
+        });
+        self.layouts.insert(tab_id, WorkspaceLayout::new(pane_id));
+        self.attach_ssh_terminal(
+            host_id,
+            ssh_id.clone(),
+            session_id,
+            feed,
+            handle,
+            pane_id,
+            tab_id,
+            window,
+            cx,
+        );
+        Some(ssh_id)
+    }
+
+    /// Create the remote terminal session for `host_id` (registry session plus
+    /// the PTY writer / resizer bridges). Nothing is connected yet.
+    pub(crate) fn new_ssh_session(
+        &mut self,
+        _host_id: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<(String, SessionId, RemoteFeed, SessionHandle)> {
         let ssh_id = uuid::Uuid::new_v4().to_string();
         let colors = self.theme_colors(cx);
         let dims = TermDimensions::new(80, 24);
@@ -5455,28 +5357,30 @@ impl Workspace {
 
         let (session_id, feed) = self.registry.create_remote(colors, dims, writer, resizer);
         let handle = self.registry.handle(session_id)?;
+        Some((ssh_id, session_id, feed, handle))
+    }
 
-        let pane_id = self.alloc_pane();
+    /// Show `session_id` in terminal pane `pane_id` of `tab_id` and start the
+    /// connection (loading screen, prompts and tunnels follow from there).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn attach_ssh_terminal(
+        &mut self,
+        host_id: String,
+        ssh_id: String,
+        session_id: SessionId,
+        feed: RemoteFeed,
+        handle: SessionHandle,
+        pane_id: PaneId,
+        tab_id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let (host_label, jump_label) = (
             self.host_view
                 .host_name(&host_id, cx)
                 .unwrap_or_else(|| host_id.clone()),
             self.host_view.jump_host_label(&host_id, cx),
         );
-        let tab_title = ssh_tab_title(&host_label, jump_label.as_deref());
-        let tab_id = self.tabs.update(cx, |s, cx| {
-            let id = s.open(
-                TabKind::Workspace,
-                TabData {
-                    session_id: Some(session_id),
-                    host_id: Some(host_id.clone()),
-                    ..TabData::default()
-                },
-                cx,
-            );
-            s.set_custom_title(id, Some(tab_title.clone()), cx);
-            id
-        });
         let view = self.new_terminal_view(handle, window, cx);
         self.panes.insert(
             pane_id,
@@ -5487,7 +5391,6 @@ impl Workspace {
                 scrollback_id: uuid::Uuid::new_v4().to_string(),
             },
         );
-        self.layouts.insert(tab_id, WorkspaceLayout::new(pane_id));
         self.ssh_tabs.insert(
             session_id,
             SshTab {
@@ -5495,6 +5398,7 @@ impl Workspace {
                 host_id: host_id.clone(),
                 feed: feed.clone(),
                 tab_id,
+                pane_id,
             },
         );
         self.set_host_status(&host_id, HostStatus::Connecting, cx);
@@ -5508,10 +5412,9 @@ impl Workspace {
                 cx,
             );
         });
-        self.spawn_ssh_connect(ssh_id.clone(), host_id, None, None, feed, cx);
+        self.spawn_ssh_connect(ssh_id, host_id, None, None, feed, cx);
         self.focus_active(window, cx);
         cx.notify();
-        Some(ssh_id)
     }
 
     /// (Re)run `ssh_connect` for `ssh_id`, streaming remote output into `feed`.
@@ -5955,7 +5858,7 @@ impl Workspace {
             .ssh_tabs
             .values()
             .find(|t| t.ssh_id == ssh_id)
-            .map(|t| t.tab_id)
+            .map(|t| t.pane_id)
             .or_else(|| {
                 self.sftp_sessions
                     .iter()
@@ -6320,6 +6223,7 @@ impl Workspace {
                 store.sync_workspace_meta(id, cwd, title, cx);
             }
         });
+        self.sync_pane_meta(cx);
         if preview_changed {
             cx.notify();
         }
@@ -6932,7 +6836,7 @@ impl Workspace {
         )
     }
 
-    fn render_content(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn render_content(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let active_space = self.spaces.read(cx).active_id();
         let active = self
             .tabs
@@ -6943,207 +6847,7 @@ impl Workspace {
         let Some(active) = active else {
             return self.render_empty_surface(cx).into_any_element();
         };
-
-        match active.kind {
-            TabKind::Workspace => {
-                // While an SSH session for this tab is still connecting (or in
-                // a prompt / error state), the loading screen replaces the
-                // terminal (T16-015).
-                if let Some(ssh_id) = self
-                    .ssh_tabs
-                    .values()
-                    .find(|t| t.tab_id == active.id)
-                    .map(|t| t.ssh_id.clone())
-                {
-                    if let Some(entry) = self
-                        .ssh_connection
-                        .read(cx)
-                        .get(&ssh_id)
-                        .filter(|e| e.state.is_blocking())
-                        .cloned()
-                    {
-                        return self.render_ssh_loading(entry, cx);
-                    }
-                }
-                if let Some(layout) = self.layouts.get(&active.id).cloned() {
-                    let multi = layout.len() > 1;
-                    let active_pane = layout.active;
-                    match &layout.group.root {
-                        Some(root) => div()
-                            .size_full()
-                            .child(self.render_member(root, active_pane, multi, cx))
-                            .into_any_element(),
-                        // Empty tree — the empty-workspace surface (T17-009 /
-                        // T18-001) will replace this placeholder.
-                        None => self.placeholder("Terminal", cx).into_any_element(),
-                    }
-                } else {
-                    self.placeholder("Terminal", cx).into_any_element()
-                }
-            }
-            TabKind::Editor => {
-                if let Some(view) = self.editors.get(&active.id) {
-                    view.clone().into_any_element()
-                } else {
-                    self.placeholder("Editor", cx).into_any_element()
-                }
-            }
-            TabKind::Sftp => {
-                if let Some(session_id) = self.sftp_sessions.get(&active.id).cloned() {
-                    if let Some(entry) = self
-                        .ssh_connection
-                        .read(cx)
-                        .get(&session_id)
-                        .filter(|e| e.state.is_blocking())
-                        .cloned()
-                    {
-                        return self.render_ssh_loading(entry, cx);
-                    }
-                }
-                if let Some(view) = self.sftp_views.get(&active.id) {
-                    view.clone().into_any_element()
-                } else {
-                    self.placeholder("SFTP", cx).into_any_element()
-                }
-            }
-            TabKind::Preview => {
-                if let Some(view) = self.previews.get(&active.id) {
-                    view.clone().into_any_element()
-                } else {
-                    self.placeholder("Preview", cx).into_any_element()
-                }
-            }
-            TabKind::GitGraph => match &self.git_graph {
-                Some(view) => view.clone().into_any_element(),
-                None => self.placeholder("Git Graph", cx).into_any_element(),
-            },
-            TabKind::Diff => match &self.project_diff {
-                Some(view) => view.clone().into_any_element(),
-                None => self.placeholder("Project Diff", cx).into_any_element(),
-            },
-            TabKind::Keymap => match &self.keymap {
-                Some(view) => view.clone().into_any_element(),
-                None => self.placeholder("Keymap", cx).into_any_element(),
-            },
-            TabKind::Hosts => self.hosts.clone().into_any_element(),
-            other => self
-                .placeholder(other.default_title(), cx)
-                .into_any_element(),
-        }
-    }
-
-    /// Render one node of the recursive pane tree: a leaf pane, or an axis of
-    /// members laid out along `flexes` with a resize handle between each pair.
-    fn render_member(
-        &mut self,
-        node: &Member,
-        active_pane: Option<PaneId>,
-        multi: bool,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let theme = self.theme.read(cx);
-        let (bg, border, accent) = (theme.background(), theme.border(), theme.accent());
-
-        match node {
-            Member::Pane(id) => {
-                let id = *id;
-                let is_active = active_pane == Some(id);
-                let content: gpui::AnyElement = match self.panes.get(&id) {
-                    Some(entry) => entry.view.clone().into_any_element(),
-                    None => div().size_full().into_any_element(),
-                };
-                div()
-                    .id(("pane", id))
-                    .relative()
-                    .size_full()
-                    .min_w_0()
-                    .min_h_0()
-                    .overflow_hidden()
-                    .border_1()
-                    .border_color(if multi && is_active { accent } else { bg })
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, _: &MouseDownEvent, window, cx| {
-                            this.set_pane_active(id, window, cx);
-                        }),
-                    )
-                    .child(content)
-                    .into_any_element()
-            }
-            Member::Axis(ax) => {
-                let axis_id = ax.id;
-                let row = ax.axis == SplitAxis::Horizontal;
-                let n = ax.members.len();
-                let flexes = ax.flexes.clone();
-
-                let mut container = div()
-                    .flex()
-                    .size_full()
-                    .min_w_0()
-                    .min_h_0()
-                    .when(row, |d| d.flex_row())
-                    .when(!row, |d| d.flex_col());
-
-                for (i, member) in ax.members.iter().enumerate() {
-                    let child_el = self.render_member(member, active_pane, multi, cx);
-                    let last = i + 1 == n;
-                    let basis = flexes.get(i).copied().unwrap_or(1.0 / n as f32);
-                    container = container.child(
-                        div()
-                            .min_w_0()
-                            .min_h_0()
-                            .overflow_hidden()
-                            .flex_basis(relative(basis))
-                            .when(last, |d| d.flex_grow())
-                            .child(child_el),
-                    );
-                    if !last {
-                        let boundary = i;
-                        container = container.child(
-                            div()
-                                .id(SharedString::from(format!(
-                                    "axis-handle-{axis_id}-{boundary}"
-                                )))
-                                .flex_shrink_0()
-                                .bg(border)
-                                .hover(|s| s.bg(accent))
-                                .when(row, |d| d.w(px(HANDLE)).h_full().cursor_col_resize())
-                                .when(!row, |d| d.h(px(HANDLE)).w_full().cursor_row_resize())
-                                .on_drag(PaneResize { axis_id, boundary }, |_, _, _, cx| {
-                                    cx.new(|_| DragGhost)
-                                })
-                                .on_click(cx.listener(
-                                    move |this, ev: &ClickEvent, _window, cx| {
-                                        if ev.click_count() >= 2 {
-                                            this.reset_axis(axis_id, cx);
-                                        }
-                                    },
-                                )),
-                        );
-                    }
-                }
-
-                container
-                    .on_drag_move(cx.listener(
-                        move |this, ev: &DragMoveEvent<PaneResize>, _window, cx| {
-                            let drag = ev.drag(cx);
-                            if drag.axis_id != axis_id {
-                                return;
-                            }
-                            let boundary = drag.boundary;
-                            let b = ev.bounds;
-                            let p = ev.event.position;
-                            let frac = if row {
-                                f32::from(p.x - b.origin.x) / f32::from(b.size.width).max(1.0)
-                            } else {
-                                f32::from(p.y - b.origin.y) / f32::from(b.size.height).max(1.0)
-                            };
-                            this.resize_axis(axis_id, boundary, frac, cx);
-                        },
-                    ))
-                    .into_any_element()
-            }
-        }
+        self.render_pane_area(active.id, window, cx)
     }
 
     fn placeholder(&self, title: &str, cx: &mut Context<Self>) -> impl IntoElement {
@@ -8208,7 +7912,9 @@ impl Workspace {
                         move |_, _, cx| {
                             view.update(cx, |this, cx| {
                                 this.context_menu = None;
-                                if let Some(editor) = this.editors.get(&id).cloned() {
+                                if let Some(editor) =
+                                    this.editors.get(&this.editor_slot_for_tab(id)).cloned()
+                                {
                                     editor.update(cx, |editor, cx| {
                                         let _ = editor.dispatch_registered_command(
                                             CommandId::EditorToggleReadOnly,
@@ -8720,8 +8426,12 @@ impl Render for Workspace {
             }
         }
         if !self.pending_tab_close.is_empty() {
-            for tab_id in std::mem::take(&mut self.pending_tab_close) {
-                self.request_close(tab_id, window, cx);
+            for id in std::mem::take(&mut self.pending_tab_close) {
+                if self.tabs.read(cx).get(id).is_some() {
+                    self.request_close(id, window, cx);
+                } else {
+                    self.close_pane_id(id, window, cx);
+                }
             }
         }
         if !self.pending_open.is_empty() {
@@ -8757,7 +8467,7 @@ impl Render for Workspace {
         }
         self.prompt_shown = want_prompt;
 
-        let content = self.render_content(cx);
+        let content = self.render_content(window, cx);
         let confirm = self
             .confirm_close
             .map(|id| self.render_confirm(id, cx).into_any_element());
@@ -8841,29 +8551,10 @@ impl Render for Workspace {
 impl Workspace {
     fn on_key_down(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let ks = &ev.keystroke;
-        let m = &ks.modifiers;
         if self.confirm_close.is_some() && ks.key == "escape" {
             self.cancel_pending_close(window, cx);
             cx.stop_propagation();
             return;
-        }
-        // Legacy direct handling retained for tab cycling until every
-        // workspace navigation action is dispatched through the keymap.
-        if !m.platform || m.control || m.alt {
-            return;
-        }
-        // Most tab/pane actions are GPUI actions now (see the shell keymap
-        // adapter), while this legacy cycling path remains local for now.
-        match (m.shift, ks.key.as_str()) {
-            (true, "]") | (false, "}") => {
-                self.cycle_tab(true, window, cx);
-                cx.stop_propagation();
-            }
-            (true, "[") | (false, "{") => {
-                self.cycle_tab(false, window, cx);
-                cx.stop_propagation();
-            }
-            _ => {}
         }
     }
 }

@@ -30,6 +30,7 @@ pub fn context_name(context: CommandContext) -> &'static str {
         CommandContext::Sftp => "Sftp",
         CommandContext::Home => "Home",
         CommandContext::SshTerminal => "SshTerminal",
+        CommandContext::Pane => "Pane",
     }
 }
 
@@ -49,6 +50,7 @@ pub fn context_label(context: CommandContext) -> &'static str {
         CommandContext::Sftp => "SFTP",
         CommandContext::Home => "Home",
         CommandContext::SshTerminal => "SSH Terminal",
+        CommandContext::Pane => "Pane",
     }
 }
 

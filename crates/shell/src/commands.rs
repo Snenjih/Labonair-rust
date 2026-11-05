@@ -248,6 +248,15 @@ pub(crate) fn attach_action_handlers(
     on!(menu::ToggleSidebar => CommandId::ToggleSidebar);
     on!(menu::ToggleZenMode => CommandId::ToggleZenMode);
     on!(menu::FocusNextPane => CommandId::FocusNextPane);
+    on!(menu::FocusPrevPane => CommandId::FocusPrevPane);
+    on!(menu::FocusPaneLeft => CommandId::FocusPaneLeft);
+    on!(menu::FocusPaneRight => CommandId::FocusPaneRight);
+    on!(menu::FocusPaneUp => CommandId::FocusPaneUp);
+    on!(menu::FocusPaneDown => CommandId::FocusPaneDown);
+    on!(menu::MovePaneLeft => CommandId::MovePaneLeft);
+    on!(menu::MovePaneRight => CommandId::MovePaneRight);
+    on!(menu::MovePaneUp => CommandId::MovePaneUp);
+    on!(menu::MovePaneDown => CommandId::MovePaneDown);
     on!(menu::OpenSettings => CommandId::OpenSettings);
     on!(menu::OpenKeymapJson => CommandId::OpenKeymapJson);
     on!(menu::CheckForUpdates => CommandId::CheckForUpdates);
@@ -280,6 +289,7 @@ pub(crate) fn attach_action_handlers(
     }
     if has_split {
         on!(menu::ClosePane => CommandId::ClosePane);
+        on!(menu::TogglePaneZoom => CommandId::TogglePaneZoom);
     }
 
     el
