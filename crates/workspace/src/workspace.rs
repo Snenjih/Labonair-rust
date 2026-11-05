@@ -1119,7 +1119,6 @@ impl Workspace {
                         s.restore_entry(
                             index == 0,
                             entry.name.clone(),
-                            crate::spaces::SpaceColor::default(),
                             entry.session.identity.clone(),
                             cx,
                         )

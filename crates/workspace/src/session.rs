@@ -22,7 +22,6 @@ use serde::{Deserialize, Serialize};
 use crate::context::WorkspaceIdentity;
 use crate::pane::{PaneId, SplitAxis, WorkspaceLayout};
 use crate::pane_group::{Member, PaneAxis, PaneGroup};
-use crate::spaces::SpaceColor;
 
 /// Bumped whenever the snapshot layout changes incompatibly; an older/newer
 /// file is discarded rather than mis-read. Bumped to 2 for [`SpacesSnapshot`]
@@ -94,8 +93,6 @@ pub struct SpacesSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct SpaceEntry {
     pub name: String,
-    #[serde(default)]
-    pub color: SpaceColor,
     pub session: SessionSnapshot,
 }
 
@@ -678,7 +675,6 @@ mod tests {
         SpacesSnapshot::new(
             vec![SpaceEntry {
                 name: "Default".to_string(),
-                color: SpaceColor::default(),
                 session,
             }],
             0,
@@ -701,12 +697,10 @@ mod tests {
             vec![
                 SpaceEntry {
                     name: "Default".to_string(),
-                    color: SpaceColor::Orange,
                     session: SessionSnapshot::new(Vec::new(), 0),
                 },
                 SpaceEntry {
                     name: "Work".to_string(),
-                    color: SpaceColor::Blue,
                     session: SessionSnapshot::with_identity(
                         WorkspaceIdentity::project("/repo"),
                         sample().tabs,

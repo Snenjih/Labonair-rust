@@ -703,7 +703,6 @@ mod tests {
         EditorTabSnapshot, PreviewTabSnapshot, SerializedLayout, SftpTabSnapshot, SpaceEntry,
         WorkspaceTabSnapshot,
     };
-    use crate::spaces::SpaceColor;
 
     fn counter(start: PaneId) -> impl FnMut() -> PaneId {
         let mut n = start;
@@ -990,7 +989,6 @@ mod tests {
         let v2 = SpacesSnapshot::new(
             vec![SpaceEntry {
                 name: "Work".into(),
-                color: SpaceColor::Orange,
                 session: v2_session(),
             }],
             0,
@@ -1014,6 +1012,27 @@ mod tests {
         let m = parse_any(raw).expect("old file parses");
         assert_eq!(m.spaces[0].session.tabs.len(), 1);
         assert_eq!(m.spaces[0].session.active_tab_index, 0);
+    }
+
+    /// Space colours were removed (R10-002): an old v2 file that still carries
+    /// `color` must load, and v3 writes must not emit it.
+    #[test]
+    fn legacy_space_color_loads_and_is_never_written() {
+        let raw = r#"{"version":2,"activeSpaceIndex":1,"spaces":[
+            {"name":"A","color":"orange","session":{"version":2,"savedAt":1,
+                "activeTabIndex":0,"tabs":[]}},
+            {"name":"B","color":"blue","session":{"version":2,"savedAt":1,
+                "activeTabIndex":0,"tabs":[]}}]}"#;
+        let m = parse_any(raw).expect("v2 file with colours loads");
+        assert_eq!(m.version, 3);
+        assert_eq!(m.spaces.len(), 2);
+        assert_eq!(m.spaces[1].name, "B");
+        assert_eq!(m.active_space_index, 1);
+
+        let json = serde_json::to_string(&m).unwrap();
+        assert!(!json.contains("color"), "{json}");
+        let back = parse_any(&json).expect("v3 round trip");
+        assert_eq!(back, m);
     }
 
     #[test]
@@ -1238,7 +1257,6 @@ mod tests {
         let v2 = SpacesSnapshot::new(
             vec![SpaceEntry {
                 name: "D".into(),
-                color: SpaceColor::default(),
                 session: v2_session(),
             }],
             0,
