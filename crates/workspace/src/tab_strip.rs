@@ -479,7 +479,6 @@ impl Workspace {
             .h(titlebar_offset)
             .w_full()
             .flex_shrink_0()
-            .bg(c.toolbar_bg)
             .on_drag_move(
                 cx.listener(|this, ev: &DragMoveEvent<DraggedPane>, _window, cx| {
                     let hovered = ev.bounds.contains(&ev.event.position);
@@ -497,8 +496,6 @@ impl Workspace {
                         .flex()
                         .items_center()
                         .h_full()
-                        .border_r_1()
-                        .border_color(border)
                         .child(previous)
                         .child(next),
                 )
