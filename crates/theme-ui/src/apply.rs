@@ -57,8 +57,12 @@ fn mono_weight(
 /// `system` should follow macOS "Reduce motion"
 /// (`NSWorkspace.accessibilityDisplayShouldReduceMotion`), but GPUI 0.2.2 does
 /// not expose it and reading it needs `unsafe` Objective-C FFI.
-/// TODO(R10-002): resolve `system` to `Reduced` when the OS preference is on,
-/// once a safe platform API exists; until then it behaves like `full`.
+/// TODO(R10-002): resolve `system` to `Reduced` when the OS preference is on.
+/// Owner decision pending: the only route is `objc2-app-kit`
+/// (`NSWorkspace::accessibilityDisplayShouldReduceMotion`, a safe wrapper that
+/// needs the `NSWorkspace`/`NSAccessibility` features and a macOS-only
+/// dependency edge into this crate plus a change notification for live
+/// updates); until then `system` behaves like `full`.
 fn resolve_animations(configured: Animations) -> AnimationLevel {
     match configured {
         Animations::System | Animations::Full => AnimationLevel::Full,

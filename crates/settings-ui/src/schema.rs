@@ -319,7 +319,7 @@ pub fn all_fields() -> Vec<AnyField> {
                 ("off", "Off"),
             ]),
             "Animations",
-            "How much the interface animates. System follows the operating system's Reduce motion setting."
+            "How much the interface animates. System is intended to follow the operating system's Reduce motion setting but currently behaves like Full."
         ),
         field!(
             appearance.pane_layout,

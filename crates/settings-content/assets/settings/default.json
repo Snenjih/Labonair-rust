@@ -27,7 +27,7 @@
     "appFontSize": 13,
     "appLineHeight": 1.5,
     "appFontFamily": "\"Inter Variable\", sans-serif",
-    // "system" (follow the OS Reduce motion preference) | "full" | "reduced" | "off".
+    // "system" (meant to follow the OS Reduce motion preference; currently behaves like "full") | "full" | "reduced" | "off".
     "animations": "system",
     // "comfortable" (floating panes) | "compact".
     "paneLayout": "comfortable",

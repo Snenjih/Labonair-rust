@@ -32,7 +32,8 @@ impl MergeFrom for PaneLayout {
 )]
 #[serde(rename_all = "lowercase")]
 pub enum Animations {
-    /// Follow the operating system's "Reduce motion" preference.
+    /// Intended to follow the operating system's "Reduce motion" preference;
+    /// currently resolves to `Full` (see `labonair-theme-ui` `resolve_animations`).
     #[default]
     System,
     /// All transitions.
@@ -70,7 +71,8 @@ pub struct AppearanceContent {
     /// `animations` instead. Remove once no v2 `config.json` carries it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_motion: Option<bool>,
-    /// UI motion level; `system` follows the OS "Reduce motion" preference.
+    /// UI motion level; `system` is meant to follow the OS "Reduce motion"
+    /// preference but currently behaves like `full`.
     pub animations: Option<Animations>,
     /// Pane layout inside a tab (`comfortable` floating | `compact`).
     pub pane_layout: Option<PaneLayout>,
