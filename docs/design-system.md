@@ -45,8 +45,8 @@ extend the token source first and record the reason in the owning task.
 
 By default every surface is opaque and the window uses
 `WindowBackgroundAppearance::Opaque`. The setting
-`appearance.translucentSurfaces` (Settings › Appearance › Density & Motion,
-default off) switches the main and Settings windows to GPUI's native blurred
+`appearance.translucentSurfaces` (Settings › Appearance › Interface Style,
+Glassy/Classic tiles, default Classic) switches the main and Settings windows to GPUI's native blurred
 material and paints surfaces with the `labonair-theme-tokens::VibrancyLayer`
 opacities below. Toggling it applies live to every open window
 (`labonair_theme_ui::window_background`).
@@ -173,8 +173,9 @@ activation. Workspace keeps tab ordering, drag/drop, persistence, rename, and
 close decisions in its owner; those behaviors extend the shared row instead
 of replacing its styling.
 
-Horizontal titlebar tabs use a flat, borderless 40-pixel row (the titlebar
-height) with content-sized widths, muted inactive text, a hover fill, and an
+The kit's `Classic` tab style (kept for the `tab_item` contract; the workspace
+now renders [floating tabs](#floating-tabs) instead) is a flat, borderless
+40-pixel row (the titlebar height) with content-sized widths, muted inactive text, a hover fill, and an
 active surface that joins the workspace below. The bar and inactive tabs use the toolbar
 surface; the active tab uses the application background. These are existing
 theme roles captured by `Palette`; the tab view adds no literal colors. The
@@ -204,7 +205,8 @@ shared search-field chrome, `text_field_surface`, text and icon buttons,
 segmented controls, select trigger/popovers, `field_input`, badges, and
 `keybinding_hint`.
 `NumberField` has no filled slider track in Settings: it is a compact minus /
-editable value / plus control. Numeric editing uses a native `InputState` and
+editable value / plus control. The Appearance ranges (font sizes, line
+heights, corner radius) use `slider_control` instead. Numeric editing uses a native `InputState` and
 commits only validated, clamped values.
 
 Feature-owned editable text uses the shared `InputState` editor inside a
@@ -256,6 +258,9 @@ GPUI divides elapsed time by the animation duration every frame, so no
 duration is ever zero: all durations go through `MotionPrefs::resolve`. The
 level is chosen in a single function (`animation::motion_level`), which maps
 the resolved `ThemeMetrics::animations` (`appearance.animations`) to the level.
+`appearance.animations = system` is meant to follow the OS Reduce-motion
+preference but currently resolves to `Full` (`labonair-theme-ui`
+`resolve_animations`; no reachable platform API without new FFI).
 
 GPUI 0.2.2 has no transforms and no hover transitions, so the engine animates
 only opacity and layout properties. **Hover stays instant on purpose**: GPUI

@@ -4,6 +4,10 @@
 Pane actions; pinned runtime, native interaction, and paired visual evidence
 remain pending  
 **Baseline:** Zed commit `3569541038dd51524b03998ba4d38d253cb54f80`  
+**Superseded in part:** [ADR 0005](../adr/0005-universal-panes.md) removed
+Editor-internal groups (`EditorSplitTree`, `Editor*Group` commands); every split is
+a Workspace pane (`pane::*`, six directions, zoom, focus/move). Rows below that
+describe Editor group routes are historical and need re-classification.  
 **Owner:** Workspace for outer tabs/panes; Editor for editor-internal groups;
 each active view owner retains its own navigation behavior
 

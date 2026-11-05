@@ -26,8 +26,9 @@ The settings system is not the owner of:
 - MCP/agent bridge runtime configuration;
 - statusbar item placement and panel visibility.
 
-There is no `Shortcuts`, `Hosts`, `Themes`, or `Icon Themes` settings
-category. The pinned Settings taxonomy has a `Keymap` page that opens the
+There is no `Shortcuts`, `Hosts`, or `Icon Themes` settings category. The
+`Themes` page only hosts the theme and background owners' surfaces inline
+(ADR 0006, below); it owns no catalog or state. The pinned Settings taxonomy has a `Keymap` page that opens the
 Keymap owner's canonical editor; it does not add a second binding editor or
 move binding state into Settings. Host and theme management remain separate
 capability surfaces.
@@ -89,9 +90,9 @@ Theme owner's colour-theme and icon-theme surfaces and the Background owner's
 image editor in their own sections (ADR 0006). A surface registered with
 `SettingsSurfaceMode::Inline` (and an inline builder) is embedded by the
 Settings window; a `Link` surface shows its action button. The Background
-surface is inline-capable; its modal remains the fallback entry point until
-the Settings view embeds it. Settings never keeps catalogs, preview state,
-image state, or persistence for these surfaces.
+surface is inline and its former options modal is removed; the `open`
+callback only opens Settings on the Themes page. Settings never keeps
+catalogs, preview state, image state, or persistence for these surfaces.
 
 `Terminal › Connection` holds global SSH connection-behaviour defaults
 (handshake timeout, keep-alive interval, keep-alive failure tolerance) — the
@@ -107,9 +108,10 @@ The macOS application receives that URL through GPUI's open-URL callback,
 validates the path against the Settings field registry, and opens Settings at
 the owning page and field. Unknown paths are ignored.
 
-Theme and icon-theme selection and host management are not Settings pages even
-when their selected IDs or defaults are persisted through the settings storage
-layer. The Keymap page is a navigation surface for the existing Keymap-owned
+Host management is not a Settings page, and theme and icon-theme catalogs are
+not Settings state, even when selected IDs or defaults are persisted through
+the settings storage layer; the Themes page embeds the theme owner's surfaces
+inline rather than duplicating them. The Keymap page is a navigation surface for the existing Keymap-owned
 editor; keymap editing and persistence remain outside Settings.
 
 The Keymap editor is reachable from both the Settings navigation and the
@@ -161,7 +163,9 @@ The native Settings window has one dense tree rail and one content surface:
   listed above; persisted `SettingsContent` groups and group headings are not
   a second navigation taxonomy. Each category row shows a coloured
   `category_chip` and, when selected, the sunken fill with a semibold label;
-  the owner pages (Keymap, Hosts) sit below the value categories with a gap;
+  the owner pages sit below the value categories with a gap (today only Keymap
+  registers one; ADR 0006 reserves a Hosts slot, but Hosts has no Settings
+  surface yet);
 - the rail uses 10 logical pixels of side and bottom inset and a 40-pixel
   macOS top inset below the native titlebar. Its shared search field is 28
   pixels high with a 12-pixel gap before navigation;

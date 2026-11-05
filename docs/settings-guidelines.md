@@ -15,7 +15,8 @@ editor, not a general application-management window.
    behavior.
 3. **No management pages.** Hosts, credentials, themes, icon themes, keymaps,
    notifications, transfers, and command registration are opened through their
-   own canonical surfaces.
+   own canonical surfaces; rule 18 allows the Themes page to embed the theme
+   and Background owner surfaces inline.
 4. **Persisted selections are not ownership.** A selected theme ID or similar
    value may be persisted by the settings storage layer while the owning module
    controls its registry and user flow.

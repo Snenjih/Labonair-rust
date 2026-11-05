@@ -19,7 +19,10 @@ tests = ["crates/workspace/src/command_provider.rs", "crates/workspace/src/works
 visual_evidence = ["Pending: native surface matrix for titlebar, tabs, panes, and focused states."]
 source_files = ["crates/workspace/src/command_provider.rs", "crates/workspace/src/workspace.rs", "crates/shell/src/menu.rs"]
 ids = [
-  "NewEditorTab", "DuplicateTab", "CloseOtherTabs", "SplitRight", "SplitDown",
+  "NewEditorTab", "DuplicateTab", "CloseOtherTabs", "SplitRight", "SplitDown", "SplitLeft", "SplitUp",
+  "FocusPrevPane", "FocusPaneLeft", "FocusPaneRight", "FocusPaneUp", "FocusPaneDown",
+  "MovePaneLeft", "MovePaneRight", "MovePaneUp", "MovePaneDown",
+  "ResetPaneSizes", "TogglePaneZoom",
   "ClosePane", "CloseTab", "NextTab", "PrevTab", "SwitchTab", "Find",
   "OpenFile", "ToggleSidebar", "ToggleFullScreen", "OpenSnippetsPanel",
   "OpenGitGraph", "FocusSourceControl", "OpenProject", "ReturnToStandalone",
@@ -204,9 +207,8 @@ ids = [
   "ToggleVimMode", "Save", "EditorAddCursor", "EditorSelectNextOccurrence",
   "EditorSelectAllOccurrences", "EditorExpandSelection", "EditorShrinkSelection",
   "EditorDuplicateLines", "EditorMoveLines", "EditorIndent", "EditorOutdent",
-  "EditorToggleComment", "EditorTranspose", "EditorSplitRight", "EditorSplitDown",
-  "EditorFocusNextGroup", "EditorFocusPreviousGroup", "EditorCloseGroup",
-  "EditorCloseOtherGroups", "EditorTriggerCompletion", "EditorGoToDefinition",
+  "EditorToggleComment", "EditorTranspose",
+  "EditorTriggerCompletion", "EditorGoToDefinition",
   "EditorGoToDeclaration", "EditorGoToReferences", "EditorGoToImplementation",
   "EditorPeekDefinition", "EditorRenameSymbol", "EditorCodeAction",
   "EditorOpenMarkdownPreview",
