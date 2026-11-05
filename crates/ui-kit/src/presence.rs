@@ -53,8 +53,8 @@
 use std::time::{Duration, Instant};
 
 use gpui::{
-    div, Animation, AnimationElement, AnimationExt, Div, ElementId, InteractiveElement,
-    IntoElement, Styled,
+    div, px, Animation, AnimationElement, AnimationExt, Div, ElementId, InteractiveElement,
+    IntoElement, Pixels, Styled,
 };
 
 use crate::animation::{MotionLevel, MotionPrefs};
@@ -178,6 +178,10 @@ pub fn exit_fade(c: Palette) -> Animation {
     Animation::new(total).with_easing(move |t| ease.eval((t * ratio).min(1.0)))
 }
 
+/// How far a popup card (popover, menu, select list) rises into place on
+/// enter. `Full` motion only; `Reduced` and `Off` fade (or snap) in place.
+pub const POPUP_SLIDE: Pixels = px(4.0);
+
 /// Apply the shared enter/exit fade: [`crate::fade_in`] under `id` while open,
 /// [`exit_fade`] under a distinct id (so the animation restarts) while
 /// `closing`.
@@ -187,6 +191,28 @@ pub(crate) fn enter_or_exit<E: Styled + IntoElement + 'static>(
     c: Palette,
     closing: bool,
 ) -> AnimationElement<E> {
+    enter_or_exit_sliding(el, id, c, closing, px(0.0))
+}
+
+/// [`enter_or_exit`] for popup cards: the enter fade is joined by a
+/// [`POPUP_SLIDE`] rise (a `top` offset lerp, `Full` motion only). The exit is
+/// a plain fade.
+pub(crate) fn enter_or_popup<E: Styled + IntoElement + 'static>(
+    el: E,
+    id: &'static str,
+    c: Palette,
+    closing: bool,
+) -> AnimationElement<E> {
+    enter_or_exit_sliding(el, id, c, closing, POPUP_SLIDE)
+}
+
+fn enter_or_exit_sliding<E: Styled + IntoElement + 'static>(
+    el: E,
+    id: &'static str,
+    c: Palette,
+    closing: bool,
+    slide: Pixels,
+) -> AnimationElement<E> {
     if closing && c.motion.level != MotionLevel::Off {
         el.with_animation(
             ElementId::from((ElementId::from(id), "exit")),
@@ -194,8 +220,14 @@ pub(crate) fn enter_or_exit<E: Styled + IntoElement + 'static>(
             |el, delta| el.opacity(1.0 - delta),
         )
     } else {
-        el.with_animation(id, crate::animation::fade_in(c), |el, delta| {
-            el.opacity(delta)
+        let motion = c.motion;
+        el.with_animation(id, crate::animation::fade_in(c), move |el, delta| {
+            let el = el.opacity(delta);
+            if slide == px(0.0) {
+                el
+            } else {
+                el.top(crate::animation::slide_offset(&motion, slide, delta))
+            }
         })
     }
 }
@@ -306,12 +338,26 @@ mod tests {
     }
 
     #[test]
+    fn popup_rise_only_plays_at_full_motion() {
+        use crate::animation::slide_offset;
+        for (level, start) in [
+            (MotionLevel::Full, POPUP_SLIDE),
+            (MotionLevel::Reduced, px(0.0)),
+            (MotionLevel::Off, px(0.0)),
+        ] {
+            assert_eq!(slide_offset(&motion(level), POPUP_SLIDE, 0.0), start);
+            assert_eq!(slide_offset(&motion(level), POPUP_SLIDE, 1.0), px(0.0));
+        }
+    }
+
+    #[test]
     fn enter_or_exit_builds_in_both_states_and_levels() {
         for level in [MotionLevel::Full, MotionLevel::Reduced, MotionLevel::Off] {
             let mut c = test_palette();
             c.motion.level = level;
             for closing in [false, true] {
                 let _ = enter_or_exit(div(), "surface", c, closing);
+                let _ = enter_or_popup(div(), "popup", c, closing);
             }
         }
         let _ = closing_guard();

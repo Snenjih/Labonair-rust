@@ -23,6 +23,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window,
 };
 
+use crate::animation::state_fill;
 use crate::density::Density;
 use crate::icon::IconName;
 use crate::palette::Palette;
@@ -265,7 +266,7 @@ impl IntoElement for TreeRow {
         };
 
         let mut row = div()
-            .id(self.id)
+            .id(self.id.clone())
             .relative()
             .flex()
             .items_center()
@@ -297,14 +298,30 @@ impl IntoElement for TreeRow {
                     .border_color(c.primary),
             );
         } else if st.selected {
-            // Ciel §8: sunken fill + semibold label, no accent tint.
-            row = row.bg(c.selected_fill).font_weight(FontWeight::SEMIBOLD);
+            // Ciel §8: sunken fill + semibold label, no accent tint. The fill
+            // is the fading layer added below; hover sits under it.
+            let hover = c.accent;
+            row = row
+                .hover(move |s| s.bg(hover))
+                .font_weight(FontWeight::SEMIBOLD);
         } else if st.marked {
             row = row.bg(c.selected_fill.opacity(0.6));
         } else {
             let hover = c.accent;
             row = row.hover(move |s| s.bg(hover));
         }
+
+        // Selected fill: an always-built layer so selecting and deselecting
+        // crossfade (first child, so it paints behind everything else).
+        row = row.child(state_fill(
+            (self.id, "sel"),
+            c,
+            st.selected && !st.drop_target,
+            c.selected_fill,
+            None,
+            px(0.0),
+            px(0.0),
+        ));
 
         if st.cut {
             row = row.opacity(0.5);

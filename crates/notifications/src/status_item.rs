@@ -3,7 +3,7 @@
 //! This belongs to the notifications capability rather than the application
 //! shell. The shell only registers the item in the global statusbar registry.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, sync::Arc, time::Instant};
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -13,7 +13,10 @@ use gpui::{
 };
 use labonair_panel::{AnyStatusItemHandle, StatusItem, StatusItemRegistration, StatusSide};
 use labonair_theme::store::ThemeStore;
-use labonair_ui_kit::{icon_toggle_button, ButtonSize, ButtonVariant, IconName, ListItem, Palette};
+use labonair_ui_kit::{
+    icon_toggle_button, popover_with_exit, ButtonSize, ButtonVariant, IconName, ListItem, Palette,
+    Presence,
+};
 
 use crate::NotificationCenter;
 
@@ -21,7 +24,9 @@ use crate::NotificationCenter;
 pub struct NotificationsStatusItem {
     center: Entity<NotificationCenter>,
     theme: Entity<ThemeStore>,
-    open: bool,
+    /// Open / closing / closed state of the dropdown; it stays mounted for the
+    /// exit fade.
+    presence: Presence,
     /// The bell trigger's window-space bounds from the last paint. The
     /// dropdown drops from `bounds.bottom_left()` so it stays anchored to the
     /// trigger, not to wherever inside it the click landed.
@@ -44,12 +49,26 @@ impl NotificationsStatusItem {
         Self {
             center,
             theme,
-            open: false,
+            presence: Presence::new(),
             trigger_bounds: None,
             fallback_anchor: Point::default(),
             expanded: HashSet::new(),
             focus: cx.focus_handle(),
         }
+    }
+}
+
+impl NotificationsStatusItem {
+    /// Whether the dropdown is open (not merely fading out).
+    fn is_open(&self) -> bool {
+        self.presence.is_mounted() && !self.presence.is_closing()
+    }
+
+    /// Start the exit fade; idempotent while closing.
+    fn close(&mut self, cx: &mut Context<Self>) {
+        let motion = Palette::from_theme(self.theme.read(cx)).motion;
+        self.presence.request_close(Instant::now(), &motion);
+        cx.notify();
     }
 }
 
@@ -84,6 +103,8 @@ impl StatusItem for NotificationsStatusItem {
 
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let count = self.center.read(cx).unread_count();
+        let motion = Palette::from_theme(self.theme.read(cx)).motion;
+        self.presence.tick(Instant::now(), &motion);
         let (fg, muted, accent, border) = {
             let theme = self.theme.read(cx);
             (
@@ -94,7 +115,7 @@ impl StatusItem for NotificationsStatusItem {
             )
         };
         let palette = Palette::from_theme(self.theme.read(cx));
-        let bell = icon_toggle_button("bar-notifications", palette, IconName::Bell, self.open)
+        let bell = icon_toggle_button("bar-notifications", palette, IconName::Bell, self.is_open())
             .track_focus(&self.focus)
             .key_context("StatusPopover")
             .relative()
@@ -134,24 +155,23 @@ impl StatusItem for NotificationsStatusItem {
                 )
             })
             .on_click(cx.listener(|this, ev: &ClickEvent, window, cx| {
-                if this.open {
-                    this.open = false;
+                if this.is_open() {
+                    this.close(cx);
                 } else {
-                    this.open = true;
+                    this.presence.open();
                     this.fallback_anchor = ev.position();
                     window.focus(&this.focus);
+                    cx.notify();
                 }
-                cx.notify();
             }))
             .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _window, cx| {
-                if this.open && ev.keystroke.key == "escape" {
-                    this.open = false;
-                    cx.notify();
+                if this.is_open() && ev.keystroke.key == "escape" {
+                    this.close(cx);
                     cx.stop_propagation();
                 }
             }));
 
-        if !self.open {
+        if !self.presence.is_mounted() {
             return bell.into_any_element();
         }
         let anchor = self
@@ -164,10 +184,7 @@ impl StatusItem for NotificationsStatusItem {
         let dismiss = {
             let view = view.clone();
             move |_window: &mut Window, cx: &mut App| {
-                view.update(cx, |item, cx| {
-                    item.open = false;
-                    cx.notify();
-                });
+                view.update(cx, |item, cx| item.close(cx));
             }
         };
         let content = div()
@@ -203,8 +220,7 @@ impl StatusItem for NotificationsStatusItem {
                         .on_click(cx.listener(
                             |this, _: &ClickEvent, _window, cx| {
                                 this.center.update(cx, |center, cx| center.clear_all(cx));
-                                this.open = false;
-                                cx.notify();
+                                this.close(cx);
                             },
                         )),
                     ),
@@ -302,10 +318,11 @@ impl StatusItem for NotificationsStatusItem {
             .relative()
             .flex_shrink_0()
             .child(bell)
-            .child(labonair_ui_kit::popover(
+            .child(popover_with_exit(
                 anchor,
                 px(300.0),
                 Palette::from_theme(self.theme.read(cx)),
+                self.presence.is_closing(),
                 dismiss,
                 content,
             ))

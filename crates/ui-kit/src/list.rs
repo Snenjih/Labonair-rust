@@ -31,6 +31,7 @@ use gpui::{
     StatefulInteractiveElement, StyleRefinement, Styled, Window,
 };
 
+use crate::animation::state_fill;
 use crate::divider::{divider, Axis};
 use crate::icon::IconName;
 use crate::palette::Palette;
@@ -148,7 +149,8 @@ impl IntoElement for ListItem {
         let c = self.c;
         let text_color = if self.disabled { c.muted } else { c.fg };
         let mut row = div()
-            .id(self.id)
+            .id(self.id.clone())
+            .relative()
             .flex()
             .items_center()
             .gap(c.space(8.0))
@@ -158,9 +160,18 @@ impl IntoElement for ListItem {
             .rounded(px(c.radius.md))
             .text_size(c.control_space(13.0))
             .text_color(text_color)
-            .when(self.selected, |d| {
-                d.bg(c.selected_fill).font_weight(FontWeight::SEMIBOLD)
-            })
+            .when(self.selected, |d| d.font_weight(FontWeight::SEMIBOLD))
+            // The selected fill is an always-built layer that crossfades; it
+            // paints behind the icon and children added below.
+            .child(state_fill(
+                (self.id, "sel"),
+                c,
+                self.selected,
+                c.selected_fill,
+                None,
+                px(c.radius.md),
+                px(0.0),
+            ))
             .when_some(self.icon, |d, icon| {
                 d.child(icon.svg(text_color).size(px(14.0)))
             })
@@ -171,7 +182,9 @@ impl IntoElement for ListItem {
             row = row.cursor_pointer();
             if let Some(hover) = self.hover {
                 row = row.hover(hover);
-            } else if !self.selected {
+            } else {
+                // Also on a selected row: the hover fill sits under the fading
+                // selection layer, so clicking a hovered row blends in.
                 let hover_fill = c.accent;
                 row = row.hover(move |s| s.bg(hover_fill));
             }

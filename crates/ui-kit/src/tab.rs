@@ -8,6 +8,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window,
 };
 
+use crate::animation::state_fill;
 use crate::{
     icon_button_builder, indicator, ButtonSize, ButtonVariant, IconButtonShape, IconName,
     IndicatorSize, Palette, DISABLED_OPACITY,
@@ -243,32 +244,44 @@ impl TabItemBuilder {
             .when(horizontal, |row| {
                 row.relative().flex_shrink_0().max_w(palette.space(240.0))
             })
-            // Floating blocks keep a constant 1px border (transparent when not
-            // selected) so selecting never shifts layout.
+            // Floating blocks keep a constant 1px border (transparent) so
+            // selecting never shifts layout; the selected ring is part of the
+            // fading fill layer below.
             .when(floating, |row| {
-                row.relative().border_1().border_color(if selected {
-                    palette.line_subtle
-                } else {
-                    gpui::transparent_black()
-                })
+                row.border_1().border_color(gpui::transparent_black())
             })
-            .when(selected, |row| {
-                if horizontal && !floating {
-                    row.bg(palette.bg)
-                } else {
-                    row.bg(palette.selected_fill)
-                        .font_weight(FontWeight::SEMIBOLD)
-                }
-            })
-            .when(!selected && !disabled, |row| {
-                row.hover(|style| style.bg(palette.accent))
-            })
+            .relative()
+            .when(selected, |row| row.font_weight(FontWeight::SEMIBOLD))
+            // Hover stays under the selected layer so a click on a hovered tab
+            // blends into the selection instead of dipping to the bar colour.
+            .when(!disabled, |row| row.hover(|style| style.bg(palette.accent)))
             .when(!disabled, |row| {
                 row.cursor_pointer()
                     .tab_index(0)
                     .focus(|style| style.border_1().border_color(palette.ring))
             })
             .when(disabled, |row| row.opacity(DISABLED_OPACITY));
+
+        // Selected fill (classic: editor surface; floating: sunken block with a
+        // 1px ring). An always-built layer, so selecting and deselecting
+        // crossfade; paints behind everything that follows.
+        row = row.child(state_fill(
+            (ElementId::from(id.clone()), "fill"),
+            palette,
+            selected,
+            if horizontal && !floating {
+                palette.bg
+            } else {
+                palette.selected_fill
+            },
+            floating.then_some(palette.line_subtle),
+            if horizontal && !floating {
+                px(0.0)
+            } else {
+                px(palette.radius.md)
+            },
+            px(if floating { 1.0 } else { 0.0 }),
+        ));
 
         if let Some(icon) = leading {
             row = row.child(

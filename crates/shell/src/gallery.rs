@@ -37,12 +37,12 @@ use labonair_ui_kit::{
     divider, floating_tab_strip, h_stack, icon_button, icon_toggle_button, indicator, kbd_row,
     keybinding_hint, list_header, menu_card_preview, modal_overlay_with_exit, number_field,
     pane_bar, pane_frame, preview_tile, preview_tile_group, segmented_control, select_trigger,
-    settings_group, settings_row, slider, slider_row, tab_drop_marker, tab_group_gap, tab_item,
-    toggle_base, Axis, ButtonSize, ButtonVariant, ChipHue, ColorSchemeChoice, IconButtonShape,
-    IconName, IndicatorSize, InterfaceStyleChoice, ListItem, MenuItem, MotionExt, MotionLevel,
-    MotionPrefs, Palette, PaneAction, PaneLayoutStyle, Presence, PresenceStep, PreviewKind,
-    SegmentSize, SegmentVariant, Severity, SliderState, TabDropSide, TabLayout, TabStyle, TileMock,
-    ToggleSize, ToggleVariant,
+    settings_group, settings_row, slider, slider_row, switch, tab_drop_marker, tab_group_gap,
+    tab_item, text_field_surface, toggle_base, Axis, ButtonSize, ButtonVariant, ChipHue,
+    ColorSchemeChoice, IconButtonShape, IconName, IndicatorSize, InterfaceStyleChoice, ListItem,
+    MenuItem, MotionExt, MotionLevel, MotionPrefs, Palette, PaneAction, PaneLayoutStyle, Presence,
+    PresenceStep, PreviewKind, SegmentSize, SegmentVariant, Severity, SliderState, TabDropSide,
+    TabLayout, TabStyle, TextFieldState, TileMock, ToggleSize, ToggleVariant,
 };
 
 fn noop_tab_activate(_: &mut Window, _: &mut App) {}
@@ -1348,6 +1348,80 @@ impl Gallery {
                             .child(glyph(IconName::Check, "gm-glyph-on", on))
                             .child(glyph(IconName::Close, "gm-glyph-off", !on)),
                     ),
+                ))
+                .child(row(
+                    "switch + checkbox",
+                    c,
+                    h_stack()
+                        .gap_3()
+                        .child(switch("gm-switch", c, on))
+                        .child(checkbox("gm-check", c, on).label("Checked")),
+                ))
+                .child(row(
+                    "segmented pill",
+                    c,
+                    segmented_control("gm-seg", c, if on { "b" } else { "a" })
+                        .segments([("a", "Alpha"), ("b", "Beta")])
+                        .variant(SegmentVariant::Solid)
+                        .size(SegmentSize::Sm),
+                ))
+                .child(row(
+                    "tab selection",
+                    c,
+                    h_stack()
+                        .gap_1()
+                        .child(
+                            tab_item("gm-tab-a", c, "main.rs")
+                                .style(TabStyle::Floating)
+                                .selected(on)
+                                .on_activate(noop_tab_activate)
+                                .on_navigate(noop_tab_navigate)
+                                .render(),
+                        )
+                        .child(
+                            tab_item("gm-tab-b", c, "lib.rs")
+                                .style(TabStyle::Floating)
+                                .selected(!on)
+                                .on_activate(noop_tab_activate)
+                                .on_navigate(noop_tab_navigate)
+                                .render(),
+                        ),
+                ))
+                .child(row(
+                    "list selection",
+                    c,
+                    div()
+                        .w(px(220.0))
+                        .child(
+                            ListItem::new("gm-list-a", c)
+                                .selected(on)
+                                .child("First row"),
+                        )
+                        .child(
+                            ListItem::new("gm-list-b", c)
+                                .selected(!on)
+                                .child("Second row"),
+                        ),
+                ))
+                .child(row(
+                    "focus ring",
+                    c,
+                    text_field_surface(
+                        "gm-field",
+                        c,
+                        if on {
+                            TextFieldState::Focused
+                        } else {
+                            TextFieldState::Normal
+                        },
+                        div().text_color(c.muted).child("Field"),
+                    )
+                    .w(px(160.0)),
+                ))
+                .child(row(
+                    "disclosure (app setting)",
+                    c,
+                    disclosure("gm-disclosure", "Section", !on, c.muted, c.fg),
                 ))
                 .child(row(
                     "exit (closing)",
