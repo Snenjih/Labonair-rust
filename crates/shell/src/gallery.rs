@@ -37,7 +37,7 @@ use labonair_ui_kit::{
     divider, floating_tab_strip, h_stack, icon_button, icon_toggle_button, indicator, kbd_row,
     keybinding_hint, list_header, menu_card_preview, modal_overlay_with_exit, number_field,
     pane_bar, pane_frame, preview_tile, preview_tile_group, segmented_control, select_trigger,
-    settings_group, settings_row, slider, slider_row, switch, tab_drop_marker, tab_group_gap,
+    settings_group, settings_row, slider, slider_control, slider_row, switch, tab_drop_marker, tab_group_gap,
     tab_item, text_field_surface, toggle_base, Axis, ButtonSize, ButtonVariant, ChipHue,
     ColorSchemeChoice, IconButtonShape, IconName, IndicatorSize, InterfaceStyleChoice, ListItem,
     MenuItem, MotionExt, MotionLevel, MotionPrefs, Palette, PaneAction, PaneLayoutStyle, Presence,
@@ -1187,6 +1187,17 @@ impl Gallery {
                         button("gs-reset", c, ButtonVariant::Subtle, ButtonSize::Xs).child("Reset"),
                     )
                     .control(number_field("gs-opacity", c, 30.0, 0.0, 100.0, 1.0).track(false)),
+            )
+            .row(
+                settings_row("gs-row-e", c, "Disabled in project scope")
+                    .description("Only the user settings layer can change this value.")
+                    .extra(
+                        div()
+                            .text_size(px(12.0))
+                            .text_color(c.muted)
+                            .child("Modified in User settings"),
+                    )
+                    .control(slider_control(&self.slider, c, "42 px", true)),
             )
             .row(settings_row("gs-row-d", c, "Row without a control"));
 
