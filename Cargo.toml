@@ -124,3 +124,13 @@ resvg = { version = "0.45.1", default-features = false, features = ["text", "sys
 dirs = "6"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
+
+# Dev builds of a GPUI app are unusably slow at opt-level 0 (every layout and
+# paint pass runs unoptimized). Own crates stay quick to rebuild at 1;
+# dependencies (gpui, alacritty_terminal, tree-sitter, ...) change rarely and
+# get full optimization.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
