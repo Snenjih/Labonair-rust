@@ -1,91 +1,14 @@
-//! A workspace-owned floating surface (popover or context menu) together with
-//! its exit state (R10-002).
-//!
-//! GPUI unmounts an element the frame its owner stops building it, so the
-//! surface's data has to outlive the dismissal for the exit fade to play. A
-//! [`MenuSlot`] keeps the data next to a ui-kit [`Presence`]: `open` shows it,
-//! `close` starts the fade (idempotent, so Esc spam is safe), `tick` runs once
-//! per render and drops the data after the fade, and `mounted` yields the data
-//! while the surface should be built, with the `closing` flag for the
-//! `*_with_exit` variants.
-
-use std::time::Instant;
+//! Exit-fade plumbing for the workspace-owned floating surfaces (popovers and
+//! context menus, R10-002). Each is a `MenuSlot` (ui-kit `PresenceSlot`: the
+//! surface data plus its open/closing/closed state); the helpers here dismiss
+//! them with a fade and tick them once per render.
 
 use gpui::{App, Context, Window};
-use labonair_ui_kit::{MotionPrefs, Palette, Presence, PresenceStep};
+use labonair_ui_kit::{MotionPrefs, Palette, PresenceStep};
+
+pub(crate) use labonair_ui_kit::PresenceSlot as MenuSlot;
 
 use crate::Workspace;
-
-/// Data of one floating surface plus its open/closing/closed state.
-pub(crate) struct MenuSlot<T> {
-    data: Option<T>,
-    presence: Presence,
-    /// A close that finished at once (motion off): reported by the next
-    /// [`MenuSlot::tick`] as `JustClosed`, so focus return stays on one path.
-    closed_at_once: bool,
-}
-
-impl<T> MenuSlot<T> {
-    pub(crate) const fn new() -> Self {
-        Self {
-            data: None,
-            presence: Presence::new(),
-            closed_at_once: false,
-        }
-    }
-
-    /// Show the surface with `data`; cancels a running exit fade.
-    pub(crate) fn open(&mut self, data: T) {
-        self.data = Some(data);
-        self.presence.open();
-    }
-
-    /// Start closing. Idempotent: closing a closing or closed surface changes
-    /// nothing.
-    pub(crate) fn close(&mut self, motion: &MotionPrefs) {
-        if self.presence.request_close(Instant::now(), motion) {
-            self.data = None;
-            self.closed_at_once = true;
-        }
-    }
-
-    /// Open and not fading out: the state in which the surface takes input.
-    pub(crate) fn is_open(&self) -> bool {
-        self.presence.is_mounted() && !self.presence.is_closing()
-    }
-
-    /// Advance the exit fade. Call once per render before building; drops the
-    /// data once the surface is gone. [`PresenceStep::JustClosed`] is the
-    /// moment to return focus.
-    pub(crate) fn tick(&mut self, motion: &MotionPrefs) -> PresenceStep {
-        let step = self.presence.tick(Instant::now(), motion);
-        if !self.presence.is_mounted() {
-            self.data = None;
-        }
-        if std::mem::take(&mut self.closed_at_once) {
-            return PresenceStep::JustClosed;
-        }
-        step
-    }
-
-    /// The data and the `closing` flag while the surface must be built (open or
-    /// fading out); `None` otherwise.
-    pub(crate) fn mounted(&self) -> Option<(&T, bool)> {
-        if self.presence.is_mounted() {
-            self.data
-                .as_ref()
-                .map(|data| (data, self.presence.is_closing()))
-        } else {
-            None
-        }
-    }
-}
-
-impl<T> Default for MenuSlot<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 impl Workspace {
     /// The active theme's motion tokens (exit durations, level).
@@ -162,57 +85,5 @@ impl Workspace {
         {
             self.focus_active(window, cx);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use labonair_ui_kit::MotionLevel;
-
-    fn motion(level: MotionLevel) -> MotionPrefs {
-        MotionPrefs::new(level, &Default::default())
-    }
-
-    #[test]
-    fn closing_keeps_the_data_until_the_fade_ends() {
-        let m = motion(MotionLevel::Full);
-        let mut slot = MenuSlot::new();
-        assert!(slot.mounted().is_none());
-
-        slot.open(7);
-        assert_eq!(slot.mounted(), Some((&7, false)));
-        assert!(slot.is_open());
-
-        slot.close(&m);
-        assert_eq!(slot.mounted(), Some((&7, true)));
-        assert!(!slot.is_open());
-        // Esc spam while closing neither restarts nor unmounts.
-        slot.close(&m);
-        assert_eq!(slot.mounted(), Some((&7, true)));
-        assert_eq!(slot.tick(&m), PresenceStep::Closing);
-    }
-
-    #[test]
-    fn reopening_during_the_fade_cancels_it() {
-        let m = motion(MotionLevel::Full);
-        let mut slot = MenuSlot::new();
-        slot.open(1);
-        slot.close(&m);
-        slot.open(2);
-        assert_eq!(slot.mounted(), Some((&2, false)));
-    }
-
-    #[test]
-    fn motion_off_closes_at_once_and_reports_it_once() {
-        let m = motion(MotionLevel::Off);
-        let mut slot = MenuSlot::new();
-        slot.open(1);
-        slot.close(&m);
-        assert!(slot.mounted().is_none());
-        assert_eq!(slot.tick(&m), PresenceStep::JustClosed);
-        // Reported once; closing a surface that is not open is not a focus event.
-        slot.close(&m);
-        assert_eq!(slot.tick(&m), PresenceStep::Hidden);
     }
 }

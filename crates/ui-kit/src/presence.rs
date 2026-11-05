@@ -166,6 +166,83 @@ impl Presence {
     }
 }
 
+/// Data of one floating surface plus its open/closing/closed state: a
+/// [`Presence`] that also keeps the surface's data alive while it fades out.
+/// `open(data)` shows it, `close` starts the fade (idempotent, so Esc spam is
+/// safe), `tick` runs once per render and drops the data after the fade (its
+/// [`PresenceStep::JustClosed`] is the moment to return focus), and `mounted`
+/// yields the data while the surface should be built, with the `closing` flag
+/// for the `*_with_exit` variants.
+pub struct PresenceSlot<T> {
+    data: Option<T>,
+    presence: Presence,
+    /// A close that finished at once (motion off): reported by the next
+    /// [`PresenceSlot::tick`] as `JustClosed`, so focus return stays on one path.
+    closed_at_once: bool,
+}
+
+impl<T> PresenceSlot<T> {
+    pub const fn new() -> Self {
+        Self {
+            data: None,
+            presence: Presence::new(),
+            closed_at_once: false,
+        }
+    }
+
+    /// Show the surface with `data`; cancels a running exit fade.
+    pub fn open(&mut self, data: T) {
+        self.data = Some(data);
+        self.presence.open();
+    }
+
+    /// Start closing. Idempotent: closing a closing or closed surface changes
+    /// nothing.
+    pub fn close(&mut self, motion: &MotionPrefs) {
+        if self.presence.request_close(Instant::now(), motion) {
+            self.data = None;
+            self.closed_at_once = true;
+        }
+    }
+
+    /// Open and not fading out: the state in which the surface takes input.
+    pub fn is_open(&self) -> bool {
+        self.presence.is_mounted() && !self.presence.is_closing()
+    }
+
+    /// Advance the exit fade. Call once per render before building; drops the
+    /// data once the surface is gone. [`PresenceStep::JustClosed`] is the
+    /// moment to return focus.
+    pub fn tick(&mut self, motion: &MotionPrefs) -> PresenceStep {
+        let step = self.presence.tick(Instant::now(), motion);
+        if !self.presence.is_mounted() {
+            self.data = None;
+        }
+        if std::mem::take(&mut self.closed_at_once) {
+            return PresenceStep::JustClosed;
+        }
+        step
+    }
+
+    /// The data and the `closing` flag while the surface must be built (open or
+    /// fading out); `None` otherwise.
+    pub fn mounted(&self) -> Option<(&T, bool)> {
+        if self.presence.is_mounted() {
+            self.data
+                .as_ref()
+                .map(|data| (data, self.presence.is_closing()))
+        } else {
+            None
+        }
+    }
+}
+
+impl<T> Default for PresenceSlot<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The exit [`Animation`]: `dur_fast` of fade progress (`0 -> 1`, drive opacity
 /// with `1 - delta`), padded so the owner gets a frame after the unmount
 /// threshold. The easing saturates at `1` once [`exit_duration`] has elapsed.
@@ -398,5 +475,57 @@ mod tests {
                 |_, _, _| {},
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod slot_tests {
+    use super::*;
+    use crate::animation::MotionLevel;
+
+    fn motion(level: MotionLevel) -> MotionPrefs {
+        MotionPrefs::new(level, &Default::default())
+    }
+
+    #[test]
+    fn closing_keeps_the_data_until_the_fade_ends() {
+        let m = motion(MotionLevel::Full);
+        let mut slot = PresenceSlot::new();
+        assert!(slot.mounted().is_none());
+
+        slot.open(7);
+        assert_eq!(slot.mounted(), Some((&7, false)));
+        assert!(slot.is_open());
+
+        slot.close(&m);
+        assert_eq!(slot.mounted(), Some((&7, true)));
+        assert!(!slot.is_open());
+        // Esc spam while closing neither restarts nor unmounts.
+        slot.close(&m);
+        assert_eq!(slot.mounted(), Some((&7, true)));
+        assert_eq!(slot.tick(&m), PresenceStep::Closing);
+    }
+
+    #[test]
+    fn reopening_during_the_fade_cancels_it() {
+        let m = motion(MotionLevel::Full);
+        let mut slot = PresenceSlot::new();
+        slot.open(1);
+        slot.close(&m);
+        slot.open(2);
+        assert_eq!(slot.mounted(), Some((&2, false)));
+    }
+
+    #[test]
+    fn motion_off_closes_at_once_and_reports_it_once() {
+        let m = motion(MotionLevel::Off);
+        let mut slot = PresenceSlot::new();
+        slot.open(1);
+        slot.close(&m);
+        assert!(slot.mounted().is_none());
+        assert_eq!(slot.tick(&m), PresenceStep::JustClosed);
+        // Reported once; closing a surface that is not open is not a focus event.
+        slot.close(&m);
+        assert_eq!(slot.tick(&m), PresenceStep::Hidden);
     }
 }

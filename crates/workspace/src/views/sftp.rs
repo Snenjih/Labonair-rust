@@ -56,8 +56,8 @@ use labonair_transfers::TransferDirection;
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{
     button, caret, context_menu, dialog_surface, divider, icon_for_path, icon_toggle_button,
-    modal_overlay, tree_row, Axis, BlinkCursor, ButtonSize, ButtonVariant, Density, IconName,
-    MenuClick, MenuItem, Palette, Tooltip, TreeRowState,
+    modal_overlay_with_exit, tree_row, Axis, BlinkCursor, ButtonSize, ButtonVariant, Density,
+    IconName, MenuClick, MenuItem, Palette, Presence, Tooltip, TreeRowState,
 };
 
 /// A menu action against the SFTP view (wrapped into a [`MenuClick`]).
@@ -680,6 +680,10 @@ pub struct SftpView {
     menu: Option<Menu>,
     perm: Option<PermDialog>,
     props: Option<PropsDialog>,
+    /// Exit-fade state of the two dialogs; the dialog data stays set while
+    /// its surface fades out and is dropped by `tick_dialogs`.
+    perm_fade: Presence,
+    props_fade: Presence,
     /// Which pane currently owns keyboard focus — drives the visible focus
     /// ring and which pane arrow/Enter/F2/Delete/Backspace act on.
     active_pane: Side,
@@ -764,6 +768,8 @@ impl SftpView {
             menu: None,
             perm: None,
             props: None,
+            perm_fade: Presence::new(),
+            props_fade: Presence::new(),
             active_pane: Side::Local,
             local_focus: cx.focus_handle(),
             remote_focus: cx.focus_handle(),
@@ -1490,6 +1496,43 @@ impl SftpView {
         }
     }
 
+    // ── dialog exit fades ──────────────────────────────────────────────────
+
+    fn dialog_motion(&self, cx: &App) -> labonair_ui_kit::MotionPrefs {
+        Palette::from_theme(self.theme.read(cx)).motion
+    }
+
+    /// Dismiss the permissions dialog with an exit fade (idempotent).
+    fn close_perm(&mut self, cx: &mut Context<Self>) {
+        let motion = self.dialog_motion(cx);
+        self.perm_fade
+            .request_close(std::time::Instant::now(), &motion);
+        cx.notify();
+    }
+
+    /// Dismiss the properties dialog with an exit fade (idempotent).
+    fn close_props(&mut self, cx: &mut Context<Self>) {
+        let motion = self.dialog_motion(cx);
+        self.props_fade
+            .request_close(std::time::Instant::now(), &motion);
+        cx.notify();
+    }
+
+    /// Advance both exit fades once per render and drop the dialog data after
+    /// the fade has finished.
+    fn tick_dialogs(&mut self, cx: &App) {
+        let motion = self.dialog_motion(cx);
+        let now = std::time::Instant::now();
+        self.perm_fade.tick(now, &motion);
+        self.props_fade.tick(now, &motion);
+        if !self.perm_fade.is_mounted() {
+            self.perm = None;
+        }
+        if !self.props_fade.is_mounted() {
+            self.props = None;
+        }
+    }
+
     // ── permissions dialog ─────────────────────────────────────────────────
 
     fn open_perm_dialog(&mut self, entry: &Entry, cx: &mut Context<Self>) {
@@ -1508,10 +1551,15 @@ impl SftpView {
             field: PermField::Octal,
             error: None,
         });
+        self.perm_fade.open();
         cx.notify();
     }
 
     fn apply_perm(&mut self, cx: &mut Context<Self>) {
+        if self.perm_fade.is_closing() {
+            // Enter spam during the exit fade must not apply twice.
+            return;
+        }
         let Some(d) = self.perm.as_ref() else { return };
         let path = d.path.clone();
         let (owner, group) = (d.owner.trim().to_string(), d.group.trim().to_string());
@@ -1523,7 +1571,7 @@ impl SftpView {
             cx.notify();
             return;
         }
-        self.perm = None;
+        self.close_perm(cx);
         let mode = octal.unwrap();
         let Some(handle) = self.sftp_handle.clone() else {
             return;
@@ -1572,6 +1620,7 @@ impl SftpView {
             calculated_size: None,
             calculating: false,
         });
+        self.props_fade.open();
         cx.notify();
     }
 
@@ -1786,10 +1835,7 @@ impl SftpView {
     fn on_perm_key(&mut self, ev: &KeyDownEvent, cx: &mut Context<Self>) {
         let ks = &ev.keystroke;
         match ks.key.as_str() {
-            "escape" => {
-                self.perm = None;
-                cx.notify();
-            }
+            "escape" => self.close_perm(cx),
             "enter" => self.apply_perm(cx),
             "tab" => {
                 if let Some(d) = self.perm.as_mut() {
@@ -1866,6 +1912,7 @@ struct Colors {
 
 impl Render for SftpView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.tick_dialogs(cx);
         if !self.blink_focus_wired {
             self.blink_focus_wired = true;
             self._blink_focus_subs.push(cx.on_focus(
@@ -3148,51 +3195,51 @@ impl SftpView {
                         .when(active && dialog_focused, |d| d.child(caret(c.fg, 14.0))),
                 )
         };
-        modal_overlay("sftp-perm-overlay")
-            .child(
-                dialog_surface("sftp-perm-dialog", c.palette)
-                    .w(px(360.0))
-                    .track_focus(&self.dialog_focus)
-                    .on_key_down(
-                        cx.listener(|this, ev: &KeyDownEvent, _w, cx| this.on_perm_key(ev, cx)),
-                    )
-                    .child(div().text_sm().child(SharedString::from(format!(
-                        "Permissions \u{2014} {}",
-                        d.name
-                    ))))
-                    .child(row("Octal", d.octal.clone(), d.field == PermField::Octal))
-                    .child(row("Owner", d.owner.clone(), d.field == PermField::Owner))
-                    .child(row("Group", d.group.clone(), d.field == PermField::Group))
-                    .child(
-                        div().text_xs().text_color(c.muted).child(
-                            "Tab switches field \u{00b7} Enter applies \u{00b7} Esc cancels",
-                        ),
-                    )
-                    .when_some(d.error.clone(), |el, e| {
-                        el.child(
-                            div()
-                                .text_xs()
-                                .text_color(c.err)
-                                .child(SharedString::from(e)),
-                        )
-                    })
-                    .child(
+        modal_overlay_with_exit(
+            "sftp-perm-overlay",
+            c.palette,
+            self.perm_fade.is_closing(),
+            dialog_surface("sftp-perm-dialog", c.palette)
+                .w(px(360.0))
+                .track_focus(&self.dialog_focus)
+                .on_key_down(
+                    cx.listener(|this, ev: &KeyDownEvent, _w, cx| this.on_perm_key(ev, cx)),
+                )
+                .child(div().text_sm().child(SharedString::from(format!(
+                    "Permissions \u{2014} {}",
+                    d.name
+                ))))
+                .child(row("Octal", d.octal.clone(), d.field == PermField::Octal))
+                .child(row("Owner", d.owner.clone(), d.field == PermField::Owner))
+                .child(row("Group", d.group.clone(), d.field == PermField::Group))
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(c.muted)
+                        .child("Tab switches field \u{00b7} Enter applies \u{00b7} Esc cancels"),
+                )
+                .when_some(d.error.clone(), |el, e| {
+                    el.child(
                         div()
-                            .flex()
-                            .flex_row()
-                            .gap_2()
-                            .child(dialog_btn("perm-cancel", "Cancel", c, false).on_click(
-                                cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                    this.perm = None;
-                                    cx.notify();
-                                }),
-                            ))
-                            .child(dialog_btn("perm-apply", "Apply", c, true).on_click(
-                                cx.listener(|this, _: &ClickEvent, _w, cx| this.apply_perm(cx)),
-                            )),
-                    ),
-            )
-            .into_any_element()
+                            .text_xs()
+                            .text_color(c.err)
+                            .child(SharedString::from(e)),
+                    )
+                })
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .gap_2()
+                        .child(dialog_btn("perm-cancel", "Cancel", c, false).on_click(
+                            cx.listener(|this, _: &ClickEvent, _w, cx| this.close_perm(cx)),
+                        ))
+                        .child(dialog_btn("perm-apply", "Apply", c, true).on_click(
+                            cx.listener(|this, _: &ClickEvent, _w, cx| this.apply_perm(cx)),
+                        )),
+                ),
+        )
+        .into_any_element()
     }
 
     fn render_props_dialog(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -3238,47 +3285,43 @@ impl SftpView {
                         },
                     )))
             };
-        modal_overlay("sftp-props-overlay")
-            .child(
-                dialog_surface("sftp-props-dialog", c.palette)
-                    .w(px(360.0))
-                    .child(div().text_sm().child(SharedString::from(format!(
-                        "Properties \u{2014} {}",
-                        e.name
-                    ))))
-                    .child(info("Name", e.name.clone()))
-                    .child(info("Path", e.path.clone()))
-                    .child(info("Type", kind))
-                    .child(info("Size", size))
-                    .child(info("Permissions", e.permissions.clone()))
-                    .child(info("Modified", format_epoch(e.modified_at)))
-                    .when(e.is_dir, |el| {
-                        el.child(
-                            dialog_btn(
-                                "props-calc",
-                                if d.calculating {
-                                    "Calculating\u{2026}"
-                                } else {
-                                    "Calculate size"
-                                },
-                                c,
-                                false,
-                            )
-                            .on_click(
-                                cx.listener(|this, _: &ClickEvent, _w, cx| this.calc_size(cx)),
-                            ),
-                        )
-                    })
-                    .child(
-                        dialog_btn("props-close", "Close", c, true).on_click(cx.listener(
-                            |this, _: &ClickEvent, _w, cx| {
-                                this.props = None;
-                                cx.notify();
+        modal_overlay_with_exit(
+            "sftp-props-overlay",
+            c.palette,
+            self.props_fade.is_closing(),
+            dialog_surface("sftp-props-dialog", c.palette)
+                .w(px(360.0))
+                .child(div().text_sm().child(SharedString::from(format!(
+                    "Properties \u{2014} {}",
+                    e.name
+                ))))
+                .child(info("Name", e.name.clone()))
+                .child(info("Path", e.path.clone()))
+                .child(info("Type", kind))
+                .child(info("Size", size))
+                .child(info("Permissions", e.permissions.clone()))
+                .child(info("Modified", format_epoch(e.modified_at)))
+                .when(e.is_dir, |el| {
+                    el.child(
+                        dialog_btn(
+                            "props-calc",
+                            if d.calculating {
+                                "Calculating\u{2026}"
+                            } else {
+                                "Calculate size"
                             },
-                        )),
-                    ),
-            )
-            .into_any_element()
+                            c,
+                            false,
+                        )
+                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.calc_size(cx))),
+                    )
+                })
+                .child(
+                    dialog_btn("props-close", "Close", c, true)
+                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.close_props(cx))),
+                ),
+        )
+        .into_any_element()
     }
 }
 
