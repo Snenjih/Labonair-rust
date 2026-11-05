@@ -25,6 +25,7 @@ use gpui::{
 use gpui_component::input::Input;
 use std::time::Duration;
 
+use crate::animation::MotionExt;
 use crate::palette::Palette;
 
 /// Creates a single-line [`InputState`] ready to be stored in `cx.new(..)`.
@@ -128,21 +129,36 @@ fn text_control_surface(
     c: Palette,
     state: TextFieldState,
 ) -> Stateful<Div> {
+    // `Focused` keeps the resting border; the focus ring is a fading layer.
     let (border, background) = match state {
         TextFieldState::Normal => (c.input, c.field_bg),
-        TextFieldState::Focused => (c.field_ring, c.field_bg),
+        TextFieldState::Focused => (c.input, c.field_bg),
         TextFieldState::Invalid => (c.error, c.field_bg),
         TextFieldState::Disabled => (c.input, c.muted_bg),
     };
 
+    let id = id.into();
     div()
-        .id(id)
+        .id(id.clone())
+        .relative()
         .min_w_0()
         .flex()
         .rounded(px(c.radius.md))
         .border_1()
         .border_color(border)
         .bg(background)
+        .child(
+            div()
+                .absolute()
+                .top(px(-1.0))
+                .right(px(-1.0))
+                .bottom(px(-1.0))
+                .left(px(-1.0))
+                .rounded(px(c.radius.md))
+                .border_1()
+                .border_color(c.field_ring)
+                .motion_state_fade((id, "ring"), c, state == TextFieldState::Focused),
+        )
         .when(state != TextFieldState::Disabled, |field| {
             field.focus(|style| style.border_1().border_color(c.field_ring))
         })

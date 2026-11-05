@@ -43,10 +43,15 @@
 //! element is freshly mounted or its id changes. [`MotionExt::motion_state_fade`]
 //! bakes the state into the id so it restarts on every flip.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use gpui::{px, Animation, AnimationElement, AnimationExt, ElementId, IntoElement, Pixels, Styled};
-use labonair_theme_tokens::{Animation as AnimationTokens, CubicBezier};
+use gpui::{
+    px, Animation, AnimationElement, AnimationExt, AnyElement, App, Element, ElementId,
+    GlobalElementId, InspectorElementId, IntoElement, LayoutId, Pixels, Styled, Window,
+};
+use labonair_theme_tokens::{
+    Animation as AnimationTokens, AnimationLevel, CubicBezier, GlobalActiveTheme,
+};
 
 use crate::divider::Axis;
 use crate::palette::Palette;
@@ -105,6 +110,20 @@ impl MotionPrefs {
         Self::new(motion_level(theme), &theme.theme().animation)
     }
 
+    /// The motion tokens of the app-wide active theme, for elements that are
+    /// built without a [`Palette`] (disclosure chevrons, tree rows). Falls back
+    /// to [`MotionLevel::Off`] when no theme is installed (unit tests), so
+    /// nothing animates by accident.
+    pub fn from_app(cx: &App) -> Self {
+        match cx.try_global::<GlobalActiveTheme>() {
+            Some(GlobalActiveTheme(active)) => Self::new(
+                level_for(active.metrics().animations),
+                &active.theme().animation,
+            ),
+            None => Self::new(MotionLevel::Off, &AnimationTokens::default()),
+        }
+    }
+
     /// The duration an animation of nominal length `d` actually runs: `d`, or
     /// [`MOTION_FLOOR`] when motion is off or `d` is zero.
     pub fn resolve(&self, d: Duration) -> Duration {
@@ -134,16 +153,18 @@ impl MotionPrefs {
 
 /// Map the theme to a [`MotionLevel`].
 ///
-/// This is the **single place** that decides the level. Today the only input is
-/// the legacy `reduce_motion` metric (`true` maps to `Off`, matching the
-/// settings migration); once the `appearance.animations` setting
-/// (`system | full | reduced | off`) reaches `ThemeMetrics`, switch it here and
-/// nowhere else.
+/// This is the **single place** that decides the level: it reads the resolved
+/// `appearance.animations` choice ([`AnimationLevel`]) off the theme metrics.
 fn motion_level(theme: &impl UiTheme) -> MotionLevel {
-    if theme.metrics().reduce_motion {
-        MotionLevel::Off
-    } else {
-        MotionLevel::Full
+    level_for(theme.metrics().animations)
+}
+
+/// The kit [`MotionLevel`] for a resolved theme [`AnimationLevel`].
+pub fn level_for(level: AnimationLevel) -> MotionLevel {
+    match level {
+        AnimationLevel::Full => MotionLevel::Full,
+        AnimationLevel::Reduced => MotionLevel::Reduced,
+        AnimationLevel::Off => MotionLevel::Off,
     }
 }
 
@@ -237,21 +258,261 @@ pub trait MotionExt: Styled + IntoElement + Sized + 'static {
         )
     }
 
-    /// A state layer (selection fill, switch thumb, disclosure glyph) that fades
-    /// in whenever `on` is true. The state is part of the animation id, so the
-    /// fade restarts on every flip; while `on` is false the layer is hidden.
-    /// Crossfade two glyphs by giving one `on` and the other `!on`.
+    /// A state layer (selection fill, check mark, disclosure glyph) whose
+    /// opacity follows `on`: it fades in when `on` turns true and fades out
+    /// when it turns false. Unlike an id-keyed [`AnimationElement`] it
+    /// remembers the previous state in element state, so a layer that is
+    /// *first mounted* already in its end state does not animate, and a flip
+    /// mid-fade continues from the current opacity. Build the layer
+    /// unconditionally (do not wrap it in `when(on, ..)`), otherwise there is
+    /// nothing left to fade out.
     fn motion_state_fade(
         self,
         id: impl Into<ElementId>,
         c: Palette,
         on: bool,
-    ) -> AnimationElement<Self> {
-        self.with_animation(
-            (id.into(), if on { "on" } else { "off" }),
-            c.motion.animation(c.motion.dur_base, c.motion.ease_soft),
-            move |el, delta| el.opacity(state_opacity(on, delta)),
-        )
+    ) -> StateTransition<Self> {
+        StateTransition::new(self, id.into(), on, false, apply_fade).with_motion(c.motion)
+    }
+
+    /// The general form of [`MotionExt::motion_state_fade`]: `apply` receives
+    /// the element and the current amount (`0.0` off .. `1.0` on) and styles
+    /// it, e.g. a switch thumb's `left` offset. Set `geometry` when `apply`
+    /// moves or resizes the element: `Reduced` and `Off` then snap to the end
+    /// state instead of animating.
+    fn motion_state(
+        self,
+        id: impl Into<ElementId>,
+        c: Palette,
+        on: bool,
+        geometry: bool,
+        apply: impl Fn(Self, f32) -> Self + 'static,
+    ) -> StateTransition<Self> {
+        StateTransition::new(self, id.into(), on, geometry, apply).with_motion(c.motion)
+    }
+}
+
+/// [`MotionExt::motion_state_fade`] for call sites without a [`Palette`]: the
+/// motion tokens are read from the active theme at layout time.
+pub fn state_fade_ambient<E: Styled + IntoElement + 'static>(
+    el: E,
+    id: impl Into<ElementId>,
+    on: bool,
+) -> StateTransition<E> {
+    StateTransition::new(el, id.into(), on, false, apply_fade)
+}
+
+/// An absolutely positioned, non-interactive fill (`inset` px beyond the
+/// parent's padding box on every side) that fades with `on`: the selected-row,
+/// active-tab and checked-box backgrounds. Place it as the **first** child of a
+/// positioned parent so it paints behind the content.
+pub(crate) fn state_fill(
+    id: impl Into<ElementId>,
+    c: Palette,
+    on: bool,
+    color: gpui::Hsla,
+    border: Option<gpui::Hsla>,
+    radius: Pixels,
+    inset: Pixels,
+) -> StateTransition<gpui::Div> {
+    use gpui::prelude::FluentBuilder;
+    gpui::div()
+        .absolute()
+        .top(-inset)
+        .right(-inset)
+        .bottom(-inset)
+        .left(-inset)
+        .rounded(radius)
+        .bg(color)
+        .when_some(border, |d, border| d.border_1().border_color(border))
+        .motion_state_fade(id, c, on)
+}
+
+/// Opacity of a state layer: untouched once fully on (no needless group
+/// opacity layer), faded otherwise.
+fn apply_fade<E: Styled>(el: E, amount: f32) -> E {
+    if amount >= 1.0 {
+        el
+    } else {
+        el.opacity(amount)
+    }
+}
+
+/// The animated amount (`0.0` off .. `1.0` on) of one state layer: a tween
+/// from where the layer was when it last flipped towards its current target.
+/// Pure and clock-injected so the level rules are unit-testable.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Tween {
+    from: f32,
+    target: f32,
+    start: Option<Instant>,
+}
+
+impl Tween {
+    /// A layer at rest in the `on` state (first mount: nothing animates).
+    pub(crate) fn settled(on: bool) -> Self {
+        let target = if on { 1.0 } else { 0.0 };
+        Self {
+            from: target,
+            target,
+            start: None,
+        }
+    }
+
+    fn value(&self, now: Instant, dur: Duration, ease: &CubicBezier) -> f32 {
+        match self.start {
+            None => self.target,
+            Some(start) => {
+                let t = (now.saturating_duration_since(start).as_secs_f32() / dur.as_secs_f32())
+                    .clamp(0.0, 1.0);
+                self.from + (self.target - self.from) * ease.eval(t)
+            }
+        }
+    }
+
+    /// Advance to `now` with the layer wanting state `on`; returns the amount
+    /// to draw and whether another frame is needed. `geometry` layers snap
+    /// unless the level is `Full`; every layer snaps when the level is `Off`.
+    pub(crate) fn advance(
+        &mut self,
+        on: bool,
+        now: Instant,
+        motion: &MotionPrefs,
+        geometry: bool,
+    ) -> (f32, bool) {
+        let target = if on { 1.0 } else { 0.0 };
+        if motion.level == MotionLevel::Off || (geometry && !motion.animates_geometry()) {
+            *self = Self::settled(on);
+            return (target, false);
+        }
+        let dur = motion.resolve(motion.dur_base);
+        let ease = motion.ease_soft;
+        if target != self.target {
+            self.from = self.value(now, dur, &ease);
+            self.target = target;
+            self.start = Some(now);
+        }
+        match self.start {
+            Some(start) if now.saturating_duration_since(start) < dur => {
+                (self.value(now, dur, &ease), true)
+            }
+            _ => {
+                *self = Self::settled(on);
+                (target, false)
+            }
+        }
+    }
+}
+
+/// An element whose style follows a boolean state with a tween. Built through
+/// [`MotionExt::motion_state_fade`], [`MotionExt::motion_state`] or
+/// [`state_fade_ambient`]; it adds no layout node of its own.
+pub struct StateTransition<E> {
+    id: ElementId,
+    element: Option<E>,
+    on: bool,
+    geometry: bool,
+    motion: Option<MotionPrefs>,
+    apply: Box<dyn Fn(E, f32) -> E + 'static>,
+}
+
+impl<E> StateTransition<E> {
+    fn new(
+        element: E,
+        id: ElementId,
+        on: bool,
+        geometry: bool,
+        apply: impl Fn(E, f32) -> E + 'static,
+    ) -> Self {
+        Self {
+            id,
+            element: Some(element),
+            on,
+            geometry,
+            motion: None,
+            apply: Box::new(apply),
+        }
+    }
+
+    fn with_motion(mut self, motion: MotionPrefs) -> Self {
+        self.motion = Some(motion);
+        self
+    }
+}
+
+impl<E: IntoElement + 'static> IntoElement for StateTransition<E> {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl<E: IntoElement + 'static> Element for StateTransition<E> {
+    type RequestLayoutState = AnyElement;
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        Some(self.id.clone())
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        global_id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let motion = self.motion.unwrap_or_else(|| MotionPrefs::from_app(cx));
+        let (on, geometry) = (self.on, self.geometry);
+        let (amount, running) = match global_id {
+            Some(global_id) => window.with_element_state(global_id, |state, _window| {
+                let mut tween = state.unwrap_or_else(|| Tween::settled(on));
+                let step = tween.advance(on, Instant::now(), &motion, geometry);
+                (step, tween)
+            }),
+            None => (
+                Tween::settled(on)
+                    .advance(on, Instant::now(), &motion, geometry)
+                    .0,
+                false,
+            ),
+        };
+        if running {
+            window.request_animation_frame();
+        }
+        let element = self.element.take().expect("should only be called once");
+        let mut element = (self.apply)(element, amount).into_any_element();
+        (element.request_layout(window, cx), element)
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: gpui::Bounds<Pixels>,
+        element: &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        element.prepaint(window, cx);
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: gpui::Bounds<Pixels>,
+        element: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        element.paint(window, cx);
     }
 }
 
@@ -328,26 +589,98 @@ mod tests {
     }
 
     #[test]
-    fn legacy_reduce_motion_metric_maps_to_off() {
-        struct Reduced(Theme);
-        impl UiTheme for Reduced {
+    fn animations_metric_maps_to_the_motion_level() {
+        struct Metered(Theme, AnimationLevel);
+        impl UiTheme for Metered {
             fn theme(&self) -> &Theme {
                 &self.0
             }
             fn metrics(&self) -> labonair_theme_tokens::ThemeMetrics {
                 labonair_theme_tokens::ThemeMetrics {
-                    reduce_motion: true,
+                    animations: self.1,
+                    reduce_motion: self.1 != AnimationLevel::Full,
                     ..Default::default()
                 }
             }
         }
-        assert_eq!(
-            MotionPrefs::from_theme(&Reduced(Theme::dark())).level,
-            MotionLevel::Off
-        );
+        for (animations, level) in [
+            (AnimationLevel::Full, MotionLevel::Full),
+            (AnimationLevel::Reduced, MotionLevel::Reduced),
+            (AnimationLevel::Off, MotionLevel::Off),
+        ] {
+            assert_eq!(
+                MotionPrefs::from_theme(&Metered(Theme::dark(), animations)).level,
+                level
+            );
+        }
         assert_eq!(
             MotionPrefs::from_theme(&TestTheme(Theme::dark())).level,
             MotionLevel::Full
+        );
+    }
+
+    fn motion(level: MotionLevel) -> MotionPrefs {
+        prefs(level)
+    }
+
+    #[test]
+    fn first_mount_and_steady_state_never_animate() {
+        let now = Instant::now();
+        for on in [true, false] {
+            let mut tween = Tween::settled(on);
+            let (amount, running) = tween.advance(on, now, &motion(MotionLevel::Full), false);
+            assert_eq!(amount, if on { 1.0 } else { 0.0 });
+            assert!(!running);
+        }
+    }
+
+    #[test]
+    fn a_flip_tweens_and_then_settles() {
+        let m = motion(MotionLevel::Full);
+        let t0 = Instant::now();
+        let mut tween = Tween::settled(false);
+        // Flip on: starts from 0, runs, settles at 1 after dur_base.
+        let (a0, run0) = tween.advance(true, t0, &m, false);
+        assert!(a0 < 0.05 && run0);
+        let (mid, run_mid) = tween.advance(true, t0 + m.dur_base / 2, &m, false);
+        assert!(mid > 0.0 && mid < 1.0 && run_mid);
+        let (end, run_end) = tween.advance(true, t0 + m.dur_base, &m, false);
+        assert_eq!((end, run_end), (1.0, false));
+    }
+
+    #[test]
+    fn a_flip_back_continues_from_the_current_amount() {
+        let m = motion(MotionLevel::Full);
+        let t0 = Instant::now();
+        let mut tween = Tween::settled(false);
+        tween.advance(true, t0, &m, false);
+        let (up, _) = tween.advance(true, t0 + m.dur_base / 2, &m, false);
+        let (back, running) = tween.advance(false, t0 + m.dur_base / 2, &m, false);
+        assert!(running);
+        assert!(
+            (back - up).abs() < 1e-3,
+            "no jump on reversal: {up} vs {back}"
+        );
+    }
+
+    #[test]
+    fn off_snaps_everything_and_reduced_snaps_only_geometry() {
+        let t0 = Instant::now();
+        for geometry in [false, true] {
+            let mut tween = Tween::settled(false);
+            let step = tween.advance(true, t0, &motion(MotionLevel::Off), geometry);
+            assert_eq!(step, (1.0, false), "Off is instant (geometry={geometry})");
+        }
+        // Reduced: fades still run, geometry snaps (never creates a tween).
+        let mut fade = Tween::settled(false);
+        assert!(
+            fade.advance(true, t0, &motion(MotionLevel::Reduced), false)
+                .1
+        );
+        let mut geo = Tween::settled(false);
+        assert_eq!(
+            geo.advance(true, t0, &motion(MotionLevel::Reduced), true),
+            (1.0, false)
         );
     }
 

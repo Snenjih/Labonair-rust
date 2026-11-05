@@ -37,7 +37,7 @@ use gpui::{
 use crate::icon::IconName;
 use crate::palette::Palette;
 use crate::popover::anchored_popup;
-use crate::presence::{closing_guard, enter_or_exit};
+use crate::presence::{closing_guard, enter_or_popup};
 use crate::DISABLED_OPACITY;
 
 /// One `(token, label)` pair — the token is what gets stored, the label what is
@@ -212,7 +212,7 @@ pub fn select_popover_with_exit(
     .w_full();
 
     let outside_dismiss = dismiss.clone();
-    let list = anchored_popup(position, c).child(enter_or_exit(
+    let list = anchored_popup(position, c).child(enter_or_popup(
         div()
             .id(SharedString::from(format!("{id}-list")))
             .occlude()

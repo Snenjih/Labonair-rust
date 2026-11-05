@@ -72,6 +72,7 @@ mod select;
 mod settings_widgets;
 mod slider;
 mod stack;
+mod switch;
 mod tab;
 #[cfg(test)]
 mod test_support;
@@ -81,8 +82,8 @@ mod toggle;
 mod tree_row;
 
 pub use animation::{
-    fade_in, reveal_extent, slide_offset, state_opacity, MotionExt, MotionLevel, MotionPrefs,
-    MOTION_FLOOR,
+    fade_in, level_for, reveal_extent, slide_offset, state_fade_ambient, state_opacity, MotionExt,
+    MotionLevel, MotionPrefs, StateTransition, MOTION_FLOOR,
 };
 pub use banner::{banner, Banner, Severity};
 pub use button::{
@@ -132,6 +133,7 @@ pub use settings_widgets::{
 };
 pub use slider::{slider, SliderEvent, SliderState, SliderValue};
 pub use stack::{h_stack, v_stack};
+pub use switch::{switch, ToggleSwitch};
 pub use tab::{
     floating_tab_strip, tab_drop_marker, tab_group_gap, tab_item, TabDropSide, TabItemBuilder,
     TabLayout, TabStyle,

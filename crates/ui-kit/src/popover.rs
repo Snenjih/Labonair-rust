@@ -17,7 +17,7 @@ use gpui::{
 use std::rc::Rc;
 
 use crate::palette::Palette;
-use crate::presence::{closing_guard, enter_or_exit};
+use crate::presence::{closing_guard, enter_or_popup};
 
 /// Position one or more popup children after measuring their actual bounds.
 /// This keeps flip/clamp decisions consistent for menus, selects, and rich
@@ -209,7 +209,7 @@ pub fn popover_with_exit(
     let dismiss_outside = dismiss.clone();
     let dismiss_escape = dismiss.clone();
 
-    let card = anchored_popup(anchor, c).child(enter_or_exit(
+    let card = anchored_popup(anchor, c).child(enter_or_popup(
         div()
             .occlude()
             .w(width)

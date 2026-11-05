@@ -20,6 +20,7 @@ use gpui::{
     div, px, ElementId, Hsla, InteractiveElement, ParentElement, SharedString, Stateful, Styled,
 };
 
+use crate::animation::state_fade_ambient;
 use crate::icon::IconName;
 
 /// Builds the disclosure row. `collapsed` selects the chevron direction;
@@ -32,11 +33,25 @@ pub fn disclosure(
     muted: Hsla,
     fg: Hsla,
 ) -> Stateful<gpui::Div> {
-    let chevron = if collapsed {
-        IconName::ChevronRight
-    } else {
-        IconName::ChevronDown
+    // GPUI cannot rotate, so the two glyphs are stacked and crossfade; the
+    // motion tokens come from the active theme (no palette in this signature).
+    let id = id.into();
+    let glyph = |icon: IconName, on: bool, key: &'static str| {
+        state_fade_ambient(
+            div()
+                .absolute()
+                .inset_0()
+                .child(icon.svg(muted).size(px(12.0))),
+            (id.clone(), key),
+            on,
+        )
     };
+    let chevron = div()
+        .relative()
+        .flex_shrink_0()
+        .size(px(12.0))
+        .child(glyph(IconName::ChevronRight, collapsed, "right"))
+        .child(glyph(IconName::ChevronDown, !collapsed, "down"));
     div()
         .id(id)
         .flex()
@@ -47,7 +62,7 @@ pub fn disclosure(
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .text_color(muted)
         .hover(move |s| s.text_color(fg))
-        .child(chevron.svg(muted).size(px(12.0)))
+        .child(chevron)
         .child(label.into())
 }
 

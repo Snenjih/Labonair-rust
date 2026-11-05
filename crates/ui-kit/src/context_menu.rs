@@ -42,7 +42,7 @@ use super::IconName;
 use crate::kbd::kbd_row;
 use crate::palette::Palette;
 use crate::popover::anchored_popup;
-use crate::presence::{closing_guard, enter_or_exit};
+use crate::presence::{closing_guard, enter_or_popup};
 
 type Handler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
@@ -750,7 +750,7 @@ pub fn context_menu_with_exit(
     // e.g. a 20px status-bar item) element opened the menu, so `inset_0` does
     // not actually cover the window and a click next to the menu would leave it
     // stuck open. The card, by contrast, always knows its own bounds.
-    let card = anchored_popup(anchor, c).child(enter_or_exit(
+    let card = anchored_popup(anchor, c).child(enter_or_popup(
         menu_card(c, items, flyouts)
             .on_mouse_down_out(move |ev, w, cx| {
                 if !in_flyout(&fb_out, ev.position) {
@@ -839,7 +839,7 @@ pub fn popover_menu_with_exit(
     let fb_out = flyouts.clone();
     let fb_bd = flyouts.clone();
 
-    let card = anchored_popup(anchor, c).child(enter_or_exit(
+    let card = anchored_popup(anchor, c).child(enter_or_popup(
         menu_card(c, items, flyouts)
             .on_mouse_down_out(move |ev, w, cx| {
                 if !in_flyout(&fb_out, ev.position) {
