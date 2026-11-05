@@ -7,7 +7,6 @@
 //! Part of `SettingsView` — see `crate::view`.
 
 use crate::view::*;
-use gpui_component::Disableable;
 use labonair_settings::SettingsSurfaceMode;
 use labonair_settings_content::file_manager::{default_sftp_columns, SftpColumn};
 use labonair_ui_kit::icon_button_builder;
@@ -272,23 +271,17 @@ impl SettingsView {
         let control = match field.control {
             FieldControl::Switch => {
                 let on = value.as_ref().and_then(|v| v.as_bool()).unwrap_or(false);
-                // The shared `gpui-component` `Switch` (re-exported by
-                // `labonair-ui-kit`). Its "on" fill reads gpui-component's own
-                // global `Theme::primary`, which `apply_prefs_to_theme`
-                // (`theme-ui/src/apply.rs`) keeps synced to this app's
-                // `core.primary` token on every theme/settings apply.
-                let switch = Switch::new(SharedString::from(format!("sw-{json_path}")))
-                    .checked(on)
-                    .disabled(field_disabled);
-                let switch = if field_disabled {
-                    switch
-                } else {
-                    switch.on_click(cx.listener(move |this, _: &bool, _w, cx| {
-                        if let Some(f) = this.field_by_path(json_path).copied() {
-                            this.toggle_bool(&f, cx);
-                        }
-                    }))
-                };
+                let view = cx.entity();
+                let switch =
+                    labonair_ui_kit::switch(SharedString::from(format!("sw-{json_path}")), *c, on)
+                        .disabled(field_disabled)
+                        .on_click(move |_: &bool, _window, app| {
+                            view.update(app, |this, cx| {
+                                if let Some(f) = this.field_by_path(json_path).copied() {
+                                    this.toggle_bool(&f, cx);
+                                }
+                            });
+                        });
                 let surface = div()
                     .id(SharedString::from(format!("settings-switch-{json_path}")))
                     .rounded(px(c.radius.sm))
@@ -296,11 +289,7 @@ impl SettingsView {
                     .border_color(gpui::transparent_black())
                     .child(switch);
                 if field_disabled {
-                    surface
-                        .tab_index(-1)
-                        .cursor_default()
-                        .opacity(DISABLED_OPACITY)
-                        .into_any_element()
+                    surface.tab_index(-1).cursor_default().into_any_element()
                 } else {
                     surface
                         .tab_index(0)

@@ -351,6 +351,14 @@ constant border so selection never shifts layout. Arrow keys move and select
 (Left/Up previous, Right/Down next, wrapping), Enter and Space activate, and
 the owner keeps the selected value.
 
+Settings additions (S2): `SettingsRow::extra` adds notes under the description
+(hint, "Modified in ...", scope explanation) and `slider_control` is the control
+half of `slider_row` with a `disabled` switch for project scope. Inline owner
+views embedded in a Settings card are row stacks (rows separated by
+`line_subtle` hairlines) and draw no card of their own. The Settings sidebar
+uses `ListItem` rows with a `category_chip`, the selected row keeps the sunken
+fill and semibold label, and section anchors are indented muted rows.
+
 ## Floating tabs
 
 `TabStyle::Floating` (default `Classic`) renders tab items as 28 px blocks with

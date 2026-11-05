@@ -37,14 +37,14 @@ means a runtime module, not merely serialization or the generated Settings UI.
 
 | Area | Fields | Consumer / scope | Decision |
 |---|---|---|---|
-| `general` | `theme` | `labonair-theme` color-mode preference; Global | Keep |
+| `general` | `theme` | `labonair-theme` color-mode preference; Global; shown as Auto/Light/Dark preview tiles on Appearance | Keep |
 | `general` | `restoreWindowState`, `defaultStartupTab`, `sessionRestore` | shell/workspace launch and session restore; Global + Project where whitelisted | Keep |
 | `general` | `startupTerminalCount`, `autostart`, `credentialEncryption`, `confirmQuitWithSsh` | no current native runtime consumer or supported workflow | Remove; legacy input remains deserializable only |
 | `general` | `checkForUpdates` | updater launch policy; Global | Keep |
-| `appearance` | `appTheme`, `iconTheme`, `themeVariantOverrides` | theme registry selection persistence; Global; capability-owned registry | Keep as hidden values, no generated Settings fields or management page |
-| `appearance` | `appFontFamily`, `appFontSize`, `appLineHeight`, `bufferFontFamily`, `bufferFontSize`, `bufferLineHeight`, `uiDensity`, `cornerRadiusScale`, `translucentSurfaces` | theme metrics/font pipeline; Global | Keep |
+| `appearance` | `appTheme`, `iconTheme`, `themeVariantOverrides` | theme registry selection persistence; Global; capability-owned registry. Edited through the theme owner's inline colour-theme grid and icon-theme picker on the Themes page (`labonair-theme-ui` `ColorThemeSettings` / `IconThemeSettings`), not as generated fields | Keep as hidden values; owner surfaces inline (ADR 0006) |
+| `appearance` | `appFontFamily`, `appFontSize`, `appLineHeight`, `bufferFontFamily`, `bufferFontSize`, `bufferLineHeight`, `uiDensity`, `cornerRadiusScale`, `translucentSurfaces` | theme metrics/font pipeline; Global; controls: sliders (fonts, line heights, corner radius), segmented (density), Classic/Glassy tiles (`translucentSurfaces`) | Keep |
 | `appearance` | `animations` (`system` \| `full` \| `reduced` \| `off`) | `ThemeMetrics.animations` via `labonair-theme-ui` (`theme_metrics_from_settings`); `system` is meant to follow the OS Reduce-motion preference but currently resolves to `full` (no safe platform API in GPUI 0.2.2); Global | Keep |
-| `appearance` | `paneLayout` (`comfortable` \| `compact`) | `ThemeMetrics.pane_layout` / `pane_gap()`, read by the workspace pane renderer; Global | Keep |
+| `appearance` | `paneLayout` (`comfortable` \| `compact`) | `ThemeMetrics.pane_layout` / `pane_gap()`, read by the workspace pane renderer; Global; Comfortable/Compact preview tiles | Keep |
 | `appearance` | `reduceMotion` | superseded by `animations`; `true` without an explicit `animations` resolves to `off` (`ThemeSettings::from_settings`) and the legacy preferences migrator writes `animations: "off"`; field is read-only compatibility input, not a Settings row. Removal condition: no supported `config.json` carries it | Remove; legacy input remains deserializable only |
 | `appearance` | `backgroundImage`, `backgroundOpacity`, `backgroundBlur`, `backgroundTintColor`, `backgroundTintOpacity` | `labonair-background` store; Global | Removed from Settings model; values migrate to the Background owner |
 | `appearance` | `appCornerRadius` | superseded by `cornerRadiusScale`; no current consumer | Remove; legacy values migrate to `cornerRadiusScale` |

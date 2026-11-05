@@ -220,6 +220,20 @@ mod tests {
         };
         expect("tab bar location", "appearance.tabsLocation", "Appearance");
         expect("zen", "appearance.zenModeShowHeader", "Appearance");
+        // Fields now shown as tiles, segmented controls and sliders.
+        expect("color scheme", "general.theme", "Appearance");
+        expect(
+            "interface style",
+            "appearance.translucentSurfaces",
+            "Appearance",
+        );
+        expect("pane layout", "appearance.paneLayout", "Appearance");
+        expect("ui density", "appearance.uiDensity", "Appearance");
+        expect(
+            "corner radius",
+            "appearance.cornerRadiusScale",
+            "Appearance",
+        );
         expect("restore window", "general.restoreWindowState", "General");
         expect("git gutter", "editor.editorGitGutter", "Editor");
         expect("word diff", "editor.editorGitWordDiff", "Editor");

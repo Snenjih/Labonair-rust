@@ -23,8 +23,7 @@ pub use labonair_ui_kit::{
     search_clear_button, search_field, search_input, segmented_control, select_popover,
     select_trigger, select_trigger_disabled, text_field, text_field_surface, text_input, v_stack,
     ButtonSize, ButtonVariant, IconButtonShape, IconName, InputEvent, InputState, Palette,
-    SegmentSize, SegmentVariant, SelectOption, SelectPopoverAnchor, Switch, TextFieldState,
-    DISABLED_OPACITY,
+    SegmentSize, SegmentVariant, SelectOption, SelectPopoverAnchor, TextFieldState,
 };
 pub use labonair_ui_kit::{
     category_chip, preview_tile, preview_tile_group, settings_group, settings_row, slider_control,

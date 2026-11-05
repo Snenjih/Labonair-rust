@@ -159,20 +159,35 @@ The native Settings window has one dense tree rail and one content surface:
   `ui_font_size / 16`; the minimum is 626×240 logical pixels;
 - the rail is 226 logical pixels wide and contains the owner-backed pages
   listed above; persisted `SettingsContent` groups and group headings are not
-  a second navigation taxonomy;
+  a second navigation taxonomy. Each category row shows a coloured
+  `category_chip` and, when selected, the sunken fill with a semibold label;
+  the owner pages (Keymap, Hosts) sit below the value categories with a gap;
 - the rail uses 10 logical pixels of side and bottom inset and a 40-pixel
   macOS top inset below the native titlebar. Its shared search field is 28
   pixels high with a 12-pixel gap before navigation;
-- the rail spans the full settings surface; the scope selector and JSON action
-  sit in the header of the right content pane, above its scrolling page;
+- the rail spans the full settings surface; the page header sits in the right
+  content pane: back/forward buttons through the visited pages (also
+  `cmd-[` / `cmd-]`), the page title, the scope selector and the JSON action;
 - the content surface keeps at least 400 logical pixels for field descriptions
   and controls, with 24 pixels of content inset;
-- generated field rows span the available content width. Labels and
-  descriptions wrap in a flexible leading column; a modified setting shows
-  its reset action and source beside the title, while the value control stays
-  aligned in the trailing column. Each row's divider spans the content width
-  and follows the row's full wrapped height, with vertical padding separating
-  it from the next setting;
+- a page is a list of section cards. Each section is one `settings_group`
+  card under a 15 px semibold title and one virtualized list item; its fields
+  are `settings_row`s. The leading column wraps the title, description and
+  notes (hint, "Modified in ...", project-scope explanation); a modified
+  setting shows its reset action beside the control, which stays aligned in the
+  trailing column. Hairlines separate rows inside a card; there is no card in a
+  card;
+- field controls are chosen by `FieldControl`: switch, number field, select,
+  font family, text, SFTP columns, `Segmented` (short closed choices such as
+  density or tab-bar location), `Slider` (bounded numbers such as font size,
+  line height, corner radius and terminal opacity; the focused row also steps
+  with the arrow keys) and `Tiles` (radio-style preview tiles for colour
+  scheme, interface style and pane layout; `translucentSurfaces` is the
+  Classic/Glassy bool). `set_field_value` stays the single write path;
+- owner surfaces registered inline (colour themes, icon theme, background) are
+  embedded as rows of the section card on the Themes page; link surfaces keep
+  their button. Search finds the surfaces and, for inline ones, navigates to
+  their section;
 - the navigation search is inset below the native titlebar controls, while the
   right content header begins at the top of the content pane;
 - the header exposes visible `User` / `Project` segments when a project is
