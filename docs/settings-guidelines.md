@@ -86,3 +86,13 @@ editor, not a general application-management window.
     embedded by the Settings window; the owner keeps all state, persistence and
     notifications. Settings gains no feature state, and no other module may add
     a parallel Settings category.
+
+19. **Pages are section cards.** Group values into `settings_group` cards of
+    `settings_row`s (title above the card). Pick the control by value shape:
+    switch for a bool, segmented control for two to four short choices,
+    preview tiles for a choice with a visual identity (colour scheme,
+    interface style, pane layout), slider for a bounded continuous number,
+    select for longer lists. Do not nest a card inside a card; an inline owner
+    view contributes rows to the host card.
+20. **Settings navigation has history.** Visiting a page records it; the
+    header's back/forward buttons and `cmd-[` / `cmd-]` walk that list.

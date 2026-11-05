@@ -6,7 +6,6 @@
 use std::sync::Arc;
 
 use gpui::{AnyWindowHandle, Entity};
-use labonair_command_palette::Page as PalettePage;
 use labonair_settings::SettingsSurfaceRegistry;
 use labonair_settings_ui::{
     ServiceFuture, SettingsFileTarget, SettingsServices, SystemFontService,
@@ -27,38 +26,23 @@ pub(crate) fn settings_services(
     main_window: AnyWindowHandle,
 ) -> SettingsServices {
     let mut surfaces = SettingsSurfaceRegistry::default();
+    // The owner surfaces of the Themes page render inline in the Settings
+    // window; their fallback entry point simply opens that page.
+    let open_themes_page =
+        |cx: &mut gpui::App| labonair_settings_ui::open_settings_window(Some("themes"), cx);
     log_surface_registration(
         "theme",
         labonair_theme_ui::register_settings_surfaces(
             &mut surfaces,
-            surface_opener(
-                "theme picker",
-                shell.clone(),
-                main_window,
-                |shell, window, cx| {
-                    shell.show_command_palette(Some(PalettePage::Themes), window, cx)
-                },
-            ),
-            surface_opener(
-                "icon theme picker",
-                shell.clone(),
-                main_window,
-                |shell, window, cx| {
-                    shell.show_command_palette(Some(PalettePage::IconThemes), window, cx)
-                },
-            ),
+            open_themes_page,
+            crate::theme_loader::themes_dir(),
         ),
     );
     log_surface_registration(
         "background",
         labonair_background::register_settings_surfaces(
             &mut surfaces,
-            surface_opener(
-                "background editor",
-                shell.clone(),
-                main_window,
-                |shell, window, cx| shell.show_background_settings(window, cx),
-            ),
+            open_themes_page,
             |message, cx| {
                 labonair_notifications::notification_center(cx).update(cx, |center, cx| {
                     center.push_action_result(

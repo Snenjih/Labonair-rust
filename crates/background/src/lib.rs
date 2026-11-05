@@ -50,9 +50,10 @@ pub use labonair_background_host::{BackgroundHost, BackgroundPulse, LayerScope};
 
 /// Contribute the Background-owned image editor to Settings navigation.
 ///
-/// The surface is inline-capable (ADR 0006): the Settings window may embed the
-/// owner's [`BackgroundSettingsView`] in the Themes page. `open_backgrounds`
-/// stays the standalone entry point (the modal) until every host embeds.
+/// The surface is inline (ADR 0006): the Settings window embeds the owner's
+/// [`BackgroundSettingsView`] in the Themes page. `open_backgrounds` is the
+/// fallback entry point for hosts that cannot embed (the composition root
+/// opens Settings on the Themes page).
 /// `report_error` receives the view's own filesystem failures (store failures
 /// are reported app-wide by the shell); it should raise a notification.
 pub fn register_settings_surfaces(

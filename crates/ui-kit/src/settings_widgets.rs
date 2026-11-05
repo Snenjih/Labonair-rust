@@ -115,6 +115,7 @@ pub struct SettingsRow {
     c: Palette,
     title: SharedString,
     description: Option<SharedString>,
+    extra: Option<AnyElement>,
     reset: Option<AnyElement>,
     control: Option<AnyElement>,
 }
@@ -130,6 +131,7 @@ pub fn settings_row(
         c,
         title: title.into(),
         description: None,
+        extra: None,
         reset: None,
         control: None,
     }
@@ -139,6 +141,13 @@ impl SettingsRow {
     /// A muted explanation under the title.
     pub fn description(mut self, description: impl Into<SharedString>) -> Self {
         self.description = Some(description.into());
+        self
+    }
+
+    /// Extra left-column content under the description (a hint, a "modified
+    /// in" note, an unavailable-in-scope explanation).
+    pub fn extra(mut self, extra: impl IntoElement) -> Self {
+        self.extra = Some(extra.into_any_element());
         self
     }
 
@@ -164,6 +173,7 @@ impl IntoElement for SettingsRow {
             c,
             title,
             description,
+            extra,
             reset,
             control,
         } = self;
@@ -198,7 +208,8 @@ impl IntoElement for SettingsRow {
                                 .text_color(c.muted)
                                 .child(description),
                         )
-                    }),
+                    })
+                    .children(extra),
             )
             .when(reset.is_some() || control.is_some(), |row| {
                 row.child(
@@ -229,24 +240,37 @@ pub fn slider_row(
     state: &Entity<SliderState>,
     value_text: impl Into<SharedString>,
 ) -> SettingsRow {
-    settings_row(id, c, label).control(
-        div()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(c.space(12.0))
-            .child(slider(state, c).w(c.space(SLIDER_ROW_TRACK)))
-            .child(
-                div()
-                    .w(c.control_space(SLIDER_ROW_VALUE))
-                    .flex_shrink_0()
-                    .flex()
-                    .justify_end()
-                    .text_size(c.control_space(12.0))
-                    .text_color(c.muted)
-                    .child(value_text.into()),
-            ),
-    )
+    settings_row(id, c, label).control(slider_control(state, c, value_text, false))
+}
+
+/// The control half of a [`slider_row`]: slider track plus a fixed-width value
+/// read-out. `disabled` makes the track inert (the owner also dims the row).
+pub fn slider_control(
+    state: &Entity<SliderState>,
+    c: Palette,
+    value_text: impl Into<SharedString>,
+    disabled: bool,
+) -> Div {
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(c.space(12.0))
+        .child(
+            slider(state, c)
+                .disabled(disabled)
+                .w(c.space(SLIDER_ROW_TRACK)),
+        )
+        .child(
+            div()
+                .w(c.control_space(SLIDER_ROW_VALUE))
+                .flex_shrink_0()
+                .flex()
+                .justify_end()
+                .text_size(c.control_space(12.0))
+                .text_color(c.muted)
+                .child(value_text.into()),
+        )
 }
 
 /// The hue of a [`category_chip`], in degrees on the colour wheel. The chip
@@ -349,6 +373,7 @@ mod tests {
             .row(settings_row("a", c, "A").description("About A"))
             .row(
                 settings_row("b", c, "B")
+                    .extra(div().child("hint"))
                     .reset(div().child("reset"))
                     .control(div().child("ctl")),
             )

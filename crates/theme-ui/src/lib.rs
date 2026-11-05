@@ -13,33 +13,65 @@
 
 mod apply;
 pub mod command_provider;
+mod settings_views;
 
 pub use apply::{
     activate_app_theme, apply_prefs_to_theme, apply_theme_metrics, preview_app_theme,
     theme_metrics_from_settings, window_background,
 };
+pub use settings_views::{ColorThemeSettings, IconThemeSettings};
 
-/// Contribute the Theme-owned pickers to Settings navigation.
+use std::path::{Path, PathBuf};
+
+use gpui::{App, AppContext as _, Entity};
+use labonair_theme::registry::RejectedTheme;
+use labonair_theme::ThemeStore;
+
+/// Rescan the user themes folder and re-apply the persisted selection, so a
+/// user family chosen in an earlier session becomes active once its file is
+/// (re)loaded. Returns the files that were skipped (unreadable, malformed, or
+/// missing a light or dark variant); the composition root reports each one
+/// through the notification center.
+pub fn reload_user_themes(
+    theme: &Entity<ThemeStore>,
+    dir: &Path,
+    cx: &mut App,
+) -> Vec<RejectedTheme> {
+    let rejected = theme.update(cx, |store, cx| store.reload_user_themes(dir, cx));
+    apply_prefs_to_theme(theme, cx);
+    rejected
+}
+
+/// Contribute the Theme-owned Settings surfaces. Both are inline: the colour
+/// theme grid and the icon-theme picker render inside the Themes page.
+/// `open_themes` is the fallback entry point (open Settings on the Themes
+/// page) and `themes_dir` the user themes folder the grid offers to open.
 pub fn register_settings_surfaces(
     registry: &mut labonair_settings::SettingsSurfaceRegistry,
-    open_app_themes: impl Fn(&mut gpui::App) + 'static,
-    open_icon_themes: impl Fn(&mut gpui::App) + 'static,
+    open_themes: impl Fn(&mut App) + Clone + 'static,
+    themes_dir: PathBuf,
 ) -> Result<(), String> {
     use labonair_settings::{
         SettingsSurface, SettingsSurfaceContribution, SettingsSurfaceId, SettingsSurfacePage,
     };
 
-    registry.register(SettingsSurfaceContribution::new(
+    registry.register(SettingsSurfaceContribution::inline(
         SettingsSurface::new(
             SettingsSurfaceId::new("app-themes"),
-            "App theme",
-            "Choose a color theme and preview its variants.",
+            "Color theme",
+            "Choose a color theme. Each theme provides a light and a dark variant.",
             "Choose theme…",
             SettingsSurfacePage::section("themes", "Themes", "Color theme"),
         ),
-        open_app_themes,
+        open_themes.clone(),
+        move |_window, cx| {
+            let theme = labonair_theme::theme_store(cx);
+            let themes_dir = themes_dir.clone();
+            cx.new(|cx| ColorThemeSettings::new(theme, themes_dir, cx))
+                .into()
+        },
     ))?;
-    registry.register(SettingsSurfaceContribution::new(
+    registry.register(SettingsSurfaceContribution::inline(
         SettingsSurface::new(
             SettingsSurfaceId::new("icon-themes"),
             "Icon theme",
@@ -47,7 +79,11 @@ pub fn register_settings_surfaces(
             "Choose icons…",
             SettingsSurfacePage::section("themes", "Themes", "Icon theme"),
         ),
-        open_icon_themes,
+        open_themes,
+        |_window, cx| {
+            let theme = labonair_theme::theme_store(cx);
+            cx.new(|cx| IconThemeSettings::new(theme, cx)).into()
+        },
     ))
 }
 
@@ -58,7 +94,7 @@ mod settings_surface_tests {
     #[test]
     fn theme_settings_surfaces_are_registered_by_their_owner() {
         let mut registry = labonair_settings::SettingsSurfaceRegistry::default();
-        register_settings_surfaces(&mut registry, |_| {}, |_| {}).unwrap();
+        register_settings_surfaces(&mut registry, |_| {}, PathBuf::new()).unwrap();
         let surfaces = registry.surfaces();
         assert_eq!(surfaces.len(), 2);
         assert_eq!(

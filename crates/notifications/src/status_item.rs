@@ -262,6 +262,36 @@ impl StatusItem for NotificationsStatusItem {
                                 );
                             }
                         }
+                        if !snapshot.actions.is_empty() {
+                            message = message.child(div().flex().gap_2().pt_1().children(
+                                snapshot.actions.iter().map(|action| {
+                                    let action_id = action.id.clone();
+                                    let action_view = view.clone();
+                                    labonair_ui_kit::button(
+                                        SharedString::from(format!(
+                                            "bar-notification-{id}-{}",
+                                            action.id
+                                        )),
+                                        palette,
+                                        ButtonVariant::OutlinedGhost,
+                                        ButtonSize::Xs,
+                                    )
+                                    .child(SharedString::from(action.label.clone()))
+                                    .on_click(
+                                        move |_: &ClickEvent, _window, cx| {
+                                            let action_id = action_id.clone();
+                                            action_view.update(cx, |item, cx| {
+                                                item.center.update(cx, |center, cx| {
+                                                    center.activate_action(id, action_id, cx)
+                                                });
+                                                cx.notify();
+                                            });
+                                            cx.stop_propagation();
+                                        },
+                                    )
+                                }),
+                            ));
+                        }
                         let row = ListItem::new(
                             SharedString::from(format!("bar-notification-{id}")),
                             palette,
