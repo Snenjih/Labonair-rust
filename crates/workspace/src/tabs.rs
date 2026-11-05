@@ -205,7 +205,6 @@ pub struct ActiveTabChanged(pub u64);
 pub struct TabStore {
     tabs: Vec<Tab>,
     active_id: u64,
-    next_id: u64,
     /// Which Space a newly-opened tab joins. Kept in sync by
     /// [`crate::Workspace::switch_space`] — this is what lets every existing
     /// `open`/`open_workspace` call site keep working unchanged while still
@@ -227,7 +226,6 @@ impl TabStore {
         Self {
             tabs: Vec::new(),
             active_id: 0,
-            next_id: 1,
             current_space: DEFAULT_SPACE_ID,
         }
     }
@@ -297,8 +295,7 @@ impl TabStore {
 
     /// Open a new tab and activate it. Returns its id.
     pub fn open(&mut self, kind: TabKind, data: TabData, cx: &mut Context<Self>) -> u64 {
-        let id = self.next_id;
-        self.next_id += 1;
+        let id = crate::pane::next_id();
         self.tabs.push(Tab {
             id,
             kind,

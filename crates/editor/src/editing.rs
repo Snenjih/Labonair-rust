@@ -11,7 +11,6 @@ use crate::buffer::{
 use crate::document::{Document, Motion};
 use crate::language::Language;
 use crate::search::{find_all, SearchQuery};
-use crate::splits::{EditorGroupId, EditorSplitTree, SplitError};
 use crate::symbols::{larger_syntax_ranges, smaller_syntax_ranges};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -90,20 +89,6 @@ pub enum DeleteTarget {
 /// Named compatibility type for a single entry in a multi-selection.
 pub type MultiSelection = Selection;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SplitIntent {
-    Left,
-    Right,
-    Up,
-    Down,
-    FocusNext,
-    FocusPrevious,
-    Close,
-    CloseOthers,
-    ResetSizes,
-    Resize { delta_milli: i16 },
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditorViewEvent {
     EditApplied {
@@ -111,7 +96,6 @@ pub enum EditorViewEvent {
         edit_count: usize,
     },
     SelectionChanged,
-    SplitChanged,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -139,7 +123,6 @@ impl EditorCommandResult {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditorCommand {
     Edit(EditIntent),
-    Split(SplitIntent),
 }
 
 /// The smallest typed command boundary needed by a workspace/editor view.
@@ -155,23 +138,18 @@ pub trait EditorSnapshotStream {
 pub struct EditorViewSnapshot {
     pub buffer: BufferSnapshot,
     pub selections: SelectionSet,
-    pub splits: EditorSplitTree,
 }
 
 /// Editor-owned state for a tab or standalone editor surface. Workspace can
 /// host this value through the typed command/snapshot traits without owning
-/// either document selections or the internal split tree.
+/// document selections.
 pub struct EditorState {
     document: Document,
-    splits: EditorSplitTree,
 }
 
 impl EditorState {
     pub fn new(document: Document) -> Self {
-        Self {
-            document,
-            splits: EditorSplitTree::new(EditorGroupId::new(1)),
-        }
+        Self { document }
     }
 
     pub fn document(&self) -> &Document {
@@ -181,14 +159,6 @@ impl EditorState {
     pub fn document_mut(&mut self) -> &mut Document {
         &mut self.document
     }
-
-    pub fn split_tree(&self) -> &EditorSplitTree {
-        &self.splits
-    }
-
-    pub fn split_tree_mut(&mut self) -> &mut EditorSplitTree {
-        &mut self.splits
-    }
 }
 
 impl EditorSnapshotStream for EditorState {
@@ -196,7 +166,6 @@ impl EditorSnapshotStream for EditorState {
         EditorViewSnapshot {
             buffer: self.document.snapshot(),
             selections: self.document.selection_set(),
-            splits: self.splits.clone(),
         }
     }
 }
@@ -205,53 +174,6 @@ impl EditorCommandSink for EditorState {
     fn execute(&mut self, command: EditorCommand) -> EditorCommandResult {
         match command {
             EditorCommand::Edit(intent) => self.document.execute_edit(intent),
-            EditorCommand::Split(intent) => self.execute_split(intent),
-        }
-    }
-}
-
-impl EditorState {
-    fn execute_split(&mut self, intent: SplitIntent) -> EditorCommandResult {
-        let before = self.splits.clone();
-        let before_count = before.group_count();
-        let result = match intent {
-            SplitIntent::Left => self.splits.split_left().map(|_| ()),
-            SplitIntent::Right => self.splits.split_right().map(|_| ()),
-            SplitIntent::Up => self.splits.split_up().map(|_| ()),
-            SplitIntent::Down => self.splits.split_down().map(|_| ()),
-            SplitIntent::FocusNext => {
-                self.splits.focus_next();
-                Ok(())
-            }
-            SplitIntent::FocusPrevious => {
-                self.splits.focus_previous();
-                Ok(())
-            }
-            SplitIntent::Close => self.splits.close_focused().map(|_| ()),
-            SplitIntent::CloseOthers => self.splits.close_other_groups(),
-            SplitIntent::ResetSizes => {
-                self.splits.reset_sizes();
-                Ok(())
-            }
-            SplitIntent::Resize { delta_milli } => self
-                .splits
-                .resize(self.splits.focused_group(), f32::from(delta_milli) / 1000.0),
-        };
-        match result {
-            Ok(()) if self.splits != before => {
-                let focused = self.splits.focused_group();
-                if self.splits.group_count() > before_count {
-                    self.document.create_editor_group_view(focused);
-                }
-                self.document.activate_editor_group_view(focused);
-                self.document
-                    .retain_editor_group_views(&self.splits.groups());
-                EditorCommandResult::changed(EditorViewEvent::SplitChanged)
-            }
-            Ok(()) => EditorCommandResult::unchanged(),
-            Err(SplitError::CannotCloseLastGroup | SplitError::GroupNotFound(_)) => {
-                EditorCommandResult::unchanged()
-            }
         }
     }
 }
@@ -2270,18 +2192,19 @@ mod tests {
     }
 
     #[test]
-    fn editor_state_split_groups_restore_independent_carets() {
+    fn editor_groups_restore_independent_carets() {
         let mut state = EditorState::new(doc("one two"));
         state.document_mut().set_caret(Position::new(0, 3), false);
+        let first = crate::EditorGroupId::new(1);
+        let second = crate::EditorGroupId::new(2);
 
-        state.execute(EditorCommand::Split(SplitIntent::Right));
-        let second = state.split_tree().focused_group();
+        state.document_mut().create_editor_group_view(second);
+        state.document_mut().activate_editor_group_view(second);
         state.document_mut().set_caret(Position::new(0, 7), false);
 
-        state.execute(EditorCommand::Split(SplitIntent::FocusPrevious));
+        state.document_mut().activate_editor_group_view(first);
         assert_eq!(state.document().cursor, Position::new(0, 3));
-        state.execute(EditorCommand::Split(SplitIntent::FocusNext));
-        assert_eq!(state.split_tree().focused_group(), second);
+        state.document_mut().activate_editor_group_view(second);
         assert_eq!(state.document().cursor, Position::new(0, 7));
     }
 

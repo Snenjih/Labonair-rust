@@ -17,12 +17,11 @@ use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    canvas, div, px, relative, AnyElement, AnyView, App, AppContext, Bounds, ClickEvent,
-    ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable, HighlightStyle,
-    InteractiveElement, IntoElement, KeyContext, KeyDownEvent, ListAlignment, ListState,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point,
-    Render, ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, StyledText, Task,
-    Window,
+    canvas, div, px, AnyElement, App, AppContext, Bounds, ClickEvent, ClipboardItem, Context,
+    Entity, EventEmitter, FocusHandle, Focusable, HighlightStyle, InteractiveElement, IntoElement,
+    KeyContext, KeyDownEvent, ListAlignment, ListState, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollWheelEvent,
+    SharedString, StatefulInteractiveElement, Styled, StyledText, Task, Window,
 };
 use labonair_command_palette_core::CommandId;
 use labonair_filesystem::file::{
@@ -46,7 +45,7 @@ use labonair_editor::{
     },
     document::Motion,
     document_syntax,
-    editing::{EditIntent, EditorCommand, EditorCommandResult, SplitIntent},
+    editing::{EditIntent, EditorCommand, EditorCommandResult},
     expand_emmet_abbreviation, find, find_all,
     lifecycle::{
         FileCapabilities, FileLifecycleEvent, FileState, LineEnding, ReloadDecision, SaveIntent,
@@ -106,13 +105,11 @@ pub enum EditorEvent {
     SvgPreviewRequested(EditorBufferSnapshot),
     /// A single SVG preview should follow whichever Editor tab was last active.
     SvgFollowingPreviewRequested(EditorBufferSnapshot),
-    /// Open a native preview in an Editor split beside its source buffer.
-    PreviewToSideRequested {
-        group: labonair_editor::EditorGroupId,
-        content: EditorSidePreviewContent,
-    },
-    /// A side preview group was closed by the Editor split controls.
-    EditorSplitPaneClosed(labonair_editor::EditorGroupId),
+    /// Open a native preview in a Preview pane beside the editor's pane.
+    PreviewToSideRequested { content: EditorSidePreviewContent },
+    /// A different group of this editor took focus (a mirror pane was
+    /// clicked); the Workspace moves its active pane to the group's pane.
+    GroupFocused(labonair_editor::EditorGroupId),
     /// A delimited text preview should open for this file in the Workspace preview host.
     TabularPreviewRequested(PathBuf),
     /// The content or file identity of an editor buffer changed.
@@ -154,12 +151,6 @@ struct EditorSearch {
     matches: Vec<Match>,
     active: Option<usize>,
     error: Option<SearchError>,
-}
-
-#[derive(Clone, Debug)]
-struct EditorSplitDrag {
-    path: labonair_editor::splits::SplitPath,
-    orientation: labonair_editor::SplitOrientation,
 }
 
 /// A pointer gesture keeps its original selection state so a drag is one
@@ -1255,14 +1246,12 @@ pub struct EditorView {
     semantic_tokens_enabled_override: Option<bool>,
     selections_menu_enabled_override: Option<bool>,
     modal_mode_override: Option<EditorModalMode>,
-    /// Editor-internal groups. Workspace pane layouts remain a separate
-    /// capability; this tree is changed only by Editor commands.
-    editor_splits: labonair_editor::EditorSplitTree,
-    /// Workspace-hosted native preview views attached to Editor split groups.
-    external_split_views: HashMap<labonair_editor::EditorGroupId, AnyView>,
-    /// Independent selection, fold, and viewport state for each split group.
+    /// The view groups onto this editor's one document. The Workspace shows
+    /// each group in its own pane (ADR 0005); there is no editor-internal
+    /// layout.
+    editor_groups: labonair_editor::EditorGroups,
+    /// Independent selection, fold, and viewport state for each group.
     editor_group_views: HashMap<labonair_editor::EditorGroupId, EditorViewSession>,
-    split_drag_last: Option<f32>,
     /// Cached glyph metrics `(char_width, line_height)` in px.
     metrics: (f32, f32),
     /// Optional per-view font-size adjustment from modifier-wheel zoom.
@@ -1596,10 +1585,8 @@ impl EditorView {
             semantic_tokens_enabled_override: None,
             selections_menu_enabled_override: None,
             modal_mode_override: None,
-            editor_splits: labonair_editor::EditorSplitTree::default(),
-            external_split_views: HashMap::new(),
+            editor_groups: labonair_editor::EditorGroups::default(),
             editor_group_views: HashMap::new(),
-            split_drag_last: None,
             metrics: (8.0, 18.0),
             font_size_override: None,
             font_zoom_remainder: 0.0,
@@ -1738,19 +1725,6 @@ impl EditorView {
         self.document_link_navigator = Some(Rc::new(navigator));
     }
 
-    /// Attach a Workspace-owned preview view to one Editor split group.
-    pub fn set_external_split_view(
-        &mut self,
-        group: labonair_editor::EditorGroupId,
-        view: AnyView,
-        cx: &mut Context<Self>,
-    ) {
-        if self.editor_splits.groups().contains(&group) {
-            self.external_split_views.insert(group, view);
-            cx.notify();
-        }
-    }
-
     pub fn language_service_snapshot(&self) -> LanguageServiceRuntimeSnapshot {
         self.language_service_snapshot.clone()
     }
@@ -1761,7 +1735,7 @@ impl EditorView {
     }
 
     fn capture_active_editor_group_view(&mut self) -> EditorViewSession {
-        let group = self.editor_splits.focused_group();
+        let group = self.editor_groups.focused_group();
         let view = self.editor_group_view_snapshot(group);
         self.editor_group_views.insert(group, view.clone());
         view
@@ -1771,7 +1745,7 @@ impl EditorView {
         &self,
         group: labonair_editor::EditorGroupId,
     ) -> EditorViewSession {
-        if group == self.editor_splits.focused_group() {
+        if group == self.editor_groups.focused_group() {
             return EditorViewSession {
                 group_id: group.value(),
                 scroll_top: self.scroll_top,
@@ -1827,8 +1801,8 @@ impl EditorView {
         self.scroll_left = 0;
         self.folds.clear();
         self.editor_group_views.clear();
-        let groups = self.editor_splits.groups();
-        let focused = self.editor_splits.focused_group();
+        let groups = self.editor_groups.groups();
+        let focused = self.editor_groups.focused_group();
         self.doc.activate_editor_group_view(focused);
         self.doc.retain_editor_group_views(&groups);
         let selection = self.doc.selection_set();
@@ -1852,12 +1826,15 @@ impl EditorView {
         self.display_layout_cache = None;
     }
 
+    /// Make `group` the focused view group: stash the live scroll / folds of
+    /// the previous one and bring `group`'s back. `false` when it is already
+    /// focused or unknown.
     fn focus_editor_group(&mut self, group: labonair_editor::EditorGroupId) -> bool {
-        if self.editor_splits.focused_group() == group {
+        if self.editor_groups.focused_group() == group {
             return false;
         }
         self.capture_active_editor_group_view();
-        if self.editor_splits.focus(group).is_err() {
+        if self.editor_groups.focus(group).is_err() {
             return false;
         }
         self.doc.activate_editor_group_view(group);
@@ -1865,66 +1842,83 @@ impl EditorView {
         true
     }
 
+    /// The focused view group (the one backing the interactive text area).
+    pub fn active_group(&self) -> labonair_editor::EditorGroupId {
+        self.editor_groups.focused_group()
+    }
+
+    /// The first (oldest) view group: the one the pane that created the
+    /// editor shows.
+    pub fn first_group(&self) -> labonair_editor::EditorGroupId {
+        self.editor_groups.groups()[0]
+    }
+
+    pub fn group_count(&self) -> usize {
+        self.editor_groups.group_count()
+    }
+
+    /// Focus a group from the Workspace (pane focus). Returns whether the
+    /// focused group changed.
+    pub fn focus_group(
+        &mut self,
+        group: labonair_editor::EditorGroupId,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let changed = self.focus_editor_group(group);
+        if changed {
+            cx.notify();
+        }
+        changed
+    }
+
+    /// Add a view group seeded from the focused one (same scroll, folds and
+    /// selections) and focus it; the Workspace shows it in a new pane. The
+    /// document, its history and its dirty state stay shared.
+    pub fn add_group(&mut self, cx: &mut Context<Self>) -> labonair_editor::EditorGroupId {
+        let seed = self.capture_active_editor_group_view();
+        let group = self.editor_groups.add();
+        let mut view = seed;
+        view.group_id = group.value();
+        self.editor_group_views.insert(group, view);
+        self.doc.create_editor_group_view(group);
+        self.doc.activate_editor_group_view(group);
+        self.restore_editor_group_view(group);
+        cx.notify();
+        group
+    }
+
+    /// Drop a view group (its pane was closed). The last group stays.
+    pub fn remove_group(
+        &mut self,
+        group: labonair_editor::EditorGroupId,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        self.close_editor_group(group, cx)
+    }
+
     fn close_editor_group(
         &mut self,
         group: labonair_editor::EditorGroupId,
         cx: &mut Context<Self>,
     ) -> bool {
-        let previous_focus = self.editor_splits.focused_group();
-        if self.editor_splits.close(group).is_err() {
+        let previous_focus = self.editor_groups.focused_group();
+        if previous_focus != group {
+            self.capture_active_editor_group_view();
+        }
+        if self.editor_groups.remove(group).is_err() {
             return false;
         }
-        if self.external_split_views.remove(&group).is_some() {
-            cx.emit(EditorEvent::EditorSplitPaneClosed(group));
-        }
-        let focused = self.editor_splits.focused_group();
+        let focused = self.editor_groups.focused_group();
         if focused != previous_focus {
             self.doc.activate_editor_group_view(focused);
             self.restore_editor_group_view(focused);
         }
-        let groups = self.editor_splits.groups();
+        let groups = self.editor_groups.groups();
         self.doc.retain_editor_group_views(&groups);
         self.editor_group_views
             .retain(|view_group, _| groups.contains(view_group));
+        cx.notify();
         true
-    }
-
-    fn synchronize_editor_group_views(
-        &mut self,
-        previous_focus: labonair_editor::EditorGroupId,
-        previous_group_count: usize,
-        cx: &mut Context<Self>,
-    ) {
-        let focused = self.editor_splits.focused_group();
-        if self.editor_splits.group_count() > previous_group_count {
-            let new_view = self
-                .editor_group_views
-                .get(&previous_focus)
-                .cloned()
-                .unwrap_or_else(|| self.capture_active_editor_group_view());
-            let mut new_view = new_view;
-            new_view.group_id = focused.value();
-            self.editor_group_views.insert(focused, new_view);
-            self.doc.create_editor_group_view(focused);
-        }
-        self.doc.activate_editor_group_view(focused);
-        let groups = self.editor_splits.groups();
-        let removed_external_groups = self
-            .external_split_views
-            .keys()
-            .copied()
-            .filter(|group| !groups.contains(group))
-            .collect::<Vec<_>>();
-        for group in removed_external_groups {
-            self.external_split_views.remove(&group);
-            cx.emit(EditorEvent::EditorSplitPaneClosed(group));
-        }
-        self.doc.retain_editor_group_views(&groups);
-        self.editor_group_views
-            .retain(|group, _| groups.contains(group));
-        if focused != previous_focus {
-            self.restore_editor_group_view(focused);
-        }
     }
 
     fn request_preview_to_side(
@@ -1932,17 +1926,7 @@ impl EditorView {
         content: EditorSidePreviewContent,
         cx: &mut Context<Self>,
     ) -> bool {
-        let group = if let Some(group) = self.external_split_views.keys().next().copied() {
-            self.focus_editor_group(group);
-            group
-        } else {
-            let result = self.execute_command(EditorCommand::Split(SplitIntent::Right), cx);
-            if !result.changed {
-                return false;
-            }
-            self.editor_splits.focused_group()
-        };
-        cx.emit(EditorEvent::PreviewToSideRequested { group, content });
+        cx.emit(EditorEvent::PreviewToSideRequested { content });
         true
     }
 
@@ -1969,50 +1953,6 @@ impl EditorView {
                 );
                 result
             }
-            EditorCommand::Split(intent) => {
-                let before = self.editor_splits.clone();
-                let previous_group_count = before.group_count();
-                let previous_focus = before.focused_group();
-                self.capture_active_editor_group_view();
-                let result = match intent {
-                    SplitIntent::Left => self.editor_splits.split_left().map(|_| ()),
-                    SplitIntent::Right => self.editor_splits.split_right().map(|_| ()),
-                    SplitIntent::Up => self.editor_splits.split_up().map(|_| ()),
-                    SplitIntent::Down => self.editor_splits.split_down().map(|_| ()),
-                    SplitIntent::FocusNext => {
-                        self.editor_splits.focus_next();
-                        Ok(())
-                    }
-                    SplitIntent::FocusPrevious => {
-                        self.editor_splits.focus_previous();
-                        Ok(())
-                    }
-                    SplitIntent::Close => self.editor_splits.close_focused().map(|_| ()),
-                    SplitIntent::CloseOthers => self.editor_splits.close_other_groups(),
-                    SplitIntent::ResetSizes => {
-                        self.editor_splits.reset_sizes();
-                        Ok(())
-                    }
-                    SplitIntent::Resize { delta_milli } => self.editor_splits.resize(
-                        self.editor_splits.focused_group(),
-                        f32::from(delta_milli) / 1000.0,
-                    ),
-                };
-                if result.is_ok() && self.editor_splits != before {
-                    self.synchronize_editor_group_views(previous_focus, previous_group_count, cx);
-                    cx.emit(EditorEvent::Changed);
-                    cx.notify();
-                    EditorCommandResult {
-                        changed: true,
-                        events: vec![labonair_editor::EditorViewEvent::SplitChanged],
-                    }
-                } else {
-                    EditorCommandResult {
-                        changed: false,
-                        events: Vec::new(),
-                    }
-                }
-            }
         }
     }
 
@@ -2037,9 +1977,6 @@ impl EditorView {
                     (_, intent) => intent,
                 };
                 let _ = self.execute_command(EditorCommand::Edit(intent), cx);
-            }
-            EditorCommandRoute::Split(intent) => {
-                let _ = self.execute_command(EditorCommand::Split(intent), cx);
             }
             EditorCommandRoute::Language(command) => {
                 self.execute_language_command(command, cx);
@@ -2411,12 +2348,6 @@ impl EditorView {
         };
         self.request_language_service(request, cx);
         cx.notify();
-    }
-
-    /// Snapshot of the Editor-owned internal split tree for integration and
-    /// persistence tests. Workspace does not receive mutable access.
-    pub fn editor_split_tree(&self) -> &labonair_editor::EditorSplitTree {
-        &self.editor_splits
     }
 
     fn current_lsp_position(&self) -> LspPosition {
@@ -4670,14 +4601,10 @@ impl EditorView {
         let id = EditorSessionId::new(id_value).unwrap_or_default();
         let mut snapshot = EditorSessionSnapshot::new(id, path);
         snapshot.language = self.doc.language.label().to_string();
-        snapshot.split_tree = self.editor_splits.clone();
-        snapshot.active_group = self.editor_splits.focused_group().value();
-        snapshot.views = self
-            .editor_splits
-            .groups()
-            .into_iter()
-            .map(|group| self.editor_group_view_snapshot(group))
-            .collect();
+        // One pane = one view: persist the focused group only (ADR 0005).
+        let focused = self.editor_groups.focused_group();
+        snapshot.active_group = focused.value();
+        snapshot.views = vec![self.editor_group_view_snapshot(focused)];
         snapshot.search = self.search.as_ref().map(|search| search.query.clone());
         if self.doc.is_dirty() {
             snapshot.recovery =
@@ -4714,43 +4641,30 @@ impl EditorView {
             self.doc.set_language(language);
         }
         self.recovery_prompt = snapshot.recovery.clone();
-        self.editor_splits = if snapshot.split_tree.validate().is_ok() {
-            snapshot.split_tree
-        } else {
-            // Session data is untrusted at this boundary. Keep the document
-            // and its single canonical buffer, but discard only an invalid
-            // split layout instead of allowing stale IDs into GPUI handlers.
-            labonair_editor::EditorSplitTree::default()
-        };
-        let _ = self
-            .editor_splits
-            .focus(labonair_editor::EditorGroupId::new(snapshot.active_group));
-        let mut saved_views = snapshot
+        // Session data is untrusted at this boundary. A restored editor is
+        // always one pane: keep the focused group's view and drop the rest
+        // (older payloads may carry several groups).
+        let group = labonair_editor::EditorGroupId::new(snapshot.active_group.max(1));
+        self.editor_groups = labonair_editor::EditorGroups::new(group);
+        self.editor_group_views.clear();
+        self.doc.create_editor_group_view(group);
+        let view = snapshot
             .views
             .into_iter()
-            .map(|view| (labonair_editor::EditorGroupId::new(view.group_id), view))
-            .collect::<HashMap<_, _>>();
-        self.editor_group_views.clear();
-        let groups = self.editor_splits.groups();
-        for group in &groups {
-            self.doc.create_editor_group_view(*group);
-            let view = saved_views
-                .remove(group)
-                .unwrap_or_else(|| EditorViewSession {
-                    group_id: group.value(),
-                    scroll_top: 0,
-                    scroll_left: 0,
-                    folds: Vec::new(),
-                    selections: self.doc.editor_group_selection(*group).unwrap_or_default(),
-                });
-            self.doc
-                .set_editor_group_selection(*group, view.selections.clone());
-            self.editor_group_views.insert(*group, view);
-        }
-        let focused_group = self.editor_splits.focused_group();
-        self.doc.activate_editor_group_view(focused_group);
-        self.doc.retain_editor_group_views(&groups);
-        self.restore_editor_group_view(focused_group);
+            .find(|view| view.group_id == group.value())
+            .unwrap_or_else(|| EditorViewSession {
+                group_id: group.value(),
+                scroll_top: 0,
+                scroll_left: 0,
+                folds: Vec::new(),
+                selections: self.doc.editor_group_selection(group).unwrap_or_default(),
+            });
+        self.doc
+            .set_editor_group_selection(group, view.selections.clone());
+        self.editor_group_views.insert(group, view);
+        self.doc.activate_editor_group_view(group);
+        self.doc.retain_editor_group_views(&[group]);
+        self.restore_editor_group_view(group);
         self.search = snapshot.search.map(|query| {
             let selection_seed = query
                 .selection_range
@@ -6786,13 +6700,6 @@ impl EditorView {
         let m = &ks.modifiers;
 
         if self
-            .external_split_views
-            .contains_key(&self.editor_splits.focused_group())
-        {
-            return;
-        }
-
-        if self
             .emmet_input
             .as_ref()
             .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window))
@@ -8661,31 +8568,35 @@ impl EditorView {
         )
     }
 
-    /// Paint one non-focused editor group as a read-only mirror of the active
-    /// document. The split tree is editor-owned, while this GPUI adapter is
-    /// intentionally the only place that turns its groups into pixels. A
-    /// future multi-document group model can replace this mirror without
-    /// changing the split contract. Mirrors deliberately show the same
-    /// snapshot revision so a focused-group switch cannot present stale text.
-    fn render_split_mirror(
-        &self,
+    /// Paint a non-focused view group as a read-only mirror of the shared
+    /// document, for a Workspace pane whose group is not the interactive one.
+    /// It shows the group's own scroll position (wheel scrolls it) and the
+    /// same revision as the live text area, without syntax colours. Pressing
+    /// it focuses the group; the Workspace then swaps which pane hosts the
+    /// interactive text area.
+    pub fn mirror_element(
+        &mut self,
         group: labonair_editor::EditorGroupId,
-        snapshot: &labonair_editor::BufferSnapshot,
-        display: &labonair_editor::DisplaySnapshot,
-        font: gpui::Font,
-        palette: Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let theme = self.theme.read(cx);
+        let palette = Palette::from_theme(theme);
+        let bg = theme.background();
+        let mut font = theme.buffer_font();
+        if let Some(family) = primary_editor_font_family(self.prefs.font_family()) {
+            font.family = family.to_owned().into();
+        }
         let font_px = self.effective_font_size() as f32;
-        let line_h = self.metrics.1;
-        let border = palette.border;
-        let muted = palette.muted;
-        let fg = palette.fg;
-        let group_value = group.value();
+        let line_h = (font_px * self.prefs.line_height()).ceil().max(1.0);
+        let snapshot = self.doc.snapshot();
+        let line_count = snapshot.line_count();
         let first_line = self
             .editor_group_views
             .get(&group)
-            .map_or(0, |view| view.scroll_top);
+            .map_or(0, |view| view.scroll_top)
+            .min(line_count.saturating_sub(1));
+        let gutter_digits = line_count.to_string().len().max(3);
+        let display = self.display_snapshot(&snapshot);
         let rows = display
             .rows
             .iter()
@@ -8698,58 +8609,41 @@ impl EditorView {
                     .items_center()
                     .text_size(px(font_px))
                     .font(font.clone())
-                    .text_color(fg)
-                    .child(SharedString::from(row.text(snapshot)))
+                    .text_color(palette.fg)
+                    .child(
+                        div()
+                            .w(px(gutter_digits as f32 * font_px * 0.62 + 12.0))
+                            .flex_shrink_0()
+                            .text_color(palette.muted)
+                            .child(SharedString::from(format!("{}", row.logical_line() + 1))),
+                    )
+                    .child(SharedString::from(row.text(&snapshot)))
             });
-        let close = button(
-            ("editor-split-close", group_value),
-            palette,
-            ButtonVariant::Subtle,
-            ButtonSize::IconXs,
-        )
-        .child("×")
-        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-            if this.close_editor_group(group, cx) {
-                cx.emit(EditorEvent::Changed);
-                cx.notify();
-            }
-        }));
         div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w_0()
-            .min_h_0()
-            .border_1()
-            .border_color(border)
-            .child(
-                div()
-                    .h(px(24.0))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px_2()
-                    .bg(palette.muted_bg)
-                    .text_xs()
-                    .text_color(muted)
-                    .child(SharedString::from(format!(
-                        "Editor group {group_value} · mirror · rev {}",
-                        snapshot.revision().value()
-                    )))
-                    .child(close),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_hidden()
-                    .px_2()
-                    .children(rows),
+            .id(("editor-mirror", group.value()))
+            .size_full()
+            .overflow_hidden()
+            .bg(bg)
+            .children(rows)
+            .on_scroll_wheel(
+                cx.listener(move |this, ev: &gpui::ScrollWheelEvent, _window, cx| {
+                    let delta = ev.delta.pixel_delta(px(line_h));
+                    let lines = (f32::from(delta.y) / line_h).round() as isize;
+                    if lines == 0 {
+                        return;
+                    }
+                    let max = this.doc.snapshot().line_count().saturating_sub(1);
+                    if let Some(view) = this.editor_group_views.get_mut(&group) {
+                        view.scroll_top = view.scroll_top.saturating_add_signed(-lines).min(max);
+                        cx.notify();
+                    }
+                }),
             )
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, _: &MouseDownEvent, _window, cx| {
                     if this.focus_editor_group(group) {
+                        cx.emit(EditorEvent::GroupFocused(group));
                         cx.emit(EditorEvent::Changed);
                         cx.notify();
                     }
@@ -8757,271 +8651,6 @@ impl EditorView {
                 }),
             )
             .into_any_element()
-    }
-
-    fn render_external_split_view(
-        &self,
-        group: labonair_editor::EditorGroupId,
-        view: AnyView,
-        palette: Palette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let group_value = group.value();
-        let active = self.editor_splits.focused_group() == group;
-        let close = button(
-            ("editor-split-close", group_value),
-            palette,
-            ButtonVariant::Subtle,
-            ButtonSize::IconXs,
-        )
-        .child("×")
-        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-            if this.close_editor_group(group, cx) {
-                cx.emit(EditorEvent::Changed);
-                cx.notify();
-            }
-        }));
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w_0()
-            .min_h_0()
-            .border_1()
-            .border_color(if active {
-                palette.accent
-            } else {
-                palette.border
-            })
-            .child(
-                div()
-                    .h(px(24.0))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px_2()
-                    .bg(palette.muted_bg)
-                    .text_xs()
-                    .text_color(palette.fg)
-                    .child(SharedString::from(format!(
-                        "Editor group {group_value} · preview"
-                    )))
-                    .child(close),
-            )
-            .child(div().flex_1().min_h_0().child(view.into_any_element()))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _: &MouseDownEvent, _window, cx| {
-                    if this.focus_editor_group(group) {
-                        cx.emit(EditorEvent::Changed);
-                        cx.notify();
-                    }
-                }),
-            )
-            .into_any_element()
-    }
-
-    /// Recursively materialize the Editor-owned split tree. Every split node
-    /// gets its own flex axis, local first-child ratio, and local drag
-    /// coordinate space; flattening leaves at the root would make nested
-    /// dividers resize the wrong node.
-    // The recursive renderer carries immutable document/display projections
-    // plus the one active widget; keeping those values explicit avoids a
-    // second editor-owned context object or workspace split state.
-    #[allow(clippy::too_many_arguments)]
-    fn render_split_node(
-        &self,
-        node: &labonair_editor::SplitNode,
-        path: &labonair_editor::splits::SplitPath,
-        focused_group: labonair_editor::EditorGroupId,
-        active_text_area: &mut Option<AnyElement>,
-        snapshot: &labonair_editor::BufferSnapshot,
-        display: &labonair_editor::DisplaySnapshot,
-        font: gpui::Font,
-        palette: Palette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        match node {
-            labonair_editor::SplitNode::Leaf(group) => {
-                if let Some(view) = self.external_split_views.get(group) {
-                    return self.render_external_split_view(*group, view.clone(), palette, cx);
-                }
-                if *group == focused_group {
-                    if let Some(text_area) = active_text_area.take() {
-                        let group = *group;
-                        let group_value = group.value();
-                        let close = button(
-                            ("editor-split-close", group_value),
-                            palette,
-                            ButtonVariant::Subtle,
-                            ButtonSize::IconXs,
-                        )
-                        .child("×")
-                        .on_click(cx.listener(
-                            move |this, _: &ClickEvent, _window, cx| {
-                                if this.close_editor_group(group, cx) {
-                                    cx.emit(EditorEvent::Changed);
-                                    cx.notify();
-                                }
-                            },
-                        ));
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .min_w_0()
-                            .min_h_0()
-                            .border_1()
-                            .border_color(palette.accent)
-                            .child(
-                                div()
-                                    .h(px(24.0))
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .px_2()
-                                    .bg(palette.muted_bg)
-                                    .text_xs()
-                                    .text_color(palette.fg)
-                                    .child(SharedString::from(format!(
-                                        "Editor group {} · active",
-                                        group.value()
-                                    )))
-                                    .child(close),
-                            )
-                            .child(text_area)
-                            .into_any_element()
-                    } else {
-                        self.render_split_mirror(*group, snapshot, display, font, palette, cx)
-                    }
-                } else {
-                    self.render_split_mirror(*group, snapshot, display, font, palette, cx)
-                }
-            }
-            labonair_editor::SplitNode::Split {
-                orientation,
-                first_size,
-                first,
-                second,
-            } => {
-                let first_path = path.child(labonair_editor::splits::SplitSide::First);
-                let second_path = path.child(labonair_editor::splits::SplitSide::Second);
-                let first_element = self.render_split_node(
-                    first,
-                    &first_path,
-                    focused_group,
-                    active_text_area,
-                    snapshot,
-                    display,
-                    font.clone(),
-                    palette,
-                    cx,
-                );
-                let second_element = self.render_split_node(
-                    second,
-                    &second_path,
-                    focused_group,
-                    active_text_area,
-                    snapshot,
-                    display,
-                    font,
-                    palette,
-                    cx,
-                );
-                let first_size = if first_size.is_finite() {
-                    first_size.clamp(0.1, 0.9)
-                } else {
-                    0.5
-                };
-                let mut first_slot = div()
-                    .min_w_0()
-                    .min_h_0()
-                    .flex_shrink_0()
-                    .child(first_element);
-                let mut second_slot = div()
-                    .min_w_0()
-                    .min_h_0()
-                    .flex_shrink_0()
-                    .child(second_element);
-                match orientation {
-                    labonair_editor::SplitOrientation::Horizontal => {
-                        first_slot = first_slot.w(relative(first_size));
-                        second_slot = second_slot.w(relative(1.0 - first_size));
-                    }
-                    labonair_editor::SplitOrientation::Vertical => {
-                        first_slot = first_slot.h(relative(first_size));
-                        second_slot = second_slot.h(relative(1.0 - first_size));
-                    }
-                };
-                let drag = EditorSplitDrag {
-                    path: path.clone(),
-                    orientation: *orientation,
-                };
-                let view = cx.entity();
-                let mut divider = div()
-                    .id(SharedString::from(format!(
-                        "editor-split-divider-{}",
-                        path.key()
-                    )))
-                    .flex_shrink_0()
-                    .bg(palette.border)
-                    .hover(|style| style.bg(palette.accent));
-                divider = match orientation {
-                    labonair_editor::SplitOrientation::Horizontal => {
-                        divider.w(px(3.0)).h_full().cursor_col_resize()
-                    }
-                    labonair_editor::SplitOrientation::Vertical => {
-                        divider.h(px(3.0)).w_full().cursor_row_resize()
-                    }
-                };
-                let divider = divider.on_drag(drag, move |_, _, _, cx| {
-                    view.update(cx, |this, _cx| {
-                        this.split_drag_last = None;
-                    });
-                    cx.new(|_| EditorDragGhost)
-                });
-                let mut surface = div().min_w_0().min_h_0().flex().flex_1();
-                surface = match orientation {
-                    labonair_editor::SplitOrientation::Horizontal => surface.flex_row(),
-                    labonair_editor::SplitOrientation::Vertical => surface.flex_col(),
-                };
-                let orientation = *orientation;
-                surface
-                    .child(first_slot)
-                    .child(divider)
-                    .child(second_slot)
-                    .on_drag_move(cx.listener(
-                        move |this, event: &gpui::DragMoveEvent<EditorSplitDrag>, _window, cx| {
-                            let drag = event.drag(cx);
-                            if drag.orientation != orientation {
-                                return;
-                            }
-                            let bounds = event.bounds;
-                            let fraction = match orientation {
-                                labonair_editor::SplitOrientation::Horizontal => {
-                                    f32::from(event.event.position.x - bounds.origin.x)
-                                        / f32::from(bounds.size.width).max(1.0)
-                                }
-                                labonair_editor::SplitOrientation::Vertical => {
-                                    f32::from(event.event.position.y - bounds.origin.y)
-                                        / f32::from(bounds.size.height).max(1.0)
-                                }
-                            };
-                            if let Some(previous) = this.split_drag_last.replace(fraction) {
-                                if this
-                                    .editor_splits
-                                    .resize_at(&drag.path, fraction - previous)
-                                    .is_ok()
-                                {
-                                    cx.emit(EditorEvent::Changed);
-                                    cx.notify();
-                                }
-                            }
-                        },
-                    ))
-                    .into_any_element()
-            }
-        }
     }
 
     /// Compact editor-owned controls hosted by the registered global statusbar
@@ -12313,24 +11942,7 @@ impl Render for EditorView {
             );
         }
 
-        let split_count = self.editor_splits.group_count();
-        let focused_group = self.editor_splits.focused_group();
-        let editor_surface = if split_count == 1 {
-            text_area.into_any_element()
-        } else {
-            let mut active_text_area = Some(text_area.into_any_element());
-            self.render_split_node(
-                self.editor_splits.root(),
-                &labonair_editor::splits::SplitPath::root(),
-                focused_group,
-                &mut active_text_area,
-                &snapshot,
-                &display,
-                font,
-                ui_palette,
-                cx,
-            )
-        };
+        let editor_surface = text_area.into_any_element();
 
         let file_status = self.render_file_status(cx);
         let show_text_area = self.should_render_text_area();
@@ -13067,19 +12679,18 @@ mod tests {
     }
 
     #[gpui::test]
-    fn preview_to_side_command_creates_an_editor_split_with_typed_source(cx: &mut TestAppContext) {
+    fn preview_to_side_command_requests_a_preview_pane_with_typed_source(cx: &mut TestAppContext) {
         let view = setup(cx);
         let captured = Arc::new(std::sync::Mutex::new(None));
         let captured_event = captured.clone();
         let _subscription = cx.update(|cx| {
             cx.subscribe(&view, move |_, event: &EditorEvent, _| {
                 if let EditorEvent::PreviewToSideRequested {
-                    group,
                     content: EditorSidePreviewContent::Markdown(source),
                 } = event
                 {
                     if let Ok(mut captured) = captured_event.lock() {
-                        *captured = Some((group.value(), source.snapshot.text()));
+                        *captured = Some(source.snapshot.text());
                     }
                 }
             })
@@ -13089,17 +12700,43 @@ mod tests {
             view.update(cx, |view, cx| {
                 view.doc = Document::from_file("guide.md".into(), "# Guide", 1);
                 assert!(view.dispatch_registered_command(CommandId::EditorOpenPreviewToSide, cx));
-                assert_eq!(view.editor_splits.group_count(), 2);
             });
         });
 
-        let (group, source) = captured
+        let source = captured
             .lock()
             .expect("event capture lock")
             .clone()
             .expect("side preview event");
-        assert_ne!(group, 0);
         assert_eq!(source, "# Guide");
+    }
+
+    #[gpui::test]
+    fn view_groups_share_one_document_with_independent_selections(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |view, cx| {
+                view.doc = Document::from_file("a.rs".into(), "one two", 1);
+                view.doc.set_caret(Position::new(0, 3), false);
+                let first = view.active_group();
+                let second = view.add_group(cx);
+                assert_eq!(view.group_count(), 2);
+                assert_eq!(view.active_group(), second);
+                view.doc.set_caret(Position::new(0, 7), false);
+
+                assert!(view.focus_group(first, cx));
+                assert_eq!(view.doc.cursor, Position::new(0, 3));
+                // One buffer: an edit through the first group is dirty for both.
+                view.doc.execute_edit(EditIntent::Insert("x".into()));
+                assert!(view.focus_group(second, cx));
+                assert!(view.doc.is_dirty());
+                assert!(view.doc.text().starts_with("onex"));
+
+                assert!(view.remove_group(second, cx));
+                assert_eq!(view.group_count(), 1);
+                assert!(!view.remove_group(first, cx), "the last group stays");
+            });
+        });
     }
 
     #[gpui::test]

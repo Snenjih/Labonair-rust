@@ -1,6 +1,6 @@
 //! Editor-owned command metadata.
 
-use crate::editing::{DeleteTarget, EditIntent, SplitIntent};
+use crate::editing::{DeleteTarget, EditIntent};
 use crate::language_services::{Diagnostic, DiagnosticSeverity};
 use crate::symbols::DocumentSymbol;
 use labonair_command_palette_core::{
@@ -81,7 +81,6 @@ pub enum EditorUiCommand {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditorCommandRoute {
     Edit(EditIntent),
-    Split(SplitIntent),
     Language(EditorLanguageCommand),
     Git(GitEditorCommand),
     Ui(EditorUiCommand),
@@ -228,17 +227,6 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         }
         CommandId::EditorToggleComment => EditorCommandRoute::Edit(EditIntent::ToggleComment),
         CommandId::EditorTranspose => EditorCommandRoute::Edit(EditIntent::Transpose),
-        CommandId::EditorSplitLeft => EditorCommandRoute::Split(SplitIntent::Left),
-        CommandId::EditorSplitRight => EditorCommandRoute::Split(SplitIntent::Right),
-        CommandId::EditorSplitUp => EditorCommandRoute::Split(SplitIntent::Up),
-        CommandId::EditorSplitDown => EditorCommandRoute::Split(SplitIntent::Down),
-        CommandId::EditorFocusNextGroup => EditorCommandRoute::Split(SplitIntent::FocusNext),
-        CommandId::EditorFocusPreviousGroup => {
-            EditorCommandRoute::Split(SplitIntent::FocusPrevious)
-        }
-        CommandId::EditorCloseGroup => EditorCommandRoute::Split(SplitIntent::Close),
-        CommandId::EditorCloseOtherGroups => EditorCommandRoute::Split(SplitIntent::CloseOthers),
-        CommandId::EditorResetSplitSizes => EditorCommandRoute::Split(SplitIntent::ResetSizes),
         CommandId::EditorTriggerCompletion => {
             EditorCommandRoute::Language(EditorLanguageCommand::TriggerCompletion)
         }
@@ -378,15 +366,6 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorOutdent,
     CommandId::EditorToggleComment,
     CommandId::EditorTranspose,
-    CommandId::EditorSplitLeft,
-    CommandId::EditorSplitRight,
-    CommandId::EditorSplitUp,
-    CommandId::EditorSplitDown,
-    CommandId::EditorFocusNextGroup,
-    CommandId::EditorFocusPreviousGroup,
-    CommandId::EditorCloseGroup,
-    CommandId::EditorCloseOtherGroups,
-    CommandId::EditorResetSplitSizes,
     CommandId::EditorTriggerCompletion,
     CommandId::EditorGoToDefinition,
     CommandId::EditorGoToDeclaration,
@@ -748,44 +727,6 @@ impl CommandProvider for EditorCommandProvider {
                 .with_default_binding("cmd-/", Some(CommandContext::Editor)),
             CommandDescriptor::new(CommandId::EditorTranspose, "Transpose Characters", "Editor")
                 .with_contexts(&[CommandContext::Editor]),
-            CommandDescriptor::new(CommandId::EditorSplitLeft, "Split Editor Left", "Editor")
-                .with_contexts(&[CommandContext::Editor]),
-            CommandDescriptor::new(CommandId::EditorSplitRight, "Split Editor Right", "Editor")
-                .with_contexts(&[CommandContext::Editor])
-                .with_default_binding("cmd-alt-]", Some(CommandContext::Editor)),
-            CommandDescriptor::new(CommandId::EditorSplitUp, "Split Editor Up", "Editor")
-                .with_contexts(&[CommandContext::Editor]),
-            CommandDescriptor::new(CommandId::EditorSplitDown, "Split Editor Down", "Editor")
-                .with_contexts(&[CommandContext::Editor])
-                .with_default_binding("cmd-alt-shift-d", Some(CommandContext::Editor)),
-            CommandDescriptor::new(
-                CommandId::EditorFocusNextGroup,
-                "Focus Next Editor Group",
-                "Editor",
-            )
-            .with_contexts(&[CommandContext::Editor])
-            .with_default_binding("cmd-alt-right", Some(CommandContext::Editor)),
-            CommandDescriptor::new(
-                CommandId::EditorFocusPreviousGroup,
-                "Focus Previous Editor Group",
-                "Editor",
-            )
-            .with_contexts(&[CommandContext::Editor])
-            .with_default_binding("cmd-alt-left", Some(CommandContext::Editor)),
-            CommandDescriptor::new(CommandId::EditorCloseGroup, "Close Editor Group", "Editor")
-                .with_contexts(&[CommandContext::Editor]),
-            CommandDescriptor::new(
-                CommandId::EditorCloseOtherGroups,
-                "Close Other Editor Groups",
-                "Editor",
-            )
-            .with_contexts(&[CommandContext::Editor]),
-            CommandDescriptor::new(
-                CommandId::EditorResetSplitSizes,
-                "Reset Editor Split Sizes",
-                "Editor",
-            )
-            .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(
                 CommandId::EditorTriggerCompletion,
                 "Trigger Completion",
@@ -1093,22 +1034,6 @@ mod tests {
     }
 
     #[test]
-    fn editor_split_size_reset_is_registered_and_routes_to_editor_split_state() {
-        let command = EditorCommandProvider
-            .commands()
-            .into_iter()
-            .find(|command| command.id == CommandId::EditorResetSplitSizes)
-            .expect("split size reset descriptor");
-
-        assert_eq!(command.title, "Reset Editor Split Sizes");
-        assert_eq!(command.contexts, vec![CommandContext::Editor]);
-        assert_eq!(
-            route_for_command(CommandId::EditorResetSplitSizes),
-            Some(EditorCommandRoute::Split(SplitIntent::ResetSizes))
-        );
-    }
-
-    #[test]
     fn executable_editor_ids_have_one_owner_descriptor() {
         let commands = EditorCommandProvider.commands();
         let mut ids = EXECUTABLE_EDITOR_COMMAND_IDS.to_vec();
@@ -1163,14 +1088,6 @@ mod tests {
             Some(EditorCommandRoute::Edit(
                 EditIntent::SelectPreviousOccurrence
             ))
-        );
-        assert_eq!(
-            route_for_command(CommandId::EditorSplitLeft),
-            Some(EditorCommandRoute::Split(SplitIntent::Left))
-        );
-        assert_eq!(
-            route_for_command(CommandId::EditorSplitUp),
-            Some(EditorCommandRoute::Split(SplitIntent::Up))
         );
         assert_eq!(
             route_for_command(CommandId::EditorUndoSelection),

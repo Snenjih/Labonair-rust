@@ -367,11 +367,11 @@ fn editor_git_files(
 
 /// One open SSH terminal tab: its backend session id, the host it targets and
 /// the [`RemoteFeed`] used to push remote output / signal disconnects.
-struct SshTab {
-    ssh_id: String,
-    host_id: String,
-    feed: RemoteFeed,
-    tab_id: u64,
+pub(crate) struct SshTab {
+    pub(crate) ssh_id: String,
+    pub(crate) host_id: String,
+    pub(crate) feed: RemoteFeed,
+    pub(crate) tab_id: u64,
 }
 
 struct WorkspaceSshEventSink(RemoteFeed);
@@ -588,11 +588,11 @@ enum EditorSidePreviewKind {
 }
 
 /// One pane's backing session + content view.
-struct PaneEntry {
-    session_id: SessionId,
-    view: Entity<TerminalView>,
+pub(crate) struct PaneEntry {
+    pub(crate) session_id: SessionId,
+    pub(crate) view: Entity<TerminalView>,
     /// Stable UUID keying this pane's persisted scrollback file (T14-002).
-    scrollback_id: String,
+    pub(crate) scrollback_id: String,
 }
 
 /// A remote file staged into a local temp copy for editing (T08-001). Keyed
@@ -638,63 +638,63 @@ pub enum WorkspaceEvent {
 
 /// The tabbed, split-pane workspace shell.
 pub struct Workspace {
-    context: context::WorkspaceContext,
-    registry: Arc<TerminalRegistry>,
-    tabs: Entity<TabStore>,
+    pub(crate) context: context::WorkspaceContext,
+    pub(crate) registry: Arc<TerminalRegistry>,
+    pub(crate) tabs: Entity<TabStore>,
     /// Named, switchable groups of tabs (T20-008 Spaces). Exactly one is
     /// visible in the tab strip at a time; the others' tabs are simply not
     /// the ones `TabStore` currently reports — their sessions/views stay
     /// alive in `layouts`/`panes`/`editors`/etc. unchanged.
-    spaces: Entity<SpaceStore>,
+    pub(crate) spaces: Entity<SpaceStore>,
     /// Anchor position of the open Spaces popover, if any (mirrors
     /// `new_tab_menu`).
-    spaces_menu: Option<gpui::Point<gpui::Pixels>>,
+    pub(crate) spaces_menu: Option<gpui::Point<gpui::Pixels>>,
     /// Which spaces are collapsed in the Spaces popover / Tabs sidebar.
     /// Shared by both presentations — one data model, two views.
-    collapsed_spaces: std::collections::HashSet<SpaceId>,
+    pub(crate) collapsed_spaces: std::collections::HashSet<SpaceId>,
     /// Space whose name is being edited inline: `(space id, buffer)`. Shares
     /// `rename_focus`/`rename_blink` with tab-rename — only one hand-rolled
     /// rename field is ever focused at a time (mutually exclusive with
     /// `rename_tab`), same invariant `caret`'s own doc comment documents.
-    space_rename: Option<(SpaceId, String)>,
+    pub(crate) space_rename: Option<(SpaceId, String)>,
     /// MRU list of project folders opened via Spaces — independent of
     /// `spaces` itself so a closed Space's project is still one click away.
-    recent_projects: recent_projects::RecentProjectsList,
+    pub(crate) recent_projects: recent_projects::RecentProjectsList,
     /// Whether the "Recent Projects" section is expanded in the Spaces
     /// popover / Tabs sidebar footer.
-    recent_projects_open: bool,
+    pub(crate) recent_projects_open: bool,
     /// Anchor position of the Tabs sidebar's "New Space" dropdown (search +
     /// Recent Projects + New Space / Open Local Folder), if open.
-    new_space_menu: Option<gpui::Point<gpui::Pixels>>,
+    pub(crate) new_space_menu: Option<gpui::Point<gpui::Pixels>>,
     /// Filter text typed into the New Space dropdown's search field.
-    new_space_search: String,
-    new_space_search_focus: FocusHandle,
-    new_space_search_blink: Entity<BlinkCursor>,
-    theme: Entity<ThemeStore>,
-    background: BackgroundHost,
+    pub(crate) new_space_search: String,
+    pub(crate) new_space_search_focus: FocusHandle,
+    pub(crate) new_space_search_blink: Entity<BlinkCursor>,
+    pub(crate) theme: Entity<ThemeStore>,
+    pub(crate) background: BackgroundHost,
     /// Split-pane tree per `Workspace` tab id — survives tab switches so the
     /// layout is never lost.
-    layouts: HashMap<u64, WorkspaceLayout>,
+    pub(crate) layouts: HashMap<u64, WorkspaceLayout>,
     /// Content view + session per pane id (pane ids are process-unique).
-    panes: HashMap<PaneId, PaneEntry>,
+    pub(crate) panes: HashMap<PaneId, PaneEntry>,
     /// Editor view per `Editor` tab id.
-    editors: HashMap<u64, Entity<EditorView>>,
+    pub(crate) editors: HashMap<u64, Entity<EditorView>>,
     /// Editor tab whose Editor-owned project search session is currently shown.
     /// This stays pinned while opening results changes the active tab.
-    project_search_owner: Option<u64>,
+    pub(crate) project_search_owner: Option<u64>,
     /// The cancellable operation handle for the Editor-owned project search.
     /// Query/result/status state remains inside the search owner Editor entity.
-    project_search_task: Option<Task<()>>,
+    pub(crate) project_search_task: Option<Task<()>>,
     /// SFTP browser view per `Sftp` tab id (T08-001).
-    sftp_views: HashMap<u64, Entity<SftpView>>,
+    pub(crate) sftp_views: HashMap<u64, Entity<SftpView>>,
     /// Native preview view per `Preview` tab id (T15-006 — WebView replacement).
-    previews: HashMap<u64, Entity<PreviewView>>,
+    pub(crate) previews: HashMap<u64, Entity<PreviewView>>,
     /// Preview tabs that follow edits from their source editor tab.
-    markdown_previews: HashMap<u64, u64>,
+    pub(crate) markdown_previews: HashMap<u64, u64>,
     /// SVG preview tabs that follow edits from their source editor tab.
-    svg_previews: HashMap<u64, u64>,
+    pub(crate) svg_previews: HashMap<u64, u64>,
     /// A PreviewView embedded in one Editor split group per source tab.
-    editor_side_previews: HashMap<
+    pub(crate) editor_side_previews: HashMap<
         u64,
         (
             labonair_editor::EditorGroupId,
@@ -703,155 +703,154 @@ pub struct Workspace {
         ),
     >,
     /// Single preview tab that follows whichever editor was last activated.
-    following_markdown_preview: Option<u64>,
-    following_markdown_editor: Option<u64>,
+    pub(crate) following_markdown_preview: Option<u64>,
+    pub(crate) following_markdown_editor: Option<u64>,
     /// Single SVG preview tab that follows whichever editor was last activated.
-    following_svg_preview: Option<u64>,
-    following_svg_editor: Option<u64>,
+    pub(crate) following_svg_preview: Option<u64>,
+    pub(crate) following_svg_editor: Option<u64>,
     /// The shared commit-graph view, lazily created for the `GitGraph` tab.
-    git_graph: Option<Entity<GitGraphView>>,
+    pub(crate) git_graph: Option<Entity<GitGraphView>>,
     /// The keymap-management view, lazily created for the single `Keymap` tab.
     /// `labonair-keymap-ui` owns its rendering; the workspace owns its tab
     /// lifecycle (mirrors `git_graph`).
-    keymap: Option<Entity<KeymapManagementView>>,
+    pub(crate) keymap: Option<Entity<KeymapManagementView>>,
     /// The host-management view for the single `Hosts` tab. Unlike `keymap`,
     /// this is never `None`: the composition root constructs it eagerly
     /// because it also serves as the live host-data hub (tunnel status,
     /// picker rows) via `host_view`, independent of whether its tab is open.
-    hosts: Entity<HostManagerView>,
+    pub(crate) hosts: Entity<HostManagerView>,
     /// The single workspace Diff item, lazily created for the `Diff` tab.
     /// Source Control and the Git Graph emit a `ProjectDiffRequest`; this view
     /// is re-pointed (working tree ↔ commit) rather than duplicated.
-    project_diff: Option<Entity<crate::views::project_diff::ProjectDiffView>>,
+    pub(crate) project_diff: Option<Entity<crate::views::project_diff::ProjectDiffView>>,
     /// Panel-type registry (T17-001) — populated once by
     /// `labonair_shell::register_builtin_panels`. The shell's dock rendering
     /// and status-bar toggles read it instead of a hard-coded `enum`. T17-002
     /// replaces the shell's ad-hoc per-side slot state with a real `Dock` that
     /// will also hang off the `Workspace`.
-    panel_registry: labonair_panel::PanelRegistry,
+    pub(crate) panel_registry: labonair_panel::PanelRegistry,
     /// Status-bar item registry (T17-003) — populated once by
     /// `labonair_shell::register_builtin_status_items`. The `StatusBar`
     /// component reads it instead of a hard-coded `render_bar_item` match.
-    status_item_registry: labonair_panel::StatusItemRegistry,
+    pub(crate) status_item_registry: labonair_panel::StatusItemRegistry,
     /// Debounce for [`Workspace::persist_docks`].
-    last_dock_save: Option<std::time::Instant>,
+    pub(crate) last_dock_save: Option<std::time::Instant>,
     /// Primary dock edge used when a panel has no current membership.
-    primary_dock_position: labonair_panel::DockPosition,
+    pub(crate) primary_dock_position: labonair_panel::DockPosition,
     /// The three edge docks (T17-002). Empty at construction; populated by
     /// [`Workspace::init_docks`] once the shell has registered the builtin
     /// panels. Replaces the shell's former ad-hoc `left_slot`/`right_slot`.
-    left_dock: crate::dock::Dock,
-    right_dock: crate::dock::Dock,
-    bottom_dock: crate::dock::Dock,
+    pub(crate) left_dock: crate::dock::Dock,
+    pub(crate) right_dock: crate::dock::Dock,
+    pub(crate) bottom_dock: crate::dock::Dock,
     /// Handle to the Tabs sidebar panel, kept so [`Workspace::sync_tabs_in_sidebar`]
     /// can add it back to a dock at runtime when `tabsLocation` flips to
     /// `"sidebar"`. Set once by [`Workspace::init_docks`].
-    tabs_panel: Option<labonair_panel::AnyPanelHandle>,
+    pub(crate) tabs_panel: Option<labonair_panel::AnyPanelHandle>,
     /// SFTP session id per `Sftp` tab id — kept alongside the view so the
     /// session can be torn down from `retire_tab` (which has no `cx`).
-    sftp_sessions: HashMap<u64, String>,
+    pub(crate) sftp_sessions: HashMap<u64, String>,
     /// Active remote-edit temp copies, keyed by editor tab id.
-    remote_edits: HashMap<u64, RemoteEdit>,
+    pub(crate) remote_edits: HashMap<u64, RemoteEdit>,
     /// SFTP tabs queued by the host manager, drained in `render`.
-    pending_sftp: Vec<String>,
+    pub(crate) pending_sftp: Vec<String>,
     /// File-open requests queued by SFTP views, drained in `render`.
-    pending_open: Vec<PendingOpen>,
-    pending_preview_focus: bool,
-    next_pane_id: PaneId,
+    pub(crate) pending_open: Vec<PendingOpen>,
+    pub(crate) pending_preview_focus: bool,
     /// Tab id whose close is awaiting unsaved-changes confirmation.
-    confirm_close: Option<u64>,
+    pub(crate) confirm_close: Option<u64>,
     /// Remaining tabs in a confirmed close-left/right/others/all operation.
-    pending_close: VecDeque<u64>,
+    pub(crate) pending_close: VecDeque<u64>,
     /// Open tab context menu: `(tab id, anchor position)`.
-    context_menu: Option<(u64, gpui::Point<gpui::Pixels>)>,
+    pub(crate) context_menu: Option<(u64, gpui::Point<gpui::Pixels>)>,
     /// Anchor position of the open "+" new-tab dropdown, if any.
-    new_tab_menu: Option<gpui::Point<gpui::Pixels>>,
+    pub(crate) new_tab_menu: Option<gpui::Point<gpui::Pixels>>,
     /// Which of the new-tab dropdown's `SSH ▸` / `SFTP ▸` submenus is open.
     /// Held here (not as pure `:hover` state) so the two flyouts are mutually
     /// exclusive and can't overlap. Only meaningful while `new_tab_menu`.
-    new_tab_submenu: Option<NewTabSubmenu>,
+    pub(crate) new_tab_submenu: Option<NewTabSubmenu>,
     /// Tab whose title is being edited inline: `(tab id, buffer)`.
-    rename_tab: Option<(u64, String)>,
-    rename_focus: FocusHandle,
-    rename_blink: Entity<BlinkCursor>,
-    _rename_blink_subs: Vec<Subscription>,
-    focus_handle: FocusHandle,
+    pub(crate) rename_tab: Option<(u64, String)>,
+    pub(crate) rename_focus: FocusHandle,
+    pub(crate) rename_blink: Entity<BlinkCursor>,
+    pub(crate) _rename_blink_subs: Vec<Subscription>,
+    pub(crate) focus_handle: FocusHandle,
     /// Cached active-terminal preview URL. Statusbar `is_empty` and render
     /// both read this value, so terminal grid-to-text conversion happens at
     /// most once per metadata refresh rather than twice per statusbar pass.
-    preview_url_cache: Option<Option<String>>,
-    _meta_sync: Task<()>,
+    pub(crate) preview_url_cache: Option<Option<String>>,
+    pub(crate) _meta_sync: Task<()>,
 
     // ── SSH (T07-001) ──────────────────────────────────────────────────────
-    ssh: Arc<dyn SshConnectionService>,
-    ssh_pty: Arc<dyn SshPtyService>,
-    ssh_remote: Arc<dyn SshRemoteCommandService>,
-    ssh_remote_file: Arc<dyn SshRemoteFileService>,
-    ssh_tunnels: Arc<dyn SshTunnelService>,
-    sftp_session: Arc<dyn SftpSessionService>,
-    sftp_browser: Arc<dyn SftpBrowserService>,
-    git: Arc<dyn GitService>,
+    pub(crate) ssh: Arc<dyn SshConnectionService>,
+    pub(crate) ssh_pty: Arc<dyn SshPtyService>,
+    pub(crate) ssh_remote: Arc<dyn SshRemoteCommandService>,
+    pub(crate) ssh_remote_file: Arc<dyn SshRemoteFileService>,
+    pub(crate) ssh_tunnels: Arc<dyn SshTunnelService>,
+    pub(crate) sftp_session: Arc<dyn SftpSessionService>,
+    pub(crate) sftp_browser: Arc<dyn SftpBrowserService>,
+    pub(crate) git: Arc<dyn GitService>,
     /// Workspace-owned adapter for editor Git projections and typed hunk
     /// actions. Git remains the sole repository/index owner.
-    editor_git_bridge: Arc<WorkspaceGitBridge>,
+    pub(crate) editor_git_bridge: Arc<WorkspaceGitBridge>,
     /// Shared Editor-owned language-service composition runtime. Workspace
     /// stores only the injected handle; process/document state stays in the
     /// editor capability.
-    editor_language_services: Arc<LanguageServiceRuntime>,
+    pub(crate) editor_language_services: Arc<LanguageServiceRuntime>,
     /// Shared typed projection of diagnostics from the open Editor buffers.
-    editor_diagnostics: HashMap<SpaceId, ProjectDiagnosticRegistry>,
-    git_graph_service: Arc<dyn GitGraphService>,
-    mcp_access: Arc<dyn McpSessionAccessService>,
-    mcp_tab_operations: Arc<dyn McpTabOperationService>,
-    tokio: TokioHandle,
-    host_view: HostView,
+    pub(crate) editor_diagnostics: HashMap<SpaceId, ProjectDiagnosticRegistry>,
+    pub(crate) git_graph_service: Arc<dyn GitGraphService>,
+    pub(crate) mcp_access: Arc<dyn McpSessionAccessService>,
+    pub(crate) mcp_tab_operations: Arc<dyn McpTabOperationService>,
+    pub(crate) tokio: TokioHandle,
+    pub(crate) host_view: HostView,
     /// Live SSH terminal tabs, keyed by registry session id.
-    ssh_tabs: HashMap<SessionId, SshTab>,
+    pub(crate) ssh_tabs: HashMap<SessionId, SshTab>,
     /// Host ids queued by the host manager for connection, drained in `render`
     /// (where a `&mut Window` is available).
-    pending_connect: Vec<String>,
+    pub(crate) pending_connect: Vec<String>,
     /// The active connect prompt (trust / password / passphrase), if any.
-    ssh_prompt: Option<SshPrompt>,
-    prompt_focus: FocusHandle,
-    prompt_shown: bool,
+    pub(crate) ssh_prompt: Option<SshPrompt>,
+    pub(crate) prompt_focus: FocusHandle,
+    pub(crate) prompt_shown: bool,
     /// Per-session connection state machine + stage progress + live log,
     /// driving the full-pane `SshLoadingScreen` (T16-015).
-    ssh_connection: Entity<ConnectionStatusStore>,
+    pub(crate) ssh_connection: Entity<ConnectionStatusStore>,
     /// Tab ids the loading screen asked to close (needs `&mut Window`).
-    pending_tab_close: Vec<u64>,
+    pub(crate) pending_tab_close: Vec<u64>,
     /// Injected SSH connection-event source → UI bridge (T17-008). The source
     /// owns transport translation; Workspace receives typed events only.
-    _ssh_event_bridge: Entity<SshEventBridge>,
+    pub(crate) _ssh_event_bridge: Entity<SshEventBridge>,
     /// Injected MCP event source → UI bridge. MCP requests and activity are
     /// delivered separately from the SSH connection lifecycle.
-    _mcp_event_bridge: Entity<McpEventBridge>,
+    pub(crate) _mcp_event_bridge: Entity<McpEventBridge>,
     /// Periodic tunnel-liveness refresh (state poll, not event-driven).
-    _ssh_poll: Task<()>,
+    pub(crate) _ssh_poll: Task<()>,
     /// Periodic session-snapshot writer (T14-001) — covers force-quit; the
     /// window-close hook in `AppShell` covers the normal path.
-    _session_save: Task<()>,
+    pub(crate) _session_save: Task<()>,
 
     // ── SFTP transfer requests (R01-003) ──────────────────────────────────
-    transfer_service: Arc<dyn TransferService>,
+    pub(crate) transfer_service: Arc<dyn TransferService>,
 
     // ── MCP bridge (T11-005) ──────────────────────────────────────────────
     /// Tab open/close requests from the MCP bridge, drained in `render`.
-    pending_mcp: Vec<McpTabOp>,
+    pub(crate) pending_mcp: Vec<McpTabOp>,
     /// Client-side mirror of the bridge's per-tab agent-access grants
     /// (T11-006) — shared with the header badge in `AppShell`.
-    agent_access: Entity<AgentAccessStore>,
+    pub(crate) agent_access: Entity<AgentAccessStore>,
 
     // ── Snippets (T12-001) ────────────────────────────────────────────────
     /// Snippet commands waiting to be typed into a freshly-opened SSH tab
     /// once its session is established, keyed by `ssh_id`.
-    pending_snippet_ssh: HashMap<String, String>,
+    pub(crate) pending_snippet_ssh: HashMap<String, String>,
 
     // ── Project settings (T19-003) ──────────────────────────────────────
     /// Signature of the rejected project-settings keys already reported for
     /// the current explicit project transition. This is only notification
     /// deduplication; project settings are synchronized by transitions, never
     /// from the render path.
-    last_project_settings_rejection_signature: Option<String>,
+    pub(crate) last_project_settings_rejection_signature: Option<String>,
 }
 
 impl EventEmitter<WorkspaceEvent> for Workspace {}
@@ -1044,7 +1043,6 @@ impl Workspace {
             pending_sftp: Vec::new(),
             pending_open: Vec::new(),
             pending_preview_focus: false,
-            next_pane_id: 1,
             confirm_close: None,
             pending_close: VecDeque::new(),
             context_menu: None,
@@ -1336,18 +1334,12 @@ impl Workspace {
     ) -> RestoreResult {
         let known_hosts: std::collections::HashSet<String> =
             self.host_view.host_ids(cx).into_iter().collect();
-        let mut next_pane = self.next_pane_id;
         let actions = plan_restore(
             snapshot,
             |h| known_hosts.contains(h),
             |f| std::path::Path::new(f).is_file(),
-            || {
-                let id = next_pane;
-                next_pane += 1;
-                id
-            },
+            crate::pane::next_id,
         );
-        self.next_pane_id = next_pane;
 
         let mut result = RestoreResult::default();
         let mut created: Vec<Option<u64>> = Vec::with_capacity(actions.len());
@@ -3060,39 +3052,37 @@ impl Workspace {
         cx.notify();
     }
 
+    /// `Open Preview to the Side`: until pane splitting hosts the preview next
+    /// to the editor, open the matching preview in its own tab.
     fn open_editor_preview_to_side(
         &mut self,
         editor_tab_id: u64,
-        group: labonair_editor::EditorGroupId,
         content: EditorSidePreviewContent,
         cx: &mut Context<Self>,
     ) {
-        let kind = match &content {
-            EditorSidePreviewContent::Markdown(_) => EditorSidePreviewKind::Markdown,
-            EditorSidePreviewContent::Svg(_) => EditorSidePreviewKind::Svg,
-            EditorSidePreviewContent::Tabular(_) => EditorSidePreviewKind::Tabular,
-        };
-        let preview = self
-            .editor_side_previews
-            .get(&editor_tab_id)
-            .filter(|(current_group, current_kind, _)| {
-                *current_group == group && *current_kind == kind
-            })
-            .map(|(_, _, preview)| preview.clone())
-            .unwrap_or_else(|| {
-                let theme = self.theme.clone();
-                let preview = cx.new(|cx| PreviewView::new(theme, cx));
-                self.editor_side_previews
-                    .insert(editor_tab_id, (group, kind, preview.clone()));
-                preview
-            });
-        Self::set_editor_side_preview_content(&preview, content, cx);
-        if let Some(editor) = self.editors.get(&editor_tab_id).cloned() {
-            editor.update(cx, |editor, cx| {
-                editor.set_external_split_view(group, preview.clone().into(), cx)
-            });
+        match content {
+            EditorSidePreviewContent::Markdown(source) => {
+                self.open_markdown_preview_for_editor(editor_tab_id, source, cx)
+            }
+            EditorSidePreviewContent::Svg(source) => {
+                self.open_svg_preview_for_editor(editor_tab_id, source, cx)
+            }
+            EditorSidePreviewContent::Tabular(source) => {
+                if let Some(path) = source.path {
+                    self.activate_preview_target(path.to_string_lossy().into_owned(), cx);
+                    self.pending_preview_focus = true;
+                }
+            }
         }
         cx.notify();
+    }
+
+    fn on_editor_group_focused(
+        &mut self,
+        _slot: u64,
+        _group: labonair_editor::EditorGroupId,
+        _cx: &mut Context<Self>,
+    ) {
     }
 
     fn set_editor_side_preview_content(
@@ -3600,17 +3590,11 @@ impl Workspace {
                 EditorEvent::SvgFollowingPreviewRequested(source) => {
                     this.open_following_svg_preview(tab_id, source.clone(), cx);
                 }
-                EditorEvent::PreviewToSideRequested { group, content } => {
-                    this.open_editor_preview_to_side(tab_id, *group, content.clone(), cx);
+                EditorEvent::PreviewToSideRequested { content } => {
+                    this.open_editor_preview_to_side(tab_id, content.clone(), cx);
                 }
-                EditorEvent::EditorSplitPaneClosed(group) => {
-                    if this
-                        .editor_side_previews
-                        .get(&tab_id)
-                        .is_some_and(|(preview_group, _, _)| preview_group == group)
-                    {
-                        this.editor_side_previews.remove(&tab_id);
-                    }
+                EditorEvent::GroupFocused(group) => {
+                    this.on_editor_group_focused(tab_id, *group, cx);
                 }
                 EditorEvent::TabularPreviewRequested(path) => {
                     this.activate_preview_target(path.to_string_lossy().into_owned(), cx);
@@ -3827,9 +3811,7 @@ impl Workspace {
     }
 
     fn alloc_pane(&mut self) -> PaneId {
-        let id = self.next_pane_id;
-        self.next_pane_id += 1;
-        id
+        crate::pane::next_id()
     }
 
     /// Spawn a local terminal session in `cwd` and return its id + handle +

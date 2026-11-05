@@ -9,7 +9,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{EditorSplitTree, FoldRange, SearchQuery, SelectionSet};
+use crate::{FoldRange, SearchQuery, SelectionSet};
 
 pub const EDITOR_SESSION_SCHEMA_VERSION: u32 = 2;
 
@@ -63,8 +63,9 @@ pub struct EditorSessionSnapshot {
     pub file_path: Option<String>,
     #[serde(default)]
     pub language: String,
-    #[serde(default)]
-    pub split_tree: EditorSplitTree,
+    /// The focused group. Panes are placed by the Workspace (ADR 0005), so an
+    /// editor snapshot carries exactly one view; payloads written before that
+    /// (with a `splitTree` and several views) are collapsed to this view.
     #[serde(default)]
     pub active_group: u64,
     #[serde(default)]
@@ -77,7 +78,6 @@ pub struct EditorSessionSnapshot {
 
 impl EditorSessionSnapshot {
     pub fn new(id: EditorSessionId, file_path: Option<String>) -> Self {
-        let split_tree = EditorSplitTree::new(crate::EditorGroupId::new(1));
         Self {
             schema_version: EDITOR_SESSION_SCHEMA_VERSION,
             session_id: id,
@@ -91,7 +91,6 @@ impl EditorSessionSnapshot {
                 folds: Vec::new(),
                 selections: SelectionSet::default(),
             }],
-            split_tree,
             search: None,
             recovery: None,
         }
@@ -104,20 +103,23 @@ impl EditorSessionSnapshot {
         if self.session_id.as_str().is_empty() {
             return Err(PersistenceError::Invalid("empty session id".into()));
         }
-        if self.split_tree.group_count() == 0
-            || !self
-                .split_tree
-                .contains(crate::EditorGroupId::new(self.active_group))
-        {
-            self.split_tree = EditorSplitTree::new(crate::EditorGroupId::new(1));
+        if self.active_group == 0 {
             self.active_group = 1;
         }
-        self.split_tree
-            .validate()
-            .map_err(|error| PersistenceError::Invalid((*error).into()))?;
-        let groups = self.split_tree.groups();
-        self.views
-            .retain(|view| groups.contains(&crate::EditorGroupId::new(view.group_id)));
+        // Splits moved to the Workspace pane tree: keep only the focused
+        // group's view so an old multi-group payload opens in one pane.
+        let focused = self.active_group;
+        let keep = self
+            .views
+            .iter()
+            .position(|view| view.group_id == focused)
+            .or(if self.views.is_empty() { None } else { Some(0) });
+        self.views = keep
+            .map(|at| vec![self.views.swap_remove(at)])
+            .unwrap_or_default();
+        if let Some(view) = self.views.first() {
+            self.active_group = view.group_id;
+        }
         if self.views.is_empty() {
             self.views.push(EditorViewSession {
                 group_id: self.active_group,
@@ -232,7 +234,7 @@ mod tests {
         let (snapshot, event) =
             decode_session(br#"{"version":1,"filePath":"/tmp/a.rs"}"#).expect("legacy record");
         assert_eq!(snapshot.file_path.as_deref(), Some("/tmp/a.rs"));
-        assert_eq!(snapshot.split_tree.group_count(), 1);
+        assert_eq!(snapshot.views.len(), 1);
         assert_eq!(event, EditorPersistenceEvent::Migrated { from_version: 1 });
     }
 

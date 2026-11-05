@@ -17,6 +17,15 @@ pub use crate::pane_group::{
 /// key on the view side.
 pub type PaneId = u64;
 
+static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// The next process-wide id. Tab ids, pane ids and axis ids all come from this
+/// one counter, so a tab id can never equal a pane or axis id and per-pane
+/// maps may share the id space of the tabs that created them.
+pub fn next_id() -> u64 {
+    NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// The smallest fraction a split child may be dragged down to.
 pub const MIN_RATIO: f32 = 0.1;
 

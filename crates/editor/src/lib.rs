@@ -18,6 +18,7 @@ pub mod editing;
 pub mod emmet;
 pub mod file_finder;
 pub mod git;
+pub mod groups;
 pub mod helix;
 pub mod history;
 pub mod kill_ring;
@@ -31,7 +32,6 @@ pub mod policy;
 pub mod runtime;
 pub mod search;
 pub mod session;
-pub mod splits;
 pub mod symbols;
 pub mod syntax;
 pub mod unified;
@@ -57,7 +57,7 @@ pub use document::{Document, EditorEditability, Motion};
 pub use editing::{
     auto_indent, matching_bracket, EditIntent, EditorCommand, EditorCommandResult,
     EditorCommandSink, EditorSnapshotStream, EditorState, EditorViewEvent, EditorViewSnapshot,
-    MultiSelection, SnippetSession, SplitIntent,
+    MultiSelection, SnippetSession,
 };
 pub use emmet::{expand_emmet_abbreviation, EmmetError};
 pub use file_finder::{
@@ -70,6 +70,7 @@ pub use git::{
     GitHunk, GitHunkAction, GitHunkActionKind, GitHunkStatus, GitHunkTarget, GitLineDecoration,
     GitProviderFuture, HunkActionSink,
 };
+pub use groups::{EditorGroupId, EditorGroups, GroupError};
 pub use helix::{Helix, HelixKey, HelixMode};
 pub use kill_ring::{KillRing, KILL_RING_CAPACITY};
 pub use language::Language;
@@ -117,7 +118,6 @@ pub use session::{
     EditorSessionStore, EditorViewSession, PersistenceError, UnsavedBufferRecovery,
     EDITOR_SESSION_SCHEMA_VERSION,
 };
-pub use splits::{EditorGroupId, EditorSplitTree, SplitError, SplitNode, SplitOrientation};
 pub use symbols::{document_symbols, document_syntax, DocumentSymbol, DocumentSyntax, SymbolKind};
 pub use syntax::{HighlightKind, HighlightSpan, StyledRun, SyntaxHighlighter};
 pub use unified::{

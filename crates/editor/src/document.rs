@@ -14,6 +14,7 @@ use crate::buffer::{
     SelectionSet, TextRange, Transaction,
 };
 use crate::editing::SnippetSession;
+use crate::groups::EditorGroupId;
 use crate::history::History;
 use crate::language::Language;
 use crate::lifecycle::{
@@ -22,7 +23,6 @@ use crate::lifecycle::{
     SaveIntent,
 };
 use crate::search::{self, map_range_through_edits, ProjectSearchQuery, SearchError, SearchQuery};
-use crate::splits::EditorGroupId;
 
 /// Whether a document may be toggled from its editor-tab context menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
