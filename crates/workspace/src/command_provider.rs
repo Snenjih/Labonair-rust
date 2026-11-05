@@ -14,6 +14,7 @@ use labonair_command_palette_runtime::CommandHandlerRegistry;
 use labonair_terminal::command_provider::TerminalCommandTarget;
 
 use crate::context::WorkspaceTransition;
+use crate::views::preview::PreviewImageAction;
 use crate::Workspace;
 
 /// Stable command metadata contributed by the workspace capability.
@@ -87,6 +88,18 @@ pub fn register_hosts_handler(
 
 struct WorkspaceTerminalCommandTarget(Entity<Workspace>);
 
+/// Surfaces that live in a pane: the `pane::*` commands are offered in all of
+/// them (the key context `Pane` wraps every pane).
+const PANE_CONTEXTS: &[CommandContext] = &[
+    CommandContext::Terminal,
+    CommandContext::SshTerminal,
+    CommandContext::Editor,
+    CommandContext::EditorVim,
+    CommandContext::EditorHelix,
+    CommandContext::Preview,
+    CommandContext::Sftp,
+];
+
 impl TerminalCommandTarget for WorkspaceTerminalCommandTarget {
     fn clear_active_terminal(&self, cx: &mut gpui::App) {
         self.0
@@ -128,6 +141,32 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
         workspace_handle.update(cx, |workspace, cx| workspace.new_preview_tab(window, cx));
     });
 
+    for (command, action) in [
+        (CommandId::PreviewImageZoomIn, PreviewImageAction::ZoomIn),
+        (CommandId::PreviewImageZoomOut, PreviewImageAction::ZoomOut),
+        (
+            CommandId::PreviewImageResetZoom,
+            PreviewImageAction::ResetZoom,
+        ),
+        (
+            CommandId::PreviewImageZoomToActualSize,
+            PreviewImageAction::ZoomToActualSize,
+        ),
+        (
+            CommandId::PreviewImageZoomToFit,
+            PreviewImageAction::ZoomToFit,
+        ),
+    ] {
+        let workspace_handle = workspace.clone();
+        registry
+            .register(command, move |window, cx| {
+                workspace_handle.update(cx, |workspace, cx| {
+                    workspace.apply_active_preview_image_action(action, window, cx);
+                });
+            })
+            .expect("workspace image-viewer command handler must have a unique id");
+    }
+
     let workspace_handle = workspace.clone();
     register!(CommandId::Save, move |_window, cx| {
         workspace_handle.update(cx, |workspace, cx| workspace.save_active(cx));
@@ -165,6 +204,56 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
         workspace_handle.update(cx, |workspace, cx| workspace.focus_next_pane(window, cx));
     });
 
+    for (id, dir) in [
+        (CommandId::FocusPaneLeft, crate::pane::SplitDirection::Left),
+        (
+            CommandId::FocusPaneRight,
+            crate::pane::SplitDirection::Right,
+        ),
+        (CommandId::FocusPaneUp, crate::pane::SplitDirection::Up),
+        (CommandId::FocusPaneDown, crate::pane::SplitDirection::Down),
+    ] {
+        let workspace_handle = workspace.clone();
+        register!(id, move |window, cx| {
+            workspace_handle.update(cx, |workspace, cx| {
+                workspace.focus_pane_dir(dir, window, cx)
+            });
+        });
+    }
+    for (id, dir) in [
+        (CommandId::MovePaneLeft, crate::pane::SplitDirection::Left),
+        (CommandId::MovePaneRight, crate::pane::SplitDirection::Right),
+        (CommandId::MovePaneUp, crate::pane::SplitDirection::Up),
+        (CommandId::MovePaneDown, crate::pane::SplitDirection::Down),
+    ] {
+        let workspace_handle = workspace.clone();
+        register!(id, move |window, cx| {
+            workspace_handle.update(cx, |workspace, cx| workspace.move_pane_dir(dir, window, cx));
+        });
+    }
+    let workspace_handle = workspace.clone();
+    register!(CommandId::MovePaneToNewTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.move_focused_pane_to_new_tab(window, cx)
+        });
+    });
+    let workspace_handle = workspace.clone();
+    register!(CommandId::CloseOtherPanes, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.close_other_panes_of_active(window, cx)
+        });
+    });
+    let workspace_handle = workspace.clone();
+    register!(CommandId::FocusPrevPane, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.focus_pane_cycle(false, window, cx)
+        });
+    });
+    let workspace_handle = workspace.clone();
+    register!(CommandId::TogglePaneZoom, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.toggle_zoom(window, cx));
+    });
+
     for (id, index) in [
         (CommandId::SelectTab1, 0),
         (CommandId::SelectTab2, 1),
@@ -185,9 +274,23 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
     }
 
     let workspace_handle = workspace.clone();
+    register!(CommandId::SplitLeft, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.split(crate::pane::SplitDirection::Left, window, cx)
+        });
+    });
+
+    let workspace_handle = workspace.clone();
     register!(CommandId::SplitRight, move |window, cx| {
         workspace_handle.update(cx, |workspace, cx| {
             workspace.split(crate::pane::SplitDirection::Right, window, cx)
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::SplitUp, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.split(crate::pane::SplitDirection::Up, window, cx)
         });
     });
 
@@ -196,6 +299,11 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
         workspace_handle.update(cx, |workspace, cx| {
             workspace.split(crate::pane::SplitDirection::Down, window, cx)
         });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::ResetPaneSizes, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.reset_pane_sizes(cx));
     });
 
     let workspace_handle = workspace.clone();
@@ -292,9 +400,9 @@ pub fn register_editor_handlers(
         ($id:expr) => {
             let workspace = workspace.clone();
             registry
-                .register($id, move |window, cx| {
+                .register($id, move |_window, cx| {
                     workspace.update(cx, |workspace, cx| {
-                        workspace.dispatch_active_editor_command($id, window, cx);
+                        workspace.dispatch_active_editor_command($id, cx);
                     });
                 })
                 .expect("editor command handler must have a unique id");
@@ -325,9 +433,9 @@ pub fn register_palette_action_handlers(
                         .update(cx, |workspace, cx| workspace.reveal_tab(*id, window, cx));
                     true
                 }
-                SubmenuAction::GoToLine(line) => {
+                SubmenuAction::GoToEditorLine { tab_id, line } => {
                     workspace_handle.update(cx, |workspace, cx| {
-                        workspace.active_editor_goto_line(*line, cx)
+                        workspace.goto_editor_line(*tab_id, *line, window, cx)
                     });
                     true
                 }
@@ -393,6 +501,7 @@ pub fn status_item_label(id: &str) -> &'static str {
         "notifications" => "Notifications",
         "cwd" => "CWD Breadcrumb",
         "cursor-position" => "Cursor Position",
+        "editor-status" => "Editor Status",
         "preview-url" => "Preview URL",
         "updater" => "Updater",
         "transfers" => "Transfers",
@@ -421,6 +530,42 @@ impl CommandProvider for WorkspaceCommandProvider {
             CommandDescriptor::new(CommandId::NewPreviewTab, "New Preview Tab", "Layout")
                 .with_default_binding("cmd-shift-p", None)
                 .with_icon(CommandIcon::File),
+            CommandDescriptor::new(
+                CommandId::PreviewImageZoomIn,
+                "Image Viewer: Zoom In",
+                "Image Viewer",
+            )
+            .with_contexts(&[CommandContext::Preview])
+            .with_default_binding("cmd-=", Some(CommandContext::Preview))
+            .with_default_binding("cmd-+", Some(CommandContext::Preview)),
+            CommandDescriptor::new(
+                CommandId::PreviewImageZoomOut,
+                "Image Viewer: Zoom Out",
+                "Image Viewer",
+            )
+            .with_contexts(&[CommandContext::Preview])
+            .with_default_binding("cmd--", Some(CommandContext::Preview)),
+            CommandDescriptor::new(
+                CommandId::PreviewImageResetZoom,
+                "Image Viewer: Reset Zoom",
+                "Image Viewer",
+            )
+            .with_contexts(&[CommandContext::Preview])
+            .with_default_binding("cmd-0", Some(CommandContext::Preview)),
+            CommandDescriptor::new(
+                CommandId::PreviewImageZoomToActualSize,
+                "Image Viewer: Actual Size",
+                "Image Viewer",
+            )
+            .with_contexts(&[CommandContext::Preview])
+            .with_default_binding("cmd-1", Some(CommandContext::Preview)),
+            CommandDescriptor::new(
+                CommandId::PreviewImageZoomToFit,
+                "Image Viewer: Fit to Window",
+                "Image Viewer",
+            )
+            .with_contexts(&[CommandContext::Preview])
+            .with_default_binding("cmd-shift-0", Some(CommandContext::Preview)),
             CommandDescriptor::new(CommandId::Save, "Save", "Tab Actions")
                 .with_icon(CommandIcon::Edit),
             CommandDescriptor::new(CommandId::CloseTab, "Close Current Tab", "Tab Actions")
@@ -432,12 +577,17 @@ impl CommandProvider for WorkspaceCommandProvider {
                 .with_icon(CommandIcon::Close),
             CommandDescriptor::new(CommandId::NextTab, "Next Tab", "Tab Actions")
                 .with_default_binding("ctrl-tab", None)
+                .with_default_binding("cmd-shift-]", None)
                 .with_icon(CommandIcon::ChevronRight),
             CommandDescriptor::new(CommandId::PrevTab, "Previous Tab", "Tab Actions")
                 .with_default_binding("ctrl-shift-tab", None)
+                .with_default_binding("cmd-shift-[", None)
                 .with_icon(CommandIcon::ChevronRight),
             CommandDescriptor::new(CommandId::FocusNextPane, "Focus Next Pane", "Layout")
                 .with_default_binding("cmd-]", None)
+                .with_icon(CommandIcon::ChevronRight),
+            CommandDescriptor::new(CommandId::FocusPrevPane, "Focus Previous Pane", "Layout")
+                .with_default_binding("cmd-[", None)
                 .with_icon(CommandIcon::ChevronRight),
             CommandDescriptor::new(CommandId::SwitchTab, "Switch Tab…", "Layout")
                 .with_icon(CommandIcon::Terminal)
@@ -487,18 +637,63 @@ impl CommandProvider for WorkspaceCommandProvider {
         }
 
         commands.extend([
+            CommandDescriptor::new(CommandId::SplitLeft, "Split Pane Left", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-k left", Some(CommandContext::Pane)),
             CommandDescriptor::new(CommandId::SplitRight, "Split Pane Right", "Layout")
-                .with_contexts(&[CommandContext::Terminal])
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-\\", Some(CommandContext::Pane))
                 .with_default_binding("cmd-d", Some(CommandContext::Terminal))
                 .with_icon(CommandIcon::ChevronRight),
+            CommandDescriptor::new(CommandId::SplitUp, "Split Pane Up", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-k up", Some(CommandContext::Pane)),
             CommandDescriptor::new(CommandId::SplitDown, "Split Pane Down", "Layout")
-                .with_contexts(&[CommandContext::Terminal])
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-shift-\\", Some(CommandContext::Pane))
                 .with_default_binding("cmd-shift-d", Some(CommandContext::Terminal))
                 .with_icon(CommandIcon::ChevronDown),
+            CommandDescriptor::new(CommandId::ResetPaneSizes, "Reset Pane Sizes", "Layout")
+                .with_contexts(PANE_CONTEXTS),
             CommandDescriptor::new(CommandId::ClosePane, "Close Active Pane", "Layout")
-                .with_contexts(&[CommandContext::Terminal])
-                .with_default_binding("cmd-shift-w", Some(CommandContext::Terminal))
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-shift-w", Some(CommandContext::Pane))
                 .with_icon(CommandIcon::Close),
+            CommandDescriptor::new(CommandId::FocusPaneLeft, "Focus Pane Left", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-left", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::FocusPaneRight, "Focus Pane Right", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-right", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::FocusPaneUp, "Focus Pane Up", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-up", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::FocusPaneDown, "Focus Pane Down", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-down", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::TogglePaneZoom, "Toggle Pane Zoom", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-shift-enter", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::MovePaneLeft, "Move Pane Left", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-shift-left", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::MovePaneRight, "Move Pane Right", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-shift-right", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::MovePaneUp, "Move Pane Up", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-shift-up", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::MovePaneDown, "Move Pane Down", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-shift-down", Some(CommandContext::Pane)),
+            CommandDescriptor::new(
+                CommandId::MovePaneToNewTab,
+                "Move Pane to New Tab",
+                "Layout",
+            )
+            .with_contexts(PANE_CONTEXTS),
+            CommandDescriptor::new(CommandId::CloseOtherPanes, "Close Other Panes", "Layout")
+                .with_contexts(PANE_CONTEXTS),
         ]);
 
         commands
@@ -524,6 +719,98 @@ mod tests {
         assert!(commands
             .iter()
             .any(|command| command.id == CommandId::SplitRight));
+        assert!(commands
+            .iter()
+            .any(|command| command.id == CommandId::SplitLeft));
+        assert!(commands
+            .iter()
+            .any(|command| command.id == CommandId::SplitUp));
+    }
+
+    #[test]
+    fn workspace_split_commands_expose_all_four_directions() {
+        let commands = WorkspaceCommandProvider.commands();
+        for (id, title, binding, context) in [
+            (
+                CommandId::SplitLeft,
+                "Split Pane Left",
+                "cmd-k left",
+                CommandContext::Pane,
+            ),
+            (
+                CommandId::SplitRight,
+                "Split Pane Right",
+                "cmd-\\",
+                CommandContext::Pane,
+            ),
+            (
+                CommandId::SplitRight,
+                "Split Pane Right",
+                "cmd-d",
+                CommandContext::Terminal,
+            ),
+            (
+                CommandId::SplitUp,
+                "Split Pane Up",
+                "cmd-k up",
+                CommandContext::Pane,
+            ),
+            (
+                CommandId::SplitDown,
+                "Split Pane Down",
+                "cmd-shift-\\",
+                CommandContext::Pane,
+            ),
+            (
+                CommandId::SplitDown,
+                "Split Pane Down",
+                "cmd-shift-d",
+                CommandContext::Terminal,
+            ),
+        ] {
+            let command = commands
+                .iter()
+                .find(|command| command.id == id)
+                .expect("workspace split descriptor");
+            assert_eq!(command.title, title);
+            // Offered in every pane kind, not only terminals.
+            assert!(command.contexts.contains(&CommandContext::Editor));
+            assert!(command.contexts.contains(&CommandContext::Terminal));
+            assert!(command.default_bindings.iter().any(|candidate| {
+                candidate.keystrokes == binding && candidate.context == Some(context)
+            }));
+        }
+        let reset = commands
+            .iter()
+            .find(|command| command.id == CommandId::ResetPaneSizes)
+            .expect("reset pane sizes descriptor");
+        assert_eq!(reset.title, "Reset Pane Sizes");
+        assert!(reset.contexts.contains(&CommandContext::Preview));
+        assert!(reset.default_bindings.is_empty());
+    }
+
+    #[test]
+    fn image_viewer_commands_have_preview_scoped_default_bindings() {
+        let commands = WorkspaceCommandProvider.commands();
+        for (id, binding) in [
+            (CommandId::PreviewImageZoomIn, "cmd-="),
+            (CommandId::PreviewImageZoomIn, "cmd-+"),
+            (CommandId::PreviewImageZoomOut, "cmd--"),
+            (CommandId::PreviewImageResetZoom, "cmd-0"),
+            (CommandId::PreviewImageZoomToActualSize, "cmd-1"),
+            (CommandId::PreviewImageZoomToFit, "cmd-shift-0"),
+        ] {
+            let descriptor = commands
+                .iter()
+                .find(|descriptor| descriptor.id == id)
+                .expect("image viewer action descriptor");
+            assert_eq!(descriptor.contexts, vec![CommandContext::Preview]);
+            assert!(descriptor.default_bindings.iter().any(|candidate| {
+                candidate.keystrokes == binding
+                    && candidate.context == Some(CommandContext::Preview)
+            }));
+            assert!(!descriptor.is_available_in(Some(CommandContext::Editor)));
+        }
     }
 
     #[test]

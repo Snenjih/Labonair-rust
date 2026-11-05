@@ -77,6 +77,28 @@ impl History {
         Some(inverse)
     }
 
+    /// Undo only the most recent typing transaction, keeping earlier typing
+    /// in the same group available to one ordinary Undo command.
+    pub fn undo_latest_typing_step(&mut self) -> Option<Transaction> {
+        let group = self.undo.last_mut()?;
+        if group.steps.last()?.forward.source() != EditSource::Typing {
+            return None;
+        }
+        let step = group.steps.pop()?;
+        if group.steps.is_empty() {
+            self.undo.pop();
+        }
+        let inverse = step.inverse.clone();
+        self.redo.push(HistoryGroup { steps: vec![step] });
+        self.can_coalesce = self.undo.last().is_some_and(|group| {
+            group
+                .steps
+                .iter()
+                .all(|step| step.forward.source() == EditSource::Typing)
+        });
+        Some(inverse)
+    }
+
     /// Move the latest group to undo and return forward transactions in apply
     /// order.
     pub fn redo(&mut self) -> Option<Vec<Transaction>> {
@@ -141,5 +163,20 @@ mod tests {
         history.record(delete.clone(), delete);
         assert_eq!(history.undo().expect("delete").len(), 1);
         assert_eq!(history.undo().expect("typing").len(), 1);
+    }
+
+    #[test]
+    fn undo_latest_typing_step_keeps_earlier_group_steps_undoable() {
+        let buffer = EditorBuffer::default();
+        let mut history = History::default();
+        let first = tx(&buffer, EditSource::Typing, "a");
+        let second = tx(&buffer, EditSource::Typing, "b");
+        history.record(first.clone(), first);
+        history.record(second.clone(), second);
+
+        assert!(history.undo_latest_typing_step().is_some());
+        assert_eq!(history.undo().expect("remaining typing group").len(), 1);
+        assert_eq!(history.redo().expect("redo remaining typing").len(), 1);
+        assert_eq!(history.redo().expect("redo last typing step").len(), 1);
     }
 }

@@ -35,7 +35,7 @@ use crate::theme::ThemeStore;
 use crate::Workspace;
 
 /// Status-bar row height — matches the shell's former `STATUS_H`.
-const STATUS_H: f32 = 32.0;
+const STATUS_H: f32 = 28.0;
 
 /// The per-dock panel-button groups are structural, not ordinary movable
 /// status items. They own their placement (left group at the left edge, bottom
@@ -72,7 +72,13 @@ impl StatusBar {
         theme: Entity<ThemeStore>,
         cx: &mut Context<Self>,
     ) -> Self {
-        cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
+        cx.observe(&workspace, |this, _, cx| {
+            for (_, _, _, _, item) in &this.items {
+                item.on_workspace_changed(cx);
+            }
+            cx.notify();
+        })
+        .detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
         // Another window persisted a placement change — reload the blob and
         // re-render (T18-005 point 8, "two windows").

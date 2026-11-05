@@ -53,7 +53,12 @@ pub fn register_settings_surfaces(
             "Keyboard shortcuts",
             "Browse and edit the shortcuts provided by Labonair.",
             "Open keymap editor…",
-            SettingsSurfacePage::new_page("keymap", "Keymap", "Keyboard shortcuts", 2),
+            SettingsSurfacePage::new_page(
+                "keymap",
+                "Keymap",
+                "Keyboard shortcuts",
+                labonair_settings::FIRST_OWNER_PAGE_INDEX,
+            ),
         ),
         open_keymap,
     ))
@@ -816,6 +821,13 @@ fn chord_chips(chord: &str) -> Vec<String> {
 fn context_from_label(label: &str) -> Option<CommandContext> {
     match label {
         "Editor" => Some(CommandContext::Editor),
+        "EditorVim" | "Vim Editor" => Some(CommandContext::EditorVim),
+        "EditorHelix" | "Helix Editor" => Some(CommandContext::EditorHelix),
+        "EditorSnippetNext" | "Snippet Next Tabstop" => Some(CommandContext::EditorSnippetNext),
+        "EditorSnippetPrevious" | "Snippet Previous Tabstop" => {
+            Some(CommandContext::EditorSnippetPrevious)
+        }
+        "Preview" => Some(CommandContext::Preview),
         "Terminal" => Some(CommandContext::Terminal),
         "Sftp" | "SFTP" => Some(CommandContext::Sftp),
         "Home" => Some(CommandContext::Home),
@@ -901,66 +913,67 @@ fn render_command_row(
         .flex()
         .items_center()
         .child(
-            ListItem::new(
-                ("keymap-row", matched_index),
-                palette.fg,
-                palette.muted,
-                palette.selected_fill,
-            )
-            .selected(selected)
-            .icon(if conflicted {
-                IconName::Warning
-            } else {
-                IconName::Command
-            })
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w_0()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(6.0))
-                            .text_size(px(12.0))
-                            .child(SharedString::from(row.title.clone()))
-                            .children(status),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(10.0))
-                            .text_color(if conflicted {
-                                palette.warning
-                            } else {
-                                palette.muted
-                            })
-                            .child(SharedString::from(if conflicted {
-                                format!("{subtitle} · overridden by another command")
-                            } else {
-                                subtitle
-                            })),
-                    ),
-            )
-            .trailing(trailing)
-            .on_click(move |event: &ClickEvent, _window, cx| {
-                let position = event.position();
-                view_for_click.update(cx, |this, cx| {
-                    if let Some(snapshot) = this.snapshot.clone() {
-                        if let Some(command_row) = snapshot
-                            .rows
-                            .iter()
-                            .find(|candidate| candidate.command == command)
-                            .cloned()
-                        {
-                            let binding_index =
-                                (!command_row.effective_bindings.is_empty()).then_some(0);
-                            this.begin_edit(&command_row, binding_index, position, &snapshot, cx);
+            ListItem::new(("keymap-row", matched_index), palette)
+                .selected(selected)
+                .icon(if conflicted {
+                    IconName::Warning
+                } else {
+                    IconName::Command
+                })
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(6.0))
+                                .text_size(px(12.0))
+                                .child(SharedString::from(row.title.clone()))
+                                .children(status),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(10.0))
+                                .text_color(if conflicted {
+                                    palette.warning
+                                } else {
+                                    palette.muted
+                                })
+                                .child(SharedString::from(if conflicted {
+                                    format!("{subtitle} · overridden by another command")
+                                } else {
+                                    subtitle
+                                })),
+                        ),
+                )
+                .trailing(trailing)
+                .on_click(move |event: &ClickEvent, _window, cx| {
+                    let position = event.position();
+                    view_for_click.update(cx, |this, cx| {
+                        if let Some(snapshot) = this.snapshot.clone() {
+                            if let Some(command_row) = snapshot
+                                .rows
+                                .iter()
+                                .find(|candidate| candidate.command == command)
+                                .cloned()
+                            {
+                                let binding_index =
+                                    (!command_row.effective_bindings.is_empty()).then_some(0);
+                                this.begin_edit(
+                                    &command_row,
+                                    binding_index,
+                                    position,
+                                    &snapshot,
+                                    cx,
+                                );
+                            }
                         }
-                    }
-                });
-            }),
+                    });
+                }),
         )
         .into_any_element()
 }
@@ -1628,7 +1641,10 @@ mod tests {
         register_settings_surfaces(&mut registry, |_| {}).unwrap();
         let surface = registry.surface(SettingsSurfaceId::new("keymap")).unwrap();
         assert_eq!(surface.page.slug, "keymap");
-        assert_eq!(surface.page.insert_at, Some(2));
+        assert_eq!(
+            surface.page.insert_at,
+            Some(labonair_settings::FIRST_OWNER_PAGE_INDEX)
+        );
     }
 
     #[test]
@@ -1642,6 +1658,11 @@ mod tests {
     fn context_labels_round_trip() {
         for context in [
             CommandContext::Editor,
+            CommandContext::EditorVim,
+            CommandContext::EditorHelix,
+            CommandContext::EditorSnippetNext,
+            CommandContext::EditorSnippetPrevious,
+            CommandContext::Preview,
             CommandContext::Terminal,
             CommandContext::Sftp,
             CommandContext::Home,

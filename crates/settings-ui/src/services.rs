@@ -70,6 +70,17 @@ impl SettingsServices {
         self.surfaces.surface(id)
     }
 
+    /// The embedded view of an inline-capable owner surface (see
+    /// [`SettingsSurfaceMode::Inline`]); `None` for link-only or unknown ids.
+    pub fn inline_surface(
+        &self,
+        id: SettingsSurfaceId,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<gpui::AnyView> {
+        self.surfaces.inline_view(id, window, cx)
+    }
+
     pub fn open_surface(&self, id: SettingsSurfaceId, cx: &mut App) -> Result<(), String> {
         self.surfaces.open(id, cx)
     }

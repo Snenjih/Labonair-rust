@@ -242,7 +242,484 @@ mouse input, light/dark themes, workload states, accessibility, failure and
 offline behavior, undo, and progressive discovery. Its values remain pending
 until paired native evidence exists.
 
+The working action requirements register in
+[`docs/parity/action-requirements.md`](parity/action-requirements.md) assigns
+stable IDs to the 595 action identifiers across the default macOS, Linux, and
+Windows profiles and records their 2,731 binding/context records. The 585
+macOS requirement IDs remain stable for the default macOS map file. The
+[`macOS overlay register`](parity/keymap-overlay-requirements.md) adds stable
+IDs for 1,402 binding entries across the seven alternate macOS profiles, the
+conditional Vim/Helix layer, and macOS-specific overrides. The latter adds 12
+distinct action identifiers to the built-in macOS default composition, which
+has 597 before optional profiles or modes. The overlay register also records
+the 133 default macOS context-block key-equivalent flags. A separate
+[`non-macOS layer register`](parity/keymap-nonmacos-requirements.md) covers
+446 shared Linux/Windows overlay bindings and 259 default-map context-block
+flags; it records that TextMate is omitted from the non-macOS selector. A
+[`registered action catalog`](parity/registered-actions-unbound.md) assigns
+stable IDs to 813 actions found in the pinned Linux runtime registry but not
+bound in any of those default-map files; 312 of those actions appear in the
+enumerated macOS layers and 32 additional spellings occur in Linux/Windows
+overlays. Five default-map identifiers and two overlay spellings resolve
+through deprecated-alias metadata. The independent
+[`Search action crosswalk`](parity/action-classification-search.md) states
+catalog intent and maps static Labonair owner routes for 23 default-macOS
+Search-family actions. Pinned runtime dispatch, native Labonair interaction,
+and paired visual acceptance remain open for that slice. The independent
+[`TextFinder group and handoff action crosswalk`](parity/action-classification-text-finder-unbound.md)
+classifies four registered-unbound action IDs and all eight macOS/shared
+Linux/Windows profile entries. It records selected result-group folding,
+all-or-none collapse toggling, asynchronous modal-to-tab result transfer, and
+TextFinder's explicit selection-only override of the generic query-seed setting.
+Labonair has Editor code-folds and inline project SearchOverlay results, but no
+matching grouped-result picker or tab conversion. Native dispatch, setting
+scope, and paired visual acceptance remain open. The independent
+[`Theme Selector Reload action crosswalk`](parity/action-classification-theme-selector-reload.md)
+records the Linux-only registered action declaration, its missing pinned
+handler and keymap routes, and Labonair's deferred, test-retained reload API.
+macOS registration and runtime behavior remain unverified. The independent
+[`Toolchain action crosswalk`](parity/action-classification-toolchain.md)
+classifies registered-unbound toolchain selection and the bound AddToolchain
+flow, including per-directory WorkspaceDb state and Labonair's unresolved
+canonical owner. Native dispatch, persistence failures, and paired macOS
+acceptance remain open. The independent
+[`Debugger Go To Memory action crosswalk`](parity/action-classification-debugger-go-to-memory.md)
+records the capability-gated Variables-list context-menu action, selected DAP
+memory-reference and size behavior, transient Memory View state, and the
+missing local Debugger owner. macOS registration, native DAP behavior, layout
+restoration, and paired visual acceptance remain open. The independent
+[`Vim AngleBrackets text-object crosswalk`](parity/action-classification-vim-angle-brackets.md)
+records the conditional Vim/Helix `<`/`>` profile bindings, nested and
+multiline delimiter matching, operator/selection flow, and missing local
+text-object route. Mode-layer loading, key dispatch, and paired macOS
+acceptance remain open. The independent
+[`Vim AnyBrackets text-object crosswalk`](parity/action-classification-vim-any-brackets.md)
+records the focused-Editor Command Palette route, inactive commented `b`
+candidate (active `b` remains Parentheses), four literal bracket types,
+nearest-pair fallback, and missing local object action. Palette dispatch,
+platform behavior, and paired macOS acceptance remain open. The independent
+[`Vim AnyPair text-object crosswalk`](parity/action-classification-vim-any-pair.md)
+records the Helix-only shared `m` binding, language-query current-pair path,
+text-scanned next/previous selection, and missing local Helix/text-object
+owner route. Profile dispatch, per-language query results, and paired macOS
+acceptance remain open. The independent
+[`Vim AnyQuotes text-object crosswalk`](parity/action-classification-vim-any-quotes.md)
+records the focused-Editor Command Palette route, commented `q` candidate and
+active MiniQuotes binding, line-local quote matching, nearest fallback,
+change-surround path, and missing local action. Palette, platform, and paired
+macOS acceptance remain open. The independent
+[`Vim Argument text-object crosswalk`](parity/action-classification-vim-argument.md)
+records the active shared `a` binding, parser-backed comma-item selection,
+asymmetric comma-inclusive around range, and unsupported `cs` and Helix
+directional consumers. Language-dependent dispatch and paired macOS
+acceptance remain open. The independent
+[`Vim ArgumentRequired action crosswalk`](parity/action-classification-vim-argument-required.md)
+records the registered but unbound action, `:delmarks` missing-argument
+route, Critical Cancel prompt, and Notification Center reconciliation.
+Palette/Ex dispatch and paired macOS acceptance remain open. The independent
+[`Vim AutoIndent action crosswalk`](parity/action-classification-vim-auto-indent.md)
+records the shared `=` bindings in Vim Visual and Helix Normal/Select, syntax
+range reindent behavior, Vim Normal's separate `PushAutoIndent` operator path,
+and the local insertion-only intent gap. Profile dispatch and paired macOS
+acceptance remain open. The independent
+[`Vim BackQuotes text-object crosswalk`](parity/action-classification-vim-back-quotes.md)
+records the active shared backtick binding, line-local marker matching,
+`cs` old-pair and Helix directional routes, and duplicate pinned action
+subscriptions. Duplicate-listener effects and paired macOS acceptance remain
+open. The independent
+[`Vim ChangeCase action crosswalk`](parity/action-classification-vim-change-case.md)
+records the three shared `~` contexts, mode-specific selection/cursor effects,
+full Unicode case mappings, separate `g~{motion}` operator, and the local
+cursor-only mapping gap. Palette, platform dispatch, Helix Select transition,
+and paired macOS acceptance remain open. The independent
+[`Vim ChangeListNewer action crosswalk`](parity/action-classification-vim-change-list-newer.md)
+records shared `g ,` navigation through transient edit-position anchors,
+counted movement, and the missing local change-list route. Profile dispatch,
+anchor restoration, and paired macOS acceptance remain open. The independent
+[`Vim ChangeListOlder action crosswalk`](parity/action-classification-vim-change-list-older.md)
+records shared `g ;` navigation toward older edit-position anchors, counted
+movement, and the same missing local change-list route. Profile dispatch,
+anchor restoration, and paired macOS acceptance remain open. The independent
+[`Vim ChangeToEndOfLine action crosswalk`](parity/action-classification-vim-change-to-end-of-line.md)
+records Vim Normal `Shift-C`, its exclusive register-backed change to a buffer
+line end, the separate Helix DuplicateBelow chord, and Labonair's partial
+uppercase-C route. Count, register, palette, platform, and paired macOS
+acceptance remain open. The independent
+[`Vim Class text-object crosswalk`](parity/action-classification-vim-class.md)
+records the shared Vim c and Helix Type routes, grammar-backed inside/around
+ranges, directional Helix selection, and missing local text-object action.
+Language coverage, profile dispatch, palette context, and paired macOS
+acceptance remain open. The independent
+[`Vim ClearExchange action crosswalk`](parity/action-classification-vim-clear-exchange.md)
+records the shared cx c cancellation route, removal of the transient
+VimExchange highlight, common operator/count/register clearing, and the
+missing local Editor route. Palette context, profile dispatch, and paired
+macOS acceptance remain open. The independent
+[`Vim ClearOperators action crosswalk`](parity/action-classification-vim-clear-operators.md)
+records the six Escape/Ctrl-C/Ctrl-[ bindings across waiting/operator
+contexts, transient operator/count/register cleanup, Helix jump-overlay
+removal, and preservation of the VimExchange highlight. Runtime profile,
+palette, and paired macOS acceptance remain open. The independent
+[`Vim ColumnLeft action crosswalk`](parity/action-classification-vim-column-left.md)
+records shared z h, counted display-column scrolling, cursor clipping
+to the visible range, and the missing local interactive route. Native
+viewport, palette, profile, and paired macOS acceptance remain open.
+The independent
+[`Vim ColumnRight action crosswalk`](parity/action-classification-vim-column-right.md)
+records shared z l, counted display-column scrolling, the left-edge
+gutter adjustment, cursor clipping into view, and the missing local
+interactive route. Native viewport, palette, profile, and paired macOS
+acceptance remain open. The independent
+[`Pane action crosswalk`](parity/action-classification-pane.md) maps static
+owner boundaries and current routes for 22 default-macOS Pane actions while
+preserving the universal-tab and Editor-group contracts; its runtime and
+paired visual evidence also remain open. The independent
+[`Editor Go to Line action crosswalk`](parity/action-classification-go-to-line.md)
+records the current line-only Outline route and the missing arbitrary
+line/column prompt for one default-macOS action; its dispatch, interaction, and
+paired visual evidence remain open. The independent
+[`File Finder action crosswalk`](parity/action-classification-file-finder.md)
+maps the single default-macOS open-file action to the Editor-owned query model
+and Workspace adapter, records related Settings targets and local route gaps,
+and leaves dispatch and paired interaction evidence pending. The separate
+[`Workspace Open action crosswalk`](parity/action-classification-workspace-open.md)
+classifies the macOS general Open action and Linux/Windows Open Files action,
+their window and path-picker Settings, and the current single-directory versus
+File Finder route gaps; native dispatch and interaction evidence remain
+pending. The independent
+[`Workspace Add Folder to Project action crosswalk`](parity/action-classification-workspace-add-folder.md)
+records directory-only multi-selection, visible roots in the current project,
+the collaboration restriction, worktree persistence, and Labonair's distinct
+single-root Open Project route; native picker, remote-root, partial-error, and
+paired interaction evidence remain pending. The independent
+[`Workspace collaborator-follow action crosswalk`](parity/action-classification-workspace-collaborator-follow.md)
+records active-center-pane Follow Next and Escape-to-Unfollow behavior,
+remembered targets, the one-participant edge case, and the planned Collaboration
+owner gap; native dispatch, participant ordering, network recovery, and paired
+interaction evidence remain pending. The independent
+[`Workspace worktree-security action crosswalk`](parity/action-classification-workspace-worktree-security.md)
+specifies default-restricted project/worktree trust, separate path and global
+auto-trust choices, typed Workspace consumers, the unbound trust reset, and
+Labonair's missing route. The Settings path/backing-field mismatch, reset
+discovery, persistence-failure behavior, native dispatch, and paired macOS
+evidence remain open. The independent
+[`Git worktree deletion action crosswalk`](parity/action-classification-git-worktree-delete.md)
+records normal and force removal, protection for main and open worktrees,
+dirty-tree confirmation, destructive effects, and Labonair's missing worktree
+catalog/removal contract. Native dispatch, data-loss confirmation, cross-window
+open-path races, Git error recovery, and paired macOS interaction captures
+remain pending. The independent
+[`Font-size decrease action crosswalk`](parity/action-classification-font-size-decrease.md)
+records the global buffer-size action, the Welcome/Onboarding UI-size override,
+1 px adjustments, transient defaults, persistent arguments, and pinned
+settings defaults. It also records the Editor primary-modifier wheel gesture,
+gated by the user setting `editor.mouse_wheel_zoom` (default false). R08-002's
+historical removal of unhandled Zoom commands does not satisfy the active
+parity requirement; a restored route needs real Theme ownership, Settings
+behavior, and execution evidence. Labonair's missing gesture setting,
+duplicate font-size paths and default mismatch, key dispatch, live effects,
+persistence, and paired macOS captures remain open. The independent
+[`Font-size increase and reset action crosswalk`](parity/action-classification-font-size-increase-reset.md)
+records global buffer increases, Welcome/Onboarding UI overrides, transient
+and persistent resets, the View-menu Reset All route across four typography
+scopes, and the Agent-panel-only ResetAgentZoom action. Duplicate local font
+paths, typed action/menu routes, Agent-panel reachability, settings-write
+recovery, native dispatch, and paired macOS captures remain open. The
+independent
+[`Workspace zoom action crosswalk`](parity/action-classification-workspace-zoom.md)
+records focused Pane/Panel overlay behavior, global Shift+Escape, the
+CommitEditor override, the zoom padding setting, and Labonair's separate
+Debug dock and native Window Zoom routes. It also separates the three
+registered, default-keymap-unbound direct/maximize actions from the global
+ToggleZoom route and distinguishes active-Pane ZoomIn/Out from Pane
+maximization. Focus dispatch, restore behavior, palette/keymap reachability,
+macOS registration, and paired captures remain pending. The independent
+[`Image Viewer zoom action crosswalk`](parity/action-classification-image-viewer-zoom.md)
+records five context-bound fit, reset, actual-size, and incremental image
+scale actions, the percentage toolbar, pointer gestures, and path-only item
+serialization. Labonair's Preview owner/crate, actions, settings boundary,
+native dispatch, and paired macOS evidence remain open. The independent
+[`Application and window lifecycle action crosswalk`](parity/action-classification-app-window-lifecycle.md)
+records native Hide/Hide Others/Minimize/Quit, Workspace fullscreen modes,
+the `confirm_quit` and `fullscreen_mode` settings, and Labonair's menu,
+shortcut, and quit-preparation gaps. Native app behavior and paired macOS and
+cross-platform evidence remain open. The independent
+[`Extensions action crosswalk`](parity/action-classification-extensions.md)
+records the Workspace-bound manager action, its menu and Welcome routes,
+category/extension focus variants, active-pane page reuse, and missing
+Labonair Extensions owner/crate/view. Marketplace implementation remains
+deferred; dispatch and catalog behavior are unverified. The independent
+[`Settings entry action crosswalk`](parity/action-classification-settings-entry.md)
+records the Settings UI, editable user/project JSON documents, and bundled
+default document as separate targets, plus the Settings menu routes and the
+additional Welcome and shortcut routes. Labonair's project Settings UI route,
+default document route, and shortcut/menu coverage remain incomplete; native
+dispatch, file behavior, and paired Settings acceptance are pending. The independent
+[`Keymap entry action crosswalk`](parity/action-classification-keymap-entry.md)
+records the Keymap management surface, editable user keymap JSON, and bundled
+default bindings as separate targets, including menu, Welcome, Settings, and
+shortcut routes. Labonair's extra management shortcut, missing raw-file
+shortcut/menu entry, and absent bundled-document route remain open; native
+dispatch and paired Keymap acceptance are pending. The independent
+[`Task definition entry action crosswalk`](parity/action-classification-task-definition-entry.md)
+records user-global task/debug files, project `.zed` definitions, and the
+Worktree Picker setup-hook route. Task and Debugger owners/crates are absent in
+Labonair, as are their file actions and native acceptance evidence; task
+execution and debug launch remain unverified. The independent
+[`Git worktree navigation and creation action crosswalk`](parity/action-classification-git-worktree-navigation.md)
+records the titlebar/shortcut picker route, typed create and switch actions,
+and path-targeted new-window flow. Labonair has no worktree lifecycle API or
+picker; Workspace restoration, remote behavior, and paired macOS acceptance
+remain open. The independent
+[`Git stash workflow action crosswalk`](parity/action-classification-git-stash.md)
+records stash-all/tracked/staged creation, latest and selected-entry apply/pop,
+the Stashes picker tab, stash review diff, and list/review drop routes. Labonair
+has partial Source Control list operations and message entry, but no
+stage-specific stash commands, picker/diff route, or latest-stash actions;
+native dispatch, conflict recovery, and paired macOS acceptance remain open.
+The independent
+[`Git staging and selection action crosswalk`](parity/action-classification-git-staging.md)
+records repository-, file-, section-, selection-range-, and hunk-level
+stage/unstage behavior with platform-specific bindings. Labonair has Source
+Control row/all/section controls and per-hunk stage/unstage routes, but the
+default action shortcuts, selection-range operation, and stage/unstage-and-next
+flows remain absent or unverified; native dispatch and paired macOS acceptance
+remain open. The independent
+[`Git restore and discard action crosswalk`](parity/action-classification-git-restore-discard.md)
+records selected-hunk edits, file restore prompt arguments, tracked-change
+selection, and untracked-file Trash behavior. Labonair's per-file discard is
+unconfirmed, its hunk discard route is unsupported, and Clean Untracked uses
+permanent deletion rather than system Trash. Pinned multi-file RestoreFile and
+RestoreTrackedFiles scopes need runtime confirmation; destructive recovery
+and paired macOS evidence remain open. The independent
+[`Git commit lifecycle action crosswalk`](parity/action-classification-git-commit-lifecycle.md)
+records commit/amend, AI message generation, composer sizing/modal behavior,
+the unresolved `git::Cancel` binding/handler mismatch, persistent signoff,
+transient hook skipping, and pushed-commit undo. Labonair has partial staged/tracked/amend commits;
+tracked mode stages untracked files too. Generation, typed signoff/no-verify
+options, modal/action routes, and last-commit undo are missing; runtime and
+paired macOS evidence remain open. The independent
+[`Git remote synchronization action crosswalk`](parity/action-classification-git-remote-sync.md)
+records fetch-all/selected-remote, pull/rebase, upstream push/publish,
+force-with-lease, and provider-backed pull-request URL workflows. Labonair
+lacks selected remotes, rebase, and a hosting-provider/pull-request URL route;
+its confirmed Force Push calls ordinary push and Publish does not set upstream.
+Runtime and paired macOS acceptance remain open. The
+independent
+[`Git branch selection and rename action crosswalk`](parity/action-classification-git-branch-selection.md)
+records the shared GitPicker Branches destination for Switch and
+CheckoutBranch, the RenameBranch argument mismatch, CopyBranchName's
+current-branch clipboard route, and three BranchList All/Local/Remote filter
+actions. Labonair has separate dropdown and palette workflows with text
+filtering, but no branch-name clipboard route or explicit filter actions;
+native focus, checkout safety, rename handling, clipboard effects, and paired
+macOS acceptance remain open. The independent
+[`Git Panel action crosswalk`](parity/action-classification-git-panel-actions.md)
+classifies twelve panel actions, including Close/Toggle, an unresolved
+OpenMenu action declaration, persisted group/sort/tree view settings,
+transient co-author state, and selected-entry staged/unstaged diffs. Labonair
+has a separate `scm_file_tree` setting, fixed change sections, and ProjectDiff
+routes; action dispatch and paired macOS acceptance remain open. The
+independent
+[`Git Graph action crosswalk`](parity/action-classification-git-graph-actions.md)
+classifies nine actions for graph opening/commit positioning, search focus,
+SHA/tag copy, CommitView, half-page selection, and changed-file layout. Labonair
+has Git Graph, pointer hash-copy, commit details, and Commit ProjectDiff routes,
+but lacks matching typed actions, tag copy, SHA positioning, and CommitView
+dispatch; runtime and paired macOS acceptance remain open. The independent
+[`Git diff and review action crosswalk`](parity/action-classification-git-diff-review.md)
+records configured HEAD/default-branch diffs, selected-ref comparison,
+staged/unstaged and per-file views, diff-base persistence, and branch-to-Agent
+review dispatch, and the `LeaderAndFollower` declaration for which no handler
+or description was found. Labonair has WorkingTree/Commit ProjectDiff display routes,
+but no diff-base or comparison-ref contract, split staged/unstaged sources, or
+branch-review route. Its `LeaderAndFollower` intent remains unresolved; native
+diff states and paired macOS acceptance remain open. The independent
+[`Git file history and navigation action crosswalk`](parity/action-classification-git-file-history.md)
+records blame/settings, modified-file bulk open, path-scoped history, ref-based
+CommitView, current-file navigation, and provider-backed file permalinks.
+Labonair has repository history/graph and commit-diff display, but no blame,
+path-history, ref-entry CommitView, bulk-open, or permalink route; native
+interaction and paired macOS acceptance remain open. The independent
+[`Git add and ignore action crosswalk`](parity/action-classification-git-add-ignore.md)
+records the Add metadata/handler mismatch and the created-file
+`.gitignore`/`.git/info/exclude` routes. Labonair has typed stage and ignore
+operations, but no matching Add action, exposes ignore controls more broadly,
+and anchors `.gitignore` paths differently; dispatch and paired macOS evidence
+remain pending. The independent
+[`Git repository and remote management action crosswalk`](parity/action-classification-git-repository-management.md)
+records clone, initialize, repository selection, and remote-create/filter
+entry points, including two registered actions with no matching handler.
+Labonair has no reachable clone/init or remote configuration contract; its
+transport init helper is uncalled, and no active repository selector exists.
+Project, URL/destination, and remote recovery behavior remain open. The
+independent
+[`ProjectPanel and Explorer action crosswalk`](parity/action-classification-project-panel-actions.md)
+classifies 25 registered-unbound actions for recursive tree expansion,
+compact-directory folding, permanent/preview/split opening, selection and
+scrolling, visibility Settings, panel focus, project-root removal, and remote
+downloads. Fifteen action IDs have 17 Vim/Helix profile bindings; the default
+macOS map has none of these actions, and direct macOS registration and
+dispatch remain unverified. Labonair has pointer expansion, permanent and
+generic preview routes, automatic single-child folding, and transient
+hidden-file toggling, but lacks matching tree actions, diagnostic/Git-entry
+navigation, selected-file splits, ignored-file visibility, project-root
+removal, and Explorer-to-Transfers download routing. Its declared
+`explorerShowHiddenByDefault` value has no Explorer consumer. Any future
+transfer progress must use the statusbar notification center under Labonair's
+no-toast contract. Paired native macOS acceptance remains open. The independent
+[bound ProjectPanel action crosswalk](parity/action-classification-project-panel-bound-actions.md)
+classifies 20 default-macOS-bound file, tree, clipboard, undo/redo, scoped-search,
+marked-file comparison, reveal, and focus actions. It records the 41 macOS-profile,
+20 Linux/Windows-profile, and 10 Vim/Helix bindings in this action subset, three
+preview/auto-open Settings effects, and Labonair's local Explorer/Workspace gaps.
+Native dispatch, file recovery, Settings save/reload, and paired macOS visuals remain
+open. The independent [generic Menu navigation action crosswalk](parity/action-classification-menu-navigation.md)
+classifies six default-bound actions and their Atom/Vim/Helix layers. It records
+provider-owned secondary confirmation, Labonair UI Kit focus/submenu routes, and
+the pinned Restart action declaration with no discovered handler. Native dispatch,
+profile precedence, keyboard focus, and paired menu acceptance remain open. The
+independent
+[Theme mode and selector action crosswalk](parity/action-classification-theme-mode-selector.md)
+classifies two default-bound actions and ten related Theme/Icon Theme Settings
+rows. It records the static-to-dynamic conversion, theme preview/confirm/cancel,
+and Labonair's separate General color-mode and single theme/icon-theme IDs.
+Native action dispatch, Settings save/reload, and paired appearance states remain
+open. The independent
+[`Terminal Clear action crosswalk`](parity/action-classification-terminal-clear.md)
+records the pinned model-level saved-screen/cwd-history effect and the local
+palette command's ANSI PTY write, without assuming equal scrollback behavior.
+Native dispatch, SSH/foreground-process behavior, and paired terminal states
+remain open. The independent
+[`Terminal clipboard action crosswalk`](parity/action-classification-terminal-clipboard.md)
+classifies Copy, Paste, and PasteText, related selection Settings, clipboard
+type branches, bracketed-paste sanitation, and Labonair's text-only route. Native
+clipboard dispatch, platform reachability, and paired terminal states remain
+open. The independent
+[`Terminal scroll action crosswalk`](parity/action-classification-terminal-scroll.md)
+classifies six line/page/top/bottom actions, alternate-screen propagation,
+inline-block viewport handling, JetBrains overrides, and the history-limit
+setting difference. Native shortcut, restored-history, and paired scroll states
+remain open. The independent
+[`Terminal character-palette and vi-mode action crosswalk`](parity/action-classification-terminal-character-palette-vi-mode.md)
+records macOS palette support and non-macOS no-op behavior, the alternate-screen
+`option_as_meta` input, transient vi-motion dispatch, missing local actions, and
+platform-specific acceptance gaps. Keyboard reachability and native palette/vi
+interaction remain open. The independent
+[`Task rerun action crosswalk`](parity/action-classification-task-rerun.md)
+classifies Workspace last-task fallback and Terminal TaskId rerun overrides,
+including same-terminal replacement, context reuse, shortcut overlaps, and the
+missing Labonair Tasks owner. Task scheduling and native context precedence
+remain open. The independent
+[`Terminal text and keystroke action crosswalk`](parity/action-classification-terminal-input.md)
+distinguishes mode-aware `SendKeystroke` dispatch from raw `SendText` bytes,
+records platform and Emacs profile behavior plus the `option_as_meta` setting,
+and identifies the missing local payload actions. Native PTY delivery and
+keymap dispatch remain open. The independent
+[`Terminal panel toggle/focus action crosswalk`](parity/action-classification-terminal-panel.md)
+classifies TerminalPanel open/focus/close and shell-start behavior, the
+settings-driven distinction between `Toggle` and `ToggleFocus`, and duplicate
+handler registration. Labonair's universal-tab mapping and native focus
+acceptance remain open. The independent
+[`Terminal registered-unbound action crosswalk`](parity/action-classification-terminal-unbound.md)
+classifies five Linux-registered Terminal IDs without default bindings. It
+records the Terminal tab rename handler and title persistence, the separate
+editor-owned `SelectAll` action, and the Terminal search route distinct from
+`SearchTest`. The two half-page and SearchTest declarations have no discovered
+handlers; `terminal::SelectAll` also has no matching handler of its own.
+Labonair has generic Workspace tab rename and Terminal-target search, with no
+local half-page or select-all action route. Native discovery, dispatch, and
+paired macOS evidence remain open. The independent
+[`Outline and OutlinePanel action crosswalk`](parity/action-classification-outline-panel-actions.md)
+classifies the searchable Editor Outline picker, five default-macOS-bound
+OutlinePanel actions, 13 registered-unbound panel actions, six unbound
+Vim/Helix IDs across seven entries plus two default-bound IDs across two more,
+and four pinned Settings effects. Labonair's
+`editorShowOutline` is a separate single-document Editor list; the OutlinePanel
+tree, modal picker action, and their macOS dispatch routes are absent. The
+Settings inventory now records its current Editor consumer; native interaction
+and paired visual acceptance remain open. The
+independent
+[`Workspace New Window action crosswalk`](parity/action-classification-workspace-new-window.md)
+records initial-content Settings and the missing Labonair user-facing window
+route; pinned dispatch and paired interaction evidence remain pending. The
+independent
+[`Workspace Close Window action crosswalk`](parity/action-classification-workspace-close-window.md)
+records global and secondary-window bindings, Workspace dirty-item and
+active-call preparation, session handling, and Labonair's OS-close/tab/pane
+routes; key dispatch, prompt and cancellation states, final-window policy,
+session restore, and paired interaction evidence remain pending. The
+independent
+[`Workspace path-copy action crosswalk`](parity/action-classification-workspace-path-copy.md)
+records absolute and worktree-relative clipboard values, per-panel selection
+cardinality, path style, and Labonair's Explorer-only menu route; platform
+dispatch, multiline order, Outline/Git routes, clipboard behavior, and paired
+interaction evidence remain pending. The independent
+[`Workspace Reopen Last Picker action crosswalk`](parity/action-classification-workspace-reopen-last-picker.md)
+records eligible-picker and per-window retention behavior, modal ordering,
+state preservation, and focus restoration; native dispatch, full picker-owner
+coverage, and paired interaction evidence remain pending. The
+independent
+[`Workspace save action crosswalk`](parity/action-classification-workspace-save.md)
+records active-item versus Workspace-wide save scope, typed save intents,
+format-on-save settings, conflict prompts, partial Save All failure behavior,
+and Labonair's active-Editor-only route; native dispatch, picker and prompt
+interaction, formatter behavior, partial-failure visibility, and paired
+interaction evidence remain pending. The
+separate
+[`Workspace New File action crosswalk`](parity/action-classification-workspace-new-file.md)
+records the untitled-document action contexts, unsaved-buffer Settings, and
+Labonair's universal-tab adaptation; dispatch and file-lifecycle acceptance
+remain pending. The independent
+[`Workspace New Terminal action crosswalk`](parity/action-classification-workspace-new-terminal.md)
+records the local/remote shell choice, focus-dependent placement, related
+Terminal Settings, and Labonair's separate local New Terminal Tab route;
+dispatch, local/remote execution, and paired interaction evidence remain
+pending. The independent
+[`Workspace Open With System action crosswalk`](parity/action-classification-workspace-open-with-system.md)
+records the ProjectPanel and InvalidBuffer contexts, local-path default-app
+handoff, Windows deprecated-alias binding, and current Labonair Preview versus
+Reveal routes; native alias dispatch and external-app acceptance remain
+pending. The independent
+[`Workspace dock sizing action crosswalk`](parity/action-classification-workspace-dock-sizing.md)
+records six active/all-open resize and reset actions, their pixel-step and
+font-size behavior, the JSON-only resize-all-panels setting, and Labonair's
+per-edge pointer resize route; keyboard dispatch and native interaction remain
+pending. The independent
+[`Workspace dock visibility action crosswalk`](parity/action-classification-workspace-dock-visibility.md)
+records the focused-dock close, three edge toggles, remembered all-dock
+restoration, the local primary-sidebar/statusbar routes, and the local tab
+close key distinction; focus, dispatch, and reload behavior remain pending.
+The independent
+[`Workspace major-region focus action crosswalk`](parity/action-classification-workspace-major-region-focus.md)
+records the visible-region order, wrap and closed-dock behavior, toolbar and
+landmark focus targets, and Labonair's pane-only traversal gap; native F6
+dispatch, screen-reader behavior, and focus-ring evidence remain pending.
+The independent
+[`Workspace pane activation and swap action crosswalk`](parity/action-classification-workspace-pane-activation-swap.md)
+records zero-based pane indices, the missing-index clone attempt, directional
+focus into panes/docks, adjacent center-pane swaps, and Labonair's tab-number
+shortcut collision; geometry, focus, topology restore, and native key behavior
+remain pending.
+The independent
+[`Workspace bulk item/pane close action crosswalk`](parity/action-classification-workspace-bulk-close.md)
+records cross-pane close-all and close-inactive behavior, pinned-item retention,
+save-intent and partial-cancellation semantics, and Labonair's distinct
+Space-scoped universal-tab routes; save prompts, continuation after
+cancellation, focus, layout restore, dispatch, and paired interaction evidence
+remain pending.
+All other action
+semantics and owner routes, profile selection/reload, user overrides, and
+macOS/Linux/Windows
+runtime evidence also remain open; these static inventories are not parity
+evidence.
+
 ## Settings parity pilot
+
+The independent [`Settings field and workflow requirements register`](parity/settings-requirements.md)
+assigns stable IDs to static fields, per-language options, shipped profiles,
+dynamic setup pages, and shared flows. Its IDs are inventory only; owners,
+effects, persistence, and paired macOS acceptance remain open.
 
 Settings is the first detailed specification pilot because it has already
 been reworked several times without accepted Zed-to-Labonair visual evidence.

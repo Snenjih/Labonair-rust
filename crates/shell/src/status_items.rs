@@ -53,8 +53,11 @@ pub fn register_builtin_status_items(
     // a panel), so there is no bottom dock-button group in the statusbar.
     let notifications_item = labonair_notifications::registration(notifications, theme, cx);
     let cwd = labonair_workspace::cwd_status_item::registration(workspace, theme, cx);
-    let cursor =
-        labonair_workspace::status_items::cursor_position_registration(workspace, theme, cx);
+    let editor_workspace = workspace.clone();
+    let editor = labonair_editor_ui::status_item_registration(
+        std::rc::Rc::new(move |cx| editor_workspace.read(cx).active_editor_view(cx)),
+        cx,
+    );
     let preview = labonair_workspace::status_items::preview_url_registration(workspace, theme, cx);
     let updater_item = labonair_updater_ui::status_item::registration(updater, theme, cx);
     let transfers = labonair_transfers_ui::status_item_registration(transfers_view, theme, cx);
@@ -65,7 +68,7 @@ pub fn register_builtin_status_items(
         cx,
     );
     // Default right-cluster order (T18-004 point 1), each item's `order()`:
-    //   cwd(10)/cursor(11)/preview(12)  — group 0, active-tab-derived text,
+    //   cwd(10)/editor(11)/preview(12)  — group 0, active-tab-derived text,
     //     widest first so it can collapse before anything else has to move.
     //   transfers(20)/agent(30)/updater(40) —
     //     group 1, the "action" items in the order the task file lists them.
@@ -76,7 +79,7 @@ pub fn register_builtin_status_items(
         dock_btn_right,
         notifications_item,
         cwd,
-        cursor,
+        editor,
         preview,
         updater_item,
         transfers,

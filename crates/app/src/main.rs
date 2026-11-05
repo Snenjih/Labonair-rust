@@ -80,6 +80,7 @@ fn main() {
             .open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    window_background: labonair_shell::window_background(cx),
                     titlebar: Some(TitlebarOptions {
                         // Reference uses macOS `titleBarStyle: "Overlay"` +
                         // `hiddenTitle: true`: one transparent overlay titlebar

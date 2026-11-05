@@ -15,6 +15,8 @@ use std::sync::{
 };
 use std::thread::{self, JoinHandle};
 
+use serde_json::Value;
+
 use crate::buffer::{BufferSnapshot, Edit, Position, Revision, TextRange};
 use crate::language::Language;
 use crate::symbols::{document_symbols, DocumentSymbol};
@@ -146,12 +148,21 @@ pub enum CompletionKind {
     Text,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CompletionTextFormat {
+    #[default]
+    PlainText,
+    Snippet,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompletionItem {
     pub label: String,
     pub kind: CompletionKind,
+    pub text_format: CompletionTextFormat,
     pub detail: Option<String>,
     pub insert_text: String,
+    pub text_edit_range: Option<LspRange>,
     pub filter_text: Option<String>,
     pub sort_text: Option<String>,
     pub documentation: Option<String>,
@@ -172,8 +183,60 @@ pub struct HoverContent {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NavigationTarget {
     pub name: String,
+    /// LSP file URI for remote targets; syntax-derived results stay local and
+    /// leave this empty because their provider does not own a file path.
+    pub uri: Option<String>,
     pub range: LspRange,
     pub selection_range: LspRange,
+}
+
+/// One LSP call-hierarchy symbol. `data` is opaque server state that must be
+/// returned unchanged when requesting incoming or outgoing calls.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CallHierarchyItem {
+    pub name: String,
+    pub kind: u32,
+    pub uri: String,
+    pub range: LspRange,
+    pub selection_range: LspRange,
+    pub detail: Option<String>,
+    pub tags: Vec<u32>,
+    pub data: Option<Value>,
+}
+
+/// A caller/callee row and the source ranges that form the call site.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CallHierarchyCall {
+    pub item: CallHierarchyItem,
+    pub ranges: Vec<LspRange>,
+}
+
+/// LSP command exposed by a code lens. Arguments and unresolved server data
+/// stay opaque so the Editor can return them to the originating server.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LanguageServiceCommand {
+    pub title: String,
+    pub command: String,
+    pub arguments: Vec<Value>,
+}
+
+/// A Code Lens positioned on a document range. Servers may defer the command
+/// until `codeLens/resolve` is requested.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CodeLens {
+    pub range: LspRange,
+    pub command: Option<LanguageServiceCommand>,
+    pub data: Option<Value>,
+}
+
+/// A server-provided link over a document range. Servers may defer the target
+/// until `documentLink/resolve` is requested.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DocumentLink {
+    pub range: LspRange,
+    pub target: Option<String>,
+    pub tooltip: Option<String>,
+    pub data: Option<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -188,6 +251,41 @@ pub struct SemanticToken {
     pub range: LspRange,
     pub token_type: String,
     pub modifiers: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InlayHintKind {
+    Type,
+    Parameter,
+    Other,
+}
+
+/// A virtual inline annotation returned by an LSP provider. Its source
+/// position is tied to the request snapshot and it never edits the buffer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InlayHint {
+    pub position: LspPosition,
+    pub label: String,
+    pub kind: InlayHintKind,
+    pub tooltip: Option<String>,
+    pub padding_left: bool,
+    pub padding_right: bool,
+}
+
+/// sRGB color channels returned by LSP `textDocument/documentColor`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DocumentColorValue {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+    pub alpha: u8,
+}
+
+/// A source range associated with a color preview by a language server.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DocumentColor {
+    pub range: LspRange,
+    pub color: DocumentColorValue,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -210,11 +308,23 @@ pub enum LanguageServiceCapability {
     SignatureHelp,
     Hover,
     Definition,
+    Declaration,
+    Implementation,
+    TypeDefinition,
     References,
+    CallHierarchy,
+    CodeLens,
+    CodeLensResolve,
+    ExecuteCommand,
+    DocumentLinks,
+    DocumentLinkResolve,
     Rename,
     CodeActions,
     SemanticTokens,
+    InlayHints,
+    DocumentColors,
     DocumentSymbols,
+    WorkspaceSymbols,
     FoldingRanges,
     Formatting,
 }
@@ -262,11 +372,23 @@ pub struct LanguageServiceCapabilities {
     pub signature_help: bool,
     pub hover: bool,
     pub definition: bool,
+    pub declaration: bool,
+    pub implementation: bool,
+    pub type_definition: bool,
     pub references: bool,
+    pub call_hierarchy: bool,
+    pub code_lens: bool,
+    pub code_lens_resolve: bool,
+    pub execute_command: bool,
+    pub document_links: bool,
+    pub document_link_resolve: bool,
     pub rename: bool,
     pub code_actions: bool,
     pub semantic_tokens: bool,
+    pub inlay_hints: bool,
+    pub document_colors: bool,
     pub document_symbols: bool,
+    pub workspace_symbols: bool,
     pub folding_ranges: bool,
     pub formatting: bool,
 }
@@ -278,11 +400,23 @@ impl LanguageServiceCapabilities {
         signature_help: false,
         hover: true,
         definition: true,
+        declaration: false,
+        implementation: false,
+        type_definition: false,
         references: true,
+        call_hierarchy: false,
+        code_lens: false,
+        code_lens_resolve: false,
+        execute_command: false,
+        document_links: false,
+        document_link_resolve: false,
         rename: true,
         code_actions: true,
         semantic_tokens: true,
+        inlay_hints: false,
+        document_colors: false,
         document_symbols: true,
+        workspace_symbols: false,
         folding_ranges: true,
         formatting: true,
     };
@@ -294,11 +428,23 @@ impl LanguageServiceCapabilities {
             LanguageServiceCapability::SignatureHelp => self.signature_help,
             LanguageServiceCapability::Hover => self.hover,
             LanguageServiceCapability::Definition => self.definition,
+            LanguageServiceCapability::Declaration => self.declaration,
+            LanguageServiceCapability::Implementation => self.implementation,
+            LanguageServiceCapability::TypeDefinition => self.type_definition,
             LanguageServiceCapability::References => self.references,
+            LanguageServiceCapability::CallHierarchy => self.call_hierarchy,
+            LanguageServiceCapability::CodeLens => self.code_lens,
+            LanguageServiceCapability::CodeLensResolve => self.code_lens_resolve,
+            LanguageServiceCapability::ExecuteCommand => self.execute_command,
+            LanguageServiceCapability::DocumentLinks => self.document_links,
+            LanguageServiceCapability::DocumentLinkResolve => self.document_link_resolve,
             LanguageServiceCapability::Rename => self.rename,
             LanguageServiceCapability::CodeActions => self.code_actions,
             LanguageServiceCapability::SemanticTokens => self.semantic_tokens,
+            LanguageServiceCapability::InlayHints => self.inlay_hints,
+            LanguageServiceCapability::DocumentColors => self.document_colors,
             LanguageServiceCapability::DocumentSymbols => self.document_symbols,
+            LanguageServiceCapability::WorkspaceSymbols => self.workspace_symbols,
             LanguageServiceCapability::FoldingRanges => self.folding_ranges,
             LanguageServiceCapability::Formatting => self.formatting,
         }
@@ -322,8 +468,38 @@ pub enum LanguageServiceRequest {
     Definition {
         position: LspPosition,
     },
+    Declaration {
+        position: LspPosition,
+    },
+    Implementation {
+        position: LspPosition,
+    },
+    TypeDefinition {
+        position: LspPosition,
+    },
     References {
         position: LspPosition,
+    },
+    PrepareCallHierarchy {
+        position: LspPosition,
+    },
+    IncomingCalls {
+        item: CallHierarchyItem,
+    },
+    OutgoingCalls {
+        item: CallHierarchyItem,
+    },
+    CodeLenses,
+    ResolveCodeLens {
+        lens: CodeLens,
+    },
+    ExecuteCommand {
+        command: String,
+        arguments: Vec<Value>,
+    },
+    DocumentLinks,
+    ResolveDocumentLink {
+        link: DocumentLink,
     },
     Rename {
         position: LspPosition,
@@ -333,7 +509,14 @@ pub enum LanguageServiceRequest {
         range: LspRange,
     },
     SemanticTokens,
+    InlayHints {
+        range: LspRange,
+    },
+    DocumentColors,
     DocumentSymbols,
+    WorkspaceSymbols {
+        query: String,
+    },
     FoldingRanges,
     Formatting,
 }
@@ -364,11 +547,25 @@ impl LanguageServiceRequest {
             Self::SignatureHelp { .. } => LanguageServiceCapability::SignatureHelp,
             Self::Hover { .. } => LanguageServiceCapability::Hover,
             Self::Definition { .. } => LanguageServiceCapability::Definition,
+            Self::Declaration { .. } => LanguageServiceCapability::Declaration,
+            Self::Implementation { .. } => LanguageServiceCapability::Implementation,
+            Self::TypeDefinition { .. } => LanguageServiceCapability::TypeDefinition,
             Self::References { .. } => LanguageServiceCapability::References,
+            Self::PrepareCallHierarchy { .. }
+            | Self::IncomingCalls { .. }
+            | Self::OutgoingCalls { .. } => LanguageServiceCapability::CallHierarchy,
+            Self::CodeLenses => LanguageServiceCapability::CodeLens,
+            Self::ResolveCodeLens { .. } => LanguageServiceCapability::CodeLensResolve,
+            Self::ExecuteCommand { .. } => LanguageServiceCapability::ExecuteCommand,
+            Self::DocumentLinks => LanguageServiceCapability::DocumentLinks,
+            Self::ResolveDocumentLink { .. } => LanguageServiceCapability::DocumentLinkResolve,
             Self::Rename { .. } => LanguageServiceCapability::Rename,
             Self::CodeActions { .. } => LanguageServiceCapability::CodeActions,
             Self::SemanticTokens => LanguageServiceCapability::SemanticTokens,
+            Self::InlayHints { .. } => LanguageServiceCapability::InlayHints,
+            Self::DocumentColors => LanguageServiceCapability::DocumentColors,
             Self::DocumentSymbols => LanguageServiceCapability::DocumentSymbols,
+            Self::WorkspaceSymbols { .. } => LanguageServiceCapability::WorkspaceSymbols,
             Self::FoldingRanges => LanguageServiceCapability::FoldingRanges,
             Self::Formatting => LanguageServiceCapability::Formatting,
         }
@@ -382,11 +579,22 @@ pub enum LanguageServiceResponse {
     SignatureHelp(Option<SignatureHelp>),
     Hover(Option<HoverContent>),
     Definition(Vec<NavigationTarget>),
+    TypeDefinition(Vec<NavigationTarget>),
     References(Vec<NavigationTarget>),
+    CallHierarchyItems(Vec<CallHierarchyItem>),
+    CallHierarchyCalls(Vec<CallHierarchyCall>),
+    CodeLenses(Vec<CodeLens>),
+    CodeLens(Option<CodeLens>),
+    CommandResult(Option<Value>),
+    DocumentLinks(Vec<DocumentLink>),
+    DocumentLink(Option<DocumentLink>),
     Rename(Vec<Edit>),
     CodeActions(Vec<CodeAction>),
     SemanticTokens(Vec<SemanticToken>),
+    InlayHints(Vec<InlayHint>),
+    DocumentColors(Vec<DocumentColor>),
     DocumentSymbols(Vec<DocumentSymbol>),
+    WorkspaceSymbols(Vec<NavigationTarget>),
     FoldingRanges(Vec<FoldingRange>),
     Formatting(Vec<Edit>),
 }
@@ -617,6 +825,9 @@ pub struct LanguageServiceSnapshot {
     pub generation: u64,
     pub diagnostics: Vec<Diagnostic>,
     pub semantic_tokens: Vec<SemanticToken>,
+    pub inlay_hints: Vec<InlayHint>,
+    pub document_colors: Vec<DocumentColor>,
+    pub document_symbols: Option<Vec<DocumentSymbol>>,
     pub completion: Option<CompletionList>,
     pub signature_help: Option<SignatureHelp>,
     pub hover: Option<HoverContent>,
@@ -627,6 +838,9 @@ pub struct LanguageServiceState {
     generation: u64,
     diagnostics: Vec<Diagnostic>,
     semantic_tokens: Vec<SemanticToken>,
+    inlay_hints: Vec<InlayHint>,
+    document_colors: Vec<DocumentColor>,
+    document_symbols: Option<Vec<DocumentSymbol>>,
     completion: Option<CompletionList>,
     signature_help: Option<SignatureHelp>,
     hover: Option<HoverContent>,
@@ -639,6 +853,9 @@ impl LanguageServiceState {
             generation: 0,
             diagnostics: Vec::new(),
             semantic_tokens: Vec::new(),
+            inlay_hints: Vec::new(),
+            document_colors: Vec::new(),
+            document_symbols: None,
             completion: None,
             signature_help: None,
             hover: None,
@@ -660,6 +877,9 @@ impl LanguageServiceState {
         self.generation = generation;
         self.diagnostics.clear();
         self.semantic_tokens.clear();
+        self.inlay_hints.clear();
+        self.document_colors.clear();
+        self.document_symbols = None;
         self.completion = None;
         self.signature_help = None;
         self.hover = None;
@@ -681,6 +901,9 @@ impl LanguageServiceState {
         match response {
             LanguageServiceResponse::Diagnostics(value) => self.diagnostics = value,
             LanguageServiceResponse::SemanticTokens(value) => self.semantic_tokens = value,
+            LanguageServiceResponse::InlayHints(value) => self.inlay_hints = value,
+            LanguageServiceResponse::DocumentColors(value) => self.document_colors = value,
+            LanguageServiceResponse::DocumentSymbols(value) => self.document_symbols = Some(value),
             LanguageServiceResponse::Completion(value) => self.completion = Some(value),
             LanguageServiceResponse::SignatureHelp(value) => self.signature_help = value,
             LanguageServiceResponse::Hover(value) => self.hover = value,
@@ -695,6 +918,9 @@ impl LanguageServiceState {
             generation: self.generation,
             diagnostics: self.diagnostics.clone(),
             semantic_tokens: self.semantic_tokens.clone(),
+            inlay_hints: self.inlay_hints.clone(),
+            document_colors: self.document_colors.clone(),
+            document_symbols: self.document_symbols.clone(),
             completion: self.completion.clone(),
             signature_help: self.signature_help.clone(),
             hover: self.hover.clone(),
@@ -709,6 +935,14 @@ impl LanguageServiceState {
 
     pub fn clear_signature_help(&mut self) {
         self.signature_help = None;
+    }
+
+    pub fn clear_inlay_hints(&mut self) {
+        self.inlay_hints.clear();
+    }
+
+    pub fn clear_document_colors(&mut self) {
+        self.document_colors.clear();
     }
 }
 
@@ -919,8 +1153,10 @@ impl SyntaxLanguageService {
                     CompletionItem {
                         label: (*keyword).to_string(),
                         kind: CompletionKind::Keyword,
+                        text_format: CompletionTextFormat::PlainText,
                         detail: Some("syntax keyword".to_string()),
                         insert_text: (*keyword).to_string(),
+                        text_edit_range: None,
                         filter_text: None,
                         sort_text: Some(format!("0-{keyword}")),
                         documentation: None,
@@ -939,8 +1175,10 @@ impl SyntaxLanguageService {
                     .or_insert_with(|| CompletionItem {
                         label: name.clone(),
                         kind: CompletionKind::Text,
+                        text_format: CompletionTextFormat::PlainText,
                         detail: Some("document symbol".to_string()),
                         insert_text: name,
+                        text_edit_range: None,
                         filter_text: None,
                         sort_text: Some(sort_text),
                         documentation: None,
@@ -1009,6 +1247,7 @@ impl SyntaxLanguageService {
                 .filter(|(name, _)| *name == word)
                 .map(|(name, range)| NavigationTarget {
                     name,
+                    uri: None,
                     range: LspRange::from_text_range(snapshot, range),
                     selection_range: LspRange::from_text_range(snapshot, range),
                 })
@@ -1019,6 +1258,7 @@ impl SyntaxLanguageService {
             .filter(|symbol| symbol.name == word)
             .map(|symbol| NavigationTarget {
                 name: symbol.name,
+                uri: None,
                 range: LspRange::from_text_range(snapshot, symbol.range),
                 selection_range: LspRange::from_text_range(snapshot, symbol.name_range),
             })
@@ -1028,6 +1268,7 @@ impl SyntaxLanguageService {
                 (document_symbols(self.language.language(), snapshot).is_empty()).then(|| {
                     NavigationTarget {
                         name: word,
+                        uri: None,
                         range: LspRange::from_text_range(snapshot, word_range),
                         selection_range: LspRange::from_text_range(snapshot, word_range),
                     }
@@ -1269,8 +1510,49 @@ impl LocalLanguageService for SyntaxLanguageService {
             LanguageServiceRequest::Definition { position } => {
                 LanguageServiceResponse::Definition(self.navigation(snapshot, position, false))
             }
+            LanguageServiceRequest::Declaration { position } => {
+                LanguageServiceResponse::Definition(self.navigation(snapshot, position, false))
+            }
+            LanguageServiceRequest::Implementation { position } => {
+                LanguageServiceResponse::Definition(self.navigation(snapshot, position, false))
+            }
+            LanguageServiceRequest::TypeDefinition { position } => {
+                LanguageServiceResponse::TypeDefinition(self.navigation(snapshot, position, false))
+            }
             LanguageServiceRequest::References { position } => {
                 LanguageServiceResponse::References(self.navigation(snapshot, position, true))
+            }
+            LanguageServiceRequest::PrepareCallHierarchy { .. }
+            | LanguageServiceRequest::IncomingCalls { .. }
+            | LanguageServiceRequest::OutgoingCalls { .. } => {
+                return Err(LanguageServiceError::UnsupportedCapability(
+                    LanguageServiceCapability::CallHierarchy,
+                ));
+            }
+            LanguageServiceRequest::CodeLenses => {
+                return Err(LanguageServiceError::UnsupportedCapability(
+                    LanguageServiceCapability::CodeLens,
+                ));
+            }
+            LanguageServiceRequest::ResolveCodeLens { .. } => {
+                return Err(LanguageServiceError::UnsupportedCapability(
+                    LanguageServiceCapability::CodeLensResolve,
+                ));
+            }
+            LanguageServiceRequest::ExecuteCommand { .. } => {
+                return Err(LanguageServiceError::UnsupportedCapability(
+                    LanguageServiceCapability::ExecuteCommand,
+                ));
+            }
+            LanguageServiceRequest::DocumentLinks => {
+                return Err(LanguageServiceError::UnsupportedCapability(
+                    LanguageServiceCapability::DocumentLinks,
+                ));
+            }
+            LanguageServiceRequest::ResolveDocumentLink { .. } => {
+                return Err(LanguageServiceError::UnsupportedCapability(
+                    LanguageServiceCapability::DocumentLinkResolve,
+                ));
             }
             LanguageServiceRequest::Rename { position, new_name } => {
                 LanguageServiceResponse::Rename(self.rename(snapshot, position, new_name))
@@ -1281,9 +1563,20 @@ impl LocalLanguageService for SyntaxLanguageService {
             LanguageServiceRequest::SemanticTokens => LanguageServiceResponse::SemanticTokens(
                 self.semantic_tokens(snapshot, cancellation)?,
             ),
+            LanguageServiceRequest::InlayHints { .. } => {
+                LanguageServiceResponse::InlayHints(Vec::new())
+            }
+            LanguageServiceRequest::DocumentColors => {
+                LanguageServiceResponse::DocumentColors(Vec::new())
+            }
             LanguageServiceRequest::DocumentSymbols => LanguageServiceResponse::DocumentSymbols(
                 document_symbols(self.language.language(), snapshot),
             ),
+            LanguageServiceRequest::WorkspaceSymbols { .. } => {
+                return Err(LanguageServiceError::UnsupportedCapability(
+                    LanguageServiceCapability::WorkspaceSymbols,
+                ));
+            }
             LanguageServiceRequest::FoldingRanges => {
                 LanguageServiceResponse::FoldingRanges(self.folding_ranges(snapshot, cancellation))
             }
@@ -1396,6 +1689,106 @@ mod tests {
     }
 
     #[test]
+    fn inlay_hints_are_capability_gated_and_revision_bound() {
+        assert!(!service(Language::Rust)
+            .capabilities()
+            .supports(LanguageServiceCapability::InlayHints));
+
+        let mut state = LanguageServiceState::new(DocumentVersion::new(1));
+        let hint = InlayHint {
+            position: LspPosition {
+                line: 0,
+                character: 2,
+            },
+            label: ": i32".into(),
+            kind: InlayHintKind::Type,
+            tooltip: None,
+            padding_left: true,
+            padding_right: false,
+        };
+        assert!(state.apply(LanguageServiceResult {
+            server: LanguageServerId::new("test"),
+            version: DocumentVersion::new(1),
+            generation: 0,
+            response: Ok(LanguageServiceResponse::InlayHints(vec![hint.clone()])),
+        }));
+        assert_eq!(state.snapshot().inlay_hints, vec![hint]);
+
+        state.set_document_generation(DocumentVersion::new(2), 1);
+        assert!(state.snapshot().inlay_hints.is_empty());
+    }
+
+    #[test]
+    fn document_colors_are_revision_bound_and_cleared_on_document_sync() {
+        let color = DocumentColor {
+            range: LspRange {
+                start: LspPosition {
+                    line: 0,
+                    character: 0,
+                },
+                end: LspPosition {
+                    line: 0,
+                    character: 4,
+                },
+            },
+            color: DocumentColorValue {
+                red: 255,
+                green: 0,
+                blue: 128,
+                alpha: 255,
+            },
+        };
+        let mut state = LanguageServiceState::new(DocumentVersion::new(1));
+        assert!(state.apply(LanguageServiceResult {
+            server: LanguageServerId::new("test"),
+            version: DocumentVersion::new(1),
+            generation: 0,
+            response: Ok(LanguageServiceResponse::DocumentColors(vec![color])),
+        }));
+        assert_eq!(state.snapshot().document_colors, vec![color]);
+
+        state.set_document_generation(DocumentVersion::new(2), 1);
+        assert!(state.snapshot().document_colors.is_empty());
+        assert!(!state.apply(LanguageServiceResult {
+            server: LanguageServerId::new("test"),
+            version: DocumentVersion::new(1),
+            generation: 0,
+            response: Ok(LanguageServiceResponse::DocumentColors(vec![color])),
+        }));
+    }
+
+    #[test]
+    fn document_symbols_are_revision_bound_and_distinguish_empty_from_unrequested() {
+        let symbol = DocumentSymbol {
+            name: "main".into(),
+            kind: crate::SymbolKind::Function,
+            line: 2,
+            range: TextRange::new(12, 42),
+            name_range: TextRange::new(15, 19),
+        };
+        let mut state = LanguageServiceState::new(DocumentVersion::new(1));
+        assert_eq!(state.snapshot().document_symbols, None);
+        assert!(state.apply(LanguageServiceResult {
+            server: LanguageServerId::new("test"),
+            version: DocumentVersion::new(1),
+            generation: 0,
+            response: Ok(LanguageServiceResponse::DocumentSymbols(vec![
+                symbol.clone()
+            ])),
+        }));
+        assert_eq!(state.snapshot().document_symbols, Some(vec![symbol]));
+
+        state.set_document_generation(DocumentVersion::new(2), 1);
+        assert_eq!(state.snapshot().document_symbols, None);
+        assert!(!state.apply(LanguageServiceResult {
+            server: LanguageServerId::new("test"),
+            version: DocumentVersion::new(1),
+            generation: 0,
+            response: Ok(LanguageServiceResponse::DocumentSymbols(Vec::new())),
+        }));
+    }
+
+    #[test]
     fn completion_is_filtered_and_sorted() {
         let snap = snapshot("fn main() { ma }");
         let result = service(Language::Rust)
@@ -1438,6 +1831,24 @@ mod tests {
             )
             .unwrap();
         assert!(matches!(hover, LanguageServiceResponse::Hover(Some(_))));
+        assert_eq!(
+            LanguageServiceRequest::TypeDefinition { position: pos }.capability(),
+            LanguageServiceCapability::TypeDefinition
+        );
+        assert_eq!(
+            LanguageServiceRequest::Declaration { position: pos }.capability(),
+            LanguageServiceCapability::Declaration
+        );
+        assert_eq!(
+            LanguageServiceRequest::Implementation { position: pos }.capability(),
+            LanguageServiceCapability::Implementation
+        );
+        assert!(!LanguageServiceCapabilities::SYNTAX_DERIVED
+            .supports(LanguageServiceCapability::Declaration));
+        assert!(!LanguageServiceCapabilities::SYNTAX_DERIVED
+            .supports(LanguageServiceCapability::Implementation));
+        assert!(!LanguageServiceCapabilities::SYNTAX_DERIVED
+            .supports(LanguageServiceCapability::TypeDefinition));
         let definition = service(Language::Rust)
             .request(
                 &snap,
@@ -1461,6 +1872,108 @@ mod tests {
             )
             .unwrap();
         assert!(matches!(rename, LanguageServiceResponse::Rename(ref edits) if edits.len() == 2));
+    }
+
+    #[test]
+    fn call_hierarchy_is_a_separate_lsp_capability() {
+        let snapshot = snapshot("fn caller() { callee(); }\nfn callee() {}\n");
+        let position = LspPosition {
+            line: 0,
+            character: 5,
+        };
+        let request = LanguageServiceRequest::PrepareCallHierarchy { position };
+        assert_eq!(
+            request.capability(),
+            LanguageServiceCapability::CallHierarchy
+        );
+        assert!(!service(Language::Rust)
+            .capabilities()
+            .supports(LanguageServiceCapability::CallHierarchy));
+        assert!(matches!(
+            service(Language::Rust).request(
+                &snapshot,
+                DocumentVersion::new(1),
+                request,
+                &CancellationToken::default(),
+            ),
+            Err(LanguageServiceError::UnsupportedCapability(
+                LanguageServiceCapability::CallHierarchy
+            ))
+        ));
+    }
+
+    #[test]
+    fn code_lens_and_execute_command_are_explicit_lsp_capabilities() {
+        let snapshot = snapshot("fn main() {}\n");
+        for (request, capability) in [
+            (
+                LanguageServiceRequest::CodeLenses,
+                LanguageServiceCapability::CodeLens,
+            ),
+            (
+                LanguageServiceRequest::ExecuteCommand {
+                    command: "fixture.run".to_string(),
+                    arguments: Vec::new(),
+                },
+                LanguageServiceCapability::ExecuteCommand,
+            ),
+        ] {
+            assert_eq!(request.capability(), capability);
+            assert!(!service(Language::Rust).capabilities().supports(capability));
+            assert!(matches!(
+                service(Language::Rust).request(
+                    &snapshot,
+                    DocumentVersion::new(1),
+                    request,
+                    &CancellationToken::default(),
+                ),
+                Err(LanguageServiceError::UnsupportedCapability(actual)) if actual == capability
+            ));
+        }
+    }
+
+    #[test]
+    fn document_links_and_resolution_are_explicit_lsp_capabilities() {
+        let snapshot = snapshot("https://example.com\n");
+        let range = LspRange {
+            start: LspPosition {
+                line: 0,
+                character: 0,
+            },
+            end: LspPosition {
+                line: 0,
+                character: 19,
+            },
+        };
+        for (request, capability) in [
+            (
+                LanguageServiceRequest::DocumentLinks,
+                LanguageServiceCapability::DocumentLinks,
+            ),
+            (
+                LanguageServiceRequest::ResolveDocumentLink {
+                    link: DocumentLink {
+                        range,
+                        target: None,
+                        tooltip: None,
+                        data: Some(serde_json::json!({ "resolve": true })),
+                    },
+                },
+                LanguageServiceCapability::DocumentLinkResolve,
+            ),
+        ] {
+            assert_eq!(request.capability(), capability);
+            assert!(!service(Language::Rust).capabilities().supports(capability));
+            assert!(matches!(
+                service(Language::Rust).request(
+                    &snapshot,
+                    DocumentVersion::new(1),
+                    request,
+                    &CancellationToken::default(),
+                ),
+                Err(LanguageServiceError::UnsupportedCapability(actual)) if actual == capability
+            ));
+        }
     }
 
     #[test]

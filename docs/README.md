@@ -86,6 +86,8 @@ the migration is complete.
   field-to-consumer, scope, and keep/move/remove/review decisions.
 - [`visual-verification.md`](visual-verification.md) — exact native-bundle and
   PID-scoped rules for rendered UI checks.
+- [`qa/r10-002-visual-checklist.md`](qa/r10-002-visual-checklist.md) — manual
+  visual QA checklist for the R10-002 UI overhaul.
 - [`testing/evidence-model.md`](testing/evidence-model.md) — evidence classes,
   status vocabulary, and scorecard contract.
 - [`testing/visual-matrix.md`](testing/visual-matrix.md) — required visual

@@ -62,12 +62,17 @@ mod kbd;
 mod list;
 mod number_field;
 mod palette;
+mod pane_bar;
 mod popover;
+mod presence;
+mod preview_tile;
 mod search_field;
 mod segmented;
 mod select;
+mod settings_widgets;
 mod slider;
 mod stack;
+mod switch;
 mod tab;
 #[cfg(test)]
 mod test_support;
@@ -76,7 +81,10 @@ pub mod theme;
 mod toggle;
 mod tree_row;
 
-pub use animation::fade_in;
+pub use animation::{
+    fade_in, level_for, reveal_extent, slide_offset, state_fade_ambient, state_opacity, MotionExt,
+    MotionLevel, MotionPrefs, StateTransition, MOTION_FLOOR,
+};
 pub use banner::{banner, Banner, Severity};
 pub use button::{
     button, button_disabled, button_no_hover, ButtonSize, ButtonVariant, DISABLED_OPACITY,
@@ -86,9 +94,12 @@ pub use checkbox::{checkbox, Checkbox};
 /// `labonair-shell`).
 #[cfg(any(debug_assertions, feature = "gallery"))]
 pub use context_menu::menu_card_preview;
-pub use context_menu::{context_menu, popover_menu, MenuClick, MenuItem, SubmenuHoverSource};
+pub use context_menu::{
+    context_menu, context_menu_with_exit, popover_menu, popover_menu_with_exit, MenuClick,
+    MenuItem, SubmenuHoverSource,
+};
 pub use density::Density;
-pub use dialog::{dialog_surface, modal_overlay};
+pub use dialog::{dialog_surface, modal_overlay, modal_overlay_with_exit};
 pub use disclosure::disclosure;
 pub use divider::{divider, Axis};
 pub use empty_state::empty_state;
@@ -103,16 +114,30 @@ pub use kbd::{kbd, kbd_row, keybinding_hint};
 pub use list::{list_header, list_separator, ListItem};
 pub use number_field::{number_field, step_value, NumberField};
 pub use palette::Palette;
-pub use popover::popover;
+pub use pane_bar::{pane_bar, pane_frame, PaneAction, PaneBar, PaneLayoutStyle, PANE_GAP};
+pub use popover::{popover, popover_with_exit};
+pub use presence::{exit_duration, exit_fade, Presence, PresenceSlot, PresenceStep};
+pub use preview_tile::{
+    preview_tile, preview_tile_group, selected_index, step_selection, ColorSchemeChoice,
+    InterfaceStyleChoice, PreviewKind, PreviewTile, PreviewTileGroup, TileMock,
+};
 pub use search_field::{search_clear_button, search_field, search_input};
 pub use segmented::{segmented_control, SegmentSize, SegmentVariant, SegmentedControl};
 pub use select::{
-    select_popover, select_trigger, select_trigger_disabled, selected_label, SelectOption,
-    SelectPopoverAnchor,
+    select_popover, select_popover_with_exit, select_trigger, select_trigger_disabled,
+    selected_label, SelectOption, SelectPopoverAnchor,
+};
+pub use settings_widgets::{
+    category_chip, settings_group, settings_row, slider_control, slider_row, ChipHue,
+    SettingsGroup, SettingsRow, SETTINGS_ROW_MIN_HEIGHT,
 };
 pub use slider::{slider, SliderEvent, SliderState, SliderValue};
 pub use stack::{h_stack, v_stack};
-pub use tab::{tab_item, TabItemBuilder, TabLayout};
+pub use switch::{switch, ToggleSwitch};
+pub use tab::{
+    floating_tab_strip, tab_drop_marker, tab_group_gap, tab_item, TabDropSide, TabItemBuilder,
+    TabLayout, TabStyle,
+};
 pub use text_field::{
     caret, field_input, text_area_surface, text_field, text_field_surface,
     text_field_surface_sized, text_input, BlinkCursor, InputEvent, InputState, TextFieldSize,

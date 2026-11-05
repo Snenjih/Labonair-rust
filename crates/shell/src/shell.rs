@@ -29,6 +29,7 @@ pub mod menu;
 pub mod modals;
 mod settings_services;
 pub mod status_items;
+mod theme_loader;
 pub mod titlebar;
 pub mod window_state;
 
@@ -38,7 +39,7 @@ pub use composition::AppComposition;
 #[cfg(any(debug_assertions, feature = "gallery"))]
 pub use gallery::{open_gallery_window, Gallery};
 pub use labonair_updater_ui::{UpdaterStatus, UpdaterView};
-pub use menu::{apply_keymap, init as init_menus};
+pub use menu::init as init_menus;
 pub use titlebar::Titlebar;
 
 // --- Convenience re-exports for the `crates/app` bootstrap -----------------
@@ -50,6 +51,7 @@ pub use labonair_background::init as init_background;
 pub use labonair_notifications::init as init_notifications;
 pub use labonair_settings::init as init_settings;
 pub use labonair_theme::{init_fonts, init_theme};
+pub use labonair_theme_ui::window_background;
 
 /// Forward native deep-links from the app bootstrap to the owning feature.
 pub fn handle_open_url(url: &str, cx: &mut gpui::App) -> bool {

@@ -16,8 +16,12 @@
 //! caret helpers break history coalescing, so each operator application forms
 //! its own undo unit while a stretch of insert-mode typing stays one unit.
 
-use crate::buffer::{BufferSnapshot, Position, TextRange};
+use std::collections::HashMap;
+
+use crate::buffer::{BufferSnapshot, Position, Revision, SelectionSet, TextRange};
 use crate::document::Document;
+use crate::editing::EditIntent;
+use crate::language::Language;
 use crate::search::{find_all, SearchQuery};
 
 fn snapshot(doc: &Document) -> BufferSnapshot {
@@ -30,6 +34,7 @@ fn snapshot(doc: &Document) -> BufferSnapshot {
 pub enum VimMode {
     Normal,
     Insert,
+    Replace,
     Visual,
     VisualLine,
     /// Ex command line (`:`), forward search (`/`) or backward search (`?`).
@@ -130,6 +135,10 @@ pub struct Vim {
     pub options: VimOptions,
     count: usize,
     pending_op: Option<char>,
+    pending_text_object: Option<char>,
+    pending_register: bool,
+    selected_register: Option<char>,
+    registers: HashMap<char, Register>,
     pending_g: bool,
     pending_replace: bool,
     pending_find: Option<char>,
@@ -142,6 +151,9 @@ pub struct Vim {
     last_search: Option<(String, SearchDir)>,
     /// `hlsearch` matches for the active pattern (view reads this to paint).
     pub search_matches: Vec<crate::search::Match>,
+    replace_undo_steps: usize,
+    replace_undo_revision: Option<Revision>,
+    replace_undo_selection: Option<SelectionSet>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -172,6 +184,10 @@ impl Vim {
             options,
             count: 0,
             pending_op: None,
+            pending_text_object: None,
+            pending_register: false,
+            selected_register: None,
+            registers: HashMap::new(),
             pending_g: false,
             pending_replace: false,
             pending_find: None,
@@ -182,6 +198,9 @@ impl Vim {
             cmd_kind: None,
             last_search: None,
             search_matches: Vec::new(),
+            replace_undo_steps: 0,
+            replace_undo_revision: None,
+            replace_undo_selection: None,
         }
     }
 
@@ -212,6 +231,7 @@ impl Vim {
                 s
             }
             VimMode::Insert => "-- INSERT --".into(),
+            VimMode::Replace => "-- REPLACE --".into(),
             VimMode::Visual => "-- VISUAL --".into(),
             VimMode::VisualLine => "-- VISUAL LINE --".into(),
             VimMode::Command => self
@@ -226,6 +246,7 @@ impl Vim {
     pub fn on_key(&mut self, doc: &mut Document, key: VimKey) -> VimResponse {
         match self.mode {
             VimMode::Insert => self.insert_key(doc, key),
+            VimMode::Replace => self.replace_key(doc, key),
             VimMode::Command => self.command_key(doc, key),
             VimMode::Normal | VimMode::Visual | VimMode::VisualLine => self.normal_key(doc, key),
         }
@@ -240,7 +261,12 @@ impl Vim {
                 VimResponse::ok()
             }
             VimKey::Enter => {
-                doc.insert("\n");
+                let unit = if self.options.expandtab {
+                    " ".repeat(self.options.shiftwidth.max(1))
+                } else {
+                    "\t".to_string()
+                };
+                doc.execute_edit(EditIntent::AutoIndent { unit });
                 VimResponse::ok()
             }
             VimKey::Backspace => {
@@ -257,11 +283,81 @@ impl Vim {
                 VimResponse::ok()
             }
             VimKey::Char(c) => {
-                doc.insert(&c.to_string());
+                if c == '>' && matches!(doc.language, Language::Html | Language::Xml) {
+                    doc.execute_edit(EditIntent::TypeTagClose);
+                } else {
+                    doc.insert(&c.to_string());
+                }
                 VimResponse::ok()
             }
             VimKey::Redo => VimResponse::ok(),
         }
+    }
+
+    fn replace_key(&mut self, doc: &mut Document, key: VimKey) -> VimResponse {
+        match key {
+            VimKey::Esc => {
+                self.clear_replace_undo();
+                self.leave_insert(doc);
+                VimResponse::ok()
+            }
+            VimKey::Char(character) => {
+                self.discard_stale_replace_undo(doc);
+                let before = doc.snapshot().revision();
+                doc.execute_edit(EditIntent::InsertOvertype(character.to_string()));
+                self.record_replace_undo(doc, before);
+                VimResponse::ok()
+            }
+            VimKey::Enter | VimKey::Tab => {
+                self.discard_stale_replace_undo(doc);
+                let before = doc.snapshot().revision();
+                let response = self.insert_key(doc, key);
+                self.record_replace_undo(doc, before);
+                response
+            }
+            VimKey::Backspace => {
+                if self.replace_undo_is_current(doc) && doc.undo_latest_typing_edit() {
+                    self.replace_undo_steps = self.replace_undo_steps.saturating_sub(1);
+                    if self.replace_undo_steps == 0 {
+                        self.clear_replace_undo();
+                    } else {
+                        self.replace_undo_revision = Some(doc.snapshot().revision());
+                        self.replace_undo_selection = Some(doc.selection_set());
+                    }
+                } else {
+                    self.clear_replace_undo();
+                }
+                VimResponse::ok()
+            }
+            VimKey::Redo => VimResponse::ok(),
+        }
+    }
+
+    fn replace_undo_is_current(&self, doc: &Document) -> bool {
+        self.replace_undo_steps > 0
+            && self.replace_undo_revision == Some(doc.snapshot().revision())
+            && self.replace_undo_selection.as_ref() == Some(&doc.selection_set())
+    }
+
+    fn discard_stale_replace_undo(&mut self, doc: &Document) {
+        if self.replace_undo_steps > 0 && !self.replace_undo_is_current(doc) {
+            self.clear_replace_undo();
+        }
+    }
+
+    fn record_replace_undo(&mut self, doc: &Document, before: Revision) {
+        let snapshot = doc.snapshot();
+        if snapshot.revision() != before {
+            self.replace_undo_steps = self.replace_undo_steps.saturating_add(1);
+            self.replace_undo_revision = Some(snapshot.revision());
+            self.replace_undo_selection = Some(doc.selection_set());
+        }
+    }
+
+    fn clear_replace_undo(&mut self) {
+        self.replace_undo_steps = 0;
+        self.replace_undo_revision = None;
+        self.replace_undo_selection = None;
     }
 
     fn leave_insert(&mut self, doc: &mut Document) {
@@ -445,6 +541,49 @@ impl Vim {
             return self.handle_g(doc, c);
         }
 
+        if let Some(object_kind) = self.pending_text_object.take() {
+            if !matches!(object_kind, 'i' | 'a') {
+                self.reset_pending();
+                return VimResponse::default();
+            }
+            let count = self.take_count().max(1);
+            let around = object_kind == 'a';
+            let range = match c {
+                'w' | 'W' => word_object_range(doc, doc.cursor, c == 'W', around, count),
+                '(' | ')' | 'b' => delimited_object_range(doc, doc.cursor, '(', ')', around, count),
+                '[' | ']' => delimited_object_range(doc, doc.cursor, '[', ']', around, count),
+                '{' | '}' | 'B' => delimited_object_range(doc, doc.cursor, '{', '}', around, count),
+                '<' | '>' => delimited_object_range(doc, doc.cursor, '<', '>', around, count),
+                '"' | '\'' | '`' => quote_object_range(doc, doc.cursor, c, around),
+                _ => None,
+            };
+            let Some((start, end)) = range else {
+                self.reset_pending();
+                return VimResponse::default();
+            };
+            let Some(op) = self.pending_op.take() else {
+                self.reset_pending();
+                return VimResponse::default();
+            };
+            doc.set_caret(start, false);
+            self.apply_operator(doc, op, MotionKind::Exclusive(end));
+            return VimResponse::ok();
+        }
+
+        if self.pending_register {
+            self.pending_register = false;
+            self.selected_register = match c {
+                '"' => None,
+                '_' | 'a'..='z' | 'A'..='Z' => Some(c),
+                _ => None,
+            };
+            return VimResponse::ok();
+        }
+        if c == '"' && self.pending_op.is_none() {
+            self.pending_register = true;
+            return VimResponse::ok();
+        }
+
         // Count accumulation (leading 0 is the "line start" motion).
         if c.is_ascii_digit() && !(c == '0' && self.count == 0) {
             self.count = self.count.saturating_mul(10) + (c as usize - '0' as usize);
@@ -452,8 +591,19 @@ impl Vim {
         }
 
         match c {
+            'R' if self.pending_op.is_none() && !self.mode.is_visual() => {
+                self.count = 0;
+                self.clear_replace_undo();
+                doc.break_undo_coalescing();
+                self.mode = VimMode::Replace;
+                VimResponse::ok()
+            }
             'i' | 'a' | 'I' | 'A' | 'o' | 'O' | 's' | 'S' | 'C' if self.pending_op.is_none() => {
                 self.enter_insert(doc, c);
+                VimResponse::ok()
+            }
+            'i' | 'a' if self.pending_op.is_some() => {
+                self.pending_text_object = Some(c);
                 VimResponse::ok()
             }
             'v' => {
@@ -829,14 +979,14 @@ impl Vim {
         };
 
         let text = self.range_text(doc, start, end);
-        self.register = Register {
+        self.record_register(Register {
             text: if linewise && !text.ends_with('\n') {
                 format!("{text}\n")
             } else {
                 text
             },
             linewise,
-        };
+        });
 
         match op {
             'y' => {
@@ -876,14 +1026,14 @@ impl Vim {
     fn visual_operate(&mut self, doc: &mut Document, op: char) {
         let (start, end, linewise) = self.visual_range(doc);
         let text = self.range_text(doc, start, end);
-        self.register = Register {
+        self.record_register(Register {
             text: if linewise && !text.ends_with('\n') {
                 format!("{text}\n")
             } else {
                 text
             },
             linewise,
-        };
+        });
         self.mode = VimMode::Normal;
         match op {
             'y' => doc.set_caret(start, false),
@@ -925,19 +1075,60 @@ impl Vim {
             let end = (cur.column + count as usize).min(snapshot(doc).line_len(cur.line));
             if end > cur.column {
                 let text = self.range_text(doc, cur, Position::new(cur.line, end));
-                self.register = Register {
+                self.record_register(Register {
                     text,
                     linewise: false,
-                };
+                });
                 self.range_delete(doc, cur, Position::new(cur.line, end));
             }
         } else {
             let start = cur.column.saturating_sub((-count) as usize);
             if start < cur.column {
+                let text = self.range_text(doc, Position::new(cur.line, start), cur);
+                self.record_register(Register {
+                    text,
+                    linewise: false,
+                });
                 self.range_delete(doc, Position::new(cur.line, start), cur);
             }
         }
         self.clamp_normal(doc);
+    }
+
+    fn record_register(&mut self, value: Register) {
+        let selected = self.selected_register.take();
+        if selected == Some('_') {
+            return;
+        }
+
+        self.register = value.clone();
+        let Some(name) = selected else {
+            return;
+        };
+        let key = name.to_ascii_lowercase();
+        if name.is_ascii_uppercase() {
+            let existing = self.registers.entry(key).or_default();
+            if existing.text.is_empty() {
+                *existing = value;
+            } else {
+                existing.text.push_str(&value.text);
+                existing.linewise |= value.linewise;
+            }
+        } else {
+            self.registers.insert(key, value);
+        }
+    }
+
+    fn read_register(&mut self) -> Register {
+        match self.selected_register.take() {
+            Some('_') => Register::default(),
+            Some(name) => self
+                .registers
+                .get(&name.to_ascii_lowercase())
+                .cloned()
+                .unwrap_or_default(),
+            None => self.register.clone(),
+        }
     }
 
     fn replace_char(&mut self, doc: &mut Document, c: char) {
@@ -1008,10 +1199,10 @@ impl Vim {
     }
 
     fn paste(&mut self, doc: &mut Document, after: bool) {
-        if self.register.text.is_empty() {
+        let reg = self.read_register();
+        if reg.text.is_empty() {
             return;
         }
-        let reg = self.register.clone();
         let cur = doc.cursor;
         if reg.linewise {
             let body = reg.text.trim_end_matches('\n');
@@ -1125,6 +1316,9 @@ impl Vim {
     fn reset_pending(&mut self) {
         self.count = 0;
         self.pending_op = None;
+        self.pending_text_object = None;
+        self.pending_register = false;
+        self.selected_register = None;
         self.pending_g = false;
         self.pending_replace = false;
         self.pending_find = None;
@@ -1196,6 +1390,153 @@ fn class(c: char, big: bool) -> Class {
     } else {
         Class::Punct
     }
+}
+
+/// Resolve Vim's inner/around word object at the caret. Small words separate
+/// punctuation from identifiers; big words group all non-whitespace text.
+fn word_object_range(
+    doc: &Document,
+    cursor: Position,
+    big: bool,
+    around: bool,
+    count: usize,
+) -> Option<(Position, Position)> {
+    let line = snapshot(doc).line(cursor.line);
+    let chars = line.chars().collect::<Vec<_>>();
+    let current = *chars.get(cursor.column)?;
+    if current.is_whitespace() {
+        return None;
+    }
+
+    let word_class = class(current, big);
+    let mut start = cursor.column;
+    while start > 0 {
+        let previous = chars[start - 1];
+        if previous.is_whitespace() || class(previous, big) != word_class {
+            break;
+        }
+        start -= 1;
+    }
+
+    let mut end = cursor.column + 1;
+    while end < chars.len() && !chars[end].is_whitespace() && class(chars[end], big) == word_class {
+        end += 1;
+    }
+
+    for _ in 1..count.max(1) {
+        let mut next = end;
+        while next < chars.len() && chars[next].is_whitespace() {
+            next += 1;
+        }
+        if next == chars.len() {
+            break;
+        }
+        let next_class = class(chars[next], big);
+        end = next + 1;
+        while end < chars.len()
+            && !chars[end].is_whitespace()
+            && class(chars[end], big) == next_class
+        {
+            end += 1;
+        }
+    }
+
+    if around {
+        let after_word = end;
+        while end < chars.len() && chars[end].is_whitespace() {
+            end += 1;
+        }
+        if end == after_word {
+            while start > 0 && chars[start - 1].is_whitespace() {
+                start -= 1;
+            }
+        }
+    }
+
+    Some((
+        Position::new(cursor.line, start),
+        Position::new(cursor.line, end),
+    ))
+}
+
+/// Resolve the nearest nested delimiter object containing the caret. A count
+/// selects successive enclosing pairs, matching Vim's counted text-object
+/// behavior for parentheses, brackets, braces, and angle brackets.
+fn delimited_object_range(
+    doc: &Document,
+    cursor: Position,
+    open: char,
+    close: char,
+    around: bool,
+    count: usize,
+) -> Option<(Position, Position)> {
+    let cursor_offset = to_offset(doc, cursor);
+    let text = doc.text();
+    let mut openings = Vec::new();
+    let mut enclosing_count = 0;
+    for (offset, character) in text.chars().enumerate() {
+        if character == open {
+            openings.push(offset);
+        } else if character == close {
+            let Some(start) = openings.pop() else {
+                continue;
+            };
+            if start <= cursor_offset && cursor_offset <= offset {
+                enclosing_count += 1;
+                if enclosing_count == count.max(1) {
+                    let (range_start, range_end) = if around {
+                        (start, offset + 1)
+                    } else {
+                        (start + 1, offset)
+                    };
+                    return Some((from_offset(doc, range_start), from_offset(doc, range_end)));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Resolve a quoted text object on the caret's line. Escaped quote marks do
+/// not close the object; surrounding text on other lines is left untouched.
+fn quote_object_range(
+    doc: &Document,
+    cursor: Position,
+    quote: char,
+    around: bool,
+) -> Option<(Position, Position)> {
+    let chars = snapshot(doc).line(cursor.line).chars().collect::<Vec<_>>();
+    let mut quotes = Vec::new();
+    for (index, character) in chars.iter().enumerate() {
+        if *character != quote {
+            continue;
+        }
+        let preceding_backslashes = chars[..index]
+            .iter()
+            .rev()
+            .take_while(|previous| **previous == '\\')
+            .count();
+        if preceding_backslashes % 2 == 0 {
+            quotes.push(index);
+        }
+    }
+
+    for pair in quotes.windows(2).step_by(2) {
+        let (open, close) = (pair[0], pair[1]);
+        if cursor.column < open || cursor.column > close {
+            continue;
+        }
+        let (start, end) = if around {
+            (open, close + 1)
+        } else {
+            (open + 1, close)
+        };
+        return Some((
+            Position::new(cursor.line, start),
+            Position::new(cursor.line, end),
+        ));
+    }
+    None
 }
 
 /// Char offset stream that treats `\n` as a single blank character.
@@ -1408,6 +1749,7 @@ mod tests {
         for ch in s.chars() {
             let k = match ch {
                 '\u{1b}' => VimKey::Esc,
+                '\u{8}' => VimKey::Backspace,
                 '\n' => VimKey::Enter,
                 _ => VimKey::Char(ch),
             };
@@ -1425,6 +1767,100 @@ mod tests {
         keys(&mut v, &mut d, "X\u{1b}");
         assert_eq!(v.mode(), VimMode::Normal);
         assert_eq!(d.text(), "Xhello");
+    }
+
+    #[test]
+    fn replace_mode_overwrites_characters_and_undoes_as_one_typing_group() {
+        let mut vim = Vim::default();
+        let mut document = doc("cat");
+
+        keys(&mut vim, &mut document, "Rdog");
+        assert_eq!(vim.mode(), VimMode::Replace);
+        assert_eq!(document.text(), "dog");
+        keys(&mut vim, &mut document, "\u{1b}");
+        assert_eq!(vim.mode(), VimMode::Normal);
+        document.undo();
+        assert_eq!(document.text(), "cat");
+    }
+
+    #[test]
+    fn replace_mode_backspace_restores_one_overwritten_character() {
+        let mut vim = Vim::default();
+        let mut document = doc("cat");
+
+        keys(&mut vim, &mut document, "Rdog");
+        assert_eq!(document.text(), "dog");
+        keys(&mut vim, &mut document, "\u{8}");
+        assert_eq!(document.text(), "dot");
+        assert_eq!(document.cursor, Position::new(0, 2));
+
+        keys(&mut vim, &mut document, "\u{8}");
+        assert_eq!(document.text(), "dat");
+        assert_eq!(document.cursor, Position::new(0, 1));
+    }
+
+    #[test]
+    fn replace_mode_backspace_preserves_grouped_undo_for_remaining_input() {
+        let mut vim = Vim::default();
+        let mut document = doc("cat");
+
+        keys(&mut vim, &mut document, "Rdog\u{8}\u{1b}");
+        assert_eq!(document.text(), "dot");
+        document.undo();
+        assert_eq!(document.text(), "cat");
+        document.redo();
+        assert_eq!(document.text(), "dot");
+        document.redo();
+        assert_eq!(document.text(), "dog");
+    }
+
+    #[test]
+    fn replace_mode_backspace_at_session_start_does_not_delete_prior_text() {
+        let mut vim = Vim::default();
+        let mut document = doc("cat");
+
+        keys(&mut vim, &mut document, "R\u{8}");
+        assert_eq!(document.text(), "cat");
+        assert!(!document.can_undo());
+    }
+
+    #[test]
+    fn replace_mode_inserts_after_the_end_of_a_line() {
+        let mut vim = Vim::default();
+        let mut document = doc("cat");
+        document.set_caret(Position::new(0, 3), false);
+
+        keys(&mut vim, &mut document, "R!");
+        keys(&mut vim, &mut document, "\u{1b}");
+        assert_eq!(document.text(), "cat!");
+        assert_eq!(document.cursor, Position::new(0, 3));
+    }
+
+    #[test]
+    fn insert_mode_completes_html_tags_on_greater_than() {
+        let mut document = Document::from_file("index.html".into(), "<main", 0);
+        document.set_caret(Position::new(0, 5), false);
+        let mut vim = Vim::default();
+
+        vim.on_key(&mut document, VimKey::Char('i'));
+        vim.on_key(&mut document, VimKey::Char('>'));
+
+        assert_eq!(document.text(), "<main></main>");
+        assert_eq!(document.cursor, Position::new(0, 6));
+        assert_eq!(vim.mode(), VimMode::Insert);
+    }
+
+    #[test]
+    fn insert_mode_continues_markdown_lists_on_enter() {
+        let mut document = Document::from_file("notes.md".into(), "- first", 0);
+        document.set_caret(Position::new(0, 7), false);
+        let mut vim = Vim::default();
+
+        vim.on_key(&mut document, VimKey::Char('i'));
+        vim.on_key(&mut document, VimKey::Enter);
+
+        assert_eq!(document.text(), "- first\n- ");
+        assert_eq!(document.cursor, Position::new(1, 2));
     }
 
     #[test]
@@ -1484,6 +1920,86 @@ mod tests {
     }
 
     #[test]
+    fn inner_word_objects_delete_change_and_yank_at_the_caret() {
+        let mut v = Vim::default();
+        let mut d = doc("say hello world");
+        d.set_caret(Position::new(0, 6), false);
+        keys(&mut v, &mut d, "diw");
+        assert_eq!(d.text(), "say  world");
+
+        d = doc("say hello world");
+        d.set_caret(Position::new(0, 6), false);
+        keys(&mut v, &mut d, "ciw");
+        assert_eq!(v.mode(), VimMode::Insert);
+        keys(&mut v, &mut d, "goodbye\u{1b}");
+        assert_eq!(d.text(), "say goodbye world");
+
+        d = doc("say hello world");
+        d.set_caret(Position::new(0, 6), false);
+        keys(&mut v, &mut d, "yiw$p");
+        assert_eq!(d.text(), "say hello worldhello");
+    }
+
+    #[test]
+    fn around_word_includes_trailing_space_or_leading_space_at_line_end() {
+        let mut v = Vim::default();
+        let mut d = doc("one two");
+        d.set_caret(Position::new(0, 1), false);
+        keys(&mut v, &mut d, "daw");
+        assert_eq!(d.text(), "two");
+
+        d = doc("one two");
+        d.set_caret(Position::new(0, 5), false);
+        keys(&mut v, &mut d, "daw");
+        assert_eq!(d.text(), "one");
+    }
+
+    #[test]
+    fn counted_inner_word_object_extends_across_following_words() {
+        let mut v = Vim::default();
+        let mut d = doc("one two three");
+        keys(&mut v, &mut d, "2diw");
+        assert_eq!(d.text(), " three");
+    }
+
+    #[test]
+    fn parenthesis_objects_delete_inner_or_around_ranges() {
+        let mut v = Vim::default();
+        let mut d = doc("fn(alpha + beta)");
+        d.set_caret(Position::new(0, 5), false);
+        keys(&mut v, &mut d, "di(");
+        assert_eq!(d.text(), "fn()");
+
+        d = doc("fn(alpha + beta)");
+        d.set_caret(Position::new(0, 5), false);
+        keys(&mut v, &mut d, "da(");
+        assert_eq!(d.text(), "fn");
+    }
+
+    #[test]
+    fn counted_delimiter_object_selects_an_enclosing_pair() {
+        let mut v = Vim::default();
+        let mut d = doc("wrap((a + b))");
+        d.set_caret(Position::new(0, 7), false);
+        keys(&mut v, &mut d, "2di(");
+        assert_eq!(d.text(), "wrap()");
+    }
+
+    #[test]
+    fn quoted_text_objects_delete_inner_or_around_ranges() {
+        let mut v = Vim::default();
+        let mut d = doc("say \"hello world\"!");
+        d.set_caret(Position::new(0, 12), false);
+        keys(&mut v, &mut d, "di\"");
+        assert_eq!(d.text(), "say \"\"!");
+
+        d = doc("say \"hello world\"!");
+        d.set_caret(Position::new(0, 12), false);
+        keys(&mut v, &mut d, "da\"");
+        assert_eq!(d.text(), "say !");
+    }
+
+    #[test]
     fn x_deletes_char_with_count() {
         let mut v = Vim::default();
         let mut d = doc("abcdef");
@@ -1506,6 +2022,40 @@ mod tests {
         keys(&mut v, &mut d, "yw");
         keys(&mut v, &mut d, "$p");
         assert_eq!(d.text(), "hellohello");
+    }
+
+    #[test]
+    fn named_register_survives_unnamed_register_changes() {
+        let mut v = Vim::default();
+        let mut d = doc("one\ntwo\nthree");
+        keys(&mut v, &mut d, "\"ayy");
+        d.set_caret(Position::new(1, 0), false);
+        keys(&mut v, &mut d, "dd");
+        keys(&mut v, &mut d, "\"ap");
+        assert_eq!(d.text(), "one\nthree\none");
+    }
+
+    #[test]
+    fn uppercase_register_appends_to_named_register() {
+        let mut v = Vim::default();
+        let mut d = doc("one\ntwo\nthree");
+        keys(&mut v, &mut d, "\"ayy");
+        d.set_caret(Position::new(1, 0), false);
+        keys(&mut v, &mut d, "\"Ayy");
+        d.set_caret(Position::new(2, 0), false);
+        keys(&mut v, &mut d, "\"ap");
+        assert_eq!(d.text(), "one\ntwo\nthree\none\ntwo");
+    }
+
+    #[test]
+    fn black_hole_register_does_not_replace_unnamed_register() {
+        let mut v = Vim::default();
+        let mut d = doc("one\ntwo\nthree");
+        keys(&mut v, &mut d, "yy");
+        d.set_caret(Position::new(1, 0), false);
+        keys(&mut v, &mut d, "\"_dd");
+        keys(&mut v, &mut d, "p");
+        assert_eq!(d.text(), "one\nthree\none");
     }
 
     #[test]

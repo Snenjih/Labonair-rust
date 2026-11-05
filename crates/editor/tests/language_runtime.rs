@@ -89,6 +89,35 @@ async fn enabled_process_is_selected_and_syncs_requests() {
 }
 
 #[tokio::test]
+async fn stop_and_restart_keep_the_local_server_status_available() {
+    let runtime = Arc::new(LanguageServiceRuntime::default());
+    let process = runtime
+        .spawn_process(config())
+        .await
+        .expect("fixture starts");
+    let language = LanguageId::new(Language::Rust);
+
+    runtime.stop_process(language).await.expect("fixture stops");
+    let stopped = runtime.snapshot(Language::Rust, DocumentVersion::new(1), 1);
+    assert_eq!(stopped.source, LanguageServiceRuntimeSource::LocalProcess);
+    assert_eq!(stopped.status, LanguageServiceRuntimeStatus::Fallback);
+    assert_eq!(stopped.server.as_str(), "runtime-fixture");
+    assert_eq!(
+        stopped.detail.as_deref(),
+        Some("language server is stopped")
+    );
+
+    runtime
+        .restart_process(language)
+        .await
+        .expect("fixture restarts");
+    let restarted = runtime.snapshot(Language::Rust, DocumentVersion::new(1), 1);
+    assert_eq!(restarted.source, LanguageServiceRuntimeSource::LocalProcess);
+    assert_eq!(restarted.status, LanguageServiceRuntimeStatus::Running);
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
 async fn stale_runtime_requests_are_rejected_before_syntax_fallback() {
     let runtime = Arc::new(LanguageServiceRuntime::default());
     let snapshot = EditorBuffer::from_text("fn main() {}").snapshot();

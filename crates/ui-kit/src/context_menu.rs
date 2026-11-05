@@ -31,18 +31,18 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gpui::{
-    canvas, deferred, div, point, prelude::FluentBuilder, px, AlignItems, AnimationExt, AnyElement,
-    App, Bounds, ClickEvent, Display, Edges, Element, GlobalElementId, InspectorElementId,
+    canvas, deferred, div, point, prelude::FluentBuilder, px, AlignItems, AnyElement, App, Bounds,
+    ClickEvent, Display, Edges, Element, FontWeight, GlobalElementId, InspectorElementId,
     InteractiveElement, IntoElement, KeyDownEvent, LayoutId, Length, MouseButton, MouseDownEvent,
     ParentElement, Pixels, Point, Position, SharedString, Size, StatefulInteractiveElement, Style,
     Styled, Window,
 };
 
 use super::IconName;
-use crate::animation::fade_in;
 use crate::kbd::kbd_row;
 use crate::palette::Palette;
 use crate::popover::anchored_popup;
+use crate::presence::{closing_guard, enter_or_popup};
 
 type Handler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
@@ -462,12 +462,14 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
             .h(px(1.0))
             .bg(c.border)
             .into_any_element(),
+        // Ciel `Eyebrow pad="menu"`: uppercase 12px semibold group label.
         Kind::Label(text) => div()
             .px(c.space(8.0))
             .py(c.space(4.0))
-            .text_size(px(11.0))
+            .text_size(c.control_space(12.0))
+            .font_weight(FontWeight::SEMIBOLD)
             .text_color(c.muted)
-            .child(text)
+            .child(SharedString::from(text.to_uppercase()))
             .into_any_element(),
         Kind::Action {
             id,
@@ -493,10 +495,10 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                 .items_center()
                 .gap_2()
                 .w_full()
+                .h(c.control_space(28.0))
                 .px(c.space(8.0))
-                .py(c.space(6.0))
-                .rounded_sm()
-                .text_size(px(13.0))
+                .rounded(px(c.radius.md))
+                .text_size(c.control_space(13.0))
                 .text_color(text_color)
                 .when(checked || icon.is_some(), |d| {
                     let glyph = if checked {
@@ -533,7 +535,11 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                 if let Some(h) = handler {
                     row = row
                         .tab_index(0)
-                        .focus(move |s| s.bg(c.accent).text_color(hover_fg))
+                        .focus(move |s| {
+                            s.bg(c.sunken)
+                                .text_color(hover_fg)
+                                .font_weight(FontWeight::SEMIBOLD)
+                        })
                         .on_click(move |ev, w, cx| h(ev, w, cx))
                         .on_key_down(|event, window, cx| match event.keystroke.key.as_str() {
                             "enter" | "space" => cx.stop_propagation(),
@@ -575,11 +581,11 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                     .max_h(c.space(320.0))
                     .overflow_y_scroll()
                     .p(c.space(4.0))
-                    .rounded_md()
+                    .rounded(px(c.radius.lg))
                     .bg(c.popover)
                     .border_1()
                     .border_color(c.border)
-                    .shadow_lg()
+                    .shadow(c.popover_shadow())
                     .children(
                         items
                             .into_iter()
@@ -614,10 +620,10 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                 .items_center()
                 .gap_2()
                 .w_full()
+                .h(c.control_space(28.0))
                 .px(c.space(8.0))
-                .py(c.space(6.0))
-                .rounded_sm()
-                .text_size(px(13.0))
+                .rounded(px(c.radius.md))
+                .text_size(c.control_space(13.0))
                 .text_color(c.popover_fg)
                 .hover(|s| s.bg(c.accent).text_color(c.accent_fg))
                 .when_some(icon, |d, ic| d.child(icon_slot(ic, c.popover_fg)))
@@ -632,7 +638,11 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                     let on_hover = ctrl.on_hover.clone();
                     let on_key = ctrl.on_hover.clone();
                     row.tab_index(0)
-                        .focus(|s| s.bg(c.accent).text_color(c.accent_fg))
+                        .focus(|s| {
+                            s.bg(c.sunken)
+                                .text_color(c.accent_fg)
+                                .font_weight(FontWeight::SEMIBOLD)
+                        })
                         .on_hover(move |h, w, cx| on_hover(SubmenuHoverSource::Trigger, *h, w, cx))
                         .on_key_down(
                             move |event, window, cx| match event.keystroke.key.as_str() {
@@ -672,11 +682,11 @@ fn menu_card(c: Palette, items: Vec<MenuItem>, flyouts: FlyoutBounds) -> gpui::D
         .min_w(c.space(160.0))
         .max_w(c.space(320.0))
         .p(c.space(4.0))
-        .rounded_md()
+        .rounded(px(c.radius.lg))
         .bg(c.popover)
         .border_1()
         .border_color(c.border)
-        .shadow_lg()
+        .shadow(c.popover_shadow())
         .occlude()
         .children(
             items
@@ -699,6 +709,19 @@ pub fn menu_card_preview(c: Palette, items: Vec<MenuItem>) -> gpui::Div {
 pub fn context_menu(
     anchor: Point<Pixels>,
     c: Palette,
+    dismiss: impl Fn(&mut Window, &mut App) + 'static,
+    items: Vec<MenuItem>,
+) -> AnyElement {
+    context_menu_with_exit(anchor, c, false, dismiss, items)
+}
+
+/// [`context_menu`] with an exit state: while `closing` the card plays the exit
+/// fade and ignores pointer input. Drive `closing` from a
+/// [`crate::Presence`]; see [`crate::presence`] for the wiring.
+pub fn context_menu_with_exit(
+    anchor: Point<Pixels>,
+    c: Palette,
+    closing: bool,
     dismiss: impl Fn(&mut Window, &mut App) + 'static,
     items: Vec<MenuItem>,
 ) -> AnyElement {
@@ -727,7 +750,7 @@ pub fn context_menu(
     // e.g. a 20px status-bar item) element opened the menu, so `inset_0` does
     // not actually cover the window and a click next to the menu would leave it
     // stuck open. The card, by contrast, always knows its own bounds.
-    let card = anchored_popup(anchor, c).child(
+    let card = anchored_popup(anchor, c).child(enter_or_popup(
         menu_card(c, items, flyouts)
             .on_mouse_down_out(move |ev, w, cx| {
                 if !in_flyout(&fb_out, ev.position) {
@@ -742,10 +765,11 @@ pub fn context_menu(
                     }
                 },
             )
-            .with_animation("context-menu-fade", fade_in(c), |el, delta| {
-                el.opacity(delta)
-            }),
-    );
+            .when(closing, |card| card.child(closing_guard())),
+        "context-menu-fade",
+        c,
+        closing,
+    ));
 
     deferred(
         div()
@@ -796,6 +820,17 @@ pub fn popover_menu(
     dismiss: impl Fn(&mut Window, &mut App) + 'static,
     items: Vec<MenuItem>,
 ) -> AnyElement {
+    popover_menu_with_exit(anchor, c, false, dismiss, items)
+}
+
+/// [`popover_menu`] with an exit state; see [`context_menu_with_exit`].
+pub fn popover_menu_with_exit(
+    anchor: Point<Pixels>,
+    c: Palette,
+    closing: bool,
+    dismiss: impl Fn(&mut Window, &mut App) + 'static,
+    items: Vec<MenuItem>,
+) -> AnyElement {
     let dismiss = Rc::new(dismiss);
     let d_out = dismiss.clone();
     let d_escape = dismiss.clone();
@@ -804,7 +839,7 @@ pub fn popover_menu(
     let fb_out = flyouts.clone();
     let fb_bd = flyouts.clone();
 
-    let card = anchored_popup(anchor, c).child(
+    let card = anchored_popup(anchor, c).child(enter_or_popup(
         menu_card(c, items, flyouts)
             .on_mouse_down_out(move |ev, w, cx| {
                 if !in_flyout(&fb_out, ev.position) {
@@ -819,10 +854,11 @@ pub fn popover_menu(
                     }
                 },
             )
-            .with_animation("popover-menu-fade", fade_in(c), |el, delta| {
-                el.opacity(delta)
-            }),
-    );
+            .when(closing, |card| card.child(closing_guard())),
+        "popover-menu-fade",
+        c,
+        closing,
+    ));
 
     deferred(
         div()

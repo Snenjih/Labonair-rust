@@ -21,9 +21,16 @@ pub fn context_name(context: CommandContext) -> &'static str {
     match context {
         CommandContext::Terminal => "Terminal",
         CommandContext::Editor => "Editor",
+        CommandContext::EditorVim => "EditorVim",
+        CommandContext::EditorHelix => "EditorHelix",
+        CommandContext::EditorSnippetNext => "EditorSnippetNext",
+        CommandContext::EditorSnippetPrevious => "EditorSnippetPrevious",
+        CommandContext::CallHierarchyPicker => "CallHierarchyPicker",
+        CommandContext::Preview => "Preview",
         CommandContext::Sftp => "Sftp",
         CommandContext::Home => "Home",
         CommandContext::SshTerminal => "SshTerminal",
+        CommandContext::Pane => "Pane",
     }
 }
 
@@ -34,9 +41,16 @@ pub fn context_label(context: CommandContext) -> &'static str {
     match context {
         CommandContext::Terminal => "Terminal",
         CommandContext::Editor => "Editor",
+        CommandContext::EditorVim => "Vim Editor",
+        CommandContext::EditorHelix => "Helix Editor",
+        CommandContext::EditorSnippetNext => "Snippet Next Tabstop",
+        CommandContext::EditorSnippetPrevious => "Snippet Previous Tabstop",
+        CommandContext::CallHierarchyPicker => "Call Hierarchy Picker",
+        CommandContext::Preview => "Preview",
         CommandContext::Sftp => "SFTP",
         CommandContext::Home => "Home",
         CommandContext::SshTerminal => "SSH Terminal",
+        CommandContext::Pane => "Pane",
     }
 }
 

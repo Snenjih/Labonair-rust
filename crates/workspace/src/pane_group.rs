@@ -166,6 +166,19 @@ impl Member {
         }
         ax.members.iter_mut().any(|m| m.reset_axis(axis_id))
     }
+
+    fn reset_sizes(&mut self) -> bool {
+        let Member::Axis(ax) = self else {
+            return false;
+        };
+        let next = even_flexes(ax.members.len());
+        let mut changed = ax.flexes != next;
+        ax.flexes = next;
+        for member in &mut ax.members {
+            changed |= member.reset_sizes();
+        }
+        changed
+    }
 }
 
 /// One axis of the split tree: `members` arranged along `axis`, sized by
@@ -443,6 +456,11 @@ impl PaneGroup {
     pub fn reset_axis(&mut self, axis_id: PaneId) -> bool {
         self.root.as_mut().is_some_and(|m| m.reset_axis(axis_id))
     }
+
+    /// Reset every axis to an even split, preserving the pane tree shape.
+    pub fn reset_sizes(&mut self) -> bool {
+        self.root.as_mut().is_some_and(Member::reset_sizes)
+    }
 }
 
 /// The pane tree of one workspace tab, plus which leaf is active (`None` only
@@ -548,6 +566,11 @@ impl WorkspaceLayout {
     /// Reset an axis to an even split.
     pub fn reset_axis(&mut self, axis_id: PaneId) -> bool {
         self.group.reset_axis(axis_id)
+    }
+
+    /// Reset every axis to an even split, preserving the pane tree shape.
+    pub fn reset_sizes(&mut self) -> bool {
+        self.group.reset_sizes()
     }
 }
 
@@ -659,6 +682,38 @@ mod tests {
         assert!(ax.flexes.iter().all(|f| (*f - 0.25).abs() < 1e-4));
 
         assert!(!g.set_boundary(999, 0, 0.5));
+    }
+
+    #[test]
+    fn reset_sizes_evenly_resets_nested_axes_and_preserves_the_tree() {
+        let mut layout = WorkspaceLayout::new(1);
+        layout.split(100, 2, SplitDirection::Right);
+        layout.set_active(1);
+        layout.split(101, 3, SplitDirection::Down);
+        assert!(layout.set_boundary(100, 0, 0.7));
+        assert!(layout.set_boundary(101, 0, 0.2));
+        let original_leaves = layout.leaves();
+        let original_active = layout.active;
+
+        assert!(layout.reset_sizes());
+        assert_eq!(layout.leaves(), original_leaves);
+        assert_eq!(layout.active, original_active);
+        assert_eq!(
+            axis_at(layout.group.root.as_ref().expect("root"), 100)
+                .unwrap()
+                .flexes,
+            [0.5, 0.5]
+        );
+        assert_eq!(
+            axis_at(layout.group.root.as_ref().expect("root"), 101)
+                .unwrap()
+                .flexes,
+            [0.5, 0.5]
+        );
+        assert!(
+            !layout.reset_sizes(),
+            "an even layout needs no second reset"
+        );
     }
 
     #[test]

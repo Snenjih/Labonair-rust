@@ -3,14 +3,17 @@
 //! Moved out of `labonair-settings-ui` in R08-005 (mechanical move — no logic
 //! change).
 
-use gpui::{App, Entity};
+use gpui::{transparent_black, App, Entity, WindowBackgroundAppearance};
 
+use labonair_settings::content::appearance::{Animations, PaneLayout as PaneLayoutSetting};
 use labonair_settings::content::general::ThemePref;
 use labonair_settings::{
     EditorSettings, GeneralSettings, Settings as _, SettingsStore, TerminalSettings, ThemeSettings,
 };
 use labonair_theme::ThemePreference;
-use labonair_theme::{ThemeMetrics, ThemeStore, UiDensity};
+use labonair_theme::{
+    AnimationLevel, PaneLayout, ThemeMetrics, ThemeStore, UiDensity, VibrancyLayer,
+};
 
 /// Build the [`labonair_theme::FontOverrides`] snapshot from the
 /// typography-relevant settings slices. A blank family / zero size means "keep
@@ -49,12 +52,32 @@ fn mono_weight(
     }
 }
 
+/// Resolve the configured motion level into the level the UI renders with.
+///
+/// `system` should follow macOS "Reduce motion"
+/// (`NSWorkspace.accessibilityDisplayShouldReduceMotion`), but GPUI 0.2.2 does
+/// not expose it and reading it needs `unsafe` Objective-C FFI.
+/// TODO(R10-002): resolve `system` to `Reduced` when the OS preference is on.
+/// Owner decision pending: the only route is `objc2-app-kit`
+/// (`NSWorkspace::accessibilityDisplayShouldReduceMotion`, a safe wrapper that
+/// needs the `NSWorkspace`/`NSAccessibility` features and a macOS-only
+/// dependency edge into this crate plus a change notification for live
+/// updates); until then `system` behaves like `full`.
+fn resolve_animations(configured: Animations) -> AnimationLevel {
+    match configured {
+        Animations::System | Animations::Full => AnimationLevel::Full,
+        Animations::Reduced => AnimationLevel::Reduced,
+        Animations::Off => AnimationLevel::Off,
+    }
+}
+
 /// Build the T20-007 [`ThemeMetrics`] from the layered `ThemeSettings`
 /// (`appearance` area). Returns `None` if the `SettingsStore` global was never
 /// installed (a headless harness) — callers then leave the store's default
 /// metrics in place.
 pub fn theme_metrics_from_settings(cx: &App) -> Option<ThemeMetrics> {
     let s = ThemeSettings::try_get(cx)?;
+    let animations = resolve_animations(s.animations());
     Some(ThemeMetrics {
         ui_font_family: s.ui_font_family().to_string(),
         ui_font_size: s.ui_font_size(),
@@ -64,8 +87,40 @@ pub fn theme_metrics_from_settings(cx: &App) -> Option<ThemeMetrics> {
         buffer_line_height: s.buffer_line_height(),
         density: UiDensity::from_str_or_default(s.ui_density()),
         corner_radius_scale: s.corner_radius_scale(),
-        reduce_motion: s.reduce_motion(),
+        reduce_motion: animations.is_reduced(),
+        animations,
+        pane_layout: match s.pane_layout() {
+            PaneLayoutSetting::Comfortable => PaneLayout::Comfortable,
+            PaneLayoutSetting::Compact => PaneLayout::Compact,
+        },
+        // Owned by the background capability: `ThemeStore::set_metrics`
+        // keeps the live value, `set_background_active` changes it.
+        background_active: false,
+        translucent_surfaces: s.translucent_surfaces(),
     })
+}
+
+/// The native window material for the `appearance.translucentSurfaces`
+/// setting: the blurred desktop material when on, an opaque window otherwise.
+/// Use for every `WindowOptions::window_background`.
+pub fn window_background(cx: &App) -> WindowBackgroundAppearance {
+    match ThemeSettings::try_get(cx) {
+        Some(s) if s.translucent_surfaces() => WindowBackgroundAppearance::Blurred,
+        _ => WindowBackgroundAppearance::Opaque,
+    }
+}
+
+/// Re-apply [`window_background`] to every open window so toggling the
+/// setting takes effect live.
+fn apply_window_material(cx: &mut App) {
+    let background = window_background(cx);
+    for handle in cx.windows() {
+        handle
+            .update(cx, |_, window, _| {
+                window.set_background_appearance(background)
+            })
+            .ok();
+    }
 }
 
 /// Push the current [`ThemeMetrics`] (T20-007) into the [`ThemeStore`]. Called
@@ -73,6 +128,7 @@ pub fn theme_metrics_from_settings(cx: &App) -> Option<ThemeMetrics> {
 pub fn apply_theme_metrics(theme: &Entity<ThemeStore>, cx: &mut App) {
     if let Some(metrics) = theme_metrics_from_settings(cx) {
         theme.update(cx, |t, cx| t.set_metrics(metrics, cx));
+        apply_window_material(cx);
     }
 }
 
@@ -172,20 +228,30 @@ fn sync_gpui_component_theme(theme: &Entity<ThemeStore>, cx: &mut App) {
         return;
     }
     let core = theme.read(cx).theme().core.clone();
+    let translucent = theme.read(cx).translucent();
+    let material = theme.read(cx).surface_material();
     let t = gpui_component::Theme::global_mut(cx);
     t.primary = core.primary;
     t.primary_hover = core.primary;
     t.primary_active = core.primary;
     t.primary_foreground = core.primary_foreground;
-    t.background = core.background;
+    // `gpui_component::Root` paints this color behind the full app tree. Keep
+    // that foundation layer clear so each owned surface reveals GPUI's native
+    // blurred window material exactly once.
+    t.background = if translucent {
+        transparent_black()
+    } else {
+        core.background
+    };
     t.foreground = core.foreground;
-    t.border = core.border;
-    t.input = core.input;
+    t.border = VibrancyLayer::Divider.resolve(core.border, material);
+    t.input = VibrancyLayer::Control.resolve(core.input, material);
     t.ring = core.ring;
     t.muted = core.muted;
     t.muted_foreground = core.muted_foreground;
     t.accent = core.accent;
     t.accent_foreground = core.accent_foreground;
+    t.popover = VibrancyLayer::Popover.resolve(core.popover, material);
     // Input's own colours: caret uses `primary` so it reads as the same
     // "active" colour as a row/tab selection bar elsewhere in the app;
     // selection is `primary` at a stronger alpha than the row-selection fill
@@ -259,6 +325,32 @@ mod tests {
         store.register_setting::<ThemeSettings>();
         store.set_layer(SettingsLayer::User, content);
         cx.set_global(store);
+    }
+
+    #[test]
+    fn animations_resolve_to_levels() {
+        assert_eq!(resolve_animations(Animations::System), AnimationLevel::Full);
+        assert_eq!(resolve_animations(Animations::Full), AnimationLevel::Full);
+        assert_eq!(
+            resolve_animations(Animations::Reduced),
+            AnimationLevel::Reduced
+        );
+        assert_eq!(resolve_animations(Animations::Off), AnimationLevel::Off);
+    }
+
+    #[gpui::test]
+    fn metrics_carry_animation_level_and_pane_layout(cx: &mut TestAppContext) {
+        let mut content = SettingsContent::default();
+        content.appearance.animations = Some(Animations::Off);
+        content.appearance.pane_layout = Some(PaneLayoutSetting::Compact);
+        cx.update(|cx| {
+            install_store(cx, content);
+            let m = theme_metrics_from_settings(cx).expect("settings store installed");
+            assert_eq!(m.animations, AnimationLevel::Off);
+            assert!(m.reduce_motion);
+            assert_eq!(m.pane_layout, PaneLayout::Compact);
+            assert_eq!(m.pane_gap(), 0.0);
+        });
     }
 
     #[gpui::test]

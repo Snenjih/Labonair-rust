@@ -14,7 +14,7 @@
 
 - R09-001-editor-e0-text-model-contract
 - R09-002-editor-e1-file-lifecycle
-- ADR 0004 editor-internal splits
+- ADR 0004 editor-internal splits (superseded by ADR 0005: splits are Workspace panes)
 - R07-001-product-surface-acceptance must be complete.
 
 ## Goal
@@ -151,7 +151,7 @@ remains formally Planned while R07-001 is open.
       and work with Unicode and folded/wrapped views.
 - [ ] Core editing operations cover line/block duplication, movement,
       indentation, bracket handling, and clipboard semantics.
-- [ ] Internal splits implement the ADR tree, focus, close, merge, and
+- [ ] (Superseded by ADR 0005 - splits are Workspace panes.) Internal splits implement the ADR tree, focus, close, merge, and
       narrow/empty states without changing Workspace pane ownership.
 - [ ] All commands are owner-registered and keymap overrides work.
 - [ ] Shared controls use labonair-ui-kit and no duplicate shell chrome exists.

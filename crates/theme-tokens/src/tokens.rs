@@ -1,15 +1,15 @@
-//! Design tokens ported 1:1 from `reference-src/src/styles/globals.css`.
+//! Typed design tokens for the Labonair UI.
 //!
-//! Every value here is transcribed directly from that file — the `:root` block
-//! for [`Theme::light`] and the `.dark` block for [`Theme::dark`]. Nothing is
-//! invented or adjusted. Colors are stored as [`gpui::Hsla`], converted once
-//! from their original Oklch notation by [`crate::color::oklch`].
+//! Base palette colors follow the frozen reference stylesheet. Labonair's
+//! native surface opacity and radius choices are maintained here as semantic
+//! tokens. Colors are stored as [`gpui::Hsla`], converted once from their
+//! original Oklch notation by [`crate::color::oklch`].
 
 use std::time::Duration;
 
 use gpui::Hsla;
 
-use crate::color::{oklch, oklch_a, transparent};
+use crate::color::{oklch_a, parse_color, transparent};
 
 /// The complete set of design tokens for one theme variant.
 #[derive(Debug, Clone, PartialEq)]
@@ -74,6 +74,139 @@ pub struct SurfaceColors {
     pub toolbar: Hsla,
     pub title_bar: Hsla,
     pub status_bar: Hsla,
+    /// Hover on an already-hovered fill (e.g. the × in a hovered tab).
+    pub hover_strong: Hsla,
+    /// The selected/active fill — the one Ciel active state (§8): rows, tabs,
+    /// nav items and toggles read as "current" through this fill plus a
+    /// semibold label, never an accent tint.
+    pub sunken: Hsla,
+    /// The neutral high-contrast primary-action fill (`--action-surface`).
+    pub action: Hsla,
+    pub action_foreground: Hsla,
+    pub action_hover: Hsla,
+    pub action_active: Hsla,
+}
+
+/// How surface fills relate to what is painted behind them.
+///
+/// This is the single switch behind the Classic/Glassy interface style and the
+/// background image: [`VibrancyLayer::resolve`] maps a material plus a semantic
+/// layer to an alpha. `bool` converts for callers that only know the
+/// `appearance.translucentSurfaces` setting (`true` = [`Self::Glassy`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SurfaceMaterial {
+    /// Opaque, fill-contrast Ciel surfaces (Classic, no background image).
+    #[default]
+    Opaque,
+    /// Surfaces over the native window blur (Glassy, no background image).
+    Glassy,
+    /// Classic with a background image: no native blur behind, so the fills
+    /// carry just enough transparency to let the image read through.
+    ImageClassic,
+    /// Glassy with a background image: the image sits over the native blur and
+    /// the fills are the most transparent.
+    ImageGlassy,
+}
+
+impl SurfaceMaterial {
+    /// Pick the material from the two independent inputs.
+    pub fn new(glassy: bool, background_image: bool) -> Self {
+        match (glassy, background_image) {
+            (false, false) => Self::Opaque,
+            (true, false) => Self::Glassy,
+            (false, true) => Self::ImageClassic,
+            (true, true) => Self::ImageGlassy,
+        }
+    }
+
+    /// Whether a background image is showing through the surfaces.
+    pub fn has_image(self) -> bool {
+        matches!(self, Self::ImageClassic | Self::ImageGlassy)
+    }
+}
+
+impl From<bool> for SurfaceMaterial {
+    fn from(glassy: bool) -> Self {
+        Self::new(glassy, false)
+    }
+}
+
+/// Role-based opacity for surfaces layered over GPUI's native blurred window
+/// background and/or the background image. Solid theme colors remain the source
+/// hue; this scale controls how much of the layer behind each surface remains
+/// visible through it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VibrancyLayer {
+    /// Main content surfaces: workspace area, editor.
+    Canvas,
+    Toolbar,
+    Sidebar,
+    Card,
+    Popover,
+    Control,
+    Divider,
+    /// The terminal surface fill (the terminal's own opacity setting governs
+    /// it when no image is showing).
+    Terminal,
+}
+
+impl VibrancyLayer {
+    /// The foreground material opacity for this semantic surface role over the
+    /// native blur ([`SurfaceMaterial::Glassy`]).
+    pub const fn opacity(self) -> f32 {
+        match self {
+            Self::Canvas => 0.92,
+            Self::Toolbar => 0.82,
+            Self::Sidebar => 0.86,
+            Self::Card => 0.94,
+            Self::Popover => 0.97,
+            Self::Control => 0.94,
+            Self::Divider => 0.56,
+            Self::Terminal => 1.0,
+        }
+    }
+
+    /// The material opacity for this role in `material`.
+    ///
+    /// With a background image the large surfaces (`Canvas`, `Toolbar`,
+    /// `Sidebar`, `Terminal`) step down to ~0.78 in Classic and ~0.6 in Glassy
+    /// so the image reads through them; floating layers (`Popover`) stay near
+    /// opaque so menus remain readable on any image, and controls/cards keep
+    /// enough fill to hold their text. Dividers do not change.
+    pub const fn opacity_in(self, material: SurfaceMaterial) -> f32 {
+        match material {
+            SurfaceMaterial::Opaque => 1.0,
+            SurfaceMaterial::Glassy => self.opacity(),
+            SurfaceMaterial::ImageClassic => match self {
+                Self::Canvas | Self::Toolbar | Self::Sidebar => 0.78,
+                Self::Terminal => 0.74,
+                Self::Card => 0.86,
+                Self::Popover => 0.97,
+                Self::Control => 0.88,
+                Self::Divider => 0.56,
+            },
+            SurfaceMaterial::ImageGlassy => match self {
+                Self::Canvas | Self::Toolbar | Self::Sidebar => 0.6,
+                Self::Terminal => 0.55,
+                Self::Card => 0.74,
+                Self::Popover => 0.94,
+                Self::Control => 0.8,
+                Self::Divider => 0.5,
+            },
+        }
+    }
+
+    /// Resolve the surface color for this role. With an opaque material (the
+    /// Ciel default — fully opaque, fill-contrast surfaces) the theme color is
+    /// returned untouched; otherwise this role's material opacity is applied
+    /// without changing the theme color itself. Accepts a plain `bool`
+    /// (`appearance.translucentSurfaces`) or a [`SurfaceMaterial`].
+    pub fn resolve(self, color: Hsla, material: impl Into<SurfaceMaterial>) -> Hsla {
+        match material.into() {
+            SurfaceMaterial::Opaque => color,
+            material => color.opacity(self.opacity_in(material)),
+        }
+    }
 }
 
 /// Border variant tokens (`--border-*`).
@@ -84,6 +217,10 @@ pub struct BorderVariants {
     pub selected: Hsla,
     pub transparent: Hsla,
     pub disabled: Hsla,
+    /// `--line-strong`: popover/dialog hairlines and active segment rings.
+    pub strong: Hsla,
+    /// `--line-subtle`: row separators inside a filled group.
+    pub subtle: Hsla,
 }
 
 /// Semantic status colors.
@@ -133,8 +270,10 @@ pub struct TerminalPalette {
     pub selection: Hsla,
 }
 
-/// Corner-radius scale, in physical pixels (derived from `--radius: 0.3125rem`
-/// at a 16px root font size, i.e. 5px, plus the fixed `--window-radius`).
+/// Corner-radius scale in logical pixels (Ciel §6): `sm` 4 · `md` 8 · `lg` 12 ·
+/// `xl` 14 · `xl2` 20 · `xl3` 22 (message bubble) · `xl4` 30 (modal). Controls
+/// use `md`; panels, popovers and tiles `lg`–`xl`; the fixed window radius is
+/// not part of the scale.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RadiusScale {
     /// `--radius` itself (== `lg`).
@@ -151,18 +290,17 @@ pub struct RadiusScale {
 }
 
 impl RadiusScale {
-    /// Build the scale from the `--radius` base value in pixels, applying the
-    /// `calc()` multipliers from the `@theme inline` block.
-    fn from_base(base: f32) -> Self {
+    /// The Ciel radius scale.
+    pub const fn ciel() -> Self {
         Self {
-            base,
-            sm: base * 0.6,
-            md: base * 0.8,
-            lg: base,
-            xl: base * 1.4,
-            xl2: base * 1.8,
-            xl3: base * 2.2,
-            xl4: base * 2.6,
+            base: 12.0,
+            sm: 4.0,
+            md: 8.0,
+            lg: 12.0,
+            xl: 14.0,
+            xl2: 20.0,
+            xl3: 22.0,
+            xl4: 30.0,
             window: 12.0,
         }
     }
@@ -321,9 +459,9 @@ pub struct Typography {
 impl Default for Animation {
     fn default() -> Self {
         Self {
-            dur_fast: Duration::from_millis(160),
-            dur_base: Duration::from_millis(240),
-            dur_slow: Duration::from_millis(320),
+            dur_fast: Duration::from_millis(120),
+            dur_base: Duration::from_millis(160),
+            dur_slow: Duration::from_millis(200),
             ease_premium: CubicBezier {
                 x1: 0.16,
                 y1: 1.0,
@@ -381,244 +519,267 @@ fn shadow(x: f32, y: f32, blur: f32, spread: f32, alpha: f32) -> ShadowLayer {
     }
 }
 
+/// Parse a static theme literal (`#rrggbb` / `#rrggbbaa`). The literals below
+/// are compile-time constants covered by `both_variants_build`, so a typo
+/// fails the first test run rather than a user session.
+fn hex(value: &str) -> Hsla {
+    parse_color(value).expect("static theme literal is a valid color")
+}
+
 impl Theme {
-    /// The default light theme — values from the `:root` block of `globals.css`.
+    /// The default light theme: Ciel's warm-neutral palette (`tokens.css`
+    /// `:root`). Surfaces separate by fill contrast — `background` is Ciel's
+    /// `--surface`, `card`/`muted`/`secondary` its `--surface-muted`,
+    /// `accent` its hover fill, `surface.sunken` its selected fill, and the
+    /// chrome (`toolbar`/`sidebar`) its `--surface-chrome`.
     pub fn light() -> Self {
         Self {
             is_dark: false,
             core: CoreColors {
-                background: oklch(97.0, 0.0, 0.0),
-                foreground: oklch(20.9, 0.0, 0.0),
-                card: oklch(100.0, 0.0, 0.0),
-                card_foreground: oklch(20.9, 0.0, 0.0),
-                popover: oklch(100.0, 0.0, 0.0),
-                popover_foreground: oklch(20.9, 0.0, 0.0),
-                primary: oklch(79.68, 0.1298, 82.18),
-                primary_foreground: oklch(20.9, 0.0, 0.0),
-                secondary: oklch(93.0, 0.0, 0.0),
-                secondary_foreground: oklch(25.2, 0.0, 0.0),
-                muted: oklch(93.0, 0.0, 0.0),
-                muted_foreground: oklch(55.41, 0.022, 262.94),
-                accent: oklch(93.0, 0.0, 0.0),
-                accent_foreground: oklch(25.2, 0.0, 0.0),
-                destructive: oklch(55.0, 0.1637, 17.27),
-                destructive_foreground: oklch(100.0, 0.0, 0.0),
-                border: oklch(88.0, 0.0, 0.0),
-                input: oklch(88.0, 0.0, 0.0),
-                ring: oklch(79.68, 0.1298, 82.18),
+                background: hex("#ffffff"),
+                foreground: hex("#2a2822"),
+                card: hex("#f0eee6"),
+                card_foreground: hex("#2a2822"),
+                popover: hex("#ffffff"),
+                popover_foreground: hex("#2a2822"),
+                primary: hex("#007cf7"),
+                primary_foreground: hex("#ffffff"),
+                secondary: hex("#f0eee6"),
+                secondary_foreground: hex("#4a473c"),
+                muted: hex("#f0eee6"),
+                muted_foreground: hex("#5c5849"),
+                accent: hex("#f0ede4"),
+                accent_foreground: hex("#2a2822"),
+                destructive: hex("#e8222d"),
+                destructive_foreground: hex("#ffffff"),
+                border: hex("#e3e2dd"),
+                input: hex("#dcdad5"),
+                ring: hex("#6b6b70"),
                 charts: [
-                    oklch(79.68, 0.1298, 82.18),
-                    oklch(53.0, 0.1, 225.69),
-                    oklch(52.0, 0.14, 125.86),
-                    oklch(55.0, 0.1637, 17.27),
-                    oklch(55.0, 0.1308, 306.3),
+                    hex("#2a78d6"),
+                    hex("#eb6834"),
+                    hex("#1baf7a"),
+                    hex("#eda100"),
+                    hex("#e87ba4"),
                 ],
             },
             sidebar: SidebarColors {
-                background: oklch(97.0, 0.0, 0.0),
-                foreground: oklch(20.9, 0.0, 0.0),
-                primary: oklch(79.68, 0.1298, 82.18),
-                primary_foreground: oklch(20.9, 0.0, 0.0),
-                accent: oklch(93.0, 0.0, 0.0),
-                accent_foreground: oklch(25.2, 0.0, 0.0),
-                border: oklch(88.0, 0.0, 0.0),
-                ring: oklch(79.68, 0.1298, 82.18),
+                background: hex("#f5f4ee"),
+                foreground: hex("#2a2822"),
+                primary: hex("#007cf7"),
+                primary_foreground: hex("#ffffff"),
+                accent: hex("#f0ede4"),
+                accent_foreground: hex("#2a2822"),
+                border: hex("#e3e2dd"),
+                ring: hex("#6b6b70"),
             },
-            // `--toolbar/title-bar/status-bar-background: var(--card)`
+            // `--surface-chrome` for every window bar and dock.
             surface: SurfaceColors {
-                toolbar: oklch(100.0, 0.0, 0.0),
-                title_bar: oklch(100.0, 0.0, 0.0),
-                status_bar: oklch(100.0, 0.0, 0.0),
+                toolbar: hex("#f5f4ee"),
+                title_bar: hex("#f5f4ee"),
+                status_bar: hex("#f5f4ee"),
+                hover_strong: hex("#e2dccb"),
+                sunken: hex("#d8d0ba"),
+                action: hex("#1c1c1e"),
+                action_foreground: hex("#ffffff"),
+                action_hover: hex("#343436"),
+                action_active: hex("#080809"),
             },
             border: BorderVariants {
-                variant: oklch(88.0, 0.0, 0.0),        // var(--border)
-                focused: oklch(79.68, 0.1298, 82.18),  // var(--ring)
-                selected: oklch(79.68, 0.1298, 82.18), // var(--ring)
+                variant: hex("#e3e2dd"),  // --line
+                focused: hex("#6b6b70"),  // --ring
+                selected: hex("#dcdad5"), // --line-strong
                 transparent: transparent(),
-                disabled: oklch(88.0, 0.0, 0.0),
+                disabled: hex("#edece7"), // --line-subtle
+                strong: hex("#dcdad5"),
+                subtle: hex("#edece7"),
             },
             status: StatusColors {
-                modified: oklch(53.0, 0.1, 225.69),
-                error: oklch(55.0, 0.1637, 17.27),
-                warning: oklch(54.0, 0.14, 55.0),
-                info: oklch(53.0, 0.1, 225.69),
-                hint: oklch(55.41, 0.022, 262.94),
-                success: oklch(52.0, 0.14, 125.86),
+                modified: hex("#3a6ea5"),
+                error: hex("#c0392b"),
+                warning: hex("#b07a2a"),
+                info: hex("#3a6ea5"),
+                hint: hex("#6f6b5c"),
+                success: hex("#5a7d3c"),
             },
             interaction: InteractionColors {
-                cursor: oklch(20.9, 0.0, 0.0), // var(--foreground)
-                selection: oklch_a(79.68, 0.1298, 82.18, 0.13),
+                cursor: hex("#2a2822"),
+                selection: hex("#007cf740"),
             },
             terminal: TerminalPalette {
-                background: oklch(100.0, 0.0, 0.0),
-                foreground: oklch(20.9, 0.0, 0.0),
-                bright_foreground: oklch(100.0, 0.0001, 259.98),
-                dim_foreground: oklch(60.0, 0.0, 0.0),
+                background: hex("#faf9f5"),
+                foreground: hex("#3d3a2f"),
+                bright_foreground: hex("#1a1814"),
+                dim_foreground: hex("#73705f"),
                 normal: AnsiColors {
-                    black: oklch(20.9, 0.0, 259.98),
-                    red: oklch(59.32, 0.1422, 16.44),
-                    green: oklch(69.52, 0.1447, 125.28),
-                    yellow: oklch(67.56, 0.1087, 82.29),
-                    blue: oklch(62.72, 0.1048, 225.37),
-                    magenta: oklch(67.62, 0.1088, 306.27),
-                    cyan: oklch(73.24, 0.0743, 170.89),
-                    white: oklch(79.8, 0.0099, 93.74),
+                    black: hex("#3d3a2f"),
+                    red: hex("#c0141d"),
+                    green: hex("#187a41"),
+                    yellow: hex("#9c5200"),
+                    blue: hex("#0064c8"),
+                    magenta: hex("#a05278"),
+                    cyan: hex("#127589"),
+                    white: hex("#cbc8bd"),
                 },
                 bright: AnsiColors {
-                    black: oklch(55.41, 0.022, 262.94),
-                    red: oklch(76.32, 0.1408, 20.86),
-                    green: oklch(93.51, 0.1593, 130.47),
-                    yellow: oklch(89.59, 0.1392, 91.09),
-                    blue: oklch(72.0, 0.1524, 249.03),
-                    magenta: oklch(84.18, 0.1159, 315.2),
-                    cyan: oklch(90.08, 0.0588, 232.06),
-                    white: oklch(100.0, 0.0001, 259.98),
+                    black: hex("#73705f"),
+                    red: hex("#e8222d"),
+                    green: hex("#1fa85a"),
+                    yellow: hex("#f08a00"),
+                    blue: hex("#007cf7"),
+                    magenta: hex("#b0608a"),
+                    cyan: hex("#16849b"),
+                    white: hex("#3d3a2f"),
                 },
                 dim: AnsiColors {
-                    black: oklch(20.9, 0.0, 259.98),
-                    red: oklch(50.0, 0.11, 17.0),
-                    green: oklch(64.0, 0.13, 125.0),
-                    yellow: oklch(60.0, 0.09, 82.0),
-                    blue: oklch(54.0, 0.09, 225.0),
-                    magenta: oklch(60.0, 0.09, 306.0),
-                    cyan: oklch(68.0, 0.07, 171.0),
-                    white: oklch(60.0, 0.005, 93.0),
+                    black: hex("#3d3a2f"),
+                    red: hex("#a3262c"),
+                    green: hex("#3f7a56"),
+                    yellow: hex("#8a6224"),
+                    blue: hex("#2a63a8"),
+                    magenta: hex("#8a5a73"),
+                    cyan: hex("#2f7c8a"),
+                    white: hex("#a8a597"),
                 },
-                cursor: oklch(20.9, 0.0, 0.0),
-                selection: oklch_a(79.68, 0.1298, 82.18, 0.13),
+                cursor: hex("#007cf7"),
+                selection: hex("#007cf740"),
             },
-            radius: RadiusScale::from_base(5.0),
+            radius: RadiusScale::ciel(),
             shadows: Shadows {
-                row: vec![shadow(0.0, 1.0, 2.0, 0.0, 0.06)],
+                row: vec![shadow(0.0, 1.0, 2.0, 0.0, 0.04)],
                 popover: vec![
-                    shadow(0.0, 4.0, 12.0, -2.0, 0.12),
-                    shadow(0.0, 2.0, 4.0, -2.0, 0.08),
+                    shadow(0.0, 12.0, 32.0, 0.0, 0.12),
+                    shadow(0.0, 1.0, 4.0, 0.0, 0.06),
                 ],
-                modal: vec![
-                    shadow(0.0, 16.0, 40.0, -8.0, 0.18),
-                    shadow(0.0, 4.0, 12.0, -4.0, 0.1),
-                ],
+                // Ciel dialogs carry a 1px `line-strong` border, not a shadow.
+                modal: Vec::new(),
             },
             animation: Animation::default(),
             typography: Typography::default(),
         }
     }
 
-    /// The default dark theme — values from the `.dark` block of `globals.css`.
+    /// The default dark theme: Ciel's neutral dark palette (`tokens.css`
+    /// `.dark`) with the blue accent.
     pub fn dark() -> Self {
         Self {
             is_dark: true,
             core: CoreColors {
-                background: oklch(20.9, 0.0, 259.98),
-                foreground: oklch(94.52, 0.0001, 259.98),
-                card: oklch(23.93, 0.0, 259.98),
-                card_foreground: oklch(94.52, 0.0001, 259.98),
-                popover: oklch(23.93, 0.0, 259.98),
-                popover_foreground: oklch(94.52, 0.0001, 259.98),
-                primary: oklch(79.68, 0.1298, 82.18),
-                primary_foreground: oklch(20.9, 0.0, 259.98),
-                secondary: oklch(35.62, 0.0, 259.98),
-                secondary_foreground: oklch(94.52, 0.0001, 259.98),
-                muted: oklch(31.32, 0.0, 259.98),
-                muted_foreground: oklch(69.6, 0.0001, 259.98),
-                accent: oklch(35.62, 0.0, 259.98),
-                accent_foreground: oklch(94.52, 0.0001, 259.98),
-                destructive: oklch(69.82, 0.1637, 17.27),
-                destructive_foreground: oklch(100.0, 0.0, 0.0),
-                border: oklch(28.91, 0.0, 259.98),
-                input: oklch(31.32, 0.0, 259.98),
-                ring: oklch(79.68, 0.1298, 82.18),
+                background: hex("#1a1a1a"),
+                foreground: hex("#ffffff"),
+                card: hex("#212121"),
+                card_foreground: hex("#ffffff"),
+                popover: hex("#1a1a1a"),
+                popover_foreground: hex("#ffffff"),
+                primary: hex("#007cf7"),
+                primary_foreground: hex("#ffffff"),
+                secondary: hex("#212121"),
+                secondary_foreground: hex("#dcdcdc"),
+                muted: hex("#212121"),
+                muted_foreground: hex("#979797"),
+                accent: hex("#2e2e2e"),
+                accent_foreground: hex("#ffffff"),
+                destructive: hex("#fd2f3b"),
+                destructive_foreground: hex("#ffffff"),
+                border: hex("#ffffff0b"),
+                input: hex("#ffffff14"),
+                ring: hex("#979797"),
                 charts: [
-                    oklch(79.68, 0.1298, 82.18),
-                    oklch(73.86, 0.1252, 225.69),
-                    oklch(82.51, 0.1745, 125.86),
-                    oklch(69.82, 0.1637, 17.27),
-                    oklch(79.7, 0.1308, 306.3),
+                    hex("#3987e5"),
+                    hex("#d95926"),
+                    hex("#199e70"),
+                    hex("#c98500"),
+                    hex("#d55181"),
                 ],
             },
             sidebar: SidebarColors {
-                background: oklch(20.9, 0.0, 259.98),
-                foreground: oklch(94.52, 0.0001, 259.98),
-                primary: oklch(79.68, 0.1298, 82.18),
-                primary_foreground: oklch(20.9, 0.0, 259.98),
-                accent: oklch(35.62, 0.0, 259.98),
-                accent_foreground: oklch(94.52, 0.0001, 259.98),
-                border: oklch(28.91, 0.0, 259.98),
-                ring: oklch(79.68, 0.1298, 82.18),
+                background: hex("#0d0d0d"),
+                foreground: hex("#ffffff"),
+                primary: hex("#007cf7"),
+                primary_foreground: hex("#ffffff"),
+                accent: hex("#2e2e2e"),
+                accent_foreground: hex("#ffffff"),
+                border: hex("#ffffff0b"),
+                ring: hex("#979797"),
             },
             surface: SurfaceColors {
-                toolbar: oklch(23.93, 0.0, 259.98),
-                title_bar: oklch(23.93, 0.0, 259.98),
-                status_bar: oklch(23.93, 0.0, 259.98),
+                toolbar: hex("#0d0d0d"),
+                title_bar: hex("#0d0d0d"),
+                status_bar: hex("#0d0d0d"),
+                hover_strong: hex("#4d4d4d"),
+                sunken: hex("#4a4a4a"),
+                action: hex("#f0f0f0"),
+                action_foreground: hex("#141414"),
+                action_hover: hex("#cdcdcd"),
+                action_active: hex("#c8c8c8"),
             },
             border: BorderVariants {
-                variant: oklch(28.91, 0.0, 259.98),
-                focused: oklch(79.68, 0.1298, 82.18),
-                selected: oklch(79.68, 0.1298, 82.18),
+                variant: hex("#ffffff0b"),
+                focused: hex("#cdcdcd"), // --field-ring
+                selected: hex("#ffffff14"),
                 transparent: transparent(),
-                disabled: oklch(28.0, 0.0, 259.98),
+                disabled: hex("#ffffff09"),
+                strong: hex("#ffffff14"),
+                subtle: hex("#ffffff09"),
             },
             status: StatusColors {
-                modified: oklch(73.86, 0.1252, 225.69),
-                error: oklch(69.82, 0.1637, 17.27),
-                warning: oklch(80.0, 0.13, 55.0),
-                info: oklch(73.86, 0.1252, 225.69),
-                hint: oklch(50.0, 0.012, 262.94),
-                success: oklch(82.51, 0.1745, 125.86),
+                modified: hex("#6bc7d9"),
+                error: hex("#fd2f3b"),
+                warning: hex("#ff9412"),
+                info: hex("#6bc7d9"),
+                hint: hex("#6a6a6a"),
+                success: hex("#31cf76"),
             },
             interaction: InteractionColors {
-                cursor: oklch(79.68, 0.1298, 82.18),
-                selection: oklch_a(79.68, 0.1298, 82.18, 0.13),
+                cursor: hex("#ffffff"),
+                selection: hex("#007cf740"),
             },
             terminal: TerminalPalette {
-                background: oklch(20.9, 0.0, 259.98),
-                foreground: oklch(94.52, 0.0001, 259.98),
-                bright_foreground: oklch(100.0, 0.0001, 259.98),
-                dim_foreground: oklch(61.5, 0.0, 259.98),
+                background: hex("#1a1a1a"),
+                foreground: hex("#dcdcdc"),
+                bright_foreground: hex("#ffffff"),
+                dim_foreground: hex("#979797"),
                 normal: AnsiColors {
-                    black: oklch(20.9, 0.0, 259.98),
-                    red: oklch(69.82, 0.1637, 17.27),
-                    green: oklch(82.51, 0.1745, 125.86),
-                    yellow: oklch(79.68, 0.1298, 82.18),
-                    blue: oklch(73.86, 0.1252, 225.69),
-                    magenta: oklch(79.7, 0.1308, 306.3),
-                    cyan: oklch(86.51, 0.0884, 171.17),
-                    white: oklch(79.8, 0.0099, 93.74),
+                    black: hex("#141414"),
+                    red: hex("#fd2f3b"),
+                    green: hex("#31cf76"),
+                    yellow: hex("#ff9412"),
+                    blue: hex("#42a0ff"),
+                    magenta: hex("#d6adf2"),
+                    cyan: hex("#6bc7d9"),
+                    white: hex("#dcdcdc"),
                 },
                 bright: AnsiColors {
-                    black: oklch(55.41, 0.022, 262.94),
-                    red: oklch(76.32, 0.1408, 20.86),
-                    green: oklch(93.51, 0.1593, 130.47),
-                    yellow: oklch(89.59, 0.1392, 91.09),
-                    blue: oklch(72.0, 0.1524, 249.03),
-                    magenta: oklch(84.18, 0.1159, 315.2),
-                    cyan: oklch(90.08, 0.0588, 232.06),
-                    white: oklch(100.0, 0.0001, 259.98),
+                    black: hex("#6a6a6a"),
+                    red: hex("#ff6069"),
+                    green: hex("#48e18a"),
+                    yellow: hex("#ffab43"),
+                    blue: hex("#74b9ff"),
+                    magenta: hex("#e4c1f7"),
+                    cyan: hex("#8bdee8"),
+                    white: hex("#ffffff"),
                 },
                 dim: AnsiColors {
-                    black: oklch(20.9, 0.0, 259.98),
-                    red: oklch(50.2, 0.117, 17.27),
-                    green: oklch(63.8, 0.135, 125.86),
-                    yellow: oklch(60.2, 0.098, 82.18),
-                    blue: oklch(54.6, 0.096, 225.69),
-                    magenta: oklch(59.5, 0.098, 306.3),
-                    cyan: oklch(68.5, 0.07, 171.17),
-                    white: oklch(60.2, 0.005, 93.74),
+                    black: hex("#141414"),
+                    red: hex("#b8353d"),
+                    green: hex("#2a9a5a"),
+                    yellow: hex("#b87020"),
+                    blue: hex("#3278bb"),
+                    magenta: hex("#a585bb"),
+                    cyan: hex("#4f93a0"),
+                    white: hex("#9a9a9a"),
                 },
-                cursor: oklch(79.68, 0.1298, 82.18),
-                selection: oklch_a(79.68, 0.1298, 82.18, 0.13),
+                cursor: hex("#007cf7"),
+                selection: hex("#007cf740"),
             },
-            radius: RadiusScale::from_base(5.0),
+            radius: RadiusScale::ciel(),
             shadows: Shadows {
-                row: vec![shadow(0.0, 1.0, 2.0, 0.0, 0.35)],
+                row: vec![shadow(0.0, 1.0, 2.0, 0.0, 0.24)],
                 popover: vec![
-                    shadow(0.0, 4.0, 16.0, -2.0, 0.55),
-                    shadow(0.0, 2.0, 6.0, -2.0, 0.35),
+                    shadow(0.0, 12.0, 32.0, 0.0, 0.26),
+                    shadow(0.0, 1.0, 4.0, 0.0, 0.18),
                 ],
-                modal: vec![
-                    shadow(0.0, 20.0, 48.0, -8.0, 0.65),
-                    shadow(0.0, 6.0, 16.0, -4.0, 0.4),
-                ],
+                modal: Vec::new(),
             },
             animation: Animation::default(),
             typography: Typography::default(),
@@ -638,35 +799,106 @@ mod tests {
     }
 
     #[test]
+    fn vibrancy_layers_keep_a_clear_material_hierarchy() {
+        assert!(VibrancyLayer::Toolbar.opacity() < VibrancyLayer::Canvas.opacity());
+        assert!(VibrancyLayer::Sidebar.opacity() < VibrancyLayer::Card.opacity());
+        assert!(VibrancyLayer::Card.opacity() < VibrancyLayer::Popover.opacity());
+        assert_eq!(VibrancyLayer::Divider.opacity(), 0.56);
+
+        let base = oklch_a(55.0, 0.03, 250.0, 0.5);
+        let material = VibrancyLayer::Card.resolve(base, true);
+        assert_eq!(VibrancyLayer::Card.resolve(base, false), base);
+        assert_eq!(
+            (material.h, material.s, material.l),
+            (base.h, base.s, base.l)
+        );
+        assert!((material.a - base.a * VibrancyLayer::Card.opacity()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn background_image_makes_large_surfaces_more_transparent() {
+        use SurfaceMaterial::*;
+        for layer in [
+            VibrancyLayer::Canvas,
+            VibrancyLayer::Toolbar,
+            VibrancyLayer::Sidebar,
+            VibrancyLayer::Terminal,
+        ] {
+            assert!(layer.opacity_in(ImageClassic) < layer.opacity_in(Glassy));
+            assert!(layer.opacity_in(ImageGlassy) < layer.opacity_in(ImageClassic));
+            assert!(layer.opacity_in(ImageClassic) < 1.0);
+        }
+        assert_eq!(VibrancyLayer::Canvas.opacity_in(ImageClassic), 0.78);
+        // Floating layers stay readable on any image.
+        assert!(VibrancyLayer::Popover.opacity_in(ImageGlassy) >= 0.9);
+        // Opaque never changes a color; `bool` keeps the legacy meaning.
+        let base = oklch_a(55.0, 0.03, 250.0, 1.0);
+        assert_eq!(VibrancyLayer::Canvas.resolve(base, Opaque), base);
+        assert_eq!(VibrancyLayer::Canvas.resolve(base, false), base);
+        assert_eq!(
+            VibrancyLayer::Canvas.resolve(base, true).a,
+            VibrancyLayer::Canvas.opacity()
+        );
+        assert!(SurfaceMaterial::new(false, true).has_image());
+        assert!(!SurfaceMaterial::new(true, false).has_image());
+    }
+
+    #[test]
+    fn ciel_theme_defaults_use_the_ciel_radius_scale_and_soft_dark_shadows() {
+        for theme in [Theme::light(), Theme::dark()] {
+            assert_eq!(theme.radius, RadiusScale::ciel());
+            // Ciel dialogs are bordered, not shadowed.
+            assert!(theme.shadows.modal.is_empty());
+        }
+
+        let dark = Theme::dark();
+        assert!(dark.shadows.row[0].color.a < 0.3);
+        assert!(dark.shadows.popover[0].color.a < 0.4);
+    }
+
+    #[test]
     fn both_variants_build() {
         let _ = Theme::light();
         let _ = Theme::dark();
     }
 
     #[test]
-    fn dark_spot_checks_against_globals_css() {
+    fn dark_spot_checks_against_ciel_tokens() {
         let d = Theme::dark();
-        // --primary #E6B450, --destructive #F26D78, --accent #3C3C3C, --border #2B2B2B
-        assert!(close(to_rgb8(d.core.primary), [0xE6, 0xB4, 0x50], 3));
-        assert!(close(to_rgb8(d.core.destructive), [0xF2, 0x6D, 0x78], 3));
-        assert!(close(to_rgb8(d.core.accent), [0x3C, 0x3C, 0x3C], 3));
-        assert!(close(to_rgb8(d.core.border), [0x2B, 0x2B, 0x2B], 3));
+        // --accent #007cf7, --surface #1a1a1a, --surface-chrome #0d0d0d,
+        // --surface-sunken #4a4a4a, --destructive #fd2f3b
+        assert!(close(to_rgb8(d.core.primary), [0x00, 0x7C, 0xF7], 1));
+        assert!(close(to_rgb8(d.core.background), [0x1A, 0x1A, 0x1A], 1));
+        assert!(close(to_rgb8(d.surface.toolbar), [0x0D, 0x0D, 0x0D], 1));
+        assert!(close(to_rgb8(d.surface.sunken), [0x4A, 0x4A, 0x4A], 1));
+        assert!(close(to_rgb8(d.core.destructive), [0xFD, 0x2F, 0x3B], 1));
+    }
+
+    #[test]
+    fn light_spot_checks_against_ciel_tokens() {
+        let l = Theme::light();
+        // --surface #fff, --surface-chrome #f5f4ee, --surface-sunken #d8d0ba,
+        // --action-surface #1c1c1e
+        assert!(close(to_rgb8(l.core.background), [0xFF, 0xFF, 0xFF], 1));
+        assert!(close(to_rgb8(l.surface.toolbar), [0xF5, 0xF4, 0xEE], 1));
+        assert!(close(to_rgb8(l.surface.sunken), [0xD8, 0xD0, 0xBA], 1));
+        assert!(close(to_rgb8(l.surface.action), [0x1C, 0x1C, 0x1E], 1));
     }
 
     #[test]
     fn selection_carries_alpha() {
-        assert!((Theme::dark().interaction.selection.a - 0.13).abs() < 1e-6);
-        assert!((Theme::light().interaction.selection.a - 0.13).abs() < 1e-6);
+        assert!((Theme::dark().interaction.selection.a - 0.25).abs() < 0.01);
+        assert!((Theme::light().interaction.selection.a - 0.25).abs() < 0.01);
     }
 
     #[test]
-    fn radius_scale_multipliers() {
+    fn radius_scale_is_the_ciel_scale() {
         let r = Theme::light().radius;
-        assert_eq!(r.base, 5.0);
-        assert_eq!(r.lg, 5.0);
-        assert!((r.sm - 3.0).abs() < 1e-6);
-        assert!((r.xl4 - 13.0).abs() < 1e-6);
+        assert_eq!((r.sm, r.md, r.lg, r.xl), (4.0, 8.0, 12.0, 14.0));
+        assert_eq!((r.xl2, r.xl3, r.xl4), (20.0, 22.0, 30.0));
         assert_eq!(r.window, 12.0);
+        assert_eq!(r.scaled(2.0).md, 16.0);
+        assert_eq!(r.scaled(2.0).window, 12.0);
     }
 
     #[test]
@@ -674,16 +906,15 @@ mod tests {
         let s = Theme::dark().shadows;
         assert_eq!(s.row.len(), 1);
         assert_eq!(s.popover.len(), 2);
-        assert_eq!(s.modal.len(), 2);
-        assert!((s.modal[0].color.a - 0.65).abs() < 1e-6);
+        assert!((s.popover[0].color.a - 0.26).abs() < 1e-6);
     }
 
     #[test]
     fn animation_durations() {
         let a = Theme::light().animation;
-        assert_eq!(a.dur_fast, Duration::from_millis(160));
-        assert_eq!(a.dur_base, Duration::from_millis(240));
-        assert_eq!(a.dur_slow, Duration::from_millis(320));
+        assert_eq!(a.dur_fast, Duration::from_millis(120));
+        assert_eq!(a.dur_base, Duration::from_millis(160));
+        assert_eq!(a.dur_slow, Duration::from_millis(200));
     }
 
     #[test]

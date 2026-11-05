@@ -3,7 +3,7 @@
 **Status:** Normative for R05-001  
 **Version:** 2
 **Owner:** `labonair-settings-content` (values), `labonair-settings` (layers and persistence), `labonair-settings-ui` (value editor)  
-**Last reviewed:** 2026-09-08
+**Last reviewed:** 2026-10-10
 
 This inventory is the gate for changing `SettingsContent`. A field may remain
 in the model only when its owning runtime consumer, default, validation, and
@@ -37,12 +37,15 @@ means a runtime module, not merely serialization or the generated Settings UI.
 
 | Area | Fields | Consumer / scope | Decision |
 |---|---|---|---|
-| `general` | `theme` | `labonair-theme` color-mode preference; Global | Keep |
+| `general` | `theme` | `labonair-theme` color-mode preference; Global; shown as Auto/Light/Dark preview tiles on Appearance | Keep |
 | `general` | `restoreWindowState`, `defaultStartupTab`, `sessionRestore` | shell/workspace launch and session restore; Global + Project where whitelisted | Keep |
 | `general` | `startupTerminalCount`, `autostart`, `credentialEncryption`, `confirmQuitWithSsh` | no current native runtime consumer or supported workflow | Remove; legacy input remains deserializable only |
 | `general` | `checkForUpdates` | updater launch policy; Global | Keep |
-| `appearance` | `appTheme`, `iconTheme`, `themeVariantOverrides` | theme registry selection persistence; Global; capability-owned registry | Keep as hidden values, no generated Settings fields or management page |
-| `appearance` | `appFontFamily`, `appFontSize`, `appLineHeight`, `bufferFontFamily`, `bufferFontSize`, `bufferLineHeight`, `uiDensity`, `cornerRadiusScale`, `reduceMotion` | theme metrics/font pipeline; Global | Keep |
+| `appearance` | `appTheme`, `iconTheme`, `themeVariantOverrides` | theme registry selection persistence; Global; capability-owned registry. Edited through the theme owner's inline colour-theme grid and icon-theme picker on the Themes page (`labonair-theme-ui` `ColorThemeSettings` / `IconThemeSettings`), not as generated fields | Keep as hidden values; owner surfaces inline (ADR 0006) |
+| `appearance` | `appFontFamily`, `appFontSize`, `appLineHeight`, `bufferFontFamily`, `bufferFontSize`, `bufferLineHeight`, `uiDensity`, `cornerRadiusScale`, `translucentSurfaces` | theme metrics/font pipeline; Global; controls: sliders (fonts, line heights, corner radius), segmented (density), Classic/Glassy tiles (`translucentSurfaces`) | Keep |
+| `appearance` | `animations` (`system` \| `full` \| `reduced` \| `off`) | `ThemeMetrics.animations` via `labonair-theme-ui` (`theme_metrics_from_settings`); `system` is meant to follow the OS Reduce-motion preference but currently resolves to `full` (no safe platform API in GPUI 0.2.2); Global | Keep |
+| `appearance` | `paneLayout` (`comfortable` \| `compact`) | `ThemeMetrics.pane_layout` / `pane_gap()`, read by the workspace pane renderer; Global; Comfortable/Compact preview tiles | Keep |
+| `appearance` | `reduceMotion` | superseded by `animations`; `true` without an explicit `animations` resolves to `off` (`ThemeSettings::from_settings`) and the legacy preferences migrator writes `animations: "off"`; field is read-only compatibility input, not a Settings row. Removal condition: no supported `config.json` carries it | Remove; legacy input remains deserializable only |
 | `appearance` | `backgroundImage`, `backgroundOpacity`, `backgroundBlur`, `backgroundTintColor`, `backgroundTintOpacity` | `labonair-background` store; Global | Removed from Settings model; values migrate to the Background owner |
 | `appearance` | `appCornerRadius` | superseded by `cornerRadiusScale`; no current consumer | Remove; legacy values migrate to `cornerRadiusScale` |
 | `appearance` | `tabsLocation`, `zenModeShowHeader`, `zenModeShowStatusbar` | shell/workspace presentation (`shell/src/titlebar.rs`, `shell/src/app_shell.rs`, `command-palette/src/palette.rs`); `tabsLocation == "sidebar"` moves the tab strip into the workspace-owned Tabs dock panel (`workspace/src/tabs_panel.rs`, reconciled by `Workspace::sync_tabs_in_sidebar`); Global | Keep |
@@ -56,18 +59,24 @@ means a runtime module, not merely serialization or the generated Settings UI.
 | `terminal` | `terminalDefaultPath`, `newTabInheritsCwd`, `terminalShowPaneHeader`, `terminalShowPaneFooter` | no current native terminal consumer | Remove; legacy input remains deserializable only |
 | `terminal` | `terminalUseWebgl` | impossible in native GPUI terminal path; legacy WebView option | Remove; legacy input remains deserializable only |
 | `terminal` | `terminalComposerEnabled`, `terminalComposerHistoryPopup`, `terminalComposerArgumentCompletion`, `terminalBlocksEnabled`, `terminalBlocksAutoCollapseOnAltScreen` | no supported native workflow or consumer | Remove; legacy input remains deserializable only |
-| `editor` | `editorFontFamily`, `editorFontSize`, `editorLineHeight`, `editorTabSize`, `editorWordWrap`, `editorLineNumbers`, `editorRelativeLineNumbers`, `editorIndentWithTabs` | native editor settings adapter; Global + Project where whitelisted | Keep |
-| `editor` | `editorFormatOnSave` | no current native editor consumer | Remove; legacy input remains deserializable only |
-| `editor` | `editorTrimTrailingWhitespace`, `editorInsertFinalNewline`, `editorBracketMatching`, `editorShowCursorPosition`, `editorShowSelectionStats`, `editorShowOutline`, `editorIndentationGuides` | no current native editor consumer | Remove; legacy input remains deserializable only |
-| `editor` | `editorAutoSave`, `editorAutoSaveDelay`, `editorAutocompleteDebounceMs`, `editorMaxFileSizeMb` | no current native editor consumer | Remove; legacy input remains deserializable only |
+| `editor` | `editorFontFamily`, `editorFontSize`, `editorFontWeight`, `editorLineHeight`, `editorTabSize`, `editorWordWrap`, `editorLineNumbers`, `editorRelativeLineNumbers`, `editorIndentWithTabs`, `editorAutoCloseBrackets`, `editorAutoSurround`, `editorDragAndDropSelection`, `editorMouseWheelZoom`, `editorScrollSensitivity`, `editorFastScrollSensitivity`, `editorVerticalScrollMargin`, `editorBracketMatching`, `editorFormatOnSave`, `editorAutoSave`, `editorAutoSaveDelay`, `editorTrimTrailingWhitespace`, `editorInsertFinalNewline`, `editorAutocompleteDebounceMs`, `editorMaxFileSizeMb` | native editor typed controls; font weight affects buffer text and gutter, bracket matching paints adjacent pairs, auto-close/surround configure typing, save preferences configure the save path, completion delay controls local suggestions, and file size limits text loading; Global + Project where whitelisted | Keep |
+| `editor` | `imageViewerUnit` | native image preview metadata (`binary` KiB/MiB or `decimal` kB/MB); Global | Keep |
+| `editor` | `editorLspDocumentColors` | `EditorSettings::lsp_document_colors`; `editor-ui` requests revision-bound LSP document colors and renders an inlay swatch or inline tint with a color-value hover; enum `off`/`inlay`/`inline`, default `inlay`; Global + Project | Keep |
+| `editor` | `editorShowOutline`, `editorShowCursorPosition`, `editorShowSelectionStats` | `EditorSettings` controls the inline symbol outline and cursor/selection details in the editor status affordance; Settings exposes all three switches; Global | Keep |
+| `editor` | `editorIndentationGuides` | `EditorSettings::indentation_guides` configures `DisplayMap`; `editor-ui` renders guide columns in text rows and Settings exposes the switch; Global + safe Project values | Keep |
+| `editor` | `editorSelectionsMenu` | `EditorSettings::selections_menu` controls the editor toolbar's selection actions; Settings exposes the switch; Global | Keep |
 | `editor` | `editorVimMode`, `vimHlsearch`, `vimIncsearch`, `vimSmartcase` | editor Vim runtime; Global + safe Project values | Keep |
+| `editor` | `editorMultiCursorModifier` | `EditorSettings::multi_cursor_modifier` selects the editor pointer modifier for additional cursors and rectangular selections; defaults to `alt`; Global | Keep |
+| `editor` | `editorSelectionHighlight` | `EditorSettings::selection_highlight` highlights exact occurrences of the selected text in the active buffer; Global | Keep |
+| `editor` | `editorRoundedSelection` | `EditorSettings::rounded_selection` controls rounded corners on editor selections; Global | Keep |
 | `editor` | `editorTheme` | syntax-theme selection persistence; Global + safe Project values | Keep as value, no management page |
-| `editor` | `editorHighlightCurrentLine`, `editorCursorBlink`, `editorCursorBlinkIntervalMs`, `editorCursorStyle` | native editor caret/line rendering (`workspace/src/views/editor.rs` render — current-line band, blink task mirroring the terminal view's, block/underline/bar caret shapes); Global | Keep |
+| `editor` | `editorHighlightCurrentLine`, `editorCursorBlink`, `editorCursorBlinkIntervalMs`, `editorCursorStyle`, `vimCursorShapeNormal`, `vimCursorShapeInsert`, `vimCursorShapeReplace`, `vimCursorShapeVisual` | native editor caret/line rendering; editor cursor supports bar/block/underline/hollow, Vim modes use their configured block/underline/bar shape, and `inherit` uses `editorCursorStyle`; Global + safe Project values | Keep |
 | `fileManager` | `explorerShowHiddenByDefault`, `explorerIndentGuides`, `explorerStickyAncestors`, `explorerAutoRevealActiveFile`, `explorerFoldSingleChildDirs`, `explorerGitDecorations`, `scmFileTree` | Explorer/SCM owners; Global + safe Project values | Keep |
 | `fileManager` | `sftpShowHiddenFiles`, `sftpShowUpFolder`, `sftpZebraStriping`, `sftpRelativeTimes`, `sftpColumns` | `SftpBrowserSettings` — read by the dual-pane SFTP browser (`workspace/src/views/sftp.rs`), re-applied live via a `SettingsStore` observer; `sftpColumns` is the ordered visible-column list, editable in Settings (checkbox + reorder) and by dragging the browser's column headers | Keep as browser-chrome values; Global |
 | `fileManager` | `sftpColumnSize`, `sftpColumnModified`, `sftpColumnPermissions`, `sftpColumnType`, `sftpFontSize` | superseded by `sftpColumns`; the four v1 visibility booleans fold into the ordered list on migration | Remove; legacy input remains deserializable only |
 | `fileManager` | `sftpRemoteEditShowTransfers`, `sftpMaxRemoteFileSizeMb`, `sftpMaxConcurrentTransfers`, `sftpDefaultConflictResolution`, `sftpChunkSizeKb`, `sftpOnFolderFileError` | runtime transfer policy belongs to the SFTP/transfer owner | Remove from Settings; future owner defines its own typed policy |
 | `workspace` | `commandPaletteSearchMode`, `commandPaletteShowRecent`, `commandPaletteHistorySize`, `commandPaletteOpacity`, `commandPalettePosition`, `commandPaletteCloseOnOverlayClick` | command-palette runtime; Global | Keep as palette values, no registration state |
+| `workspace` | `showNavHistoryButtons`, `showTabBarButtons`, `showEditorTabGitStatus`, `showEditorTabDiagnostics` | titlebar tab-strip navigation/action visibility and optional Git/diagnostic markers in editor tabs; Global | Keep |
 | `workspace` | `commandPaletteBlur`, `commandPaletteAnimation` | no current native palette consumer | Remove; legacy input remains deserializable only |
 | `workspace` | `gitStatusPollIntervalMs` | no current native SCM polling consumer | Remove; legacy input remains deserializable only |
 | `workspace` | `dockLayout`, `sidebarPosition`, `sidebarOpen`, `sidebarActivePanel`, `sidebarRightOpen`, `sidebarRightActivePanel`, `sidebarWidth`, `sidebarRightWidth` | workspace layout/session state; Runtime state | Removed from `SettingsContent`; `labonair-workspace` imports these legacy keys into `workspace-layout.json` |

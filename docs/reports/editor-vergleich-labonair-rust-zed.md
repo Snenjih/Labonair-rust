@@ -921,9 +921,9 @@ Diese Liste ist für Labonair besonders wichtig: Ein Teil der gewünschten Ziel-
 
 ### Eingefrorener Labonair-Vorgänger
 
-- [EditorPane settings and lifecycle](../../reference-src/src/modules/editor/EditorPane.tsx#L95), [save transforms/autosave](../../reference-src/src/modules/editor/EditorPane.tsx#L281).
-- [CodeMirror shared extensions](../../reference-src/src/modules/editor/lib/extensions.ts#L59), [EditorToolbar](../../reference-src/src/modules/editor/EditorToolbar.tsx#L84), [OutlinePanel](../../reference-src/src/modules/editor/OutlinePanel.tsx#L93).
-- [Language resolver](../../reference-src/src/modules/editor/lib/languageResolver.ts#L6), [Formatter](../../reference-src/src/modules/editor/lib/formatter.ts#L1), [Auto-Save](../../reference-src/src/modules/editor/lib/useAutoSave.ts#L1).
+- `EditorPane settings and lifecycle` (`../../reference-src/src/modules/editor/EditorPane.tsx#L95`), `save transforms/autosave` (`../../reference-src/src/modules/editor/EditorPane.tsx#L281`).
+- `CodeMirror shared extensions` (`../../reference-src/src/modules/editor/lib/extensions.ts#L59`), `EditorToolbar` (`../../reference-src/src/modules/editor/EditorToolbar.tsx#L84`), `OutlinePanel` (`../../reference-src/src/modules/editor/OutlinePanel.tsx#L93`).
+- `Language resolver` (`../../reference-src/src/modules/editor/lib/languageResolver.ts#L6`), `Formatter` (`../../reference-src/src/modules/editor/lib/formatter.ts#L1`), `Auto-Save` (`../../reference-src/src/modules/editor/lib/useAutoSave.ts#L1`).
 
 [^arch]: [docs/rework-roadmap.md](../../docs/rework-roadmap.md#L219) beschreibt `labonair-editor` als Owner der Editor-Algorithmen und die Workspace-View als GPUI-Adapter; der Audit nennt die Extraktion weiterhin laufend.
 [^docs]: [docs/README.md](../../docs/README.md#L53) definiert die Reihenfolge der maßgeblichen Quellen; [repository-layout.md](../../docs/repository-layout.md#L35) definiert Capability- und UI-Sibling-Grenzen.
@@ -963,13 +963,13 @@ Diese Liste ist für Labonair besonders wichtig: Ein Teil der gewünschten Ziel-
 [^editorcommands]: [crates/editor/src/command_provider.rs](../../crates/editor/src/command_provider.rs#L28).
 [^lifecycle]: [docs/feature-lifecycle.md](../../docs/feature-lifecycle.md#L24).
 [^zedcargo]: [Zed editor Cargo.toml](../../zed-refrence/zed/crates/editor/Cargo.toml#L1).
-[^refextensions]: [reference-src Editor extensions](../../reference-src/src/modules/editor/lib/extensions.ts#L59).
-[^refpane]: [reference-src EditorPane](../../reference-src/src/modules/editor/EditorPane.tsx#L121).
-[^refformat]: [reference-src EditorPane save transforms](../../reference-src/src/modules/editor/EditorPane.tsx#L281).
-[^reftoolbar]: [reference-src EditorToolbar](../../reference-src/src/modules/editor/EditorToolbar.tsx#L95).
-[^refoutline]: [reference-src OutlinePanel](../../reference-src/src/modules/editor/OutlinePanel.tsx#L93).
-[^reflanguage]: [reference-src language resolver](../../reference-src/src/modules/editor/lib/languageResolver.ts#L14).
-[^refformatter]: [reference-src formatter](../../reference-src/src/modules/editor/lib/formatter.ts#L8).
+[^refextensions]: `reference-src Editor extensions` (`../../reference-src/src/modules/editor/lib/extensions.ts#L59`).
+[^refpane]: `reference-src EditorPane` (`../../reference-src/src/modules/editor/EditorPane.tsx#L121`).
+[^refformat]: `reference-src EditorPane save transforms` (`../../reference-src/src/modules/editor/EditorPane.tsx#L281`).
+[^reftoolbar]: `reference-src EditorToolbar` (`../../reference-src/src/modules/editor/EditorToolbar.tsx#L95`).
+[^refoutline]: `reference-src OutlinePanel` (`../../reference-src/src/modules/editor/OutlinePanel.tsx#L93`).
+[^reflanguage]: `reference-src language resolver` (`../../reference-src/src/modules/editor/lib/languageResolver.ts#L14`).
+[^refformatter]: `reference-src formatter` (`../../reference-src/src/modules/editor/lib/formatter.ts#L8`).
 
 ## 8. Current implementation status
 

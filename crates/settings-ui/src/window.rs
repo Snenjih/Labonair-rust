@@ -136,6 +136,7 @@ fn open_settings_target(target: SettingsTarget, cx: &mut App) {
     let opened = cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
+            window_background: labonair_theme_ui::window_background(cx),
             titlebar: Some(TitlebarOptions {
                 title: Some("Labonair — Settings".into()),
                 appears_transparent: true,
@@ -161,6 +162,9 @@ fn open_settings_target(target: SettingsTarget, cx: &mut App) {
                     SettingsTarget::Page(slug) => v.navigate_to_slug(slug),
                     SettingsTarget::Field(path) => v.navigate_to_json_path(&path, cx),
                 }
+                // A deep link is the first visited location, not a step forward.
+                v.visited = vec![(v.active_area, v.active_subpage)];
+                v.visited_pos = 0;
                 v.publish_settings_diagnostics(cx);
                 v.load_system_fonts(cx);
                 window.focus(&v.focus);

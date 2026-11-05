@@ -5,14 +5,16 @@
 //! the `Severity` spelling. Notifications are consumed by the statusbar
 //! dropdown; this crate deliberately has no toast renderer.
 //!
-//! Actionable notifications are not currently produced by any feature. When
-//! one is needed it returns as a bounded task (R08-010) with a stable action
-//! id + typed payload dispatched through the command/owner registry — never a
-//! stored closure.
+//! Actionable notifications (R08-010) carry data-only [`NotificationAction`]s
+//! (a stable id and a label). Activating one emits a typed
+//! [`NotificationActionEvent`] from the [`NotificationCenter`]; the owning
+//! module subscribes and interprets the id — a notification never stores a
+//! closure.
 
 use std::time::Instant;
 
 use gpui::{App, AppContext, Context, Entity, Global, SharedString};
+pub use labonair_notifications_core::NotificationAction;
 use labonair_notifications_core::{NotificationDraft, NotificationKind, NotificationRegistry};
 
 mod status_item;
@@ -52,6 +54,7 @@ pub struct Notification {
     pub source: Option<SharedString>,
     pub details: Option<SharedString>,
     pub dedupe_key: Option<SharedString>,
+    pub actions: Vec<NotificationAction>,
 }
 
 impl Notification {
@@ -67,6 +70,7 @@ impl Notification {
             source: None,
             details: None,
             dedupe_key: None,
+            actions: Vec::new(),
         }
     }
 
@@ -104,6 +108,12 @@ impl Notification {
         self.dedupe_key = Some(key.into());
         self
     }
+
+    /// Offer a user action. `id` is a stable, owner-interpreted identifier.
+    pub fn action(mut self, id: impl Into<String>, label: impl Into<String>) -> Self {
+        self.actions.push(NotificationAction::new(id, label));
+        self
+    }
 }
 
 /// Read-only view of a retained notification for the statusbar dropdown.
@@ -116,7 +126,17 @@ pub struct NotificationSnapshot {
     pub details: Option<SharedString>,
     pub source: Option<SharedString>,
     pub read: bool,
+    pub actions: Vec<NotificationAction>,
 }
+
+/// Emitted by the [`NotificationCenter`] when the user activates an action.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotificationActionEvent {
+    pub notification_id: u64,
+    pub action_id: String,
+}
+
+impl gpui::EventEmitter<NotificationActionEvent> for NotificationCenter {}
 
 /// GPUI-facing adapter around [`NotificationRegistry`].
 pub struct NotificationCenter {
@@ -188,6 +208,9 @@ impl NotificationCenter {
         if let Some(details) = notif.details {
             draft = draft.details(details.to_string());
         }
+        for action in notif.actions {
+            draft = draft.action(action);
+        }
         let id = self.registry.insert(draft, now)?;
         cx.notify();
         Some(id)
@@ -197,6 +220,16 @@ impl NotificationCenter {
         if self.registry.dismiss(id) {
             cx.notify();
         }
+    }
+
+    /// The user activated `action_id` on notification `id`: mark it read and
+    /// hand the id to the owner through [`NotificationActionEvent`].
+    pub fn activate_action(&mut self, id: u64, action_id: String, cx: &mut Context<Self>) {
+        self.mark_read(id, cx);
+        cx.emit(NotificationActionEvent {
+            notification_id: id,
+            action_id,
+        });
     }
 
     pub fn mark_read(&mut self, id: u64, cx: &mut Context<Self>) {
@@ -241,6 +274,7 @@ impl NotificationCenter {
                 details: item.details.clone().map(SharedString::from),
                 source: item.source.clone().map(SharedString::from),
                 read: item.read,
+                actions: item.actions.clone(),
             })
             .collect()
     }

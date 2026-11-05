@@ -45,6 +45,7 @@ pub enum Inline {
     Bold(String),
     Italic(String),
     Link { text: String, href: String },
+    Image { alt: String, src: String },
 }
 
 impl Inline {
@@ -53,6 +54,7 @@ impl Inline {
         match self {
             Inline::Text(s) | Inline::Code(s) | Inline::Bold(s) | Inline::Italic(s) => s,
             Inline::Link { text, .. } => text,
+            Inline::Image { alt, .. } => alt,
         }
     }
 }
@@ -299,6 +301,16 @@ pub fn parse_inline(src: &str) -> Vec<Inline> {
     while i < chars.len() {
         let c = chars[i];
         match c {
+            '!' if chars.get(i + 1) == Some(&'[') => {
+                if let Some((alt, src, next)) = parse_link(&chars, i + 1) {
+                    push_text(&mut buf, &mut out);
+                    out.push(Inline::Image { alt, src });
+                    i = next;
+                } else {
+                    buf.push(c);
+                    i += 1;
+                }
+            }
             '`' => {
                 if let Some(end) = find_from(&chars, i + 1, "`") {
                     push_text(&mut buf, &mut out);
@@ -473,6 +485,21 @@ mod tests {
                     href: "https://x.dev".into()
                 },
                 Inline::Text(" ok".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn image_parsing_preserves_alt_text_and_source() {
+        assert_eq!(
+            parse_inline("before ![diagram](../assets/diagram.png) after"),
+            vec![
+                Inline::Text("before ".into()),
+                Inline::Image {
+                    alt: "diagram".into(),
+                    src: "../assets/diagram.png".into(),
+                },
+                Inline::Text(" after".into()),
             ]
         );
     }

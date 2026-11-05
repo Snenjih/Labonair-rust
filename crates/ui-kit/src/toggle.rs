@@ -90,7 +90,7 @@ pub fn icon_toggle_button(
     pressed: bool,
 ) -> Stateful<Div> {
     let size = ToggleSize::default();
-    let color = if pressed { c.selected_accent } else { c.muted };
+    let color = if pressed { c.fg } else { c.muted };
     base(id, c, ToggleVariant::default(), size, pressed, false)
         .w(c.space(size.height()))
         .justify_center()
@@ -137,7 +137,7 @@ fn base(
             d.border_1().border_color(c.input)
         })
         // `aria-pressed:bg-muted` from `toggleVariants`.
-        .when(pressed, |d| d.bg(c.muted_bg))
+        .when(pressed, |d| d.bg(c.selected_fill))
         .when(disabled, |d| d.opacity(DISABLED_OPACITY))
         .when(!disabled, |d| {
             d.cursor_pointer()

@@ -206,7 +206,7 @@ pub enum BackgroundTarget {
 pub struct BackgroundSettings {
     /// Filename inside `backgrounds_dir()`, or empty for "no background".
     pub background_image: String,
-    /// Slider value 0..=100. Rendered opacity is halved on top of this.
+    /// Slider value 0..=100 (mapped through a gamma curve when rendered).
     pub background_opacity: u8,
     /// Gaussian blur radius in pixels, 0..=100. Applied once at load time.
     pub background_blur: u8,

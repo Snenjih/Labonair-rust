@@ -21,7 +21,7 @@ use labonair_workspace::{file_finder::FileFinderView, search_overlay::SearchOver
 
 use crate::app_shell::AppShell;
 use crate::menu;
-use crate::modals::{BackgroundSettingsModal, CommandPaletteModal, UpdaterModal};
+use crate::modals::{CommandPaletteModal, UpdaterModal};
 
 fn register_snapshot(registry: &mut SubmenuRegistry, snapshot: SubmenuSnapshot) {
     registry
@@ -98,17 +98,6 @@ impl AppShell {
                     None => p.open(window, cx),
                 });
                 CommandPaletteModal::new(palette.clone(), cx)
-            });
-        });
-    }
-
-    /// Open the Background owner's editor through the app's modal layer.
-    pub(crate) fn show_background_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let background = self.background.clone();
-        let theme = self.theme.clone();
-        self.modal_layer.update(cx, |layer, cx| {
-            layer.open_modal(window, cx, move |window, cx| {
-                BackgroundSettingsModal::new(background, theme, window, cx)
             });
         });
     }
@@ -235,19 +224,14 @@ impl AppShell {
         register_snapshot(&mut submenus, git_branches);
 
         let symbols = labonair_editor::command_provider::outline_submenu(
-            self.workspace
-                .read(cx)
-                .active_editor_symbols(cx)
-                .into_iter()
-                .map(|s| {
-                    (
-                        s.line,
-                        s.name,
-                        format!("{}  ·  line {}", s.kind.label(), s.line + 1),
-                    )
-                }),
+            self.workspace.read(cx).editor_symbol_picker_rows(cx),
         );
         register_snapshot(&mut submenus, symbols);
+
+        let diagnostics = labonair_editor::command_provider::diagnostics_submenu(
+            self.workspace.read(cx).editor_diagnostic_picker_rows(cx),
+        );
+        register_snapshot(&mut submenus, diagnostics);
 
         let app_themes = labonair_theme::command_provider::app_themes_submenu(
             labonair_theme::command_provider::app_theme_choices()

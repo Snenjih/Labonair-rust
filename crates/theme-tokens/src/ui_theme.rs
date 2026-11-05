@@ -8,7 +8,7 @@
 use gpui::{App, Hsla};
 
 use crate::metrics::{ActiveTheme, GlobalActiveTheme, ThemeMetrics};
-use crate::tokens::{RadiusScale, Theme};
+use crate::tokens::{RadiusScale, SurfaceMaterial, Theme};
 
 /// Token accessor the ui-kit primitives build against.
 ///
@@ -31,6 +31,20 @@ pub trait UiTheme {
     /// `Theme`; the runtime `ThemeStore` overrides it with the live metrics.
     fn metrics(&self) -> ThemeMetrics {
         ThemeMetrics::default()
+    }
+
+    /// Whether surfaces are painted translucent over the native window blur
+    /// (`appearance.translucentSurfaces`). Off by default: opaque Ciel fills.
+    fn translucent_surfaces(&self) -> bool {
+        self.metrics().translucent_surfaces
+    }
+
+    /// The surface material (Classic/Glassy x background image) every
+    /// [`VibrancyLayer::resolve`](crate::VibrancyLayer::resolve) call should
+    /// use, so surfaces turn translucent while a background image is showing.
+    fn surface_material(&self) -> SurfaceMaterial {
+        let m = self.metrics();
+        SurfaceMaterial::new(m.translucent_surfaces, m.background_active)
     }
 
     /// `--muted-foreground`.
@@ -109,13 +123,14 @@ pub trait UiTheme {
     }
 
     /// Canonical selected/active fill for list selection (Explorer rows,
-    /// command-palette results, active tab, active nav item) — the primary
-    /// colour at a low alpha; hover stays neutral.
+    /// command-palette results, active tab, active nav item): Ciel's
+    /// `--surface-sunken` (§8) — no accent tint; hover stays neutral.
     fn selected_fill(&self) -> Hsla {
-        self.primary().opacity(0.16)
+        self.theme().surface.sunken
     }
 
-    /// The solid primary marker that accompanies [`Self::selected_fill`].
+    /// The accent (`--accent` blue) marker for genuinely "active/changed"
+    /// state — toggled icons, search-match highlights. Never a row selection.
     fn selected_accent(&self) -> Hsla {
         self.primary()
     }

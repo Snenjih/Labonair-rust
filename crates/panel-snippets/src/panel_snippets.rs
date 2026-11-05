@@ -1727,26 +1727,21 @@ impl SnippetsView {
         // `selected_fill` == the row's own resting background so `ListItem`'s
         // built-in hover tint is a no-op — this card never had a row-level
         // hover affordance, only its individual buttons did.
-        ListItem::new(
-            SharedString::from(format!("snip-row-{}", s.id)),
-            c.fg,
-            c.muted,
-            card,
-        )
-        .child(body)
-        .extra(move |row| {
-            row.flex_col()
-                .items_start()
-                .cursor_default()
-                .gap(px(4.0))
-                .p(px(6.0))
-                .rounded_md()
-                .border_1()
-                .border_color(border)
-                .bg(card)
-                .on_mouse_down(MouseButton::Right, on_right_click)
-        })
-        .into_any_element()
+        ListItem::new(SharedString::from(format!("snip-row-{}", s.id)), c.palette)
+            .child(body)
+            .extra(move |row| {
+                row.flex_col()
+                    .items_start()
+                    .cursor_default()
+                    .gap(px(4.0))
+                    .p(px(6.0))
+                    .rounded_md()
+                    .border_1()
+                    .border_color(border)
+                    .bg(card)
+                    .on_mouse_down(MouseButton::Right, on_right_click)
+            })
+            .into_any_element()
     }
 
     fn render_form(&mut self, c: &Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -2047,23 +2042,18 @@ impl SnippetsView {
             let hid = h.id.clone();
             let is_sel = selected == h.id;
             rows = rows.child(
-                ListItem::new(
-                    SharedString::from(format!("snip-hp-{}", h.id)),
-                    c.fg,
-                    c.muted,
-                    c.accent,
-                )
-                .selected(is_sel)
-                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                    if let Some(hp) = this.host_picker.as_mut() {
-                        hp.selected = hid.clone();
-                    }
-                    cx.notify();
-                }))
-                .child(SharedString::from(format!(
-                    "{} ({})",
-                    h.name, h.host_address
-                ))),
+                ListItem::new(SharedString::from(format!("snip-hp-{}", h.id)), c.palette)
+                    .selected(is_sel)
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        if let Some(hp) = this.host_picker.as_mut() {
+                            hp.selected = hid.clone();
+                        }
+                        cx.notify();
+                    }))
+                    .child(SharedString::from(format!(
+                        "{} ({})",
+                        h.name, h.host_address
+                    ))),
             );
         }
         Some(self.modal(
@@ -2189,9 +2179,7 @@ impl SnippetsView {
             tabs = tabs.child(
                 ListItem::new(
                     SharedString::from(format!("snip-log-tab-{}", l.run_id)),
-                    c.fg,
-                    c.muted,
-                    c.accent,
+                    c.palette,
                 )
                 .selected(active)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {

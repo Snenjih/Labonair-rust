@@ -22,6 +22,7 @@ use gpui::{
     IntoElement, ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
 };
 
+use crate::animation::{state_fill, MotionExt};
 use crate::icon::IconName;
 use crate::palette::Palette;
 use crate::DISABLED_OPACITY;
@@ -72,7 +73,10 @@ impl Checkbox {
     /// the tick inside their own selectable row.
     pub fn box_only(self) -> Div {
         let c = self.c;
+        // The checked fill and the tick are always-built layers that fade with
+        // the state; the box itself keeps the unchecked frame.
         div()
+            .relative()
             .flex_shrink_0()
             .size(c.space(16.0))
             .flex()
@@ -80,19 +84,23 @@ impl Checkbox {
             .justify_center()
             .rounded(px(c.radius.sm))
             .border_1()
-            .border_color(if self.checked {
-                c.primary
-            } else {
-                gpui::transparent_black()
-            })
-            .bg(if self.checked {
-                c.primary
-            } else {
-                c.input.opacity(0.9)
-            })
-            .when(self.checked, |d| {
-                d.child(IconName::SquareCheck.svg(c.primary_fg).size(px(12.0)))
-            })
+            .border_color(c.input)
+            .bg(c.field_bg)
+            .child(state_fill(
+                (self.id.clone(), "fill"),
+                c,
+                self.checked,
+                c.primary,
+                None,
+                px(c.radius.sm),
+                px(1.0),
+            ))
+            .child(
+                div()
+                    .relative()
+                    .child(IconName::SquareCheck.svg(c.primary_fg).size(px(12.0)))
+                    .motion_state_fade((self.id.clone(), "tick"), c, self.checked),
+            )
     }
 }
 

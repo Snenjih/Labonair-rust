@@ -58,10 +58,10 @@ use crate::theme::ThemeStore;
 use labonair_explorer_host::ExplorerHost;
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
-    button, chevron_icon_path, context_menu, dialog_surface, icon_for_path, modal_overlay,
-    search_clear_button, search_field, search_input, svg_path, text_field_surface, text_input,
-    tree_row, ButtonSize, ButtonVariant, IconName, InputEvent, InputState, MenuClick, MenuItem,
-    Palette, TextFieldState, TreeRowState,
+    button, chevron_icon_path, context_menu, dialog_surface, icon_for_path,
+    modal_overlay_with_exit, search_clear_button, search_field, search_input, svg_path,
+    text_field_surface, text_input, tree_row, ButtonSize, ButtonVariant, IconName, InputEvent,
+    InputState, MenuClick, MenuItem, Palette, PresenceSlot, TextFieldState, TreeRowState,
 };
 
 /// A menu action expressed against the view + window (wrapped into a
@@ -751,7 +751,8 @@ pub struct ExplorerView {
     /// Last painted panel width — decides whether the toolbar actions render
     /// as inline icon buttons or collapse into the `…` overflow menu.
     measured_width: Option<Pixels>,
-    confirm_delete: Option<PathBuf>,
+    /// Delete confirmation dialog (path + exit-fade state).
+    confirm_delete: PresenceSlot<PathBuf>,
     focus: FocusHandle,
     /// Virtual-list scroll handle — drives sticky-ancestor computation and
     /// active-file reveal (Phase 3.3 / 3.5).
@@ -815,7 +816,7 @@ impl ExplorerView {
             context_menu: None,
             overflow_menu: None,
             measured_width: None,
-            confirm_delete: None,
+            confirm_delete: PresenceSlot::new(),
             focus: cx.focus_handle(),
             scroll: UniformListScrollHandle::new(),
             active_file: None,
@@ -862,7 +863,7 @@ impl ExplorerView {
         self.drop_target = None;
         self.context_menu = None;
         self.overflow_menu = None;
-        self.confirm_delete = None;
+        self.confirm_delete = PresenceSlot::new();
         self.edit_buffer.clear();
         self.git_status.clear();
         self.search_hits.clear();
@@ -1578,14 +1579,28 @@ impl ExplorerView {
             self.notify_remote_unsupported("Deleting", cx);
             return;
         }
-        self.confirm_delete = Some(path);
+        self.confirm_delete.open(path);
+        cx.notify();
+    }
+
+    /// Dismiss the delete confirmation with an exit fade (idempotent).
+    fn close_delete_confirm(&mut self, cx: &mut Context<Self>) {
+        let motion = Palette::from_theme(self.theme.read(cx)).motion;
+        self.confirm_delete.close(&motion);
         cx.notify();
     }
 
     fn confirm_delete_now(&mut self, cx: &mut Context<Self>) {
-        let Some(path) = self.confirm_delete.take() else {
+        // Ignore a second Enter/click while the dialog is already fading out.
+        let Some(path) = self
+            .confirm_delete
+            .mounted()
+            .filter(|(_, closing)| !closing)
+            .map(|(path, _)| path.clone())
+        else {
             return;
         };
+        self.close_delete_confirm(cx);
         let Some(parent) = path.parent().map(Path::to_path_buf) else {
             return;
         };
@@ -1766,6 +1781,8 @@ impl Render for ExplorerView {
         let _span =
             tracing::trace_span!(target: "labonair::perf", "render", view = "explorer_panel")
                 .entered();
+        let motion = Palette::from_theme(self.theme.read(cx)).motion;
+        self.confirm_delete.tick(&motion);
         let c = {
             let t = self.theme.read(cx);
             Colors {
@@ -2131,8 +2148,12 @@ impl Render for ExplorerView {
         if let Some(pos) = self.overflow_menu {
             container = container.child(self.render_overflow_menu(pos, root.clone(), cx));
         }
-        if let Some(target) = self.confirm_delete.clone() {
-            container = container.child(self.render_delete_confirm(target, c, cx));
+        if let Some((target, closing)) = self
+            .confirm_delete
+            .mounted()
+            .map(|(path, closing)| (path.clone(), closing))
+        {
+            container = container.child(self.render_delete_confirm(target, closing, c, cx));
         }
 
         container.into_any_element()
@@ -2622,6 +2643,7 @@ impl ExplorerView {
     fn render_delete_confirm(
         &self,
         target: PathBuf,
+        closing: bool,
         c: Colors,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -2629,7 +2651,10 @@ impl ExplorerView {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        modal_overlay("explorer-delete-overlay").child(
+        modal_overlay_with_exit(
+            "explorer-delete-overlay",
+            c.palette,
+            closing,
             dialog_surface("explorer-delete-dialog", c.palette)
                 .w(px(240.0))
                 .child(
@@ -2655,10 +2680,7 @@ impl ExplorerView {
                             )
                             .child("Cancel")
                             .on_click(cx.listener(
-                                |this, _: &ClickEvent, _window, cx| {
-                                    this.confirm_delete = None;
-                                    cx.notify();
-                                },
+                                |this, _: &ClickEvent, _window, cx| this.close_delete_confirm(cx),
                             )),
                         )
                         .child(

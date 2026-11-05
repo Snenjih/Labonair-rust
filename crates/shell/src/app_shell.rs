@@ -30,7 +30,7 @@ use gpui::{
     div, px, App, Bounds, Context, Entity, FocusHandle, Focusable, InteractiveElement, IntoElement,
     ParentElement, Pixels, Render, Styled, Task, Window, WindowBounds,
 };
-use labonair_notifications::NotificationCenter;
+use labonair_notifications::{notification_center, Notification, NotificationCenter};
 use labonair_settings::Settings as _;
 use tokio::runtime::Handle as TokioHandle;
 
@@ -40,7 +40,7 @@ use labonair_workspace::live_bridge::WorkspaceLiveBridge;
 use labonair_workspace::modal_layer::ModalLayer;
 use labonair_workspace::status_bar::StatusBar;
 
-use crate::background::{BackgroundStore, LayerScope};
+use crate::background::{BackgroundEvent, BackgroundStore, LayerScope};
 use crate::commands::CommandDispatcher;
 use crate::composition::AppComposition;
 use crate::modals::ShellPalette;
@@ -103,6 +103,7 @@ impl AppShell {
         // Re-render on theme changes; every other reactive edge is set up in
         // `bootstrap` (or self-managed by the child entities).
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        bridge_background_to_theme(&theme, &background, cx);
 
         crate::bootstrap::bootstrap(
             theme,
@@ -189,15 +190,15 @@ impl Render for AppShell {
         // `&mut Window`).
         self.sync_updater_modal(window, cx);
 
-        let (bg, ui_font, ui_font_size) = {
+        let (ui_font, ui_font_size) = {
             let t = self.theme.read(cx);
-            (t.background(), t.ui_font(), t.ui_font_size())
+            (t.ui_font(), t.ui_font_size())
         };
         let background_layer = self.background.read(cx).layer(LayerScope::App);
         let show_statusbar = labonair_settings::ThemeSettings::try_get(cx)
             .map(|s| s.zen_mode_show_statusbar())
             .unwrap_or(true);
-        let can_split = self.workspace.read(cx).active_is_terminal(cx);
+        let can_split = self.workspace.read(cx).active_can_split(cx);
         let has_split = self.workspace.read(cx).active_has_split(cx);
 
         // The shell root carries only the three genuine window actions; every
@@ -210,7 +211,6 @@ impl Render for AppShell {
             .flex()
             .flex_col()
             .size_full()
-            .bg(bg)
             .font(ui_font)
             .text_size(px(ui_font_size))
             .on_action(cx.listener(Self::act_toggle_fullscreen))
@@ -232,6 +232,50 @@ impl Render for AppShell {
             // separate notification overlay.
             .child(self.modal_layer.clone())
     }
+}
+
+/// Connect the Background owner to the theme and the notification center.
+///
+/// * While an image covers the window the theme is told so
+///   (`ThemeStore::set_background_active`), which turns the window surfaces
+///   translucent; the store learns the UI text colour so it can clamp the tint.
+/// * Load/decode/save failures become notifications (the owner never shows UI).
+///
+/// Every setter is a no-op when nothing changed, so the two observers settle
+/// after one round trip.
+fn bridge_background_to_theme(
+    theme: &Entity<ThemeStore>,
+    background: &Entity<BackgroundStore>,
+    cx: &mut Context<AppShell>,
+) {
+    fn sync(theme: &Entity<ThemeStore>, background: &Entity<BackgroundStore>, cx: &mut App) {
+        let active = background.read(cx).covers_window();
+        let text = theme.read(cx).foreground();
+        theme.update(cx, |t, cx| t.set_background_active(active, cx));
+        background.update(cx, |b, cx| b.set_text_color(text, cx));
+    }
+
+    sync(theme, background, cx);
+    let (t, b) = (theme.clone(), background.clone());
+    cx.observe(background, move |_, _, cx| sync(&t, &b, cx))
+        .detach();
+    let (t, b) = (theme.clone(), background.clone());
+    cx.observe(theme, move |_, _, cx| sync(&t, &b, cx)).detach();
+    cx.subscribe(
+        background,
+        |_, _, event: &BackgroundEvent, cx| match event {
+            BackgroundEvent::Error(message) => {
+                notification_center(cx).update(cx, |center, cx| {
+                    center.push(
+                        Notification::error("Background", "Background image problem")
+                            .details(message.clone()),
+                        cx,
+                    );
+                });
+            }
+        },
+    )
+    .detach();
 }
 
 fn bounds_differ(a: Bounds<Pixels>, b: Bounds<Pixels>) -> bool {

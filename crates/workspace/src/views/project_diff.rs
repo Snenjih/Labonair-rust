@@ -11,10 +11,17 @@
 //!   hunks can be staged / unstaged individually (`git apply --cached`).
 //! * [`DiffSource::Commit`] — a single committed change, fetched once as a whole
 //!   patch (`git show`), split per file for the rail, rendered **read-only**.
+//! * [`DiffSource::Stash`] — a saved stash, fetched once as a whole patch,
+//!   including untracked files, then rendered **read-only**.
+//! * [`DiffSource::Branch`] — changes from a branch's merge base with the
+//!   current branch to that target branch, rendered **read-only**.
 //!
 //! The hunk body is virtualised ([`uniform_list`]) so large diffs stay cheap.
 //! Repeated `WorkingTree` requests re-point the selection instead of
 //! duplicating; a `Commit` request re-targets the same item at the new commit.
+
+use std::collections::HashSet;
+use std::ops::Range;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -28,6 +35,8 @@ use labonair_editor::unified::{
 use labonair_git::GitService;
 use labonair_notifications::{notification_center, notify_err, Notification};
 use labonair_panel::{DiffSource, ProjectDiffFile, ProjectDiffMode, ProjectDiffRequest};
+use labonair_settings::{EditorSettings, Settings as _};
+use labonair_ui_kit::{button, ButtonSize, ButtonVariant, Palette};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
@@ -62,10 +71,14 @@ enum DiffRow {
         text: SharedString,
         /// Index into the selected file's `hunks`, for hunk staging.
         hunk_idx: usize,
+        collapsed: bool,
         /// `false` for whole-file (new / deleted) diffs — no per-hunk control.
         per_hunk: bool,
     },
-    Unified(SharedString),
+    Unified {
+        text: SharedString,
+        changed_range: Option<Range<usize>>,
+    },
     Split {
         /// `(text, is_deletion)` — `is_deletion` tints the cell.
         left: Option<(SharedString, bool)>,
@@ -89,12 +102,15 @@ pub struct ProjectDiffView {
     selected: Option<String>,
     mode: ProjectDiffMode,
 
-    /// `WorkingTree`: loaded `git diff` text for `selected`. `Commit`: unused.
+    /// `WorkingTree`: loaded `git diff` text for `selected`. Read-only sources:
+    /// unused.
     diff_text: Option<String>,
-    /// `Commit`: the whole commit patch, parsed once per file.
+    /// Read-only source patch, parsed once per file.
     commit_files: Vec<FileDiff>,
     /// Flattened body of the selected file, rebuilt on select / mode / reload.
     rows: Vec<DiffRow>,
+    /// Hunk indices hidden from the current diff body.
+    collapsed_hunks: HashSet<usize>,
     /// Generation guard so a slow response for a previous selection / commit
     /// cannot overwrite a newer one.
     gen: u64,
@@ -123,21 +139,28 @@ impl ProjectDiffView {
             diff_text: None,
             commit_files: Vec::new(),
             rows: Vec::new(),
+            collapsed_hunks: HashSet::new(),
             gen: 0,
             op_in_progress: false,
         }
     }
 
-    /// Point the item at a (possibly new) review. Idempotent for the working
-    /// tree — repeated calls just re-point the selection.
+    /// Point the item at a (possibly new) review. Idempotent for a repeated
+    /// working-tree or read-only source — calls just re-point the selection.
     pub fn apply_request(&mut self, req: ProjectDiffRequest, cx: &mut Context<Self>) {
+        let repository_changed = !same_repository_context(
+            self.repo_root.as_deref(),
+            self.session_id.as_deref(),
+            &req.repo_root,
+            req.session_id.as_deref(),
+        );
         self.repo_root = Some(req.repo_root);
         self.session_id = req.session_id;
         self.mode = req.mode;
 
         match req.source.clone() {
             DiffSource::WorkingTree => {
-                let source_changed = self.source != DiffSource::WorkingTree;
+                let source_changed = repository_changed || self.source != DiffSource::WorkingTree;
                 self.source = DiffSource::WorkingTree;
                 self.commit_files.clear();
                 self.files = req.files;
@@ -147,15 +170,16 @@ impl ProjectDiffView {
                     self.reload(cx);
                 }
             }
-            DiffSource::Commit { hash, .. } => {
-                let same_commit = matches!(
-                    &self.source,
-                    DiffSource::Commit { hash: h, .. } if *h == hash
-                );
-                self.source = req.source;
-                if !same_commit {
-                    self.load_commit(hash, cx);
+            DiffSource::Commit { .. } | DiffSource::Stash { .. } | DiffSource::Branch { .. } => {
+                let same_source =
+                    !repository_changed && same_read_only_source(&self.source, &req.source);
+                self.source = req.source.clone();
+                if !same_source {
+                    self.load_read_only_diff(req.source, cx);
                 } else if let Some(sel) = req.selected {
+                    if self.selected.as_deref() != Some(sel.as_str()) {
+                        self.collapsed_hunks.clear();
+                    }
                     self.selected = Some(sel);
                     self.rebuild_rows();
                 }
@@ -169,9 +193,12 @@ impl ProjectDiffView {
             return;
         }
         self.selected = Some(path);
+        self.collapsed_hunks.clear();
         match self.source {
             DiffSource::WorkingTree => self.reload(cx),
-            DiffSource::Commit { .. } => self.rebuild_rows(),
+            DiffSource::Commit { .. } | DiffSource::Stash { .. } | DiffSource::Branch { .. } => {
+                self.rebuild_rows()
+            }
         }
         cx.notify();
     }
@@ -192,6 +219,7 @@ impl ProjectDiffView {
 
     /// `WorkingTree`: fetch the selected file's `git diff`.
     fn reload(&mut self, cx: &mut Context<Self>) {
+        self.collapsed_hunks.clear();
         let (Some(root), Some(file)) = (self.repo_root.clone(), self.current_file().cloned())
         else {
             self.diff_text = None;
@@ -250,13 +278,14 @@ impl ProjectDiffView {
         .detach();
     }
 
-    /// `Commit`: fetch the whole commit patch once, split per file for the rail.
-    fn load_commit(&mut self, hash: String, cx: &mut Context<Self>) {
+    /// Fetch a read-only patch once, then split it per file for the rail.
+    fn load_read_only_diff(&mut self, source: DiffSource, cx: &mut Context<Self>) {
         let Some(root) = self.repo_root.clone() else {
             return;
         };
         self.diff_text = None;
         self.commit_files.clear();
+        self.collapsed_hunks.clear();
         self.files.clear();
         self.selected = None;
         self.rows.clear();
@@ -264,9 +293,16 @@ impl ProjectDiffView {
         let generation = self.gen;
         let session = self.session_id.clone();
         let git = self.git.clone();
-        let jh = self
-            .tokio
-            .spawn(async move { git.commit_diff(root, hash, session).await });
+        let jh = self.tokio.spawn(async move {
+            match source {
+                DiffSource::Commit { hash, .. } => git.commit_diff(root, hash, session).await,
+                DiffSource::Stash { hash, .. } => git.stash_diff(root, hash, session).await,
+                DiffSource::Branch { base, head, .. } => {
+                    git.branch_diff(root, base, head, session).await
+                }
+                DiffSource::WorkingTree => Err("Working-tree diffs load per file.".to_string()),
+            }
+        });
         cx.spawn(async move |this, cx| {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
@@ -295,8 +331,8 @@ impl ProjectDiffView {
                         notification_center(cx).update(cx, |center, cx| {
                             center.push(
                                 Notification::error(
-                                    "Commit diff load failed",
-                                    "Could not load the selected commit.",
+                                    "Read-only diff load failed",
+                                    "Could not load the selected Git change.",
                                 )
                                 .source("project-diff")
                                 .details(e.clone())
@@ -335,21 +371,29 @@ impl ProjectDiffView {
                 let parsed = parse_diff_hunks(text);
                 if let Some(file) = parsed.first() {
                     let per_hunk = !is_whole_file_single_hunk(file);
-                    push_file_rows(&mut rows, file, is_split, per_hunk);
+                    push_file_rows(&mut rows, file, is_split, per_hunk, &self.collapsed_hunks);
                 }
             }
-            DiffSource::Commit { .. } => {
+            DiffSource::Commit { .. } | DiffSource::Stash { .. } | DiffSource::Branch { .. } => {
                 let selected_file = self
                     .selected
                     .as_deref()
                     .and_then(|s| self.commit_files.iter().find(|f| f.path == s));
                 if let Some(file) = selected_file {
                     // Committed changes are read-only — never a per-hunk control.
-                    push_file_rows(&mut rows, file, is_split, false);
+                    push_file_rows(&mut rows, file, is_split, false, &self.collapsed_hunks);
                 }
             }
         }
         self.rows = rows;
+    }
+
+    fn toggle_hunk(&mut self, hunk_idx: usize, cx: &mut Context<Self>) {
+        if !self.collapsed_hunks.remove(&hunk_idx) {
+            self.collapsed_hunks.insert(hunk_idx);
+        }
+        self.rebuild_rows();
+        cx.notify();
     }
 
     /// Stage (or, if `reverse`, unstage) one hunk of the loaded diff.
@@ -434,7 +478,7 @@ impl ProjectDiffView {
 
     fn header_title(&self) -> String {
         match &self.source {
-            DiffSource::Commit { hash, subject } => {
+            DiffSource::Commit { hash, subject } | DiffSource::Stash { hash, subject } => {
                 let short: String = hash.chars().take(7).collect();
                 if subject.is_empty() {
                     short
@@ -442,6 +486,7 @@ impl ProjectDiffView {
                     format!("{short}  {subject}")
                 }
             }
+            DiffSource::Branch { subject, .. } => subject.clone(),
             DiffSource::WorkingTree => self
                 .selected
                 .clone()
@@ -450,25 +495,113 @@ impl ProjectDiffView {
     }
 }
 
-fn push_file_rows(rows: &mut Vec<DiffRow>, file: &FileDiff, is_split: bool, per_hunk: bool) {
+fn same_repository_context(
+    left_root: Option<&str>,
+    left_session: Option<&str>,
+    right_root: &str,
+    right_session: Option<&str>,
+) -> bool {
+    left_root == Some(right_root) && left_session == right_session
+}
+
+fn same_read_only_source(left: &DiffSource, right: &DiffSource) -> bool {
+    match (left, right) {
+        (DiffSource::Commit { hash: left, .. }, DiffSource::Commit { hash: right, .. })
+        | (DiffSource::Stash { hash: left, .. }, DiffSource::Stash { hash: right, .. }) => {
+            left == right
+        }
+        (
+            DiffSource::Branch {
+                base: left_base,
+                head: left_head,
+                ..
+            },
+            DiffSource::Branch {
+                base: right_base,
+                head: right_head,
+                ..
+            },
+        ) => left_base == right_base && left_head == right_head,
+        _ => false,
+    }
+}
+
+fn push_file_rows(
+    rows: &mut Vec<DiffRow>,
+    file: &FileDiff,
+    is_split: bool,
+    per_hunk: bool,
+    collapsed_hunks: &HashSet<usize>,
+) {
     for (i, hunk) in file.hunks.iter().enumerate() {
+        let collapsed = collapsed_hunks.contains(&i);
         rows.push(DiffRow::HunkHeader {
             text: SharedString::from(hunk.header.clone()),
             hunk_idx: i,
+            collapsed,
             per_hunk,
         });
+        if collapsed {
+            continue;
+        }
         if is_split {
             split_hunk_rows_into(rows, &hunk.lines);
         } else {
-            for l in &hunk.lines {
-                rows.push(DiffRow::Unified(SharedString::from(if l.is_empty() {
-                    " ".to_string()
-                } else {
-                    l.clone()
-                })));
+            unified_hunk_rows_into(rows, &hunk.lines);
+        }
+    }
+}
+
+fn unified_hunk_rows_into(out: &mut Vec<DiffRow>, lines: &[String]) {
+    let mut deletions = Vec::new();
+    let mut additions = Vec::new();
+    let flush =
+        |out: &mut Vec<DiffRow>, deletions: &mut Vec<String>, additions: &mut Vec<String>| {
+            let count = deletions.len().max(additions.len());
+            for index in 0..count {
+                let paired_ranges = match (deletions.get(index), additions.get(index)) {
+                    (Some(before), Some(after)) => word_diff_ranges(before, after),
+                    _ => None,
+                };
+                if let Some(before) = deletions.get(index) {
+                    out.push(DiffRow::Unified {
+                        text: SharedString::from(format!("-{before}")),
+                        changed_range: paired_ranges
+                            .as_ref()
+                            .map(|(range, _)| range.start + 1..range.end + 1),
+                    });
+                }
+                if let Some(after) = additions.get(index) {
+                    out.push(DiffRow::Unified {
+                        text: SharedString::from(format!("+{after}")),
+                        changed_range: paired_ranges
+                            .as_ref()
+                            .map(|(_, range)| range.start + 1..range.end + 1),
+                    });
+                }
+            }
+            deletions.clear();
+            additions.clear();
+        };
+
+    for line in lines {
+        match line.as_bytes().first() {
+            Some(b'-') => deletions.push(line.get(1..).unwrap_or_default().to_string()),
+            Some(b'+') => additions.push(line.get(1..).unwrap_or_default().to_string()),
+            _ => {
+                flush(out, &mut deletions, &mut additions);
+                out.push(DiffRow::Unified {
+                    text: SharedString::from(if line.is_empty() {
+                        " ".to_string()
+                    } else {
+                        line.clone()
+                    }),
+                    changed_range: None,
+                });
             }
         }
     }
+    flush(out, &mut deletions, &mut additions);
 }
 
 impl Focusable for ProjectDiffView {
@@ -487,8 +620,13 @@ impl Render for ProjectDiffView {
         )
         .entered();
         let c = self.colors(cx);
-        let font = self.theme.read(cx).buffer_font();
+        let theme = self.theme.read(cx);
+        let font = theme.buffer_font();
+        let palette = Palette::from_theme(theme);
         let is_split = matches!(self.mode, ProjectDiffMode::Split);
+        let word_diff = EditorSettings::try_get(cx)
+            .map(|settings| settings.git_word_diff())
+            .unwrap_or(true);
         let read_only = !self.source.supports_staging();
         let reverse = self.current_file().map(|f| f.staged).unwrap_or(false);
         let selected = self.selected.clone();
@@ -604,7 +742,9 @@ impl Render for ProjectDiffView {
             uniform_list("project-diff-body", rows.len(), move |range, _win, _cx| {
                 range
                     .map(|i| {
-                        diff_row_element(&rows[i], c, is_split, read_only, reverse, &list_view)
+                        diff_row_element(
+                            &rows[i], c, palette, word_diff, read_only, reverse, &list_view,
+                        )
                     })
                     .collect::<Vec<_>>()
             })
@@ -629,7 +769,8 @@ impl Render for ProjectDiffView {
 fn diff_row_element(
     row: &DiffRow,
     c: Colors,
-    _is_split: bool,
+    palette: Palette,
+    word_diff: bool,
     read_only: bool,
     reverse: bool,
     view: &Entity<ProjectDiffView>,
@@ -638,10 +779,22 @@ fn diff_row_element(
         DiffRow::HunkHeader {
             text,
             hunk_idx,
+            collapsed,
             per_hunk,
         } => {
             let show_action = *per_hunk && !read_only;
             let idx = *hunk_idx;
+            let fold_view = view.clone();
+            let fold_button = button(
+                ("pd-fold-hunk", idx),
+                palette,
+                ButtonVariant::Transparent,
+                ButtonSize::Xs,
+            )
+            .child(if *collapsed { "Expand" } else { "Collapse" })
+            .on_click(move |_, _, cx| {
+                fold_view.update(cx, |this, cx| this.toggle_hunk(idx, cx));
+            });
             let v = view.clone();
             div()
                 .flex()
@@ -650,7 +803,14 @@ fn diff_row_element(
                 .px(px(8.0))
                 .bg(c.info.opacity(0.10))
                 .text_color(c.info)
-                .child(text.clone())
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.0))
+                        .child(text.clone())
+                        .child(fold_button),
+                )
                 .when(show_action, |d| {
                     d.child(
                         div()
@@ -671,7 +831,10 @@ fn diff_row_element(
                 })
                 .into_any_element()
         }
-        DiffRow::Unified(text) => {
+        DiffRow::Unified {
+            text,
+            changed_range,
+        } => {
             let color = match text.chars().next() {
                 Some('+') => c.success,
                 Some('-') => c.error,
@@ -681,7 +844,15 @@ fn diff_row_element(
                 .px(px(8.0))
                 .whitespace_nowrap()
                 .text_color(color)
-                .child(text.clone())
+                .child(render_diff_text(
+                    text.as_ref(),
+                    if word_diff {
+                        changed_range.clone()
+                    } else {
+                        None
+                    },
+                    color,
+                ))
                 .into_any_element()
         }
         DiffRow::Raw(text) => {
@@ -698,10 +869,19 @@ fn diff_row_element(
                 .into_any_element()
         }
         DiffRow::Split { left, right } => {
-            let cell = |slot: &Option<(SharedString, bool)>, tint: gpui::Hsla| {
+            let (left_changed, right_changed) = match (left, right) {
+                (Some((left, true)), Some((right, true))) if word_diff => {
+                    word_diff_ranges(left.as_ref(), right.as_ref())
+                        .map_or((None, None), |(left, right)| (Some(left), Some(right)))
+                }
+                _ => (None, None),
+            };
+            let cell = |slot: &Option<(SharedString, bool)>,
+                        tint: gpui::Hsla,
+                        changed_range: Option<Range<usize>>| {
                 let (text, active) = match slot {
-                    Some((t, active)) => (t.clone(), *active),
-                    None => (SharedString::from(" "), false),
+                    Some((text, active)) => (text.as_ref(), *active),
+                    None => (" ", false),
                 };
                 let mut d = div()
                     .flex_1()
@@ -713,16 +893,79 @@ fn diff_row_element(
                 if active {
                     d = d.bg(tint.opacity(0.10));
                 }
-                d.child(text)
+                d.child(render_diff_text(text, changed_range, tint))
             };
             div()
                 .flex()
                 .gap(px(1.0))
-                .child(cell(left, c.error))
-                .child(cell(right, c.success))
+                .child(cell(left, c.error, left_changed))
+                .child(cell(right, c.success, right_changed))
                 .into_any_element()
         }
     }
+}
+
+/// Byte ranges of the changed middle after preserving the longest common
+/// prefix and suffix. The paired diff cells are already line-aligned; keeping
+/// the unchanged edges makes short token changes visible without a heavier
+/// intraline diff algorithm.
+fn word_diff_ranges(before: &str, after: &str) -> Option<(Range<usize>, Range<usize>)> {
+    let prefix_chars = before
+        .chars()
+        .zip(after.chars())
+        .take_while(|(left, right)| left == right)
+        .count();
+    let prefix_bytes = before
+        .char_indices()
+        .nth(prefix_chars)
+        .map_or(before.len(), |(index, _)| index);
+    let before_tail = &before[prefix_bytes..];
+    let after_tail = &after[prefix_bytes..];
+    let suffix_chars = before_tail
+        .chars()
+        .rev()
+        .zip(after_tail.chars().rev())
+        .take_while(|(left, right)| left == right)
+        .count();
+    if prefix_bytes == before.len() && prefix_bytes == after.len() {
+        return None;
+    }
+    let suffix_bytes = |text: &str| {
+        text.chars()
+            .rev()
+            .take(suffix_chars)
+            .map(char::len_utf8)
+            .sum::<usize>()
+    };
+    Some((
+        prefix_bytes..before.len() - suffix_bytes(before),
+        prefix_bytes..after.len() - suffix_bytes(after),
+    ))
+}
+
+fn render_diff_text(
+    text: &str,
+    changed_range: Option<Range<usize>>,
+    tint: gpui::Hsla,
+) -> gpui::AnyElement {
+    let Some(range) =
+        changed_range.filter(|range| range.start <= range.end && range.end <= text.len())
+    else {
+        return div()
+            .child(SharedString::from(text.to_string()))
+            .into_any_element();
+    };
+    div()
+        .flex()
+        .whitespace_nowrap()
+        .child(SharedString::from(text[..range.start].to_string()))
+        .child(
+            div()
+                .bg(tint.opacity(0.28))
+                .child(SharedString::from(text[range.clone()].to_string())),
+        )
+        .child(SharedString::from(text[range.end..].to_string()))
+        .into_any_element()
 }
 
 /// Flatten one hunk's body lines into side-by-side [`DiffRow::Split`] rows
@@ -787,5 +1030,138 @@ mod tests {
         );
         // empty change set → nothing
         assert_eq!(resolve_selection(&[], Some("a.rs")), None);
+    }
+
+    #[test]
+    fn read_only_source_identity_includes_kind_and_hash() {
+        let commit = DiffSource::Commit {
+            hash: "abc".into(),
+            subject: "subject changed in place".into(),
+        };
+        let same_commit = DiffSource::Commit {
+            hash: "abc".into(),
+            subject: "updated subject".into(),
+        };
+        let other_commit = DiffSource::Commit {
+            hash: "def".into(),
+            subject: "subject".into(),
+        };
+        let stash = DiffSource::Stash {
+            hash: "abc".into(),
+            subject: "Stash · subject".into(),
+        };
+        let branch = DiffSource::Branch {
+            base: "main".into(),
+            head: "feature".into(),
+            subject: "main → feature".into(),
+        };
+        let same_branch = DiffSource::Branch {
+            base: "main".into(),
+            head: "feature".into(),
+            subject: "updated subject".into(),
+        };
+
+        assert!(same_read_only_source(&commit, &same_commit));
+        assert!(!same_read_only_source(&commit, &other_commit));
+        assert!(!same_read_only_source(&commit, &stash));
+        assert!(same_read_only_source(&stash, &stash));
+        assert!(same_read_only_source(&branch, &same_branch));
+        assert!(!same_read_only_source(&branch, &commit));
+    }
+
+    #[test]
+    fn repository_context_identity_includes_root_and_remote_session() {
+        assert!(same_repository_context(
+            Some("/work/project"),
+            Some("ssh-session"),
+            "/work/project",
+            Some("ssh-session"),
+        ));
+        assert!(!same_repository_context(
+            Some("/work/project"),
+            Some("ssh-session"),
+            "/work/other",
+            Some("ssh-session"),
+        ));
+        assert!(!same_repository_context(
+            Some("/work/project"),
+            Some("ssh-session"),
+            "/work/project",
+            Some("other-session"),
+        ));
+    }
+
+    #[test]
+    fn word_diff_ranges_keep_unchanged_prefix_and_suffix() {
+        let before = "let count = 1;";
+        let after = "let count = 42;";
+        let (before_range, after_range) =
+            word_diff_ranges(before, after).expect("changed token range");
+        assert_eq!(&before[before_range], "1");
+        assert_eq!(&after[after_range], "42");
+        assert_eq!(word_diff_ranges("same", "same"), None);
+    }
+
+    #[test]
+    fn word_diff_ranges_respect_utf8_boundaries() {
+        let before = "α = old;";
+        let after = "α = new;";
+        let (before_range, after_range) =
+            word_diff_ranges(before, after).expect("changed token range");
+        assert_eq!(&before[before_range], "old");
+        assert_eq!(&after[after_range], "new");
+    }
+
+    #[test]
+    fn unified_replacements_keep_word_diff_ranges_for_both_lines() {
+        let mut rows = Vec::new();
+        unified_hunk_rows_into(
+            &mut rows,
+            &["-let count = 1;".into(), "+let count = 42;".into()],
+        );
+        let [DiffRow::Unified {
+            text: before,
+            changed_range: Some(before_range),
+        }, DiffRow::Unified {
+            text: after,
+            changed_range: Some(after_range),
+        }] = rows.as_slice()
+        else {
+            panic!("replacement rows should carry word-diff ranges");
+        };
+        assert_eq!(&before[before_range.clone()], "1");
+        assert_eq!(&after[after_range.clone()], "42");
+    }
+
+    #[test]
+    fn collapsed_hunks_keep_the_header_and_hide_body_rows() {
+        let file = FileDiff {
+            path: "src/lib.rs".into(),
+            header_lines: Vec::new(),
+            hunks: vec![DiffHunk {
+                header: "@@ -1 +1 @@".into(),
+                old_start: 1,
+                old_lines: 1,
+                new_start: 1,
+                new_lines: 1,
+                lines: vec!["-old".into(), "+new".into()],
+            }],
+            is_new_file: false,
+            is_deleted_file: false,
+        };
+        let mut expanded = Vec::new();
+        push_file_rows(&mut expanded, &file, false, true, &HashSet::new());
+        assert_eq!(expanded.len(), 3);
+
+        let mut collapsed = Vec::new();
+        push_file_rows(&mut collapsed, &file, false, true, &HashSet::from([0]));
+        assert_eq!(collapsed.len(), 1);
+        assert!(matches!(
+            collapsed.first(),
+            Some(DiffRow::HunkHeader {
+                collapsed: true,
+                ..
+            })
+        ));
     }
 }

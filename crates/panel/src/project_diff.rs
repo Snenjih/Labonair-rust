@@ -35,6 +35,23 @@ pub enum DiffSource {
         /// Commit subject, for the tab title / header.
         subject: String,
     },
+    /// A saved Git stash, rendered read-only with untracked files included.
+    Stash {
+        /// Stash commit hash.
+        hash: String,
+        /// Stash message, for the tab title / header.
+        subject: String,
+    },
+    /// A comparison between the merge base of two branches and the target
+    /// branch, rendered read-only. `files` is derived from the patch.
+    Branch {
+        /// Branch used as the comparison base.
+        base: String,
+        /// Branch whose changes are shown.
+        head: String,
+        /// Description for the tab title / header.
+        subject: String,
+    },
 }
 
 impl DiffSource {
@@ -67,8 +84,9 @@ pub struct ProjectDiffRequest {
     pub repo_root: String,
     /// Remote SSH session id, or `None` for a local repo.
     pub session_id: Option<String>,
-    /// What is being reviewed. `WorkingTree` uses `files`; `Commit` derives its
-    /// own file list.
+    /// What is being reviewed. `WorkingTree` uses `files`; `Commit` and `Stash`
+    /// `Commit`, `Stash`, and `Branch` derive their file lists from read-only
+    /// patches.
     pub source: DiffSource,
     /// Ordered changed files to review (`WorkingTree` source only).
     pub files: Vec<ProjectDiffFile>,

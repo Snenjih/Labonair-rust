@@ -26,6 +26,9 @@
       "cmd-8": "tab::Select8",
       "cmd-9": "tab::Select9",
       "cmd-]": "pane::FocusNext",
+      "cmd-[": "pane::FocusPrev",
+      "cmd-shift-]": "tab::Next",
+      "cmd-shift-[": "tab::Prev",
       "cmd-f": "search::Toggle",
       "cmd-b": "sidebar::Toggle",
       "cmd-shift-z": "view::ToggleZenMode",
@@ -37,12 +40,33 @@
     }
   },
   {
-    // Mirrors `crates/shell/src/commands.rs`'s `CTX_TERMINAL` — pane
-    // split/close are only offered while the active tab is a terminal.
+    // Terminal-only aliases for the pane split keys (the `Pane` block below
+    // holds the universal ones).
     "context": "Terminal",
     "bindings": {
       "cmd-d": "pane::SplitRight",
-      "cmd-shift-d": "pane::SplitDown",
+      "cmd-shift-d": "pane::SplitDown"
+    }
+  },
+  {
+    // `Pane` wraps every pane of a tab's pane group, whatever its kind
+    // (R10-002, ADR 0005). Editor-context bindings (multi-cursor, indent,
+    // fold) are deeper and win inside editor panes.
+    "context": "Pane",
+    "bindings": {
+      "cmd-\\": "pane::SplitRight",
+      "cmd-shift-\\": "pane::SplitDown",
+      "cmd-k left": "pane::SplitLeft",
+      "cmd-k up": "pane::SplitUp",
+      "cmd-alt-left": "pane::FocusLeft",
+      "cmd-alt-right": "pane::FocusRight",
+      "cmd-alt-up": "pane::FocusUp",
+      "cmd-alt-down": "pane::FocusDown",
+      "cmd-alt-shift-left": "pane::MoveLeft",
+      "cmd-alt-shift-right": "pane::MoveRight",
+      "cmd-alt-shift-up": "pane::MoveUp",
+      "cmd-alt-shift-down": "pane::MoveDown",
+      "cmd-shift-enter": "pane::ToggleZoom",
       "cmd-shift-w": "pane::Close"
     }
   }

@@ -210,8 +210,10 @@ composition adapter. Local language services are in scope before any remote
 language-service work. Autosave and format-on-save are opt-in and default to
 disabled.
 
-The accepted split decision is recorded in
-[docs/adr/0004-editor-internal-splits.md](adr/0004-editor-internal-splits.md).
+The split decision is recorded in
+[docs/adr/0004-editor-internal-splits.md](adr/0004-editor-internal-splits.md),
+superseded by [ADR 0005](adr/0005-universal-panes.md) (editor splits are now
+sibling panes; the editor-internal split tree is removed).
 The executable sequence is:
 
 1. [R09-001-editor-e0-text-model-contract.md](../tasks/rework/R09-001-editor-e0-text-model-contract.md)

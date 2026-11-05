@@ -277,64 +277,6 @@ impl StatusItem for AgentAccessStatusItem {
 // Workspace-derived informational items.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Statusbar item showing the active editor cursor position.
-pub struct CursorPositionStatusItem {
-    workspace: Entity<Workspace>,
-    theme: Entity<ThemeStore>,
-}
-
-impl CursorPositionStatusItem {
-    pub fn new(
-        workspace: Entity<Workspace>,
-        theme: Entity<ThemeStore>,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
-        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        Self { workspace, theme }
-    }
-}
-
-impl Render for CursorPositionStatusItem {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.render_status(window, cx)
-    }
-}
-
-impl StatusItem for CursorPositionStatusItem {
-    fn id(&self) -> &'static str {
-        "cursor-position"
-    }
-
-    fn default_side(&self) -> StatusSide {
-        StatusSide::Right
-    }
-
-    fn order(&self) -> i32 {
-        11
-    }
-
-    fn group(&self) -> u32 {
-        0
-    }
-
-    fn is_empty(&self, cx: &App) -> bool {
-        self.workspace.read(cx).active_editor_cursor(cx).is_none()
-    }
-
-    fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let Some((line, col)) = self.workspace.read(cx).active_editor_cursor(cx) else {
-            return div().into_any_element();
-        };
-        let muted = self.theme.read(cx).muted_foreground();
-        div()
-            .text_size(px(11.0))
-            .text_color(muted)
-            .child(SharedString::from(format!("Ln {line}, Col {col}")))
-            .into_any_element()
-    }
-}
-
 /// Statusbar item exposing the active native preview URL.
 pub struct PreviewUrlStatusItem {
     workspace: Entity<Workspace>,
@@ -405,25 +347,6 @@ impl StatusItem for PreviewUrlStatusItem {
                 cx.open_url(&open);
             }))
             .into_any_element()
-    }
-}
-
-/// Build the cursor-position status-bar contribution.
-pub fn cursor_position_registration(
-    workspace: &Entity<Workspace>,
-    theme: &Entity<ThemeStore>,
-    cx: &mut App,
-) -> labonair_panel::StatusItemRegistration {
-    let item = cx.new(|cx| CursorPositionStatusItem::new(workspace.clone(), theme.clone(), cx));
-    let handle = item.clone();
-    labonair_panel::StatusItemRegistration {
-        id: item.read(cx).id(),
-        default_side: item.read(cx).default_side(),
-        order: item.read(cx).order(),
-        group: item.read(cx).group(),
-        build: std::sync::Arc::new(move |_window, _cx| {
-            std::sync::Arc::new(handle.clone()) as labonair_panel::AnyStatusItemHandle
-        }),
     }
 }
 

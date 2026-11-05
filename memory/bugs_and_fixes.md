@@ -4,6 +4,32 @@ Older entries preserve the state of the code when each issue was recorded.
 When an API was later renamed or removed, the current implementation and
 normative documentation take precedence over the historical symbol name.
 
+## 2026-10-12 — Editor text area collapsed to zero height
+
+**Symptom:** opened files showed their path and line count, but no source text.
+A GPUI test measured a populated first row at 110×21 px while the enclosing
+text-area viewport measured 1920×0 px, so `overflow_hidden()` clipped every
+row.
+
+**Root cause:** `editor_surface_container` had the default block display. Its
+editor child used `flex_1()`, which only takes effect inside a flex container;
+the text area's children are positioned absolutely, leaving its auto height at
+zero.
+
+**Fix:** make `editor_surface_container` a flex row so the editor viewport
+fills the available height beside the optional minimap. The font stack passed
+to GPUI was also normalized to its first family while preserving the theme
+fallback chain; this was a separate rendering issue and did not correct the
+zero-height clipping by itself.
+
+## 2026-10-12 — Buffer revisions are document-local
+
+Editor `Revision` values restart for each loaded buffer. A consumer following
+editor snapshots must not treat `(path, revision)` alone as a global identity:
+a reload or a different buffer can have the same revision number while its
+content differs. Re-apply each typed buffer-change event, or include an
+independent buffer generation in any future deduplication key.
+
 ## 2026-10-07 — Terminal startup resized against the whole window and overlaid backgrounds
 
 **Symptom:** opening a terminal caused a startup redraw burst and could make
@@ -1029,3 +1055,78 @@ correct PID before it could inspect the window.
 before comparing it with the approved debug and packaged Rust binary paths.
 The retry confirmed the correct native window and reached `screencapture`; the
 remaining failure is the genuine macOS Screen Recording permission denial.
+
+## 2026-10-10 — Keep Workspace Open Files distinct from File Finder
+
+**Discovery:** The pinned Linux action catalog lists `editor::OpenFile` as a
+deprecated alias for `workspace::OpenFiles`. Labonair also names its Editor
+File Finder command `editor::OpenFile`, but routes it to a root-scoped fuzzy
+picker with a local `Cmd+Shift+O` default. That shared action-name string does
+not make the two workflows equivalent; File Finder is separately bound to the
+pinned `Cmd+P` action.
+
+**Disposition:** Record the Workspace multi-path action and the action-name
+collision in the [Workspace Open requirements packet](../docs/parity/action-classification-workspace-open.md).
+Labonair's Open Files route remains unimplemented and runtime acceptance is
+pending.
+
+## 2026-10-11 — Pinned BackQuotes action has duplicate listeners
+
+**Discovery:** The frozen Zed `vim::object::register` function calls
+`Vim::action` twice for `&BackQuotes`. Each call reaches
+`Editor::register_action`, which stores a distinct subscription and installs a
+Bubble-phase listener for the same action type. No focused BackQuotes action
+fixture was found; existing AnyQuotes backtick cases exercise a different
+action. The effect of both listeners on each operator and Helix selection path
+has not been observed.
+
+**Disposition:** Preserve this as a pinned-source anomaly and verify its event
+effects before claiming exact behavior. Do not edit the frozen reference or
+replicate duplicate local handlers. Track it in the
+[Vim BackQuotes classification](../docs/parity/action-classification-vim-back-quotes.md).
+
+## 2026-10-11 — Local Vim case toggle truncates Unicode mappings
+
+**Bug found:** `crates/editor/src/vim.rs::toggle_case` takes only the first
+character returned by `char::to_uppercase()` or `char::to_lowercase()`. Case
+mappings that expand are truncated: toggling `ß` yields `S`, while the pinned
+`vim::ChangeCase` path preserves the full `SS` mapping. The local parser also
+applies its `~` implementation from the cursor/count and does not transform a
+Visual selection.
+
+**Disposition:** Record the data-loss and selection gaps in the
+[Vim ChangeCase classification](../docs/parity/action-classification-vim-change-case.md).
+Keep this parity-inventory slice documentation-only; fix and verify the local
+Editor path when its owner contract is implemented.
+
+## 2026-10-11 — Local Vim uppercase C ignores count and skips the change register
+
+**Bug found:** `crates/editor/src/vim.rs::enter_insert` handles uppercase `C`
+by deleting from the caret to the current line end, then enters Insert mode.
+It resets but does not apply a pending count and does not copy the deleted text
+to the Vim register. The pinned `vim::ChangeToEndOfLine` action passes its
+count through the `EndOfLine` motion and copies the changed selection before
+deleting it. The existing pinned `test_change_end_of_line` fixture exercises
+`c $`, not the direct Shift-C action.
+
+**Disposition:** Record the partial local route and its count/register gaps in
+the [Vim ChangeToEndOfLine classification](../docs/parity/action-classification-vim-change-to-end-of-line.md).
+Keep this parity-inventory slice documentation-only; fix and verify the local
+Editor behavior when its owner contract is implemented.
+
+## 2026-10-11 — Pinned Vim mode transition remaps Normal in Helix mode
+
+**Discovery:** `Vim::switch_mode(Mode::Normal, ...)` changes the resulting mode
+to Helix Normal when the Helix mode setting is enabled. Direct text transforms
+in Vim Visual/Helix Select and palette-only Insert/Replace routes request
+`Mode::Normal`, so the resulting mode is Helix Normal in that setting. When
+`temp_mode` is active, the same Normal request instead clears the temporary
+state and returns to Insert. A source review of `vim::ChangeCase` had
+incorrectly described Helix Select as returning to Vim Normal.
+
+**Disposition:** Describe the requested mode separately from the resulting
+mode, account for the Helix remapping and temporary-mode return when classifying
+direct actions, and keep Helix Select and no-op/read-only transitions in the
+runtime acceptance list. This behavior is recorded in the
+[Vim ChangeCase classification](../docs/parity/action-classification-vim-change-case.md)
+and [Vim ConvertToLowerCase classification](../docs/parity/action-classification-vim-convert-to-lower-case.md).

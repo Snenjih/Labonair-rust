@@ -26,51 +26,54 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder, px, App, ClickEvent, Div, InteractiveElement, IntoElement,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, prelude::FluentBuilder, px, App, ClickEvent, Div, ElementId, FontWeight,
+    InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
+    Styled, Window,
 };
 
+use crate::animation::state_fill;
 use crate::palette::Palette;
 use crate::DISABLED_OPACITY;
 
 /// Which of the two reference looks the control uses.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum SegmentVariant {
-    /// Bordered pills, accent border on the active one.
+    /// Bordered pills; the active one takes the sunken fill and a semibold label.
     #[default]
     Outline,
-    /// A muted track whose active segment lifts to the background colour.
+    /// A muted track whose active segment lifts to the surface colour with a
+    /// 1px `line-strong` ring (readable in dark mode too).
     Solid,
-    /// A full-width, borderless tab strip. Active text uses the foreground
-    /// token; inactive text remains muted.
+    /// A full-width, borderless tab strip. The active tab takes the sunken fill
+    /// and a semibold label (no underline); inactive text remains muted.
     Flat,
 }
 
 /// Segment height/typography. Matches [`crate::ButtonSize`]'s naming.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum SegmentSize {
-    /// 20px — statusbar / dense panel strips.
+    /// 24px — statusbar / dense panel strips.
     Xs,
-    /// 24px — the settings and picker strips.
+    /// 28px — the settings and picker strips (`--control-h-dense`).
     #[default]
     Sm,
-    /// 32px — standalone page-level tabs.
+    /// 32px — standalone page-level tabs (`--control-h-sm`).
     Md,
 }
 
 impl SegmentSize {
     fn height(self) -> f32 {
         match self {
-            SegmentSize::Xs => 20.0,
-            SegmentSize::Sm => 24.0,
+            SegmentSize::Xs => 24.0,
+            SegmentSize::Sm => 28.0,
             SegmentSize::Md => 32.0,
         }
     }
 
     fn text(self) -> f32 {
         match self {
-            SegmentSize::Xs => 10.0,
-            SegmentSize::Sm => 11.5,
+            SegmentSize::Xs => 12.0,
+            SegmentSize::Sm => 13.0,
             SegmentSize::Md => 13.0,
         }
     }
@@ -180,7 +183,7 @@ impl IntoElement for SegmentedControl {
             .when(variant == SegmentVariant::Solid, |d| {
                 d.gap(c.space(2.0))
                     .p(c.space(2.0))
-                    .rounded(px(c.radius.lg))
+                    .rounded(px(c.radius.md))
                     .bg(c.muted_bg)
             })
             .when(disabled, |d| d.opacity(DISABLED_OPACITY));
@@ -195,28 +198,50 @@ impl IntoElement for SegmentedControl {
                     let key_handler = handler.clone();
                     let clicked = key.clone();
                     let key_list = keys.clone();
+                    let segment_id = SharedString::from(format!("{group_id}-{key}"));
+                    // The active pill is an always-built layer that fades
+                    // between segments; label colour and weight flip at once.
+                    let (pill_fill, pill_border) = match variant {
+                        SegmentVariant::Solid => (c.bg, Some(c.line_strong)),
+                        SegmentVariant::Outline => (c.sunken, Some(c.line_strong)),
+                        SegmentVariant::Flat => (c.sunken, None),
+                    };
+                    let pill = state_fill(
+                        (ElementId::from(segment_id.clone()), "pill"),
+                        c,
+                        on,
+                        pill_fill,
+                        pill_border,
+                        px(if variant == SegmentVariant::Flat {
+                            0.0
+                        } else {
+                            c.radius.md
+                        }),
+                        px(if variant == SegmentVariant::Outline {
+                            1.0
+                        } else {
+                            0.0
+                        }),
+                    );
                     div()
-                        .id(SharedString::from(format!("{group_id}-{key}")))
+                        .id(segment_id)
+                        .relative()
                         .flex()
                         .flex_shrink_0()
                         .when(variant == SegmentVariant::Flat, |d| d.flex_1())
                         .items_center()
                         .justify_center()
                         .h(c.space(size.height()))
-                        .px(c.space(10.0))
+                        .px(c.space(12.0))
                         .when(variant != SegmentVariant::Flat, |d| {
                             d.rounded(px(c.radius.md))
                         })
                         .text_size(px(size.text()))
                         .text_color(if on { c.fg } else { c.muted })
                         .when(variant == SegmentVariant::Outline, |d| {
-                            d.border_1()
-                                .border_color(if on { c.accent } else { c.border })
+                            d.border_1().border_color(c.border)
                         })
-                        .when(variant == SegmentVariant::Solid && on, |d| d.bg(c.bg))
-                        .when(variant == SegmentVariant::Flat && on, |d| {
-                            d.border_b_1().border_color(c.fg)
-                        })
+                        .when(on, |d| d.font_weight(FontWeight::SEMIBOLD))
                         .when(!disabled, |d| {
                             d.tab_index(0)
                                 .focus(|style| style.border_1().border_color(c.ring))
@@ -230,6 +255,7 @@ impl IntoElement for SegmentedControl {
                                 }
                             })
                         })
+                        .child(pill)
                         .child(label)
                         .when(!disabled, move |d| match click_handler {
                             Some(h) => d.on_click(move |_: &ClickEvent, w, cx| h(&clicked, w, cx)),
@@ -268,7 +294,7 @@ impl IntoElement for SegmentedControl {
     }
 }
 
-fn adjacent_segment_index(index: usize, len: usize, forward: bool) -> Option<usize> {
+pub(crate) fn adjacent_segment_index(index: usize, len: usize, forward: bool) -> Option<usize> {
     if len == 0 || index >= len {
         return None;
     }

@@ -56,13 +56,18 @@ fn side_from_str(s: &str) -> Option<StatusSide> {
 pub fn overrides_from_blob(blob: &Map<String, Value>) -> HashMap<String, StatusPlacement> {
     let mut out = HashMap::new();
     for (id, raw) in blob {
+        let resolved_id = match id.as_str() {
+            "cursor-position" if blob.contains_key("editor-status") => continue,
+            "cursor-position" => "editor-status",
+            _ => id.as_str(),
+        };
         let side = raw
             .get("side")
             .and_then(Value::as_str)
             .and_then(side_from_str)
             .unwrap_or(StatusSide::Right);
         let hidden = raw.get("hidden").and_then(Value::as_bool).unwrap_or(false);
-        out.insert(id.clone(), StatusPlacement { side, hidden });
+        out.insert(resolved_id.to_string(), StatusPlacement { side, hidden });
     }
     out
 }
@@ -338,6 +343,36 @@ mod tests {
         // panicking or dropping the entry.
         assert_eq!(
             overrides.get("weird"),
+            Some(&StatusPlacement {
+                side: StatusSide::Right,
+                hidden: false,
+            })
+        );
+    }
+
+    #[test]
+    fn replacing_cursor_status_item_preserves_its_saved_placement() {
+        let mut blob = Map::new();
+        blob.insert(
+            "cursor-position".to_string(),
+            json!({ "side": "left", "hidden": true }),
+        );
+        let overrides = overrides_from_blob(&blob);
+        assert_eq!(
+            overrides.get("editor-status"),
+            Some(&StatusPlacement {
+                side: StatusSide::Left,
+                hidden: true,
+            })
+        );
+
+        blob.insert(
+            "editor-status".to_string(),
+            json!({ "side": "right", "hidden": false }),
+        );
+        let overrides = overrides_from_blob(&blob);
+        assert_eq!(
+            overrides.get("editor-status"),
             Some(&StatusPlacement {
                 side: StatusSide::Right,
                 hidden: false,

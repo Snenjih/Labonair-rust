@@ -81,28 +81,28 @@ impl ThemeFile {
     }
 
     /// A theme file must carry a name and at least one `light` and one `dark`
-    /// variant (matching Labonair's own validation).
+    /// variant. Delegates to [`crate::registry::ThemeFamilyContent::validate`]
+    /// so the legacy and family formats share one rule.
     pub fn validate(&self) -> Result<(), String> {
-        if self.name.trim().is_empty() {
-            return Err("theme 'name' must not be empty".to_string());
+        if let Some(v) = self
+            .variants
+            .values()
+            .find(|v| v.mode != "light" && v.mode != "dark")
+        {
+            return Err(format!(
+                "variant mode {:?} must be \"light\" or \"dark\"",
+                v.mode
+            ));
         }
-        if self.variants.is_empty() {
-            return Err("'variants' must contain at least one entry".to_string());
-        }
-        let has_light = self.variants.values().any(|v| v.mode == "light");
-        let has_dark = self.variants.values().any(|v| v.mode == "dark");
-        if !has_light || !has_dark {
-            return Err(
-                "'variants' must include at least one entry with mode \"light\" and one with mode \"dark\""
-                    .to_string(),
-            );
-        }
-        Ok(())
+        crate::registry::ThemeFamilyContent::from(self)
+            .validate()
+            .map_err(|e| e.to_string())
     }
 
     /// Resolve the variant to render. If `variant_key` names an existing
     /// variant whose `mode` matches the requested appearance, it wins;
-    /// otherwise fall back to the first variant of the right mode, then any.
+    /// otherwise fall back to the first variant of the right mode. There is no
+    /// cross-mode fallback: a file without that mode yields `None`.
     fn resolve_variant(&self, dark: bool, variant_key: Option<&str>) -> Option<&ThemeFileVariant> {
         let want = if dark { "dark" } else { "light" };
         if let Some(key) = variant_key {
@@ -112,10 +112,7 @@ impl ThemeFile {
                 }
             }
         }
-        self.variants
-            .values()
-            .find(|v| v.mode == want)
-            .or_else(|| self.variants.values().next())
+        self.variants.values().find(|v| v.mode == want)
     }
 
     /// The `(key, label)` pairs of every variant matching the given appearance,
@@ -251,6 +248,14 @@ pub const COLOR_TOKENS: &[&str] = &[
     "border.selected",
     "border.transparent",
     "border.disabled",
+    "border.strong",
+    "border.subtle",
+    "surface.hover_strong",
+    "surface.sunken",
+    "action",
+    "action_foreground",
+    "action_hover",
+    "action_active",
     "modified",
     "error",
     "warning",
@@ -337,6 +342,14 @@ pub(crate) fn set_token(theme: &mut Theme, key: &str, c: gpui::Hsla) -> bool {
         "border.selected" => theme.border.selected = c,
         "border.transparent" => theme.border.transparent = c,
         "border.disabled" => theme.border.disabled = c,
+        "border.strong" => theme.border.strong = c,
+        "border.subtle" => theme.border.subtle = c,
+        "surface.hover_strong" => theme.surface.hover_strong = c,
+        "surface.sunken" => theme.surface.sunken = c,
+        "action" => theme.surface.action = c,
+        "action_foreground" => theme.surface.action_foreground = c,
+        "action_hover" => theme.surface.action_hover = c,
+        "action_active" => theme.surface.action_active = c,
         "modified" => theme.status.modified = c,
         "error" => theme.status.error = c,
         "warning" => theme.status.warning = c,
@@ -423,6 +436,14 @@ pub(crate) fn get_token(theme: &Theme, key: &str) -> gpui::Hsla {
         "border.selected" => theme.border.selected,
         "border.transparent" => theme.border.transparent,
         "border.disabled" => theme.border.disabled,
+        "border.strong" => theme.border.strong,
+        "border.subtle" => theme.border.subtle,
+        "surface.hover_strong" => theme.surface.hover_strong,
+        "surface.sunken" => theme.surface.sunken,
+        "action" => theme.surface.action,
+        "action_foreground" => theme.surface.action_foreground,
+        "action_hover" => theme.surface.action_hover,
+        "action_active" => theme.surface.action_active,
         "modified" => theme.status.modified,
         "error" => theme.status.error,
         "warning" => theme.status.warning,
@@ -558,6 +579,29 @@ mod tests {
         let no_name = r#"{ "name": "  ", "variants": {
             "d": { "mode": "dark", "colors": {} }, "l": { "mode": "light", "colors": {} } } }"#;
         assert!(ThemeFile::from_json(no_name).unwrap().validate().is_err());
+    }
+
+    #[test]
+    fn validate_matches_the_family_rule_and_rejects_unknown_modes() {
+        let only_light =
+            r#"{ "name": "X", "variants": { "l": { "mode": "light", "colors": {} } } }"#;
+        let err = ThemeFile::from_json(only_light)
+            .unwrap()
+            .validate()
+            .unwrap_err();
+        assert!(err.contains("dark"), "{err}");
+
+        let sepia = r#"{ "name": "X", "variants": {
+            "d": { "mode": "dark", "colors": {} }, "l": { "mode": "sepia", "colors": {} } } }"#;
+        assert!(ThemeFile::from_json(sepia).unwrap().validate().is_err());
+    }
+
+    #[test]
+    fn missing_mode_has_no_cross_mode_fallback() {
+        let only_dark = r#"{ "name": "X", "variants": { "d": { "mode": "dark", "colors": {} } } }"#;
+        let file = ThemeFile::from_json(only_dark).unwrap();
+        assert!(Theme::from_theme_file(&file, false).is_err());
+        assert!(Theme::from_theme_file(&file, true).is_ok());
     }
 
     #[test]

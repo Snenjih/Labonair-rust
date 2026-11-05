@@ -61,13 +61,33 @@ pub const PROJECT_SETTINGS_WHITELIST: &[(&str, &[&str])] = &[
             "editorTabSize",
             "editorWordWrap",
             "editorIndentWithTabs",
+            "editorAutoCloseBrackets",
+            "editorAutoSurround",
+            "editorDragAndDropSelection",
+            "editorMouseWheelZoom",
+            "editorScrollSensitivity",
+            "editorFastScrollSensitivity",
+            "editorVerticalScrollMargin",
             "editorIndentationGuides",
             "editorWhitespace",
             "editorBracketMatching",
             "editorScrollBeyondLastLine",
             "editorStickyContext",
             "editorDiagnostics",
+            "editorDiagnosticsMaxSeverity",
+            "editorLspDocumentColors",
+            "editorErrorLens",
+            "editorErrorLensDelayMs",
+            "editorErrorLensSpacing",
+            "editorErrorLensMinimumColumn",
             "editorSemanticTokens",
+            "editorInlayHints",
+            "editorInlayTypeHints",
+            "editorInlayParameterHints",
+            "editorInlayOtherHints",
+            "editorInlayShowBackground",
+            "editorInlayEditDebounceMs",
+            "editorInlayScrollDebounceMs",
             "editorGitWordDiff",
             "editorCompletion",
             "editorHover",
@@ -78,6 +98,10 @@ pub const PROJECT_SETTINGS_WHITELIST: &[(&str, &[&str])] = &[
             "editorAutoSaveDelay",
             "editorLineNumbers",
             "editorRelativeLineNumbers",
+            "vimCursorShapeNormal",
+            "vimCursorShapeInsert",
+            "vimCursorShapeReplace",
+            "vimCursorShapeVisual",
         ],
     ),
 ];
@@ -212,12 +236,23 @@ mod tests {
     #[test]
     fn filter_and_parse_keeps_every_whitelisted_leaf() {
         let (content, rejected) = filter_and_parse(
-            r#"{"editor":{"editorTabSize":4,"editorWordWrap":true,"editorGitWordDiff":false}}"#,
+            r#"{"editor":{"editorTabSize":4,"editorWordWrap":true,"editorGitWordDiff":false,"editorLspDocumentColors":"inline","editorAutoCloseBrackets":false,"editorAutoSurround":false,"editorDragAndDropSelection":false,"editorMouseWheelZoom":true,"editorScrollSensitivity":1.5,"editorFastScrollSensitivity":6.0,"editorVerticalScrollMargin":5}}"#,
         );
         assert!(rejected.is_empty());
         assert_eq!(content.editor.editor_tab_size, Some(4));
         assert_eq!(content.editor.editor_word_wrap, Some(true));
         assert_eq!(content.editor.editor_git_word_diff, Some(false));
+        assert_eq!(content.editor.editor_auto_close_brackets, Some(false));
+        assert_eq!(content.editor.editor_auto_surround, Some(false));
+        assert_eq!(content.editor.editor_drag_and_drop_selection, Some(false));
+        assert_eq!(content.editor.editor_mouse_wheel_zoom, Some(true));
+        assert_eq!(content.editor.editor_scroll_sensitivity, Some(1.5));
+        assert_eq!(content.editor.editor_fast_scroll_sensitivity, Some(6.0));
+        assert_eq!(content.editor.editor_vertical_scroll_margin, Some(5));
+        assert_eq!(
+            content.editor.editor_lsp_document_colors,
+            Some(labonair_settings_content::editor::EditorDocumentColorMode::Inline)
+        );
     }
 
     #[test]
@@ -231,6 +266,11 @@ mod tests {
     fn project_write_whitelist_matches_the_persisted_contract() {
         assert!(is_project_setting_allowed("general.restoreWindowState"));
         assert!(is_project_setting_allowed("editor.editorTabSize"));
+        assert!(is_project_setting_allowed("editor.editorLspDocumentColors"));
+        assert!(is_project_setting_allowed("editor.vimCursorShapeNormal"));
+        assert!(is_project_setting_allowed("editor.vimCursorShapeInsert"));
+        assert!(is_project_setting_allowed("editor.vimCursorShapeReplace"));
+        assert!(is_project_setting_allowed("editor.vimCursorShapeVisual"));
         assert!(!is_project_setting_allowed("general.autostart"));
         assert!(!is_project_setting_allowed("mcp.bridgePort"));
         assert!(!is_project_setting_allowed("general"));

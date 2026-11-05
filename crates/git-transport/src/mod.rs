@@ -9,8 +9,8 @@ use labonair_ssh_transport::SshState;
 
 pub use adapter::{GitGraphTransportService, GitTransportService};
 pub use labonair_git::{
-    Branch, CommitInfo, CommitResult, FileDiffStat, FileStatus, GitStatus, StashEntry,
-    SubmoduleState, SubmoduleStatus, SubmoduleSyncState, WorkspaceGitState,
+    Branch, CommitInfo, CommitResult, FileDiffStat, FileStatus, GitBlameLine, GitStatus,
+    StashEntry, SubmoduleState, SubmoduleStatus, SubmoduleSyncState, WorkspaceGitState,
 };
 
 // ─── Pure parsers (shared by the standalone commands and the bundle) ──────────
@@ -614,6 +614,61 @@ pub async fn git_get_diff(
     Ok(truncate_diff(&stdout, MAX_DIFF_BYTES))
 }
 
+/// Return Git's attribution for one one-based source line.
+pub async fn git_get_blame_line(
+    path: String,
+    file: String,
+    line: u32,
+    session_id: Option<String>,
+    sftp_state: &SshState,
+    events: EventBus,
+) -> Result<GitBlameLine, String> {
+    if line == 0 {
+        return Err("Git blame line numbers start at one".into());
+    }
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
+    let line_range = format!("{line},{line}");
+    let output = executor
+        .run(&["blame", "--line-porcelain", "-L", &line_range, "--", &file])
+        .await?;
+    parse_blame_line(&output)
+}
+
+fn parse_blame_line(output: &str) -> Result<GitBlameLine, String> {
+    let mut lines = output.lines();
+    let header = lines
+        .next()
+        .ok_or_else(|| "Git blame returned no line attribution".to_string())?;
+    let commit = header
+        .split_whitespace()
+        .next()
+        .map(|value| value.trim_start_matches('^'))
+        .filter(|value| value.len() >= 7 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .ok_or_else(|| "Git blame returned an invalid commit id".to_string())?
+        .to_string();
+    let mut author = None;
+    let mut summary = None;
+    let mut author_time = None;
+    for line in lines {
+        if let Some(value) = line.strip_prefix("author ") {
+            author = Some(value.to_string());
+        } else if let Some(value) = line.strip_prefix("summary ") {
+            summary = Some(value.to_string());
+        } else if let Some(value) = line.strip_prefix("author-time ") {
+            author_time = value.parse::<i64>().ok();
+        } else if line.starts_with('\t') {
+            break;
+        }
+    }
+    Ok(GitBlameLine {
+        commit,
+        author: author.ok_or_else(|| "Git blame omitted the author".to_string())?,
+        summary: summary.ok_or_else(|| "Git blame omitted the commit summary".to_string())?,
+        author_time: author_time
+            .ok_or_else(|| "Git blame omitted the author timestamp".to_string())?,
+    })
+}
+
 fn truncate_diff(stdout: &[u8], max: usize) -> String {
     if stdout.len() > max {
         let truncated = String::from_utf8_lossy(safe_truncate_utf8(stdout, max)).into_owned();
@@ -709,6 +764,22 @@ pub async fn git_unstage_hunk(
     apply_hunk_patch(&executor, &file, hunk_patch_text, true).await
 }
 
+/// Discards one reviewed editor hunk from the worktree. A staged hunk uses
+/// `git apply --index --reverse` so the index and worktree move back together;
+/// an unstaged or untracked hunk only changes the worktree.
+pub async fn git_discard_hunk(
+    path: String,
+    file: String,
+    hunk_patch_text: String,
+    staged: bool,
+    session_id: Option<String>,
+    sftp_state: &SshState,
+    events: EventBus,
+) -> Result<(), String> {
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
+    apply_discard_hunk_patch(&executor, &file, hunk_patch_text, staged).await
+}
+
 /// Shared `git apply --cached[--reverse]` dispatch for hunk stage/unstage.
 async fn apply_hunk_patch(
     executor: &GitExecutor,
@@ -724,6 +795,23 @@ async fn apply_hunk_patch(
         .run_with_stdin(&args, hunk_patch_text.into_bytes())
         .await
         .map_err(|e| classify_apply_error(&e, file))
+}
+
+async fn apply_discard_hunk_patch(
+    executor: &GitExecutor,
+    file: &str,
+    hunk_patch_text: String,
+    staged: bool,
+) -> Result<(), String> {
+    let mut args: Vec<&str> = vec!["apply"];
+    if staged {
+        args.push("--index");
+    }
+    args.push("--reverse");
+    executor
+        .run_with_stdin(&args, hunk_patch_text.into_bytes())
+        .await
+        .map_err(|error| classify_apply_error(&error, file))
 }
 
 /// `git apply --cached` fails with a "the patch doesn't match the index"
@@ -904,37 +992,42 @@ pub async fn git_continue(
 }
 
 /// Returns the commit log.
-pub async fn git_get_log(
+pub(crate) struct GitLogRequest {
+    pub limit: Option<u32>,
+    pub all_branches: bool,
+    pub session_id: Option<String>,
+    pub skip: Option<usize>,
+    /// Relative pathspec; when present Git follows that file across renames.
+    pub file: Option<String>,
+}
+
+pub(crate) async fn git_get_log(
     path: String,
-    limit: Option<u32>,
-    all_branches: bool,
-    session_id: Option<String>,
-    skip: Option<usize>,
+    request: GitLogRequest,
     sftp_state: &SshState,
     events: EventBus,
 ) -> Result<Vec<CommitInfo>, String> {
     // Remote page size defaults lower than local's 500 — a single exec must
     // finish within the session's existing 15s timeout, and remote round-trip
     // + remote CPU cost is higher per commit than a local process.
-    let default_limit = if session_id.is_some() { 200 } else { 500 };
-    let n = limit.unwrap_or(default_limit).to_string();
-    let skip_str = skip.map(|s| s.to_string());
+    let default_limit = if request.session_id.is_some() {
+        200
+    } else {
+        500
+    };
+    let n = request.limit.unwrap_or(default_limit).to_string();
+    let skip_str = request.skip.map(|s| s.to_string());
     let format = "--format=%x1e%H%x00%P%x00%an%x00%ae%x00%at%x00%s%x00%D".to_string();
 
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
+    let executor = resolve_executor(path, request.session_id, sftp_state.clone(), events.clone());
 
-    let mut args: Vec<&str> = vec!["log"];
-    if all_branches {
-        args.push("--all");
-    }
-    if let Some(ref s) = skip_str {
-        args.push("--skip");
-        args.push(s);
-    }
-    args.push("-n");
-    args.push(&n);
-    args.push(&format);
-    args.push("--shortstat");
+    let args = git_log_arguments(
+        &n,
+        request.all_branches,
+        skip_str.as_deref(),
+        &format,
+        request.file.as_deref(),
+    );
 
     let raw = executor.run(&args).await?;
 
@@ -1001,6 +1094,28 @@ pub async fn git_get_log(
     }
 
     Ok(commits)
+}
+
+fn git_log_arguments<'a>(
+    limit: &'a str,
+    all_branches: bool,
+    skip: Option<&'a str>,
+    format: &'a str,
+    file: Option<&'a str>,
+) -> Vec<&'a str> {
+    let mut args = vec!["log"];
+    if all_branches {
+        args.push("--all");
+    }
+    if let Some(skip) = skip {
+        args.push("--skip");
+        args.push(skip);
+    }
+    args.extend(["-n", limit, format, "--shortstat"]);
+    if let Some(file) = file {
+        args.extend(["--follow", "--", file]);
+    }
+    args
 }
 
 /// Returns the full detail (message + stat) of a single commit.
@@ -1220,6 +1335,43 @@ pub async fn git_get_commit_diff(
     let stdout = executor
         .run_raw(&["show", "--format=", "--patch", &hash])
         .await?;
+    Ok(truncate_diff(&stdout, MAX_DIFF_BYTES))
+}
+
+pub async fn git_get_stash_diff(
+    path: String,
+    hash: String,
+    session_id: Option<String>,
+    sftp_state: &SshState,
+    events: EventBus,
+) -> Result<String, String> {
+    const MAX_DIFF_BYTES: usize = 200 * 1024;
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
+    let stdout = executor
+        .run_raw(&[
+            "stash",
+            "show",
+            "--include-untracked",
+            "--format=",
+            "--patch",
+            &hash,
+        ])
+        .await?;
+    Ok(truncate_diff(&stdout, MAX_DIFF_BYTES))
+}
+
+pub async fn git_get_branch_diff(
+    path: String,
+    base: String,
+    head: String,
+    session_id: Option<String>,
+    sftp_state: &SshState,
+    events: EventBus,
+) -> Result<String, String> {
+    const MAX_DIFF_BYTES: usize = 200 * 1024;
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
+    let comparison = format!("{base}...{head}");
+    let stdout = executor.run_raw(&["diff", "--patch", &comparison]).await?;
     Ok(truncate_diff(&stdout, MAX_DIFF_BYTES))
 }
 
@@ -1631,6 +1783,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn blame_porcelain_extracts_commit_author_summary_and_timestamp() {
+        let blame = parse_blame_line(
+            "^0123456789abcdef0123456789abcdef01234567 4 9 1\nauthor Ada Lovelace\nauthor-time 1740000000\nsummary Improve parser\nfilename src/lib.rs\n\tlet value = 1;\n",
+        )
+        .expect("valid porcelain blame");
+        assert_eq!(blame.commit, "0123456789abcdef0123456789abcdef01234567");
+        assert_eq!(blame.author, "Ada Lovelace");
+        assert_eq!(blame.summary, "Improve parser");
+        assert_eq!(blame.author_time, 1_740_000_000);
+    }
+
+    #[test]
     fn shortstat_parses_all_fields() {
         assert_eq!(
             parse_shortstat("3 files changed, 10 insertions(+), 4 deletions(-)"),
@@ -1642,6 +1806,22 @@ mod tests {
     fn shortstat_handles_missing_fields() {
         assert_eq!(parse_shortstat("1 file changed, 1 insertion(+)"), (1, 1, 0));
         assert_eq!(parse_shortstat(""), (0, 0, 0));
+    }
+
+    #[test]
+    fn file_history_log_uses_follow_and_a_literal_pathspec() {
+        let args = git_log_arguments(
+            "20",
+            false,
+            Some("3"),
+            "--format=%H",
+            Some("--looks-like-an-option.rs"),
+        );
+        assert_eq!(
+            &args[args.len() - 3..],
+            ["--follow", "--", "--looks-like-an-option.rs"]
+        );
+        assert_eq!(&args[..4], ["log", "--skip", "3", "-n"]);
     }
 
     #[test]
@@ -2090,6 +2270,84 @@ rename_src.txt\0\
             "expected nothing staged after unstaging hunk 1:\n{staged_after_unstage}"
         );
 
+        let raw_after_unstage = git_output(&dir, &["diff", "--", "tracked.txt"]);
+        let (header, first_hunk) = split_first_hunk(&raw_after_unstage);
+        let discard_patch = format!("{header}\n{first_hunk}\n");
+        apply_discard_hunk_patch(&executor, "tracked.txt", discard_patch.clone(), false)
+            .await
+            .expect("discard unstaged hunk");
+        let after_discard = git_output(&dir, &["diff", "--", "tracked.txt"]);
+        assert!(!after_discard.contains("a2_CHANGED"));
+        assert!(after_discard.contains("a14_CHANGED"));
+        let stale_discard =
+            apply_discard_hunk_patch(&executor, "tracked.txt", discard_patch, false).await;
+        assert!(stale_discard
+            .expect_err("discarding the same stale hunk must fail")
+            .starts_with("Diff is stale"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn discard_staged_hunk_updates_index_and_worktree_together() {
+        let dir = make_temp_repo("discard_staged");
+        let initial = "one\ntwo\nthree\n";
+        write_file(&dir, "tracked.txt", initial);
+        std::process::Command::new("git")
+            .args(["add", "tracked.txt"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-q", "-m", "init"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        write_file(&dir, "tracked.txt", "one\nchanged\nthree\n");
+        std::process::Command::new("git")
+            .args(["add", "tracked.txt"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let staged_diff = git_output(&dir, &["diff", "--cached", "--", "tracked.txt"]);
+        let (header, hunk) = split_first_hunk(&staged_diff);
+        let patch = format!("{header}\n{hunk}\n");
+        let executor = GitExecutor::Local {
+            cwd: dir.to_string_lossy().into_owned(),
+        };
+
+        apply_discard_hunk_patch(&executor, "tracked.txt", patch, true)
+            .await
+            .expect("discard staged hunk");
+
+        assert!(git_output(&dir, &["diff", "--cached", "--", "tracked.txt"]).is_empty());
+        assert!(git_output(&dir, &["diff", "--", "tracked.txt"]).is_empty());
+        assert_eq!(
+            std::fs::read_to_string(dir.join("tracked.txt")).unwrap(),
+            initial
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn discard_untracked_hunk_removes_the_untracked_file() {
+        let dir = make_temp_repo("discard_untracked");
+        write_file(&dir, "fresh.txt", "untracked content\n");
+        let diff = git_output(
+            &dir,
+            &["diff", "--no-index", "--", "/dev/null", "fresh.txt"],
+        );
+        let (header, hunk) = split_first_hunk(&diff);
+        let patch = format!("{header}\n{hunk}\n");
+        let executor = GitExecutor::Local {
+            cwd: dir.to_string_lossy().into_owned(),
+        };
+
+        apply_discard_hunk_patch(&executor, "fresh.txt", patch, false)
+            .await
+            .expect("discard untracked hunk");
+
+        assert!(!dir.join("fresh.txt").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -2108,6 +2366,55 @@ rename_src.txt\0\
             ssh: labonair_ssh_transport::SshState::default(),
             events: EventBus::new(),
         }
+    }
+
+    #[tokio::test]
+    async fn branch_diff_shows_target_changes_since_merge_base() {
+        let dir = make_temp_repo("branch_diff");
+        let path = dir.to_string_lossy().into_owned();
+        let run = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .unwrap_or_else(|error| panic!("failed to run git {args:?}: {error}"));
+            assert!(
+                output.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        run(&["branch", "-M", "main"]);
+        write_file(&dir, "shared.txt", "base\n");
+        run(&["add", "."]);
+        run(&["commit", "-q", "-m", "base"]);
+        run(&["switch", "-q", "-c", "feature"]);
+        write_file(&dir, "shared.txt", "base\nfeature\n");
+        run(&["commit", "-qam", "feature change"]);
+        run(&["switch", "-q", "main"]);
+        write_file(&dir, "main-only.txt", "main\n");
+        run(&["add", "."]);
+        run(&["commit", "-q", "-m", "main change"]);
+
+        let app = test_capabilities();
+        let diff = git_get_branch_diff(
+            path,
+            "main".into(),
+            "feature".into(),
+            None,
+            &app.ssh,
+            app.events,
+        )
+        .await
+        .expect("load branch comparison");
+
+        assert!(diff.contains("+feature"), "target change missing:\n{diff}");
+        assert!(diff.contains("shared.txt"), "changed path missing:\n{diff}");
+        assert!(
+            !diff.contains("main-only.txt"),
+            "base-only change leaked:\n{diff}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]

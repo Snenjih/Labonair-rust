@@ -16,7 +16,7 @@
 //! identity, never closable — is today's implicit single workspace, just
 //! given a name and a place in the model.
 
-use gpui::{hsla, EventEmitter, Hsla};
+use gpui::EventEmitter;
 
 use crate::context::WorkspaceIdentity;
 
@@ -26,60 +26,11 @@ pub type SpaceId = u64;
 /// least this one.
 pub const DEFAULT_SPACE_ID: SpaceId = 1;
 
-/// A small fixed set of badge colors (mirrors the reference Spaces switcher's
-/// colored initial badges) rather than an arbitrary theme-independent `Hsla`,
-/// so the color survives session-snapshot round-trips as a plain enum instead
-/// of float components.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SpaceColor {
-    #[default]
-    Orange,
-    Blue,
-    Green,
-    Purple,
-    Pink,
-    Yellow,
-    Gray,
-}
-
-impl SpaceColor {
-    /// Fixed accent color for the badge — deliberately independent of the
-    /// active theme (mirrors the reference switcher's own fixed palette).
-    pub fn hsla(self) -> Hsla {
-        match self {
-            SpaceColor::Orange => hsla(24. / 360., 0.85, 0.53, 1.0),
-            SpaceColor::Blue => hsla(217. / 360., 0.85, 0.60, 1.0),
-            SpaceColor::Green => hsla(142. / 360., 0.60, 0.45, 1.0),
-            SpaceColor::Purple => hsla(266. / 360., 0.65, 0.62, 1.0),
-            SpaceColor::Pink => hsla(330. / 360., 0.70, 0.62, 1.0),
-            SpaceColor::Yellow => hsla(45. / 360., 0.90, 0.55, 1.0),
-            SpaceColor::Gray => hsla(220. / 360., 0.06, 0.55, 1.0),
-        }
-    }
-
-    /// Cycles through the preset set, skipping `Orange` (reserved for
-    /// [`DEFAULT_SPACE_ID`]) so newly created spaces read as visually
-    /// distinct from Default and from each other for a while.
-    fn nth(n: usize) -> Self {
-        const CYCLE: [SpaceColor; 6] = [
-            SpaceColor::Blue,
-            SpaceColor::Purple,
-            SpaceColor::Green,
-            SpaceColor::Pink,
-            SpaceColor::Yellow,
-            SpaceColor::Gray,
-        ];
-        CYCLE[n % CYCLE.len()]
-    }
-}
-
 /// One named group of tabs.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Space {
     pub id: SpaceId,
     pub name: String,
-    pub color: SpaceColor,
     pub identity: WorkspaceIdentity,
     /// Which tab to reactivate when switching back into this space. `None`
     /// once the space has no tabs left.
@@ -112,7 +63,6 @@ impl SpaceStore {
             spaces: vec![Space {
                 id: DEFAULT_SPACE_ID,
                 name: "Default".to_string(),
-                color: SpaceColor::Orange,
                 identity: WorkspaceIdentity::Standalone,
                 last_active_tab: None,
             }],
@@ -156,11 +106,9 @@ impl SpaceStore {
     ) -> SpaceId {
         let id = self.next_id;
         self.next_id += 1;
-        let color = SpaceColor::nth(self.spaces.len().saturating_sub(1));
         self.spaces.push(Space {
             id,
             name: name.into(),
-            color,
             identity,
             last_active_tab: None,
         });
@@ -169,7 +117,7 @@ impl SpaceStore {
     }
 
     /// Re-create the seeded snapshot-restore shape used at startup: replaces
-    /// the seeded Default space's name/color/identity in place (keeping
+    /// the seeded Default space's name/identity in place (keeping
     /// `DEFAULT_SPACE_ID`) rather than creating a second space, or creates a
     /// fresh space for every subsequent snapshot entry. Returns the id the
     /// entry ended up at.
@@ -177,14 +125,12 @@ impl SpaceStore {
         &mut self,
         is_first: bool,
         name: String,
-        color: SpaceColor,
         identity: WorkspaceIdentity,
         cx: &mut gpui::Context<Self>,
     ) -> SpaceId {
         if is_first {
             if let Some(default) = self.spaces.iter_mut().find(|s| s.id == DEFAULT_SPACE_ID) {
                 default.name = name;
-                default.color = color;
                 default.identity = identity;
             }
             cx.notify();
@@ -195,7 +141,6 @@ impl SpaceStore {
             self.spaces.push(Space {
                 id,
                 name,
-                color,
                 identity,
                 last_active_tab: None,
             });
@@ -323,7 +268,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn rename_and_recolor(cx: &mut TestAppContext) {
+    fn rename_and_retarget(cx: &mut TestAppContext) {
         cx.update(|cx| {
             let store = cx.new(|_| SpaceStore::new());
             store.update(cx, |s, cx| {
@@ -347,20 +292,14 @@ mod tests {
                 let first = s.restore_entry(
                     true,
                     "Restored".into(),
-                    SpaceColor::Blue,
                     WorkspaceIdentity::project("/a"),
                     cx,
                 );
                 assert_eq!(first, DEFAULT_SPACE_ID);
                 assert_eq!(s.len(), 1);
 
-                let second = s.restore_entry(
-                    false,
-                    "Second".into(),
-                    SpaceColor::Green,
-                    WorkspaceIdentity::Standalone,
-                    cx,
-                );
+                let second =
+                    s.restore_entry(false, "Second".into(), WorkspaceIdentity::Standalone, cx);
                 assert_ne!(second, DEFAULT_SPACE_ID);
                 assert_eq!(s.len(), 2);
             });

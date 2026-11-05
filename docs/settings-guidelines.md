@@ -15,7 +15,8 @@ editor, not a general application-management window.
    behavior.
 3. **No management pages.** Hosts, credentials, themes, icon themes, keymaps,
    notifications, transfers, and command registration are opened through their
-   own canonical surfaces.
+   own canonical surfaces; rule 18 allows the Themes page to embed the theme
+   and Background owner surfaces inline.
 4. **Persisted selections are not ownership.** A selected theme ID or similar
    value may be persisted by the settings storage layer while the owning module
    controls its registry and user flow.
@@ -78,3 +79,21 @@ editor, not a general application-management window.
     `labonair://settings/<json-path>` link. Opening a known link selects the
     owning page, scrolls to the field, and briefly highlights it; an unknown
     path must not open an unrelated Settings page.
+
+18. **Owner surfaces may be embedded inline.** The Themes page hosts the
+    colour-theme, icon-theme and Background owner surfaces
+    ([ADR 0006](adr/0006-settings-hosts-owner-surfaces-inline.md)). A surface
+    registered with `SettingsSurfaceMode::Inline` and an inline builder is
+    embedded by the Settings window; the owner keeps all state, persistence and
+    notifications. Settings gains no feature state, and no other module may add
+    a parallel Settings category.
+
+19. **Pages are section cards.** Group values into `settings_group` cards of
+    `settings_row`s (title above the card). Pick the control by value shape:
+    switch for a bool, segmented control for two to four short choices,
+    preview tiles for a choice with a visual identity (colour scheme,
+    interface style, pane layout), slider for a bounded continuous number,
+    select for longer lists. Do not nest a card inside a card; an inline owner
+    view contributes rows to the host card.
+20. **Settings navigation has history.** Visiting a page records it; the
+    header's back/forward buttons and `cmd-[` / `cmd-]` walk that list.

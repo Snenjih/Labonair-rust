@@ -3,10 +3,12 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder, px, AnyElement, App, Div, InteractiveElement, IntoElement,
-    ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
+    div, prelude::FluentBuilder, px, AnyElement, App, Div, ElementId, FontWeight, Hsla,
+    InteractiveElement, IntoElement, ParentElement, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, Window,
 };
 
+use crate::animation::state_fill;
 use crate::{
     icon_button_builder, indicator, ButtonSize, ButtonVariant, IconButtonShape, IconName,
     IndicatorSize, Palette, DISABLED_OPACITY,
@@ -25,6 +27,20 @@ pub enum TabLayout {
     Vertical,
 }
 
+/// Visual style of a tab item.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TabStyle {
+    /// The flat, contiguous strip (the current titlebar tabs).
+    #[default]
+    Classic,
+    /// Rounded floating blocks: 28px blocks with `radius.md`, a sunken fill and
+    /// a `line_subtle` ring when selected, hover fill otherwise, and a close
+    /// button on hover only. Lay blocks out with [`floating_tab_strip`]; the
+    /// strip supplies the 40px bar, 6px padding and 4px (horizontal) or 2px
+    /// (vertical) gap.
+    Floating,
+}
+
 /// One caller-owned tab item. Workspace retains selection, ordering, drag/drop,
 /// persistence, and close policy; this component supplies common tab chrome
 /// and keyboard activation.
@@ -35,11 +51,14 @@ pub struct TabItemBuilder {
     label_content: Option<AnyElement>,
     leading: Option<IconName>,
     layout: TabLayout,
+    style: TabStyle,
     selected: bool,
     disabled: bool,
     dirty: bool,
+    status_colors: Vec<Hsla>,
     busy: bool,
     peek: bool,
+    pinned: bool,
     activate: Option<TabAction>,
     double_click: Option<TabAction>,
     navigate: Option<TabNavigation>,
@@ -60,11 +79,14 @@ pub fn tab_item(
         label_content: None,
         leading: None,
         layout: TabLayout::Horizontal,
+        style: TabStyle::Classic,
         selected: false,
         disabled: false,
         dirty: false,
+        status_colors: Vec::new(),
         busy: false,
         peek: false,
+        pinned: false,
         activate: None,
         double_click: None,
         navigate: None,
@@ -75,6 +97,12 @@ pub fn tab_item(
 impl TabItemBuilder {
     pub fn layout(mut self, layout: TabLayout) -> Self {
         self.layout = layout;
+        self
+    }
+
+    /// Switch between the classic strip and the floating block style.
+    pub fn style(mut self, style: TabStyle) -> Self {
+        self.style = style;
         self
     }
 
@@ -98,6 +126,22 @@ impl TabItemBuilder {
         self
     }
 
+    /// Append a small owner-colored state marker after the tab title.
+    pub fn status_color(mut self, color: Option<Hsla>) -> Self {
+        if let Some(color) = color {
+            self.status_colors.push(color);
+        }
+        self
+    }
+
+    /// Append another small owner-colored state marker after existing markers.
+    pub fn status_marker(mut self, color: Option<Hsla>) -> Self {
+        if let Some(color) = color {
+            self.status_colors.push(color);
+        }
+        self
+    }
+
     pub fn busy(mut self, busy: bool) -> Self {
         self.busy = busy;
         self
@@ -105,6 +149,12 @@ impl TabItemBuilder {
 
     pub fn peek(mut self, peek: bool) -> Self {
         self.peek = peek;
+        self
+    }
+
+    /// Show a pin in place of the close control for a pinned tab.
+    pub fn pinned(mut self, pinned: bool) -> Self {
+        self.pinned = pinned;
         self
     }
 
@@ -148,11 +198,14 @@ impl TabItemBuilder {
             label_content,
             leading,
             layout,
+            style,
             selected,
             disabled,
             dirty,
+            status_colors,
             busy,
             peek,
+            pinned,
             activate,
             double_click,
             navigate,
@@ -160,53 +213,75 @@ impl TabItemBuilder {
         } = self;
 
         let horizontal = layout == TabLayout::Horizontal;
+        let floating = style == TabStyle::Floating;
         let mut row = div()
             .id(id.clone())
             .group("tab_item")
             .flex()
             .flex_row()
             .items_center()
-            .gap(palette.space(if horizontal { 8.0 } else { 6.0 }))
-            .h(palette.space(if horizontal { 32.0 } else { 28.0 }))
-            .px(palette.space(if horizontal { 12.0 } else { 8.0 }))
-            .rounded(if horizontal {
+            .gap(palette.space(if horizontal && !floating { 8.0 } else { 6.0 }))
+            .h(palette.space(if horizontal && !floating { 40.0 } else { 28.0 }))
+            .px(palette.space(if horizontal && !floating {
+                12.0
+            } else if floating && horizontal {
+                10.0
+            } else {
+                8.0
+            }))
+            .rounded(if horizontal && !floating {
                 px(0.0)
             } else {
                 px(palette.radius.md)
             })
-            .text_size(palette.control_space(if horizontal { 13.0 } else { 12.0 }))
+            .text_size(palette.control_space(if horizontal && !floating { 13.0 } else { 12.0 }))
             .text_color(if selected { palette.fg } else { palette.muted })
             .when(layout == TabLayout::Vertical, |row| {
                 row.w_full().flex_shrink_0()
             })
+            // Ciel `EditorTabs variant="flat"`: borderless; the active tab is a
+            // fill, never an underline or accent tint.
             .when(horizontal, |row| {
-                row.relative()
-                    .flex_shrink_0()
-                    .max_w(palette.space(240.0))
-                    .border_b_1()
-                    .border_r_1()
-                    .border_color(palette.border)
+                row.relative().flex_shrink_0().max_w(palette.space(240.0))
             })
-            .when(selected, |row| {
-                if horizontal {
-                    row.bg(palette.bg).border_color(palette.bg)
-                } else {
-                    row.bg(palette.selected_fill)
-                }
+            // Floating blocks keep a constant 1px border (transparent) so
+            // selecting never shifts layout; the selected ring is part of the
+            // fading fill layer below.
+            .when(floating, |row| {
+                row.border_1().border_color(gpui::transparent_black())
             })
-            .when(!selected && !disabled, |row| {
-                if horizontal {
-                    row
-                } else {
-                    row.hover(|style| style.bg(palette.border))
-                }
-            })
+            .relative()
+            .when(selected, |row| row.font_weight(FontWeight::SEMIBOLD))
+            // Hover stays under the selected layer so a click on a hovered tab
+            // blends into the selection instead of dipping to the bar colour.
+            .when(!disabled, |row| row.hover(|style| style.bg(palette.accent)))
             .when(!disabled, |row| {
                 row.cursor_pointer()
                     .tab_index(0)
                     .focus(|style| style.border_1().border_color(palette.ring))
             })
             .when(disabled, |row| row.opacity(DISABLED_OPACITY));
+
+        // Selected fill (classic: editor surface; floating: sunken block with a
+        // 1px ring). An always-built layer, so selecting and deselecting
+        // crossfade; paints behind everything that follows.
+        row = row.child(state_fill(
+            (ElementId::from(id.clone()), "fill"),
+            palette,
+            selected,
+            if horizontal && !floating {
+                palette.bg
+            } else {
+                palette.selected_fill
+            },
+            floating.then_some(palette.line_subtle),
+            if horizontal && !floating {
+                px(0.0)
+            } else {
+                px(palette.radius.md)
+            },
+            px(if floating { 1.0 } else { 0.0 }),
+        ));
 
         if let Some(icon) = leading {
             row = row.child(
@@ -235,11 +310,22 @@ impl TabItemBuilder {
         if dirty {
             row = row.child(indicator(IndicatorSize::Xs, palette.fg.opacity(0.7)));
         }
+        for color in status_colors {
+            row = row.child(indicator(IndicatorSize::Xs, color));
+        }
         if busy {
             row = row.child(indicator(IndicatorSize::Xs, palette.info));
         }
 
-        if let Some(close) = close.filter(|_| !disabled) {
+        if pinned {
+            row = row.child(
+                div().flex_shrink_0().child(
+                    IconName::Pin
+                        .svg(if selected { palette.fg } else { palette.muted })
+                        .size(palette.control_space(14.0)),
+                ),
+            );
+        } else if let Some(close) = close.filter(|_| !disabled) {
             let click_close = close.clone();
             let close_button = icon_button_builder(
                 SharedString::from(format!("{id}-close")),
@@ -261,7 +347,7 @@ impl TabItemBuilder {
                     close(window, cx);
                 }
             })
-            .when(horizontal, |button| {
+            .when(horizontal || floating, |button| {
                 button
                     .invisible()
                     .group_hover("tab_item", |style| style.visible())
@@ -302,7 +388,7 @@ impl TabItemBuilder {
             });
         }
 
-        if horizontal {
+        if horizontal && !floating {
             row = row.child(
                 div()
                     .absolute()
@@ -315,6 +401,89 @@ impl TabItemBuilder {
         }
 
         row
+    }
+}
+
+/// Bar height of a horizontal [`TabStyle::Floating`] strip, before density.
+const FLOATING_BAR_HEIGHT: f32 = 40.0;
+/// Padding around the blocks of a floating strip.
+const FLOATING_BAR_PADDING: f32 = 6.0;
+/// Gap between floating blocks: horizontal and vertical strips.
+const FLOATING_GAP_H: f32 = 4.0;
+const FLOATING_GAP_V: f32 = 2.0;
+/// Extra space that replaces the pinned/unpinned divider of the classic strip.
+const FLOATING_GROUP_GAP: f32 = 8.0;
+/// Thickness of the drop-insertion marker.
+const DROP_MARKER_THICKNESS: f32 = 2.0;
+
+/// The container for [`TabStyle::Floating`] blocks: a 40px bar with 6px
+/// padding and 4px gaps (horizontal), or a column with 2px gaps (vertical).
+/// The caller adds the tab blocks, and [`tab_group_gap`] between groups.
+pub fn floating_tab_strip(
+    id: impl Into<ElementId>,
+    c: Palette,
+    layout: TabLayout,
+) -> Stateful<Div> {
+    let strip = div().id(id).flex().flex_shrink_0();
+    match layout {
+        TabLayout::Horizontal => strip
+            .flex_row()
+            .items_center()
+            .h(c.space(FLOATING_BAR_HEIGHT))
+            .px(c.space(FLOATING_BAR_PADDING))
+            .gap(c.space(FLOATING_GAP_H)),
+        TabLayout::Vertical => strip
+            .flex_col()
+            .w_full()
+            .p(c.space(FLOATING_BAR_PADDING))
+            .gap(c.space(FLOATING_GAP_V)),
+    }
+}
+
+/// A spacer that separates tab groups (for example pinned from unpinned) in a
+/// floating strip, in place of the classic 1px divider.
+pub fn tab_group_gap(c: Palette, layout: TabLayout) -> Div {
+    let gap = div().flex_shrink_0();
+    match layout {
+        TabLayout::Horizontal => gap.w(c.space(FLOATING_GROUP_GAP)).h_full(),
+        TabLayout::Vertical => gap.h(c.space(FLOATING_GROUP_GAP)).w_full(),
+    }
+}
+
+/// Which edge of a tab block a drop would insert next to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TabDropSide {
+    /// Before the block (left in a horizontal strip, above in a vertical one).
+    Before,
+    /// After the block.
+    After,
+}
+
+/// The drop-insertion marker: a 2px primary bar centred in the gap next to a
+/// tab block. It is absolutely positioned, so showing it never shifts layout:
+/// add it as a child of the (relative) tab block while a drag hovers it.
+pub fn tab_drop_marker(c: Palette, layout: TabLayout, side: TabDropSide) -> Div {
+    let thickness = px(DROP_MARKER_THICKNESS);
+    let bar = div().absolute().bg(c.primary).rounded_full();
+    // Centre the bar in the gap: half the gap plus half the bar, outward.
+    let (gap, inset) = match layout {
+        TabLayout::Horizontal => (FLOATING_GAP_H, c.space(4.0)),
+        TabLayout::Vertical => (FLOATING_GAP_V, c.space(4.0)),
+    };
+    let outward = -(c.space(gap) + thickness) / 2.0;
+    match (layout, side) {
+        (TabLayout::Horizontal, TabDropSide::Before) => {
+            bar.left(outward).top(inset).bottom(inset).w(thickness)
+        }
+        (TabLayout::Horizontal, TabDropSide::After) => {
+            bar.right(outward).top(inset).bottom(inset).w(thickness)
+        }
+        (TabLayout::Vertical, TabDropSide::Before) => {
+            bar.top(outward).left(inset).right(inset).h(thickness)
+        }
+        (TabLayout::Vertical, TabDropSide::After) => {
+            bar.bottom(outward).left(inset).right(inset).h(thickness)
+        }
     }
 }
 
@@ -352,6 +521,36 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn floating_style_builds_each_layout_and_state() {
+        let c = test_palette();
+        for layout in [TabLayout::Horizontal, TabLayout::Vertical] {
+            for selected in [true, false] {
+                for disabled in [true, false] {
+                    let _ = tab_item("tab", c, "Editor")
+                        .style(TabStyle::Floating)
+                        .layout(layout)
+                        .leading(IconName::SquarePen)
+                        .selected(selected)
+                        .disabled(disabled)
+                        .dirty(true)
+                        .pinned(!selected)
+                        .on_activate(|_, _| {})
+                        .on_close(|_, _| {})
+                        .render()
+                        .child(tab_drop_marker(c, layout, TabDropSide::Before))
+                        .child(tab_drop_marker(c, layout, TabDropSide::After));
+                }
+            }
+            let _ = floating_tab_strip("strip", c, layout).child(tab_group_gap(c, layout));
+        }
+    }
+
+    #[test]
+    fn classic_stays_the_default_style() {
+        assert_eq!(TabStyle::default(), TabStyle::Classic);
     }
 
     #[test]

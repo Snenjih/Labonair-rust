@@ -1,6 +1,6 @@
 # ADR 0004 — Keep editor-internal splits inside the Editor capability
 
-* **Status:** Accepted
+* **Status:** Superseded by [ADR 0005](0005-universal-panes.md)
 * **Date:** 2026-09-12
 * **Deciders:** project owner and implementation team
 * **Related:** [`capabilities.md`](../capabilities.md), [`modules.md`](../modules.md), [`feature-lifecycle.md`](../feature-lifecycle.md), [`0003-modular-product-architecture.md`](0003-modular-product-architecture.md)
