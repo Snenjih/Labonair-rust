@@ -37,6 +37,7 @@ pub mod layout;
 pub mod live_bridge;
 pub mod markdown;
 pub mod mcp_event_bridge;
+pub mod menu_slot;
 pub mod modal_layer;
 pub mod pane;
 pub mod pane_actions;
@@ -124,6 +125,7 @@ use tokio::runtime::Handle as TokioHandle;
 use crate::dock::{position_slug, RESIZE_HANDLE_SIZE};
 use crate::editor_git_bridge::{EditorGitContext, WorkspaceGitBridge};
 use crate::live_bridge::LiveCommand;
+use crate::menu_slot::MenuSlot;
 use crate::pane::{PaneId, SplitDirection, WorkspaceLayout};
 use crate::project_search::root_safe_path;
 use crate::spaces::{SpaceId, SpaceStore, DEFAULT_SPACE_ID};
@@ -494,11 +496,6 @@ fn persist_scrollback_captures(data_dir: &Path, captures: Vec<ScrollbackCapture>
     }
 }
 
-/// Height of `AppShell`'s titlebar. The tab strip lives inside it, so the
-/// tab / new-tab menus (rendered via the window-anchored `context_menu`
-/// primitive) drop from the bar's bottom edge instead of the pointer's `y`.
-const TITLEBAR_OFFSET: f32 = 32.0;
-
 /// The new-tab dropdown's two host submenus.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum NewTabSubmenu {
@@ -648,7 +645,9 @@ pub struct Workspace {
     pub(crate) spaces: Entity<SpaceStore>,
     /// Anchor position of the open Spaces popover, if any (mirrors
     /// `new_tab_menu`).
-    pub(crate) spaces_menu: Option<gpui::Point<gpui::Pixels>>,
+    pub(crate) spaces_menu: MenuSlot<gpui::Point<gpui::Pixels>>,
+    /// The per-space "..." actions menu: `(space id, anchor)`.
+    pub(crate) space_actions_menu: MenuSlot<(SpaceId, gpui::Point<gpui::Pixels>)>,
     /// Which spaces are collapsed in the Spaces popover / Tabs sidebar.
     /// Shared by both presentations — one data model, two views.
     pub(crate) collapsed_spaces: std::collections::HashSet<SpaceId>,
@@ -665,7 +664,7 @@ pub struct Workspace {
     pub(crate) recent_projects_open: bool,
     /// Anchor position of the Tabs sidebar's "New Space" dropdown (search +
     /// Recent Projects + New Space / Open Local Folder), if open.
-    pub(crate) new_space_menu: Option<gpui::Point<gpui::Pixels>>,
+    pub(crate) new_space_menu: MenuSlot<gpui::Point<gpui::Pixels>>,
     /// Filter text typed into the New Space dropdown's search field.
     pub(crate) new_space_search: String,
     pub(crate) new_space_search_focus: FocusHandle,
@@ -766,9 +765,11 @@ pub struct Workspace {
     /// Remaining tabs in a confirmed close-left/right/others/all operation.
     pub(crate) pending_close: VecDeque<u64>,
     /// Open tab context menu: `(tab id, anchor position)`.
-    pub(crate) context_menu: Option<(u64, gpui::Point<gpui::Pixels>)>,
+    pub(crate) context_menu: MenuSlot<(u64, gpui::Point<gpui::Pixels>)>,
     /// Anchor position of the open "+" new-tab dropdown, if any.
-    pub(crate) new_tab_menu: Option<gpui::Point<gpui::Pixels>>,
+    pub(crate) new_tab_menu: MenuSlot<gpui::Point<gpui::Pixels>>,
+    /// Strip scroll handles and the tab drag-over marker.
+    pub(crate) tab_strip: crate::tab_strip::TabStripState,
     /// Which of the new-tab dropdown's `SSH ▸` / `SFTP ▸` submenus is open.
     /// Held here (not as pure `:hover` state) so the two flyouts are mutually
     /// exclusive and can't overlap. Only meaningful while `new_tab_menu`.
@@ -1004,12 +1005,13 @@ impl Workspace {
             registry,
             tabs,
             spaces,
-            spaces_menu: None,
+            spaces_menu: MenuSlot::new(),
+            space_actions_menu: MenuSlot::new(),
             collapsed_spaces: std::collections::HashSet::new(),
             space_rename: None,
             recent_projects: recent_projects::load(),
             recent_projects_open: false,
-            new_space_menu: None,
+            new_space_menu: MenuSlot::new(),
             new_space_search: String::new(),
             new_space_search_focus,
             new_space_search_blink,
@@ -1053,8 +1055,9 @@ impl Workspace {
             pending_preview_focus: false,
             confirm_close: None,
             pending_close: VecDeque::new(),
-            context_menu: None,
-            new_tab_menu: None,
+            context_menu: MenuSlot::new(),
+            new_tab_menu: MenuSlot::new(),
+            tab_strip: Default::default(),
             new_tab_submenu: None,
             rename_tab: None,
             rename_focus,
@@ -6122,7 +6125,7 @@ impl Workspace {
 
     /// Start editing a tab's title inline (from the tab context menu).
     fn begin_tab_rename(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        self.context_menu = None;
+        self.close_tab_menu(cx);
         let current = self
             .tabs
             .read(cx)
@@ -6213,7 +6216,9 @@ impl Workspace {
         match ev.keystroke.key.as_str() {
             "enter" => self.commit_space_rename(cx),
             "escape" => {
+                // Cancel the rename only; the popover hosting the field stays.
                 self.space_rename = None;
+                cx.stop_propagation();
                 cx.notify();
             }
             "backspace" => {
@@ -6249,19 +6254,13 @@ impl Workspace {
             .collect()
     }
 
-    fn close_new_space_menu(&mut self, cx: &mut Context<Self>) {
-        self.new_space_menu = None;
-        self.new_space_search.clear();
-        cx.notify();
-    }
-
     fn on_new_space_search_key(
         &mut self,
         ev: &KeyDownEvent,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.new_space_menu.is_none() {
+        if !self.new_space_menu.is_open() {
             return;
         }
         match ev.keystroke.key.as_str() {
@@ -6561,18 +6560,38 @@ impl Render for Workspace {
         let confirm = self
             .confirm_close
             .map(|id| self.render_confirm(id, cx).into_any_element());
+        self.tick_menus(window, cx);
         let context_menu = self
             .context_menu
-            .map(|(id, pos)| self.render_context_menu(id, pos, cx).into_any_element());
+            .mounted()
+            .map(|(&(id, pos), closing)| (id, pos, closing))
+            .map(|(id, pos, closing)| {
+                self.render_context_menu(id, pos, closing, cx)
+                    .into_any_element()
+            });
         let new_tab_menu = self
             .new_tab_menu
-            .map(|pos| self.render_new_tab_menu(pos, cx).into_any_element());
+            .mounted()
+            .map(|(&pos, closing)| (pos, closing))
+            .map(|(pos, closing)| {
+                self.render_new_tab_menu(pos, closing, cx)
+                    .into_any_element()
+            });
         let spaces_menu = self
             .spaces_menu
-            .map(|pos| self.render_spaces_popover(pos, cx));
+            .mounted()
+            .map(|(&pos, closing)| (pos, closing))
+            .map(|(pos, closing)| self.render_spaces_popover(pos, closing, cx));
+        let space_actions_menu = self
+            .space_actions_menu
+            .mounted()
+            .map(|(&(id, pos), closing)| (id, pos, closing))
+            .map(|(id, pos, closing)| self.render_space_actions_menu(id, pos, closing, cx));
         let new_space_menu = self
             .new_space_menu
-            .map(|pos| self.render_new_space_menu(pos, cx));
+            .mounted()
+            .map(|(&pos, closing)| (pos, closing))
+            .map(|(pos, closing)| self.render_new_space_menu(pos, closing, cx));
 
         // T17-006: the three edge docks + the drag-to-resize handler used to
         // live in `AppShell::render`; they compose here now so the shell only
@@ -6634,6 +6653,7 @@ impl Render for Workspace {
             .children(context_menu)
             .children(new_tab_menu)
             .children(spaces_menu)
+            .children(space_actions_menu)
             .children(new_space_menu)
     }
 }

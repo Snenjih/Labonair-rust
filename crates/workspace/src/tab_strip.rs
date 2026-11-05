@@ -1,32 +1,125 @@
 //! Tab strip rendering: the titlebar strip, the vertical sidebar list and the
 //! per-tab block (R10-002).
+//!
+//! Tabs render as `TabStyle::Floating` blocks. Everything a block shows (label,
+//! icon, status markers) comes from [`tab_display`], the one seam tab rendering
+//! reads through, so pane-group names and hover lists extend it in one place.
 
 use std::path::Path;
-use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, point, px, Animation, AnimationExt, App, AppContext, ClipboardItem, Context,
-    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    div, point, px, App, AppContext, ClipboardItem, Context, DragMoveEvent, Hsla,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, ScrollHandle,
+    SharedString, StatefulInteractiveElement, Styled, Window,
 };
+use labonair_command_palette_core::CommandId;
 use labonair_settings::{Settings as _, WorkspaceSettings};
 use labonair_ui_kit::{
-    caret, context_menu, divider, icon_button_builder, tab_item, Axis, ButtonSize, IconButtonShape,
-    IconName, MenuItem, Palette, SubmenuHoverSource, TabLayout,
+    caret, context_menu_with_exit, divider, floating_tab_strip, icon_button_builder,
+    tab_drop_marker, tab_group_gap, tab_item, Axis, ButtonSize, Density, IconButtonShape, IconName,
+    MenuItem, MotionExt, Palette, SubmenuHoverSource, TabDropSide, TabLayout, TabStyle, Tooltip,
 };
-
-use labonair_command_palette_core::CommandId;
 
 use crate::tabs::{Tab, TabDiagnosticStatus, TabGitStatus, TabKind};
-use crate::{
-    relative_path_under_root, DraggedTab, NewTabSubmenu, TabDragPreview, Workspace, TITLEBAR_OFFSET,
-};
+use crate::{relative_path_under_root, DraggedTab, NewTabSubmenu, TabDragPreview, Workspace};
+
+/// Everything one tab block shows. The seam for tab rendering: both the
+/// horizontal strip and the sidebar list read a tab only through this.
+#[derive(Clone, Debug)]
+pub(crate) struct TabDisplay {
+    /// Title shown on the block (custom title, process title, cwd basename...).
+    pub label: SharedString,
+    /// Full text for the tooltip of a (possibly truncated) title.
+    pub tooltip: SharedString,
+    /// Kind icon, shown on non-editor tabs and in the sidebar.
+    pub icon: IconName,
+    /// Git status marker of an editor tab, when enabled in settings.
+    pub status_color: Option<Hsla>,
+    /// Diagnostics marker of an editor tab, when enabled in settings.
+    pub diagnostic_color: Option<Hsla>,
+}
+
+/// Resolve how `tab` is displayed. Reads settings and the theme, never mutates.
+pub(crate) fn tab_display(tab: &Tab, workspace: &Workspace, cx: &App) -> TabDisplay {
+    let c = Palette::from_theme(workspace.theme.read(cx));
+    let label = SharedString::from(tab.label());
+    let editor = tab.kind == TabKind::Editor;
+    let status_color = (editor
+        && WorkspaceSettings::try_get(cx)
+            .is_some_and(|settings| settings.show_editor_tab_git_status()))
+    .then_some(tab.git_status)
+    .flatten()
+    .map(|status| match status {
+        TabGitStatus::Added => c.success,
+        TabGitStatus::Modified => c.warning,
+        TabGitStatus::Deleted => c.error,
+    });
+    let diagnostic_color = (editor
+        && WorkspaceSettings::try_get(cx)
+            .is_some_and(|settings| settings.show_editor_tab_diagnostics()))
+    .then_some(tab.diagnostic_status)
+    .flatten()
+    .map(|status| match status {
+        TabDiagnosticStatus::Error => c.error,
+        TabDiagnosticStatus::Warning => c.warning,
+    });
+    TabDisplay {
+        tooltip: label.clone(),
+        label,
+        icon: tab.kind.indicator(),
+        status_color,
+        diagnostic_color,
+    }
+}
+
+/// Strip-local view state: scroll handles and the drag-over marker.
+#[derive(Default)]
+pub(crate) struct TabStripState {
+    /// Horizontal titlebar strip.
+    pub scroll_h: ScrollHandle,
+    /// Vertical sidebar list.
+    pub scroll_v: ScrollHandle,
+    /// The tab last scrolled into view per presentation (`[horizontal,
+    /// vertical]`), so manual scrolling is not fought on every render.
+    scrolled_to: [Option<u64>; 2],
+    /// The block a tab drag hovers and the side an insertion would land on.
+    /// Only meaningful while a drag is active.
+    pub drop_target: Option<(u64, TabDropSide)>,
+}
+
+/// Which side of `target` a reorder of `dragged` lands on, or `None` when the
+/// drop would be rejected (same tab, different Space, pinned/unpinned mix).
+/// `tabs` is `(id, space id, pinned)` in store order. Mirrors
+/// `TabStore::reorder`, which moves the dragged tab into the target's slot.
+pub(crate) fn drop_side(
+    tabs: &[(u64, u64, bool)],
+    dragged: u64,
+    target: u64,
+) -> Option<TabDropSide> {
+    let from = tabs.iter().position(|t| t.0 == dragged)?;
+    let to = tabs.iter().position(|t| t.0 == target)?;
+    let (a, b) = (tabs[from], tabs[to]);
+    if from == to || a.1 != b.1 || a.2 != b.2 {
+        return None;
+    }
+    Some(if from < to {
+        TabDropSide::After
+    } else {
+        TabDropSide::Before
+    })
+}
 
 impl Workspace {
-    /// Render one tab row. `sidebar == true` lays the row out for the vertical
+    /// Height of `AppShell`'s titlebar (density scaled). The tab strip lives
+    /// inside it, so strip-opened menus drop from the bar's bottom edge.
+    fn titlebar_offset(c: &Palette) -> gpui::Pixels {
+        Density::from_palette(c).titlebar_height()
+    }
+
+    /// Render one tab block. `sidebar == true` lays it out for the vertical
     /// Tabs sidebar panel (full width, click-anchored menus, top-edge drop
-    /// indicator); `false` is the horizontal titlebar strip.
+    /// marker); `false` is the horizontal titlebar strip.
     pub(crate) fn render_tab(
         &self,
         tab: &Tab,
@@ -36,54 +129,16 @@ impl Workspace {
         let theme = self.theme.read(cx);
         let fg = theme.foreground();
         let c = Palette::from_theme(theme);
+        let titlebar_offset = Self::titlebar_offset(&c);
         let id = tab.id;
         let active = self.tabs.read(cx).active_id() == id;
-        let label = SharedString::from(tab.label());
-        let status_color = (tab.kind == TabKind::Editor
-            && WorkspaceSettings::try_get(cx)
-                .is_some_and(|settings| settings.show_editor_tab_git_status()))
-        .then_some(tab.git_status)
-        .flatten()
-        .map(|status| match status {
-            TabGitStatus::Added => c.success,
-            TabGitStatus::Modified => c.warning,
-            TabGitStatus::Deleted => c.error,
-        });
-        let diagnostic_color = (tab.kind == TabKind::Editor
-            && WorkspaceSettings::try_get(cx)
-                .is_some_and(|settings| settings.show_editor_tab_diagnostics()))
-        .then_some(tab.diagnostic_status)
-        .flatten()
-        .map(|status| match status {
-            TabDiagnosticStatus::Error => c.error,
-            TabDiagnosticStatus::Warning => c.warning,
-        });
-
-        // D4 — tab-entrance animation (`@keyframes labonair-tab-in` in the
-        // reference `globals.css`: fade + `scale(0.86) → 1` over `--dur-base`
-        // with `--ease-premium`). GPUI 0.2.2 `Div` can't take a scale
-        // transform, so we animate opacity only. Reduce-motion mirrors the
-        // reference's `animation-duration: 0.01ms` clamp rather than dropping
-        // the keyframe entirely.
-        // T20-007: `reduce_motion` + timings now come from the metric-aware
-        // `ActiveTheme` — `ThemeStore::animation()` already reports zero
-        // durations when reduce-motion is on. GPUI's `with_animation` can
-        // divide by a zero duration, so we still clamp to a 10µs floor here
-        // (mirrors the reference `animation-duration: 0.01ms`).
-        let (ease, dur_base, reduce_motion) = {
-            let store = self.theme.read(cx);
-            let a = store.animation();
-            (
-                a.ease_premium,
-                a.dur_base,
-                store.active_theme().reduce_motion(),
-            )
-        };
-        let tab_in_dur = if reduce_motion || dur_base.is_zero() {
-            Duration::from_micros(10)
+        let display = tab_display(tab, self, cx);
+        let layout = if sidebar {
+            TabLayout::Vertical
         } else {
-            dur_base
+            TabLayout::Horizontal
         };
+        let label = display.label.clone();
 
         let label_content = match self.rename_tab.as_ref().filter(|(rid, _)| *rid == id) {
             Some((_, buf)) => div()
@@ -102,7 +157,7 @@ impl Workspace {
                 .px_1()
                 .rounded_sm()
                 .border_1()
-                .border_color(theme.primary())
+                .border_color(c.primary)
                 .flex()
                 .items_center()
                 .child(SharedString::from(buf.clone()))
@@ -116,20 +171,17 @@ impl Workspace {
         let view = cx.entity();
         let mut tab_item = tab_item(format!("workspace-tab-{id}"), c, label.clone());
         if sidebar || tab.kind != TabKind::Editor {
-            tab_item = tab_item.leading(tab.kind.indicator());
+            tab_item = tab_item.leading(display.icon);
         }
         tab_item = tab_item
-            .layout(if sidebar {
-                TabLayout::Vertical
-            } else {
-                TabLayout::Horizontal
-            })
+            .style(TabStyle::Floating)
+            .layout(layout)
             .selected(active)
             .dirty(tab.kind == TabKind::Editor && tab.dirty)
             .peek(tab.kind == TabKind::Editor && tab.peek)
             .pinned(tab.pinned)
-            .status_color(status_color)
-            .status_marker(diagnostic_color)
+            .status_color(display.status_color)
+            .status_marker(display.diagnostic_color)
             .label_content(label_content)
             .on_activate({
                 let view = view.clone();
@@ -161,18 +213,28 @@ impl Workspace {
                 view.update(app, |this, cx| this.request_close(id, window, cx));
             });
         }
-        let row = tab_item
+        let renaming = self.rename_tab.as_ref().is_some_and(|(rid, _)| *rid == id);
+        let marker = self
+            .tab_strip
+            .drop_target
+            .filter(|(target, _)| *target == id && cx.has_active_drag())
+            .map(|(_, side)| tab_drop_marker(c, layout, side));
+        tab_item
             .render()
+            .when(!renaming, |row| {
+                let tooltip = display.tooltip.clone();
+                row.tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
+            })
+            .children(marker)
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
                     let y = if sidebar {
                         ev.position.y
                     } else {
-                        px(TITLEBAR_OFFSET)
+                        titlebar_offset
                     };
-                    this.context_menu = Some((id, point(ev.position.x, y)));
-                    cx.notify();
+                    this.open_tab_menu(id, point(ev.position.x, y), cx);
                 }),
             )
             .on_mouse_down(
@@ -194,23 +256,36 @@ impl Workspace {
                     })
                 },
             )
-            .drag_over::<DraggedTab>(move |style, _, _, _| {
-                let style = if sidebar {
-                    style.border_t_2()
-                } else {
-                    style.border_l_2()
-                };
-                style.border_color(fg)
-            })
+            .on_drag_move(
+                cx.listener(move |this, ev: &DragMoveEvent<DraggedTab>, _window, cx| {
+                    let hovered = ev.bounds.contains(&ev.event.position);
+                    let current = this.tab_strip.drop_target;
+                    let next = if hovered {
+                        let dragged = ev.drag(cx).id;
+                        let tabs: Vec<_> = this
+                            .tabs
+                            .read(cx)
+                            .tabs()
+                            .iter()
+                            .map(|t| (t.id, t.space_id, t.pinned))
+                            .collect();
+                        drop_side(&tabs, dragged, id).map(|side| (id, side))
+                    } else if current.is_some_and(|(target, _)| target == id) {
+                        None
+                    } else {
+                        return;
+                    };
+                    if next != current {
+                        this.tab_strip.drop_target = next;
+                        cx.notify();
+                    }
+                }),
+            )
             .on_drop(cx.listener(move |this, dragged: &DraggedTab, _window, cx| {
+                this.tab_strip.drop_target = None;
                 this.tabs.update(cx, |s, cx| s.reorder(dragged.id, id, cx));
             }))
-            .with_animation(
-                ("tab-in", id),
-                Animation::new(tab_in_dur).with_easing(move |t| ease.eval(t)),
-                |el, delta| el.opacity(delta),
-            );
-        row
+            .motion_fade_in(("tab-in", id), c)
     }
 
     /// The tab strip. Rendered inside `AppShell`'s single overlay titlebar
@@ -220,6 +295,7 @@ impl Workspace {
         let theme = self.theme.read(cx);
         let (muted, fg, border) = (theme.muted_foreground(), theme.foreground(), theme.border());
         let c = Palette::from_theme(theme);
+        let titlebar_offset = Self::titlebar_offset(&c);
         let active_space_id = self.spaces.read(cx).active_id();
         // Only the active Space's tabs show in the titlebar strip — every
         // other Space's tabs stay alive (T20-008) but out of sight until
@@ -234,6 +310,27 @@ impl Workspace {
             .collect();
         let pinned_tabs: Vec<Tab> = tabs.iter().filter(|tab| tab.pinned).cloned().collect();
         let unpinned_tabs: Vec<Tab> = tabs.iter().filter(|tab| !tab.pinned).cloned().collect();
+
+        // Keep the selected tab in view: once per selection change, so manual
+        // scrolling is not undone on every render. The group gap is a child of
+        // the strip too, so it shifts the index of the unpinned tabs.
+        let active_id = self.tabs.read(cx).active_id();
+        let has_gap = !pinned_tabs.is_empty() && !unpinned_tabs.is_empty();
+        if self.tab_strip.scrolled_to[0] != Some(active_id) {
+            if let Some(ix) = pinned_tabs
+                .iter()
+                .position(|t| t.id == active_id)
+                .or_else(|| {
+                    unpinned_tabs
+                        .iter()
+                        .position(|t| t.id == active_id)
+                        .map(|ix| ix + pinned_tabs.len() + usize::from(has_gap))
+                })
+            {
+                self.tab_strip.scroll_h.scroll_to_item(ix);
+                self.tab_strip.scrolled_to[0] = Some(active_id);
+            }
+        }
 
         let active_space = self.spaces.read(cx).active().cloned();
         let (show_nav_history_buttons, show_tab_bar_buttons) = WorkspaceSettings::try_get(cx)
@@ -293,11 +390,8 @@ impl Workspace {
             .render()
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
-                    this.new_tab_menu = Some(point(ev.position.x, px(TITLEBAR_OFFSET)));
-                    this.new_tab_submenu = None;
-                    this.context_menu = None;
-                    cx.notify();
+                cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
+                    this.open_new_tab_menu(point(ev.position.x, titlebar_offset), cx);
                 }),
             );
 
@@ -326,11 +420,8 @@ impl Workspace {
             })
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
-                    this.spaces_menu = Some(point(ev.position.x, px(TITLEBAR_OFFSET)));
-                    this.new_tab_menu = None;
-                    this.context_menu = None;
-                    cx.notify();
+                cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
+                    this.open_spaces_menu(point(ev.position.x, titlebar_offset), cx);
                 }),
             );
 
@@ -338,7 +429,7 @@ impl Workspace {
             .flex()
             .items_center()
             .gap_1()
-            .h(px(32.0))
+            .h(titlebar_offset)
             .w_full()
             .flex_shrink_0()
             .bg(c.toolbar_bg)
@@ -357,41 +448,74 @@ impl Workspace {
             })
             .when(show_tab_bar_buttons, |bar| bar.child(spaces_trigger))
             .child(
-                div()
-                    .id("tab-strip")
-                    .flex()
-                    .items_center()
-                    .gap_0()
+                floating_tab_strip("tab-strip", c, TabLayout::Horizontal)
+                    // Shrinkable and scrollable, unlike the kit default.
+                    .flex_shrink()
                     .min_w_0()
-                    .h_full()
                     .overflow_x_scroll()
+                    .track_scroll(&self.tab_strip.scroll_h)
                     .children(pinned_tabs.iter().map(|t| self.render_tab(t, false, cx)))
-                    .when(
-                        !pinned_tabs.is_empty() && !unpinned_tabs.is_empty(),
-                        |strip| strip.child(div().mx_1().w(px(1.0)).h(px(16.0)).bg(border)),
-                    )
+                    .when(has_gap, |strip| {
+                        strip.child(tab_group_gap(c, TabLayout::Horizontal))
+                    })
                     .children(unpinned_tabs.iter().map(|t| self.render_tab(t, false, cx))),
             )
             .when(show_tab_bar_buttons, |bar| bar.child(new_tab))
     }
 
+    /// Open the tab context menu for `id` at `anchor`.
+    pub(crate) fn open_tab_menu(
+        &mut self,
+        id: u64,
+        anchor: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        self.context_menu.open((id, anchor));
+        self.close_new_tab_menu(cx);
+        self.close_spaces_menu(cx);
+    }
+
+    /// Open the "+" new-tab dropdown at `anchor`.
+    pub(crate) fn open_new_tab_menu(
+        &mut self,
+        anchor: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        self.new_tab_menu.open(anchor);
+        self.new_tab_submenu = None;
+        self.close_tab_menu(cx);
+        self.close_spaces_menu(cx);
+    }
+
+    /// Open the Spaces popover at `anchor`.
+    pub(crate) fn open_spaces_menu(
+        &mut self,
+        anchor: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        self.spaces_menu.open(anchor);
+        self.close_new_tab_menu(cx);
+        self.close_tab_menu(cx);
+    }
+
     /// The vertical tab list shown in the Tabs sidebar panel when
     /// `tabsLocation == "sidebar"`. Same behaviour as [`Workspace::render_tab_bar`]
     /// (select / close / reorder / rename / context menu), stacked in a column
-    /// with a "New Tab" footer. The new-tab / context menus themselves are
+    /// with a "New Space" footer. The new-tab / context menus themselves are
     /// rendered by [`Workspace::render`], anchored at the click position.
     pub fn render_tab_list_vertical(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let (muted, fg, border) = {
-            let theme = self.theme.read(cx);
-            (theme.muted_foreground(), theme.foreground(), theme.border())
-        };
+        let c = Palette::from_theme(self.theme.read(cx));
+        let (muted, fg, border) = (c.muted, c.fg, c.line_subtle);
         let spaces = self.spaces.read(cx).spaces().to_vec();
         let tabs = self.tabs.read(cx).tabs().to_vec();
+        let active_id = self.tabs.read(cx).active_id();
 
         // Grouped into a collapsible section per Space (T20-008) — the same
         // data and row component the Spaces popover uses, just expanded
-        // inline instead of in a floating card.
+        // inline instead of in a floating card. `scroll_ix` counts the direct
+        // children of the scroll container so the active tab can be revealed.
         let mut groups: Vec<gpui::AnyElement> = Vec::with_capacity(spaces.len() * 2);
+        let mut scroll_ix = None;
         let last_space_idx = spaces.len().saturating_sub(1);
         for (idx, space) in spaces.iter().enumerate() {
             let space_tabs: Vec<&Tab> = tabs.iter().filter(|t| t.space_id == space.id).collect();
@@ -400,14 +524,28 @@ impl Workspace {
                     .into_any_element(),
             );
             if !self.collapsed_spaces.contains(&space.id) {
-                groups.extend(
-                    space_tabs
-                        .into_iter()
-                        .map(|t| self.render_tab(t, true, cx).into_any_element()),
-                );
+                let has_gap =
+                    space_tabs.iter().any(|t| t.pinned) && space_tabs.iter().any(|t| !t.pinned);
+                let mut gap_done = false;
+                for tab in space_tabs {
+                    if has_gap && !tab.pinned && !gap_done {
+                        gap_done = true;
+                        groups.push(tab_group_gap(c, TabLayout::Vertical).into_any_element());
+                    }
+                    if tab.id == active_id {
+                        scroll_ix = Some(groups.len());
+                    }
+                    groups.push(self.render_tab(tab, true, cx).into_any_element());
+                }
             }
             if idx != last_space_idx {
                 groups.push(divider(Axis::Horizontal, border).my_1().into_any_element());
+            }
+        }
+        if self.tab_strip.scrolled_to[1] != Some(active_id) {
+            if let Some(ix) = scroll_ix {
+                self.tab_strip.scroll_v.scroll_to_item(ix);
+                self.tab_strip.scrolled_to[1] = Some(active_id);
             }
         }
         // Recent Projects lives in the "New Space" dropdown (`sidebar-new-space`)
@@ -421,15 +559,12 @@ impl Workspace {
             .h_full()
             .w_full()
             .child(
-                div()
-                    .id("sidebar-tab-list")
+                floating_tab_strip("sidebar-tab-list", c, TabLayout::Vertical)
                     .flex_1()
+                    .flex_shrink()
                     .min_h_0()
-                    .flex()
-                    .flex_col()
-                    .gap_0p5()
                     .overflow_y_scroll()
-                    .p_1p5()
+                    .track_scroll(&self.tab_strip.scroll_v)
                     .children(groups),
             )
             .child(
@@ -450,12 +585,12 @@ impl Workspace {
                             .rounded_md()
                             .text_color(muted)
                             .cursor_pointer()
-                            .hover(|s| s.bg(border).text_color(fg))
+                            .hover(|s| s.bg(c.accent).text_color(fg))
                             .child(IconName::FolderAdd.svg(muted).size(px(15.0)))
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|this, ev: &MouseDownEvent, window, cx| {
-                                    this.new_space_menu = Some(ev.position);
+                                    this.new_space_menu.open(ev.position);
                                     this.new_space_search.clear();
                                     window.focus(&this.new_space_search_focus);
                                     cx.notify();
@@ -472,6 +607,7 @@ impl Workspace {
     pub(crate) fn render_new_tab_menu(
         &mut self,
         pos: gpui::Point<gpui::Pixels>,
+        closing: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let recent = self.recent_host_picker_rows(cx, 5);
@@ -525,7 +661,7 @@ impl Workspace {
                                 move |_, w, cx| {
                                     let id = id.clone();
                                     v.update(cx, |this, cx| {
-                                        this.new_tab_menu = None;
+                                        this.close_new_tab_menu(cx);
                                         if ssh {
                                             this.open_ssh_tab(id, w, cx)
                                         } else {
@@ -545,7 +681,7 @@ impl Workspace {
                         let v = view.clone();
                         move |_, _w, cx| {
                             v.update(cx, |this, cx| {
-                                this.new_tab_menu = None;
+                                this.close_new_tab_menu(cx);
                                 this.open_hosts_tab(cx)
                             })
                         }
@@ -562,7 +698,7 @@ impl Workspace {
                     let v = view.clone();
                     move |_, w, cx| {
                         v.update(cx, |this, cx| {
-                            this.new_tab_menu = None;
+                            this.close_new_tab_menu(cx);
                             this.new_terminal_tab(w, cx)
                         })
                     }
@@ -574,7 +710,7 @@ impl Workspace {
                     let v = view.clone();
                     move |_, w, cx| {
                         v.update(cx, |this, cx| {
-                            this.new_tab_menu = None;
+                            this.close_new_tab_menu(cx);
                             this.new_editor_tab(w, cx)
                         })
                     }
@@ -586,7 +722,7 @@ impl Workspace {
                     let v = view.clone();
                     move |_, w, cx| {
                         v.update(cx, |this, cx| {
-                            this.new_tab_menu = None;
+                            this.close_new_tab_menu(cx);
                             this.new_preview_tab(w, cx)
                         })
                     }
@@ -597,7 +733,7 @@ impl Workspace {
                     let v = view.clone();
                     move |_, _w, cx| {
                         v.update(cx, |this, cx| {
-                            this.new_tab_menu = None;
+                            this.close_new_tab_menu(cx);
                             this.open_git_graph_tab(cx)
                         })
                     }
@@ -621,14 +757,15 @@ impl Workspace {
             let v = view.clone();
             move |_w: &mut Window, cx: &mut App| {
                 v.update(cx, |this, cx| {
-                    this.new_tab_menu = None;
+                    this.close_new_tab_menu(cx);
                     cx.notify()
                 })
             }
         };
-        context_menu(
+        context_menu_with_exit(
             pos,
             Palette::from_theme(self.theme.read(cx)),
+            closing,
             dismiss,
             items,
         )
@@ -638,6 +775,7 @@ impl Workspace {
         &mut self,
         id: u64,
         pos: gpui::Point<gpui::Pixels>,
+        closing: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let tab = self.tabs.read(cx).get(id).cloned();
@@ -704,7 +842,7 @@ impl Workspace {
                         let view = view.clone();
                         move |_, _, cx| {
                             view.update(cx, |this, cx| {
-                                this.context_menu = None;
+                                this.close_tab_menu(cx);
                                 if let Some(editor) =
                                     this.editors.get(&this.editor_slot_for_tab(id)).cloned()
                                 {
@@ -731,7 +869,7 @@ impl Workspace {
                         move |_, _, cx| {
                             cx.write_to_clipboard(ClipboardItem::new_string(path.clone()));
                             view.update(cx, |this, cx| {
-                                this.context_menu = None;
+                                this.close_tab_menu(cx);
                                 cx.notify();
                             });
                         }
@@ -744,7 +882,7 @@ impl Workspace {
                         move |_, _, cx| {
                             cx.write_to_clipboard(ClipboardItem::new_string(relative_path.clone()));
                             view.update(cx, |this, cx| {
-                                this.context_menu = None;
+                                this.close_tab_menu(cx);
                                 cx.notify();
                             });
                         }
@@ -760,7 +898,7 @@ impl Workspace {
                         move |_, _, cx| {
                             cx.reveal_path(Path::new(&path));
                             view.update(cx, |this, cx| {
-                                this.context_menu = None;
+                                this.close_tab_menu(cx);
                                 cx.notify();
                             });
                         }
@@ -775,7 +913,7 @@ impl Workspace {
                             let directory = directory.to_string_lossy().into_owned();
                             move |_, window, cx| {
                                 view.update(cx, |this, cx| {
-                                    this.context_menu = None;
+                                    this.close_tab_menu(cx);
                                     this.new_terminal_tab_in(Some(directory.clone()), window, cx);
                                 });
                             }
@@ -790,7 +928,7 @@ impl Workspace {
                         let path = path.to_string();
                         move |_, _, cx| {
                             view.update(cx, |this, cx| {
-                                this.context_menu = None;
+                                this.close_tab_menu(cx);
                                 this.open_file_history_tab(path.clone(), cx);
                                 cx.notify();
                             });
@@ -807,7 +945,7 @@ impl Workspace {
                         let v = view.clone();
                         move |_, _w, cx| {
                             v.update(cx, |this, cx| {
-                                this.context_menu = None;
+                                this.close_tab_menu(cx);
                                 this.tabs.update(cx, |s, cx| s.set_peek(id, false, cx));
                             })
                         }
@@ -824,7 +962,7 @@ impl Workspace {
                 let view = view.clone();
                 move |_, _, cx| {
                     view.update(cx, |this, cx| {
-                        this.context_menu = None;
+                        this.close_tab_menu(cx);
                         this.tabs
                             .update(cx, |store, cx| store.set_pinned(id, !is_pinned, cx));
                     });
@@ -846,7 +984,7 @@ impl Workspace {
                     let v = view.clone();
                     move |_, w, cx| {
                         v.update(cx, |this, cx| {
-                            this.context_menu = None;
+                            this.close_tab_menu(cx);
                             this.tabs.update(cx, |s, cx| s.set_active(id, cx));
                             this.duplicate_active_tab(w, cx);
                         })
@@ -867,7 +1005,7 @@ impl Workspace {
                     let v = view.clone();
                     move |_, w, cx| {
                         v.update(cx, |this, cx| {
-                            this.context_menu = None;
+                            this.close_tab_menu(cx);
                             this.request_close(id, w, cx)
                         })
                     }
@@ -880,7 +1018,7 @@ impl Workspace {
                     let v = view.clone();
                     move |_, w, cx| {
                         v.update(cx, |this, cx| {
-                            this.context_menu = None;
+                            this.close_tab_menu(cx);
                             this.close_others(id, w, cx)
                         })
                     }
@@ -893,7 +1031,7 @@ impl Workspace {
                     let v = view.clone();
                     move |_, w, cx| {
                         v.update(cx, |this, cx| {
-                            this.context_menu = None;
+                            this.close_tab_menu(cx);
                             this.close_tabs_to_side(id, false, w, cx)
                         })
                     }
@@ -906,7 +1044,7 @@ impl Workspace {
                     let v = view.clone();
                     move |_, w, cx| {
                         v.update(cx, |this, cx| {
-                            this.context_menu = None;
+                            this.close_tab_menu(cx);
                             this.close_tabs_to_side(id, true, w, cx)
                         })
                     }
@@ -919,7 +1057,7 @@ impl Workspace {
                     let v = view.clone();
                     move |_, w, cx| {
                         v.update(cx, |this, cx| {
-                            this.context_menu = None;
+                            this.close_tab_menu(cx);
                             this.close_clean_tabs(space_id, w, cx)
                         })
                     }
@@ -929,7 +1067,7 @@ impl Workspace {
             let v = view.clone();
             move |_, w, cx| {
                 v.update(cx, |this, cx| {
-                    this.context_menu = None;
+                    this.close_tab_menu(cx);
                     this.close_all_tabs(space_id, w, cx)
                 })
             }
@@ -940,7 +1078,7 @@ impl Workspace {
                     let v = view.clone();
                     move |_, w, cx| {
                         v.update(cx, |this, cx| {
-                            this.context_menu = None;
+                            this.close_tab_menu(cx);
                             this.close_by_kind(space_id, k, w, cx)
                         })
                     }
@@ -959,7 +1097,7 @@ impl Workspace {
                             let (session_id, label, host_id) =
                                 (session_id.clone(), label.clone(), host_id.clone());
                             v.update(cx, |this, cx| {
-                                this.context_menu = None;
+                                this.close_tab_menu(cx);
                                 this.agent_access.update(cx, |s, cx| {
                                     s.set_grant(
                                         id,
@@ -982,16 +1120,52 @@ impl Workspace {
             let v = view.clone();
             move |_w: &mut Window, cx: &mut App| {
                 v.update(cx, |this, cx| {
-                    this.context_menu = None;
+                    this.close_tab_menu(cx);
                     cx.notify()
                 })
             }
         };
-        context_menu(
+        context_menu_with_exit(
             pos,
             Palette::from_theme(self.theme.read(cx)),
+            closing,
             dismiss,
             items,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // (id, space id, pinned) in store order.
+    const TABS: [(u64, u64, bool); 5] = [
+        (1, 1, true),
+        (2, 1, true),
+        (3, 1, false),
+        (4, 1, false),
+        (5, 2, false),
+    ];
+
+    #[test]
+    fn drop_marker_follows_the_reorder_direction() {
+        assert_eq!(drop_side(&TABS, 3, 4), Some(TabDropSide::After));
+        assert_eq!(drop_side(&TABS, 4, 3), Some(TabDropSide::Before));
+        assert_eq!(drop_side(&TABS, 1, 2), Some(TabDropSide::After));
+    }
+
+    #[test]
+    fn drop_marker_hides_for_rejected_drops() {
+        // Onto itself.
+        assert_eq!(drop_side(&TABS, 3, 3), None);
+        // Pinned onto unpinned and back.
+        assert_eq!(drop_side(&TABS, 1, 3), None);
+        assert_eq!(drop_side(&TABS, 4, 2), None);
+        // Across spaces.
+        assert_eq!(drop_side(&TABS, 4, 5), None);
+        // Unknown ids.
+        assert_eq!(drop_side(&TABS, 9, 3), None);
+        assert_eq!(drop_side(&TABS, 3, 9), None);
     }
 }
