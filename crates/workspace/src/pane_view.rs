@@ -12,8 +12,8 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
     canvas, div, px, AnyElement, AppContext, ClickEvent, Context, DragMoveEvent,
-    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point,
+    Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use labonair_ui_kit::{
     pane_bar, pane_frame, IconName, MotionExt, Palette, PaneAction, PaneLayoutStyle,
@@ -34,17 +34,37 @@ pub struct DraggedPane {
     pub icon: IconName,
 }
 
-/// Mini-chip drag image (icon and title) for [`DraggedPane`].
+/// Mini-chip drag image (icon and title) for [`DraggedPane`] and tab drags.
 pub struct PaneDragChip {
     label: SharedString,
     icon: IconName,
     palette: Palette,
+    /// Where the pointer grabbed the dragged element. GPUI places the drag
+    /// image at the grab origin, so the chip is shifted by this much plus a
+    /// small gap to sit just below-right of the pointer.
+    grab: Point<Pixels>,
 }
+
+impl PaneDragChip {
+    pub fn new(label: SharedString, icon: IconName, palette: Palette, grab: Point<Pixels>) -> Self {
+        Self {
+            label,
+            icon,
+            palette,
+            grab,
+        }
+    }
+}
+
+/// Gap between the pointer and the drag chip.
+const CHIP_OFFSET: f32 = 12.0;
 
 impl Render for PaneDragChip {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let c = self.palette;
         div()
+            .ml(self.grab.x + px(CHIP_OFFSET))
+            .mt(self.grab.y + px(CHIP_OFFSET))
             .flex()
             .items_center()
             .gap_1()
@@ -115,12 +135,12 @@ impl Workspace {
         if !multi {
             let pane = root.first_leaf();
             let body = self.pane_body(pane, window, cx);
-            return div()
+            let area = div()
                 .relative()
                 .size_full()
                 .child(probe)
-                .child(Self::pane_context(body))
-                .into_any_element();
+                .child(Self::pane_context(body));
+            return self.with_pane_dnd(area, tab_id, cx).into_any_element();
         }
 
         let ctx = TreeCtx {
@@ -155,6 +175,7 @@ impl Workspace {
                     this.drag_divider(drag.axis_id, drag.boundary, ev.event.position, cx);
                 }),
             );
+        let inner = self.with_pane_dnd(inner, tab_id, cx);
         // Comfortable panes float: the whole area keeps a gap margin so the
         // outer frames do not touch the dock or titlebar.
         let margin = if style.is_framed() { metrics.gap } else { 0.0 };
@@ -380,12 +401,8 @@ impl Workspace {
             label: spec.title.clone(),
             icon: spec.icon,
         };
-        let bar = bar.render().on_drag(drag, move |drag, _, _, cx| {
-            let chip = PaneDragChip {
-                label: drag.label.clone(),
-                icon: drag.icon,
-                palette: c,
-            };
+        let bar = bar.render().on_drag(drag, move |drag, grab, _, cx| {
+            let chip = PaneDragChip::new(drag.label.clone(), drag.icon, c, grab);
             cx.new(|_| chip)
         });
 

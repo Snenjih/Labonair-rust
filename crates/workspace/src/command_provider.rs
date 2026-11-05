@@ -232,6 +232,18 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
         });
     }
     let workspace_handle = workspace.clone();
+    register!(CommandId::MovePaneToNewTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.move_focused_pane_to_new_tab(window, cx)
+        });
+    });
+    let workspace_handle = workspace.clone();
+    register!(CommandId::CloseOtherPanes, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.close_other_panes_of_active(window, cx)
+        });
+    });
+    let workspace_handle = workspace.clone();
     register!(CommandId::FocusPrevPane, move |window, cx| {
         workspace_handle.update(cx, |workspace, cx| {
             workspace.focus_pane_cycle(false, window, cx)
@@ -674,6 +686,14 @@ impl CommandProvider for WorkspaceCommandProvider {
             CommandDescriptor::new(CommandId::MovePaneDown, "Move Pane Down", "Layout")
                 .with_contexts(PANE_CONTEXTS)
                 .with_default_binding("cmd-alt-shift-down", Some(CommandContext::Pane)),
+            CommandDescriptor::new(
+                CommandId::MovePaneToNewTab,
+                "Move Pane to New Tab",
+                "Layout",
+            )
+            .with_contexts(PANE_CONTEXTS),
+            CommandDescriptor::new(CommandId::CloseOtherPanes, "Close Other Panes", "Layout")
+                .with_contexts(PANE_CONTEXTS),
         ]);
 
         commands

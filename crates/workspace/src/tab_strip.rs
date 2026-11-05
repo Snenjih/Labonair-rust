@@ -21,8 +21,11 @@ use labonair_ui_kit::{
     MenuItem, MotionExt, Palette, SubmenuHoverSource, TabDropSide, TabLayout, TabStyle, Tooltip,
 };
 
+use crate::pane_drop::tab_join_highlight;
+use crate::pane_group_naming::group_label;
+use crate::pane_view::PaneDragChip;
 use crate::tabs::{Tab, TabDiagnosticStatus, TabGitStatus, TabKind};
-use crate::{relative_path_under_root, DraggedTab, NewTabSubmenu, TabDragPreview, Workspace};
+use crate::{relative_path_under_root, DraggedPane, DraggedTab, NewTabSubmenu, Workspace};
 
 /// Everything one tab block shows. The seam for tab rendering: both the
 /// horizontal strip and the sidebar list read a tab only through this.
@@ -38,13 +41,34 @@ pub(crate) struct TabDisplay {
     pub status_color: Option<Hsla>,
     /// Diagnostics marker of an editor tab, when enabled in settings.
     pub diagnostic_color: Option<Hsla>,
+    /// Number of panes in the tab (`1` for a plain tab). From two on the label
+    /// and icon describe the group and the hover list is available.
+    pub pane_count: usize,
+    /// Unsaved-changes marker: an editor tab, or a group holding a dirty editor.
+    pub dirty: bool,
 }
 
 /// Resolve how `tab` is displayed. Reads settings and the theme, never mutates.
 pub(crate) fn tab_display(tab: &Tab, workspace: &Workspace, cx: &App) -> TabDisplay {
     let c = Palette::from_theme(workspace.theme.read(cx));
-    let label = SharedString::from(tab.label());
-    let editor = tab.kind == TabKind::Editor;
+    // A pane group names itself after its panes (R10-002 "Tab-Name/Icon einer
+    // Gruppe"); a single pane keeps the tab's own label and kind icon.
+    let panes = workspace.tab_pane_ids(tab.id);
+    let group = (panes.len() > 1).then(|| {
+        let active = workspace.layouts.get(&tab.id).and_then(|l| l.active);
+        group_label(
+            &panes,
+            &workspace.pane_meta,
+            active,
+            tab.custom_title.as_deref(),
+        )
+    });
+    let pane_count = panes.len();
+    let label = SharedString::from(match &group {
+        Some(g) => g.title.clone(),
+        None => tab.label(),
+    });
+    let editor = tab.kind == TabKind::Editor && group.is_none();
     let status_color = (editor
         && WorkspaceSettings::try_get(cx)
             .is_some_and(|settings| settings.show_editor_tab_git_status()))
@@ -67,9 +91,11 @@ pub(crate) fn tab_display(tab: &Tab, workspace: &Workspace, cx: &App) -> TabDisp
     TabDisplay {
         tooltip: label.clone(),
         label,
-        icon: tab.kind.indicator(),
+        icon: group.map_or_else(|| tab.kind.indicator(), |g| g.icon),
         status_color,
         diagnostic_color,
+        pane_count,
+        dirty: tab.dirty && (tab.kind == TabKind::Editor || pane_count > 1),
     }
 }
 
@@ -170,14 +196,14 @@ impl Workspace {
 
         let view = cx.entity();
         let mut tab_item = tab_item(format!("workspace-tab-{id}"), c, label.clone());
-        if sidebar || tab.kind != TabKind::Editor {
+        if sidebar || tab.kind != TabKind::Editor || display.pane_count > 1 {
             tab_item = tab_item.leading(display.icon);
         }
         tab_item = tab_item
             .style(TabStyle::Floating)
             .layout(layout)
             .selected(active)
-            .dirty(tab.kind == TabKind::Editor && tab.dirty)
+            .dirty(display.dirty)
             .peek(tab.kind == TabKind::Editor && tab.peek)
             .pinned(tab.pinned)
             .status_color(display.status_color)
@@ -214,18 +240,30 @@ impl Workspace {
             });
         }
         let renaming = self.rename_tab.as_ref().is_some_and(|(rid, _)| *rid == id);
+        let (join, strip_end) = self.tab_drop_hints(id, cx);
         let marker = self
             .tab_strip
             .drop_target
             .filter(|(target, _)| *target == id && cx.has_active_drag())
-            .map(|(_, side)| tab_drop_marker(c, layout, side));
+            .map(|(_, side)| tab_drop_marker(c, layout, side))
+            .or_else(|| strip_end.then(|| tab_drop_marker(c, layout, TabDropSide::After)));
         tab_item
             .render()
-            .when(!renaming, |row| {
+            .when(!renaming && display.pane_count < 2, |row| {
                 let tooltip = display.tooltip.clone();
                 row.tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
             })
             .children(marker)
+            .when(join, |row| row.child(tab_join_highlight(c)))
+            .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
+                let pos = window.mouse_position();
+                let anchor = if sidebar {
+                    point(pos.x, pos.y + px(14.0))
+                } else {
+                    point(pos.x - px(12.0), titlebar_offset)
+                };
+                this.tab_hover_changed(id, *hovered, anchor, cx);
+            }))
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
@@ -249,13 +287,22 @@ impl Workspace {
                 DraggedTab {
                     id,
                     label: label.clone(),
+                    icon: display.icon,
                 },
-                |dragged, _, _, cx| {
-                    cx.new(|_| TabDragPreview {
-                        label: dragged.label.clone(),
-                    })
+                move |dragged, grab, _, cx| {
+                    cx.new(|_| PaneDragChip::new(dragged.label.clone(), dragged.icon, c, grab))
                 },
             )
+            .on_drag_move(
+                cx.listener(move |this, ev: &DragMoveEvent<DraggedPane>, _window, cx| {
+                    let hovered = ev.bounds.contains(&ev.event.position);
+                    let drag = ev.drag(cx).clone();
+                    this.tab_pane_drag_over(id, hovered, &drag, cx);
+                }),
+            )
+            .on_drop(cx.listener(move |this, dragged: &DraggedPane, window, cx| {
+                this.drop_pane_on_tab(dragged, id, window, cx);
+            }))
             .on_drag_move(
                 cx.listener(move |this, ev: &DragMoveEvent<DraggedTab>, _window, cx| {
                     let hovered = ev.bounds.contains(&ev.event.position);
@@ -282,7 +329,7 @@ impl Workspace {
                 }),
             )
             .on_drop(cx.listener(move |this, dragged: &DraggedTab, _window, cx| {
-                this.tab_strip.drop_target = None;
+                this.clear_pane_dnd(cx);
                 this.tabs.update(cx, |s, cx| s.reorder(dragged.id, id, cx));
             }))
             .motion_fade_in(("tab-in", id), c)
@@ -433,6 +480,16 @@ impl Workspace {
             .w_full()
             .flex_shrink_0()
             .bg(c.toolbar_bg)
+            .on_drag_move(
+                cx.listener(|this, ev: &DragMoveEvent<DraggedPane>, _window, cx| {
+                    let hovered = ev.bounds.contains(&ev.event.position);
+                    let drag = ev.drag(cx).clone();
+                    this.strip_pane_drag_over(hovered, &drag, cx);
+                }),
+            )
+            .on_drop(cx.listener(|this, dragged: &DraggedPane, window, cx| {
+                this.drop_pane_on_strip(dragged, window, cx);
+            }))
             .when(show_nav_history_buttons, |bar| {
                 bar.child(
                     div()
@@ -454,6 +511,16 @@ impl Workspace {
                     .min_w_0()
                     .overflow_x_scroll()
                     .track_scroll(&self.tab_strip.scroll_h)
+                    .on_drag_move(cx.listener(
+                        |this, ev: &DragMoveEvent<DraggedTab>, _window, _cx| {
+                            this.auto_scroll_strip(false, ev.bounds, ev.event.position);
+                        },
+                    ))
+                    .on_drag_move(cx.listener(
+                        |this, ev: &DragMoveEvent<DraggedPane>, _window, _cx| {
+                            this.auto_scroll_strip(false, ev.bounds, ev.event.position);
+                        },
+                    ))
                     .children(pinned_tabs.iter().map(|t| self.render_tab(t, false, cx)))
                     .when(has_gap, |strip| {
                         strip.child(tab_group_gap(c, TabLayout::Horizontal))
@@ -558,6 +625,16 @@ impl Workspace {
             .min_h_0()
             .h_full()
             .w_full()
+            .on_drag_move(
+                cx.listener(|this, ev: &DragMoveEvent<DraggedPane>, _window, cx| {
+                    let hovered = ev.bounds.contains(&ev.event.position);
+                    let drag = ev.drag(cx).clone();
+                    this.strip_pane_drag_over(hovered, &drag, cx);
+                }),
+            )
+            .on_drop(cx.listener(|this, dragged: &DraggedPane, window, cx| {
+                this.drop_pane_on_strip(dragged, window, cx);
+            }))
             .child(
                 floating_tab_strip("sidebar-tab-list", c, TabLayout::Vertical)
                     .flex_1()
@@ -565,6 +642,16 @@ impl Workspace {
                     .min_h_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.tab_strip.scroll_v)
+                    .on_drag_move(cx.listener(
+                        |this, ev: &DragMoveEvent<DraggedTab>, _window, _cx| {
+                            this.auto_scroll_strip(true, ev.bounds, ev.event.position);
+                        },
+                    ))
+                    .on_drag_move(cx.listener(
+                        |this, ev: &DragMoveEvent<DraggedPane>, _window, _cx| {
+                            this.auto_scroll_strip(true, ev.bounds, ev.event.position);
+                        },
+                    ))
                     .children(groups),
             )
             .child(
@@ -991,6 +1078,8 @@ impl Workspace {
                     }
                 }),
         );
+        items.push(MenuItem::separator());
+        items.extend(self.pane_menu_items(id, &view, cx));
         items.push(MenuItem::separator());
         // T20-001: `MenuItem::keybind` renders the item's live binding as
         // `Kbd` chips, resolved through the user's `keymap.json` overrides.
