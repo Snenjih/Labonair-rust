@@ -30,6 +30,7 @@ pub mod context;
 pub mod cwd_breadcrumb;
 pub mod cwd_status_item;
 pub mod dock;
+pub mod dock_reveal;
 pub mod dock_status_item;
 pub mod editor_git_bridge;
 pub mod file_finder;
@@ -770,6 +771,8 @@ pub struct Workspace {
     pub(crate) new_tab_menu: MenuSlot<gpui::Point<gpui::Pixels>>,
     /// Strip scroll handles and the tab drag-over marker.
     pub(crate) tab_strip: crate::tab_strip::TabStripState,
+    /// Open/close reveal state of the left, right and bottom docks.
+    pub(crate) dock_reveal: [crate::dock_reveal::DockReveal; 3],
     /// Which of the new-tab dropdown's `SSH ▸` / `SFTP ▸` submenus is open.
     /// Held here (not as pure `:hover` state) so the two flyouts are mutually
     /// exclusive and can't overlap. Only meaningful while `new_tab_menu`.
@@ -1058,6 +1061,7 @@ impl Workspace {
             context_menu: MenuSlot::new(),
             new_tab_menu: MenuSlot::new(),
             tab_strip: Default::default(),
+            dock_reveal: Default::default(),
             new_tab_submenu: None,
             rename_tab: None,
             rename_focus,
@@ -6397,7 +6401,7 @@ impl Workspace {
         &mut self,
         pos: labonair_panel::DockPosition,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    ) -> gpui::Div {
         use labonair_panel::DockPosition;
 
         let (sidebar_bg, sidebar_fg, sidebar_border) = {
@@ -6596,19 +6600,9 @@ impl Render for Workspace {
         // live in `AppShell::render`; they compose here now so the shell only
         // has to `.child(workspace.clone())`.
         use labonair_panel::DockPosition;
-        let (left_open, right_open, bottom_open) = (
-            self.dock(DockPosition::Left).is_open(),
-            self.dock(DockPosition::Right).is_open(),
-            self.dock(DockPosition::Bottom).is_open(),
-        );
-        let left_dock =
-            left_open.then(|| self.render_dock(DockPosition::Left, cx).into_any_element());
-        let right_dock =
-            right_open.then(|| self.render_dock(DockPosition::Right, cx).into_any_element());
-        let bottom_dock = bottom_open.then(|| {
-            self.render_dock(DockPosition::Bottom, cx)
-                .into_any_element()
-        });
+        let left_dock = self.render_dock_slot(DockPosition::Left, window, cx);
+        let right_dock = self.render_dock_slot(DockPosition::Right, window, cx);
+        let bottom_dock = self.render_dock_slot(DockPosition::Bottom, window, cx);
         let center = div()
             .flex_1()
             .min_w_0()
