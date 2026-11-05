@@ -21,9 +21,11 @@ use labonair_ui_kit::{
     MenuItem, MotionExt, Palette, SubmenuHoverSource, TabDropSide, TabLayout, TabStyle, Tooltip,
 };
 
+use crate::pane_drop::tab_join_highlight;
 use crate::pane_group_naming::group_label;
+use crate::pane_view::PaneDragChip;
 use crate::tabs::{Tab, TabDiagnosticStatus, TabGitStatus, TabKind};
-use crate::{relative_path_under_root, DraggedTab, NewTabSubmenu, TabDragPreview, Workspace};
+use crate::{relative_path_under_root, DraggedPane, DraggedTab, NewTabSubmenu, Workspace};
 
 /// Everything one tab block shows. The seam for tab rendering: both the
 /// horizontal strip and the sidebar list read a tab only through this.
@@ -238,11 +240,13 @@ impl Workspace {
             });
         }
         let renaming = self.rename_tab.as_ref().is_some_and(|(rid, _)| *rid == id);
+        let (join, strip_end) = self.tab_drop_hints(id, cx);
         let marker = self
             .tab_strip
             .drop_target
             .filter(|(target, _)| *target == id && cx.has_active_drag())
-            .map(|(_, side)| tab_drop_marker(c, layout, side));
+            .map(|(_, side)| tab_drop_marker(c, layout, side))
+            .or_else(|| strip_end.then(|| tab_drop_marker(c, layout, TabDropSide::After)));
         tab_item
             .render()
             .when(!renaming && display.pane_count < 2, |row| {
@@ -250,6 +254,7 @@ impl Workspace {
                 row.tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
             })
             .children(marker)
+            .when(join, |row| row.child(tab_join_highlight(c)))
             .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
                 let pos = window.mouse_position();
                 let anchor = if sidebar {
@@ -282,13 +287,22 @@ impl Workspace {
                 DraggedTab {
                     id,
                     label: label.clone(),
+                    icon: display.icon,
                 },
-                |dragged, _, _, cx| {
-                    cx.new(|_| TabDragPreview {
-                        label: dragged.label.clone(),
-                    })
+                move |dragged, grab, _, cx| {
+                    cx.new(|_| PaneDragChip::new(dragged.label.clone(), dragged.icon, c, grab))
                 },
             )
+            .on_drag_move(
+                cx.listener(move |this, ev: &DragMoveEvent<DraggedPane>, _window, cx| {
+                    let hovered = ev.bounds.contains(&ev.event.position);
+                    let drag = ev.drag(cx).clone();
+                    this.tab_pane_drag_over(id, hovered, &drag, cx);
+                }),
+            )
+            .on_drop(cx.listener(move |this, dragged: &DraggedPane, window, cx| {
+                this.drop_pane_on_tab(dragged, id, window, cx);
+            }))
             .on_drag_move(
                 cx.listener(move |this, ev: &DragMoveEvent<DraggedTab>, _window, cx| {
                     let hovered = ev.bounds.contains(&ev.event.position);
@@ -315,7 +329,7 @@ impl Workspace {
                 }),
             )
             .on_drop(cx.listener(move |this, dragged: &DraggedTab, _window, cx| {
-                this.tab_strip.drop_target = None;
+                this.clear_pane_dnd(cx);
                 this.tabs.update(cx, |s, cx| s.reorder(dragged.id, id, cx));
             }))
             .motion_fade_in(("tab-in", id), c)
@@ -466,6 +480,16 @@ impl Workspace {
             .w_full()
             .flex_shrink_0()
             .bg(c.toolbar_bg)
+            .on_drag_move(
+                cx.listener(|this, ev: &DragMoveEvent<DraggedPane>, _window, cx| {
+                    let hovered = ev.bounds.contains(&ev.event.position);
+                    let drag = ev.drag(cx).clone();
+                    this.strip_pane_drag_over(hovered, &drag, cx);
+                }),
+            )
+            .on_drop(cx.listener(|this, dragged: &DraggedPane, window, cx| {
+                this.drop_pane_on_strip(dragged, window, cx);
+            }))
             .when(show_nav_history_buttons, |bar| {
                 bar.child(
                     div()
@@ -487,6 +511,16 @@ impl Workspace {
                     .min_w_0()
                     .overflow_x_scroll()
                     .track_scroll(&self.tab_strip.scroll_h)
+                    .on_drag_move(cx.listener(
+                        |this, ev: &DragMoveEvent<DraggedTab>, _window, _cx| {
+                            this.auto_scroll_strip(false, ev.bounds, ev.event.position);
+                        },
+                    ))
+                    .on_drag_move(cx.listener(
+                        |this, ev: &DragMoveEvent<DraggedPane>, _window, _cx| {
+                            this.auto_scroll_strip(false, ev.bounds, ev.event.position);
+                        },
+                    ))
                     .children(pinned_tabs.iter().map(|t| self.render_tab(t, false, cx)))
                     .when(has_gap, |strip| {
                         strip.child(tab_group_gap(c, TabLayout::Horizontal))
@@ -591,6 +625,16 @@ impl Workspace {
             .min_h_0()
             .h_full()
             .w_full()
+            .on_drag_move(
+                cx.listener(|this, ev: &DragMoveEvent<DraggedPane>, _window, cx| {
+                    let hovered = ev.bounds.contains(&ev.event.position);
+                    let drag = ev.drag(cx).clone();
+                    this.strip_pane_drag_over(hovered, &drag, cx);
+                }),
+            )
+            .on_drop(cx.listener(|this, dragged: &DraggedPane, window, cx| {
+                this.drop_pane_on_strip(dragged, window, cx);
+            }))
             .child(
                 floating_tab_strip("sidebar-tab-list", c, TabLayout::Vertical)
                     .flex_1()
@@ -598,6 +642,16 @@ impl Workspace {
                     .min_h_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.tab_strip.scroll_v)
+                    .on_drag_move(cx.listener(
+                        |this, ev: &DragMoveEvent<DraggedTab>, _window, _cx| {
+                            this.auto_scroll_strip(true, ev.bounds, ev.event.position);
+                        },
+                    ))
+                    .on_drag_move(cx.listener(
+                        |this, ev: &DragMoveEvent<DraggedPane>, _window, _cx| {
+                            this.auto_scroll_strip(true, ev.bounds, ev.event.position);
+                        },
+                    ))
                     .children(groups),
             )
             .child(

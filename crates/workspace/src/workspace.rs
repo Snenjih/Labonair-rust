@@ -42,6 +42,8 @@ pub mod menu_slot;
 pub mod modal_layer;
 pub mod pane;
 pub mod pane_actions;
+pub(crate) mod pane_dnd;
+pub(crate) mod pane_drop;
 pub mod pane_group;
 pub mod pane_group_naming;
 pub mod pane_items;
@@ -543,6 +545,7 @@ fn terminal_emulator_config(cx: &App) -> labonair_terminal::EmulatorConfig {
 struct DraggedTab {
     id: u64,
     label: SharedString,
+    icon: labonair_ui_kit::IconName,
 }
 
 /// Value carried while dragging a split divider: which axis, and which
@@ -558,24 +561,6 @@ struct DragGhost;
 impl Render for DragGhost {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div()
-    }
-}
-
-/// Drag image shown while a tab is being reordered.
-struct TabDragPreview {
-    label: SharedString,
-}
-
-impl Render for TabDragPreview {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .px_2()
-            .py_1()
-            .text_xs()
-            .rounded_md()
-            .bg(gpui::rgba(0x00000099))
-            .text_color(gpui::white())
-            .child(self.label.clone())
     }
 }
 
@@ -685,6 +670,8 @@ pub struct Workspace {
     pub(crate) editor_aliases: HashMap<PaneId, crate::pane_items::EditorBinding>,
     /// Per-tab zoom overlay (runtime only).
     pub(crate) zoom: crate::zoom::ZoomState,
+    /// Drag-over state of tab / pane drags (drop zones, tab hints).
+    pub(crate) pane_dnd: crate::pane_drop::PaneDnd,
     /// Hover list of a pane-group tab (one shared popover).
     pub(crate) tab_hover: crate::tab_hover::TabHover,
     /// Pane area of the active tab in window coordinates, measured during
@@ -1036,6 +1023,7 @@ impl Workspace {
             pane_meta: crate::pane_kind::PaneMetaStore::new(),
             editor_aliases: HashMap::new(),
             zoom: crate::zoom::ZoomState::default(),
+            pane_dnd: crate::pane_drop::PaneDnd::default(),
             tab_hover: crate::tab_hover::TabHover::default(),
             pane_area: std::rc::Rc::new(std::cell::Cell::new(None)),
             following_markdown_preview: None,
@@ -4628,15 +4616,13 @@ impl Workspace {
         }
     }
 
-    /// Tear down a removed tab's whole pane tree: every pane retires its own
-    /// session, view, document binding and connection.
-    fn retire_tab(&mut self, tab: &Tab, cx: &mut Context<Self>) {
-        // Closing a tab revokes any agent-access grant that followed it —
-        // backend (so the bridge stops exposing the session) and local mirror.
-        if self.agent_access.read(cx).is_granted(tab.id) {
+    /// Closing a tab revokes any agent-access grant that followed it —
+    /// backend (so the bridge stops exposing the session) and local mirror.
+    fn revoke_tab_grant(&mut self, tab_id: u64, cx: &mut Context<Self>) {
+        if self.agent_access.read(cx).is_granted(tab_id) {
             self.agent_access.update(cx, |s, cx| {
                 s.set_grant(
-                    tab.id,
+                    tab_id,
                     String::new(),
                     false,
                     String::new(),
@@ -4646,6 +4632,12 @@ impl Workspace {
                 );
             });
         }
+    }
+
+    /// Tear down a removed tab's whole pane tree: every pane retires its own
+    /// session, view, document binding and connection.
+    fn retire_tab(&mut self, tab: &Tab, cx: &mut Context<Self>) {
+        self.revoke_tab_grant(tab.id, cx);
         self.zoom.clear(tab.id);
         let panes = self
             .layouts
@@ -6646,6 +6638,7 @@ impl Render for Workspace {
             .flex_col()
             .size_full()
             .on_key_down(cx.listener(Self::on_key_down))
+            .capture_key_down(cx.listener(Self::cancel_drag_on_escape))
             .child(docked)
             .children(confirm)
             .children(context_menu)

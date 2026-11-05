@@ -315,7 +315,7 @@ pub fn smart_direction(target: PxRect) -> SplitDirection {
 /// Does `after` respect the minimum, ignoring panes that were already too
 /// small and did not shrink (a split must not be blocked by an unrelated
 /// pane that a tiny window squeezed earlier)?
-fn respects_minimum(before: &Solved, after: &Solved, m: &TilingMetrics) -> bool {
+pub(crate) fn respects_minimum(before: &Solved, after: &Solved, m: &TilingMetrics) -> bool {
     after.panes.iter().all(|(id, r)| {
         let prev = before.pane_rect(*id);
         let dim_ok = |now: f32, min: f32, was: Option<f32>| {
