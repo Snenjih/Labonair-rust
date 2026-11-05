@@ -37,12 +37,12 @@ use labonair_ui_kit::{
     divider, floating_tab_strip, h_stack, icon_button, icon_toggle_button, indicator, kbd_row,
     keybinding_hint, list_header, menu_card_preview, modal_overlay_with_exit, number_field,
     pane_bar, pane_frame, preview_tile, preview_tile_group, segmented_control, select_trigger,
-    settings_group, settings_row, slider, slider_control, slider_row, switch, tab_drop_marker, tab_group_gap,
-    tab_item, text_field_surface, toggle_base, Axis, ButtonSize, ButtonVariant, ChipHue,
-    ColorSchemeChoice, IconButtonShape, IconName, IndicatorSize, InterfaceStyleChoice, ListItem,
-    MenuItem, MotionExt, MotionLevel, MotionPrefs, Palette, PaneAction, PaneLayoutStyle, Presence,
-    PresenceStep, PreviewKind, SegmentSize, SegmentVariant, Severity, SliderState, TabDropSide,
-    TabLayout, TabStyle, TextFieldState, TileMock, ToggleSize, ToggleVariant,
+    settings_group, settings_row, slider, slider_control, slider_row, switch, tab_drop_marker,
+    tab_group_gap, tab_item, text_field_surface, toggle_base, Axis, ButtonSize, ButtonVariant,
+    ChipHue, ColorSchemeChoice, IconButtonShape, IconName, IndicatorSize, InterfaceStyleChoice,
+    ListItem, MenuItem, MotionExt, MotionLevel, MotionPrefs, Palette, PaneAction, PaneLayoutStyle,
+    Presence, PresenceStep, PreviewKind, SegmentSize, SegmentVariant, Severity, SliderState,
+    TabDropSide, TabLayout, TabStyle, TextFieldState, TileMock, ToggleSize, ToggleVariant,
 };
 
 fn noop_tab_activate(_: &mut Window, _: &mut App) {}
