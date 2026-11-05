@@ -23,7 +23,8 @@
 //!
 //! The whole bar is the drag handle: `render` returns a `Stateful<Div>` so the
 //! caller attaches `on_drag` itself (the payload type lives in the workspace).
-//! Action buttons swallow mouse-down so pressing one never starts a drag.
+//! Action buttons swallow mouse-down so pressing one never starts a drag. They
+//! are always visible, active or not.
 
 use std::rc::Rc;
 
@@ -295,7 +296,6 @@ impl PaneBar {
 
         let mut bar = div()
             .id(ElementId::from(id.clone()))
-            .group("pane_bar")
             .flex()
             .flex_row()
             .items_center()
@@ -348,11 +348,6 @@ impl PaneBar {
                     .flex_shrink_0()
                     .items_center()
                     .gap(c.space(2.0))
-                    .when(!active, |actions| {
-                        actions
-                            .invisible()
-                            .group_hover("pane_bar", |style| style.visible())
-                    })
                     .children(buttons),
             );
         }
