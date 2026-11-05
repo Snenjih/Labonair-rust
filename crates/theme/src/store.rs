@@ -141,6 +141,9 @@ pub struct ThemeStore {
     active_family: Option<String>,
     /// Per-mode variant override for `active_family` (e.g. Catppuccin "Mocha").
     registry_variant: Option<String>,
+    /// User theme files skipped by the last [`Self::reload_user_themes`], kept
+    /// so Settings can list them next to the theme grid.
+    rejected_themes: Vec<crate::registry::RejectedTheme>,
     /// The icon-theme registry (T20-006): the embedded built-in catalog. File
     /// loading remains an extension adapter and is not invoked by the current
     /// product workflow.
@@ -180,6 +183,7 @@ impl ThemeStore {
             registry: ThemeRegistry::builtin(),
             active_family: None,
             registry_variant: None,
+            rejected_themes: Vec::new(),
             icon_registry: IconThemeRegistry::builtin(),
             active_icon_theme: crate::BUILTIN_ICON_THEME_ID.to_string(),
             preview_icon_theme: None,
@@ -426,6 +430,7 @@ impl ThemeStore {
         cx: &mut Context<Self>,
     ) -> Vec<crate::registry::RejectedTheme> {
         let rejected = self.registry.load_user_themes(dir);
+        self.rejected_themes = rejected.clone();
         if let Some(fam) = self.active_family.clone() {
             if !self.registry.contains(&fam) {
                 self.active_family = None;
@@ -436,6 +441,12 @@ impl ThemeStore {
         self.reresolve_custom();
         cx.notify();
         rejected
+    }
+
+    /// User theme files skipped by the last reload (unreadable, malformed, or
+    /// missing a light or dark variant).
+    pub fn rejected_themes(&self) -> &[crate::registry::RejectedTheme] {
+        &self.rejected_themes
     }
 
     /// The active runtime typography overrides.

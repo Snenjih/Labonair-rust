@@ -15,6 +15,8 @@ labonair-theme = { path = "../theme" }
 labonair-settings = { path = "../settings" }
 labonair-command-palette-core = { path = "../command-palette-core" }
 labonair-command-palette-runtime = { path = "../command-palette-runtime" }
+labonair-ui-kit = { path = "../ui-kit" }
+tracing = { workspace = true }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

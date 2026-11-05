@@ -202,6 +202,9 @@ pub(crate) fn bootstrap(
         Err(err) => tracing::warn!("bar item placement migration failed: {err}"),
     }
 
+    // User theme files: load, watch, and report skipped files (R10-002).
+    crate::theme_loader::load_and_watch(&theme, cx);
+
     cx.observe(&background, |_, _, cx| cx.notify()).detach();
 
     let registry = Arc::new(TerminalRegistry::new());

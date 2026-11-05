@@ -4867,7 +4867,9 @@ dependencies = [
  "labonair-command-palette-runtime",
  "labonair-settings",
  "labonair-theme",
+ "labonair-ui-kit",
  "serde_json",
+ "tracing",
  "uuid",
 ]
 
