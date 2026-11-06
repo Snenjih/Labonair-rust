@@ -34,15 +34,15 @@ use labonair_theme::{theme_store, ThemePreference, ThemeStore};
 
 use labonair_ui_kit::{
     banner, button, category_chip, checkbox, context_menu_with_exit, dialog_surface, disclosure,
-    divider, floating_tab_strip, h_stack, icon_button, icon_toggle_button, indicator, kbd_row,
-    keybinding_hint, list_header, menu_card_preview, modal_overlay_with_exit, number_field,
-    pane_bar, pane_frame, preview_tile, preview_tile_group, segmented_control, select_trigger,
-    settings_group, settings_row, slider, slider_control, slider_row, switch, tab_drop_marker,
-    tab_group_gap, tab_item, text_field_surface, toggle_base, Axis, ButtonSize, ButtonVariant,
-    ChipHue, ColorSchemeChoice, IconButtonShape, IconName, IndicatorSize, InterfaceStyleChoice,
-    ListItem, MenuItem, MotionExt, MotionLevel, MotionPrefs, Palette, PaneAction, PaneLayoutStyle,
-    Presence, PresenceStep, PreviewKind, SegmentSize, SegmentVariant, Severity, SliderState,
-    TabDropSide, TabLayout, TabStyle, TextFieldState, TileMock, ToggleSize, ToggleVariant,
+    divider, floating_tab_strip, h_stack, icon_button, indicator, kbd_row, keybinding_hint,
+    list_header, menu_card_preview, modal_overlay_with_exit, number_field, pane_bar, pane_frame,
+    preview_tile, preview_tile_group, segmented_control, select_trigger, settings_group,
+    settings_row, slider, slider_control, slider_row, switch, tab_drop_marker, tab_group_gap,
+    tab_item, text_field_surface, Axis, ButtonSize, ButtonVariant, ChipHue, ColorSchemeChoice,
+    IconButtonShape, IconName, IndicatorSize, InterfaceStyleChoice, ListItem, MenuItem, MotionExt,
+    MotionLevel, MotionPrefs, Palette, PaneAction, PaneLayoutStyle, Presence, PresenceStep,
+    PreviewKind, SegmentSize, SegmentVariant, Severity, SliderState, TabDropSide, TabLayout,
+    TabStyle, TextFieldState, TileMock,
 };
 
 fn noop_tab_activate(_: &mut Window, _: &mut App) {}
@@ -241,7 +241,6 @@ impl Render for Gallery {
                             .gap_4()
                             .child(self.render_header(c, cx))
                             .child(self.render_buttons(c))
-                            .child(self.render_toggles(c, cx))
                             .child(self.render_checkbox(c, cx))
                             .child(self.render_list(c))
                             .child(self.render_disclosure(c, cx))
@@ -330,6 +329,7 @@ impl Gallery {
         ];
         let sizes = [
             (ButtonSize::None, "None"),
+            (ButtonSize::Xxs, "Dense"),
             (ButtonSize::Xs, "Compact"),
             (ButtonSize::Default, "Default"),
             (ButtonSize::Sm, "Medium"),
@@ -417,83 +417,6 @@ impl Gallery {
             );
         body = body.child(row("Icon states and shapes", c, icons));
         section("Button", c, body)
-    }
-
-    fn render_toggles(&self, c: Palette, cx: &mut Context<Self>) -> impl IntoElement {
-        let icon_row = h_stack()
-            .flex_wrap()
-            .gap_2()
-            .child(icon_toggle_button(
-                "tg-icon-off",
-                c,
-                IconName::PanelLeft,
-                false,
-            ))
-            .child(icon_toggle_button(
-                "tg-icon-on",
-                c,
-                IconName::PanelLeft,
-                true,
-            ))
-            .child(icon_toggle_button(
-                "tg-icon-b-off",
-                c,
-                IconName::PanelBottom,
-                false,
-            ))
-            .child(icon_toggle_button(
-                "tg-icon-b-on",
-                c,
-                IconName::PanelBottom,
-                true,
-            ));
-        let _ = cx;
-
-        let mut labelled = h_stack().flex_wrap().gap_2();
-        for (v, vname) in [
-            (ToggleVariant::Default, "Default"),
-            (ToggleVariant::Outline, "Outline"),
-        ] {
-            for (s, sname) in [
-                (ToggleSize::Xs, "Xs"),
-                (ToggleSize::Sm, "Sm"),
-                (ToggleSize::Md, "Md"),
-            ] {
-                labelled = labelled.child(
-                    toggle_base(
-                        SharedString::from(format!("tg-{vname}-{sname}")),
-                        c,
-                        v,
-                        s,
-                        sname == "Sm",
-                        false,
-                    )
-                    .child(SharedString::from(format!("{vname}/{sname}"))),
-                );
-            }
-        }
-        labelled = labelled.child(
-            toggle_base(
-                "tg-disabled",
-                c,
-                ToggleVariant::Outline,
-                ToggleSize::Sm,
-                true,
-                true,
-            )
-            .child("Disabled"),
-        );
-
-        section(
-            "ToggleButton",
-            c,
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(row("icon (off / on)", c, icon_row))
-                .child(row("labelled", c, labelled)),
-        )
     }
 
     fn render_checkbox(&self, c: Palette, cx: &mut Context<Self>) -> impl IntoElement {

@@ -7,7 +7,7 @@ use gpui::{
 };
 use labonair_panel::{DockPosition, PanelIcon, StatusItem, StatusSide};
 use labonair_theme::store::ThemeStore;
-use labonair_ui_kit::{icon_toggle_button, IconName, Palette};
+use labonair_ui_kit::{icon_button_builder, ButtonSize, IconName, Palette};
 
 use crate::Workspace;
 
@@ -273,16 +273,16 @@ impl StatusItem for DockPanelButtons {
                 } else {
                     SharedString::from(format!("{title} ({})", keys.join("")))
                 };
-                icon_toggle_button(
+                icon_button_builder(
                     SharedString::from(format!("dock-btn-{name}")),
                     palette,
                     icon,
-                    active,
                 )
-                .tab_index(0)
-                .tooltip(move |window, cx| {
-                    labonair_ui_kit::Tooltip::new(tooltip.clone()).build(window, cx)
-                })
+                .size(ButtonSize::IconXxs)
+                .icon_size(16.0)
+                .selected(active)
+                .tooltip(tooltip)
+                .render()
                 .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                     this.workspace.update(cx, |workspace, cx| {
                         workspace.select_panel(click_name.as_ref(), cx);

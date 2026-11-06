@@ -146,7 +146,8 @@ content, focus entry and return, dismissal, validation, and action order. A
 dialog placed beside a trigger or at a viewport edge uses `dialog_surface`
 inside its owner-provided positioner rather than introducing another card style.
 
-Buttons share Ciel's control scale: 16 (inline), 24 (`Xs`), 28 (`Default`,
+Buttons share Ciel's control scale: 16 (inline), 20 (`Xxs`, the dense status bar),
+24 (`Xs`), 28 (`Default`,
 the minimum click target), 32 (`Sm`), and 36 (`Lg`, the standard form button)
 logical pixels at the reference UI font size, with 12/13/13/14 px labels and
 medium weight. Their dimensions scale with the active UI font and density, and
@@ -157,8 +158,21 @@ treatments are explicit choices. Controls in one row share one height. Enabled c
 hover, pressed, and visible focus states. Disabled controls preserve
 their geometry, lose their Tab stop, and use disabled foreground treatment.
 
+There is one button family: `button` for text buttons and `icon_button_builder`
+for everything with a glyph. There is no separate toggle primitive; a sticky
+pressed state is `icon_button_builder(..).selected(bool)`. Zones pick one size
+and keep it: title bar and tab strip 28 (`Icon` / `Default`), panel headers 24
+(`IconXs` / `Xs`), status bar 20 (`IconXxs` / `Xxs`). Ghost icon-only buttons
+rest in the muted foreground and use the foreground when selected; hover is
+always the `accent` fill. Do not restyle a kit button's colors, radius or hover
+at the call site, choose a `ButtonVariant` instead (`Transparent` for muted text
+actions, `TintedError` for destructive ones, `Filled` / `Outlined` for chips).
+`crates/shell/tests/shared_controls.rs` fails when a file outside the kit adds
+its own `.hover(..)` style; rows, resize grips and scrollbar thumbs are the
+reviewed exceptions.
+
 Icon buttons use the same shared state model. The UI-kit builder supports wide
-and square geometry, caller-owned selected and disabled state, an alternate
+and square geometry, an optional text label (`.label(..)`, always wide), caller-owned selected and disabled state, an alternate
 selected glyph, a status indicator, opacity, and a tooltip. Icon-only actions
 provide a short tooltip label. The glyph can be sized independently while
 remaining scaled with the active font and density; indicators can carry a

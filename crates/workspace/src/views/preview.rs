@@ -35,8 +35,8 @@ use labonair_editor::{
 use labonair_notifications::{notification_center, Notification};
 use labonair_settings::{EditorSettings, Settings as _};
 use labonair_ui_kit::{
-    button, divider, text_field, text_field_surface, text_input, Axis, ButtonSize, ButtonVariant,
-    InputEvent, InputState, Palette, TextFieldState, Tooltip,
+    button, divider, icon_button_builder, text_field, text_field_surface, text_input, Axis,
+    ButtonSize, ButtonVariant, IconName, InputEvent, InputState, Palette, TextFieldState, Tooltip,
 };
 
 use crate::markdown::{parse_markdown, Inline, MdBlock};
@@ -1560,98 +1560,82 @@ impl Render for PreviewView {
                     .w(px(58.0))
                     .into_any_element()
                 } else {
-                    div()
-                        .id("preview-image-zoom-level")
-                        .min_w(px(38.0))
-                        .text_center()
-                        .text_size(px(10.0))
-                        .text_color(muted)
-                        .cursor_pointer()
-                        .tooltip(|window, cx| {
-                            Tooltip::new("Click to edit; right-click to reset to 100%.")
-                                .build(window, cx)
-                        })
-                        .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                            this.edit_image_zoom(window, cx);
-                        }))
-                        .on_mouse_down(
-                            MouseButton::Right,
-                            cx.listener(|this, _event: &MouseDownEvent, _, cx| {
-                                this.set_image_zoom(ImageZoom::ActualSize, cx);
-                                cx.stop_propagation();
-                            }),
-                        )
-                        .child(zoom)
-                        .into_any_element()
+                    button(
+                        "preview-image-zoom-level",
+                        c,
+                        ButtonVariant::Transparent,
+                        ButtonSize::Xs,
+                    )
+                    .min_w(px(38.0))
+                    .tooltip(|window, cx| {
+                        Tooltip::new("Click to edit; right-click to reset to 100%.")
+                            .build(window, cx)
+                    })
+                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.edit_image_zoom(window, cx);
+                    }))
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|this, _event: &MouseDownEvent, _, cx| {
+                            this.set_image_zoom(ImageZoom::ActualSize, cx);
+                            cx.stop_propagation();
+                        }),
+                    )
+                    .child(zoom)
+                    .into_any_element()
                 };
                 element
                     .child(div().text_size(px(10.0)).text_color(muted).child(metadata))
                     .child(
-                        labonair_ui_kit::button_no_hover(
-                            "preview-image-zoom-out",
-                            c,
-                            ButtonVariant::Subtle,
-                            ButtonSize::Xs,
-                        )
-                        .text_color(muted)
-                        .hover(|style| style.text_color(fg))
-                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                            let viewport = window.viewport_size();
-                            this.zoom_image(
-                                0.8,
-                                f32::from(viewport.width),
-                                f32::from(viewport.height),
-                                None,
-                                cx,
-                            );
-                        }))
-                        .child("−"),
+                        icon_button_builder("preview-image-zoom-out", c, IconName::Minus)
+                            .size(ButtonSize::IconXs)
+                            .render()
+                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                let viewport = window.viewport_size();
+                                this.zoom_image(
+                                    0.8,
+                                    f32::from(viewport.width),
+                                    f32::from(viewport.height),
+                                    None,
+                                    cx,
+                                );
+                            })),
                     )
                     .child(zoom_control)
                     .child(
-                        labonair_ui_kit::button_no_hover(
-                            "preview-image-zoom-in",
-                            c,
-                            ButtonVariant::Subtle,
-                            ButtonSize::Xs,
-                        )
-                        .text_color(muted)
-                        .hover(|style| style.text_color(fg))
-                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                            let viewport = window.viewport_size();
-                            this.zoom_image(
-                                1.25,
-                                f32::from(viewport.width),
-                                f32::from(viewport.height),
-                                None,
-                                cx,
-                            );
-                        }))
-                        .child("+"),
+                        icon_button_builder("preview-image-zoom-in", c, IconName::Plus)
+                            .size(ButtonSize::IconXs)
+                            .render()
+                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                let viewport = window.viewport_size();
+                                this.zoom_image(
+                                    1.25,
+                                    f32::from(viewport.width),
+                                    f32::from(viewport.height),
+                                    None,
+                                    cx,
+                                );
+                            })),
                     )
                     .child(
-                        labonair_ui_kit::button_no_hover(
+                        labonair_ui_kit::button(
                             "preview-image-actual-size",
                             c,
-                            ButtonVariant::Subtle,
+                            ButtonVariant::Transparent,
                             ButtonSize::Xs,
                         )
-                        .text_color(muted)
-                        .hover(|style| style.text_color(fg))
                         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                             this.set_image_zoom(ImageZoom::ActualSize, cx);
                         }))
                         .child("100%"),
                     )
                     .child(
-                        labonair_ui_kit::button_no_hover(
+                        labonair_ui_kit::button(
                             "preview-image-fit",
                             c,
-                            ButtonVariant::Subtle,
+                            ButtonVariant::Transparent,
                             ButtonSize::Xs,
                         )
-                        .text_color(muted)
-                        .hover(|style| style.text_color(fg))
                         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                             this.set_image_zoom(ImageZoom::Fit, cx);
                         }))
@@ -1660,28 +1644,24 @@ impl Render for PreviewView {
             })
             .when(!self.source_bound, |d| {
                 d.child(
-                    labonair_ui_kit::button_no_hover(
+                    labonair_ui_kit::button(
                         "preview-reload",
                         c,
-                        ButtonVariant::Subtle,
+                        ButtonVariant::Transparent,
                         ButtonSize::Xs,
                     )
-                    .text_color(muted)
-                    .hover(|s| s.text_color(fg))
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reload(cx)))
                     .child("Reload"),
                 )
             })
             .when(!self.url.is_empty(), |d| {
                 d.child(
-                    labonair_ui_kit::button_no_hover(
+                    labonair_ui_kit::button(
                         "preview-external",
                         c,
-                        ButtonVariant::Subtle,
+                        ButtonVariant::Transparent,
                         ButtonSize::Xs,
                     )
-                    .text_color(muted)
-                    .hover(|s| s.text_color(fg))
                     .on_click(cx.listener(|this, _: &ClickEvent, _, _| this.open_external()))
                     .child("Open externally"),
                 )

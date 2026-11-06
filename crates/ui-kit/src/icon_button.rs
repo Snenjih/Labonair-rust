@@ -5,9 +5,9 @@ use gpui::{
     StatefulInteractiveElement, Styled,
 };
 
+use crate::button::button_no_hover;
 use crate::{
-    button, button_disabled, button_no_hover, ButtonSize, ButtonVariant, IconName, IndicatorSize,
-    Palette, Tooltip,
+    button, button_disabled, ButtonSize, ButtonVariant, IconName, IndicatorSize, Palette, Tooltip,
 };
 
 /// Width treatment for an icon button.
@@ -40,6 +40,7 @@ pub struct IconButtonBuilder {
     selected: bool,
     disabled: bool,
     tooltip: Option<SharedString>,
+    label: Option<SharedString>,
     indicator: Option<(IndicatorSize, Hsla)>,
     indicator_border_color: Option<Hsla>,
 }
@@ -62,6 +63,7 @@ impl IconButtonBuilder {
             selected: false,
             disabled: false,
             tooltip: None,
+            label: None,
             indicator: None,
             indicator_border_color: None,
         }
@@ -129,6 +131,14 @@ impl IconButtonBuilder {
         self
     }
 
+    /// Adds a text label after the glyph. A labelled button is always wide;
+    /// cap its width by chaining `.max_w(..)` on the rendered element and the
+    /// label truncates.
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
     pub fn indicator(mut self, size: IndicatorSize, color: Hsla) -> Self {
         self.indicator = Some((size, color));
         self
@@ -156,13 +166,14 @@ impl IconButtonBuilder {
             selected,
             disabled,
             tooltip,
+            label,
             indicator,
             indicator_border_color,
         } = self;
 
         let button_size = match shape {
-            IconButtonShape::Wide => size.wide(),
-            IconButtonShape::Square => size.square(),
+            IconButtonShape::Square if label.is_none() => size.square(),
+            _ => size.wide(),
         };
         let button_variant = if selected {
             selected_variant.unwrap_or(variant)
@@ -215,6 +226,9 @@ impl IconButtonBuilder {
         }
 
         button = button.child(icon_content);
+        if let Some(label) = label {
+            button = button.child(div().min_w_0().truncate().child(label));
+        }
         if let Some(label) = tooltip {
             button =
                 button.tooltip(move |window, cx| Tooltip::new(label.clone()).build(window, cx));
@@ -266,14 +280,13 @@ pub fn icon_button_disabled(
 
 fn default_icon_color(c: Palette, variant: ButtonVariant) -> Hsla {
     match variant {
-        ButtonVariant::Subtle
-        | ButtonVariant::Filled
-        | ButtonVariant::Outlined
-        | ButtonVariant::OutlinedGhost => c.fg,
+        // Ghost toolbar glyphs rest muted and brighten when selected, the one
+        // rule every icon-only control in the app follows.
+        ButtonVariant::Subtle | ButtonVariant::Transparent => c.muted,
+        ButtonVariant::Filled | ButtonVariant::Outlined | ButtonVariant::OutlinedGhost => c.fg,
         ButtonVariant::TintedError => c.error,
         ButtonVariant::Action => c.action_fg,
         ButtonVariant::Link => c.primary,
-        ButtonVariant::Transparent => c.muted,
     }
 }
 
@@ -302,11 +315,13 @@ mod tests {
                     ButtonSize::Sm,
                     ButtonSize::Lg,
                     ButtonSize::None,
+                    ButtonSize::Xxs,
                     ButtonSize::Icon,
                     ButtonSize::IconXs,
                     ButtonSize::IconSm,
                     ButtonSize::IconLg,
                     ButtonSize::IconNone,
+                    ButtonSize::IconXxs,
                 ] {
                     for disabled in [false, true] {
                         let _ = icon_button_builder("icon", c, IconName::Refresh)
@@ -322,6 +337,7 @@ mod tests {
                             .indicator(IndicatorSize::Xs, c.success)
                             .indicator_border_color(c.bg)
                             .tooltip("Refresh")
+                            .label("Refresh")
                             .alpha(0.8)
                             .render();
                     }

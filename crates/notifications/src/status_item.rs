@@ -14,7 +14,7 @@ use gpui::{
 use labonair_panel::{AnyStatusItemHandle, StatusItem, StatusItemRegistration, StatusSide};
 use labonair_theme::store::ThemeStore;
 use labonair_ui_kit::{
-    icon_toggle_button, popover_with_exit, ButtonSize, ButtonVariant, IconName, ListItem, Palette,
+    icon_button_builder, popover_with_exit, ButtonSize, ButtonVariant, IconName, ListItem, Palette,
     Presence,
 };
 
@@ -115,7 +115,10 @@ impl StatusItem for NotificationsStatusItem {
             )
         };
         let palette = Palette::from_theme(self.theme.read(cx));
-        let bell = icon_toggle_button("bar-notifications", palette, IconName::Bell, self.is_open())
+        let bell = icon_button_builder("bar-notifications", palette, IconName::Bell)
+            .size(ButtonSize::IconXxs)
+            .selected(self.is_open())
+            .render()
             .track_focus(&self.focus)
             .key_context("StatusPopover")
             .relative()
@@ -207,15 +210,12 @@ impl StatusItem for NotificationsStatusItem {
                             .child("Notifications"),
                     )
                     .child(
-                        labonair_ui_kit::button_no_hover(
+                        labonair_ui_kit::button(
                             "bar-notif-clear",
                             palette,
-                            ButtonVariant::Subtle,
+                            ButtonVariant::Transparent,
                             ButtonSize::Xs,
                         )
-                        .text_color(muted)
-                        .text_size(px(13.0))
-                        .hover(|style| style.text_color(fg))
                         .child("Clear all")
                         .on_click(cx.listener(
                             |this, _: &ClickEvent, _window, cx| {

@@ -58,7 +58,7 @@ use crate::theme::ThemeStore;
 use labonair_explorer_host::ExplorerHost;
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
-    button, chevron_icon_path, context_menu, dialog_surface, icon_for_path,
+    button, chevron_icon_path, context_menu, dialog_surface, icon_button_builder, icon_for_path,
     modal_overlay_with_exit, search_clear_button, search_field, search_input, svg_path,
     text_field_surface, text_input, tree_row, ButtonSize, ButtonVariant, IconName, InputEvent,
     InputState, MenuClick, MenuItem, Palette, PresenceSlot, TextFieldState, TreeRowState,
@@ -1864,16 +1864,13 @@ impl Render for ExplorerView {
                     ),
             )
             .child(
-                button(
-                    "search",
-                    c.palette,
-                    ButtonVariant::Subtle,
-                    ButtonSize::IconXs,
-                )
-                .child(IconName::Search.svg(c.muted).size(px(13.0)))
-                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                    this.toggle_search(window, cx)
-                })),
+                icon_button_builder("search", c.palette, IconName::Search)
+                    .size(ButtonSize::IconXs)
+                    .tooltip("Search")
+                    .render()
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.toggle_search(window, cx)
+                    })),
             );
 
         if show_inline_actions {
@@ -1883,83 +1880,62 @@ impl Render for ExplorerView {
             let show_hidden = self.model.show_hidden;
             toolbar = toolbar
                 .child(
-                    button(
-                        "explorer-new-file",
-                        c.palette,
-                        ButtonVariant::Subtle,
-                        ButtonSize::IconXs,
-                    )
-                    .child(IconName::File.svg(c.muted).size(px(13.0)))
-                    .on_click(cx.listener(
-                        move |this, _: &ClickEvent, window, cx| {
+                    icon_button_builder("explorer-new-file", c.palette, IconName::File)
+                        .size(ButtonSize::IconXs)
+                        .tooltip("New File")
+                        .render()
+                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                             this.begin_create(nf_root.clone(), false, window, cx)
-                        },
-                    )),
+                        })),
                 )
                 .child(
-                    button(
-                        "explorer-new-folder",
-                        c.palette,
-                        ButtonVariant::Subtle,
-                        ButtonSize::IconXs,
-                    )
-                    .child(IconName::Folder.svg(c.muted).size(px(13.0)))
-                    .on_click(cx.listener(
-                        move |this, _: &ClickEvent, window, cx| {
+                    icon_button_builder("explorer-new-folder", c.palette, IconName::Folder)
+                        .size(ButtonSize::IconXs)
+                        .tooltip("New Folder")
+                        .render()
+                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                             this.begin_create(nd_root.clone(), true, window, cx)
-                        },
-                    )),
+                        })),
                 )
                 .child(
-                    button(
-                        "explorer-refresh",
-                        c.palette,
-                        ButtonVariant::Subtle,
-                        ButtonSize::IconXs,
-                    )
-                    .child(IconName::Refresh.svg(c.muted).size(px(13.0)))
-                    .on_click(cx.listener(
-                        move |this, _: &ClickEvent, _window, cx| {
+                    icon_button_builder("explorer-refresh", c.palette, IconName::Refresh)
+                        .size(ButtonSize::IconXs)
+                        .tooltip("Refresh")
+                        .render()
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                             this.load_dir(rf_root.clone(), true, cx)
-                        },
-                    )),
+                        })),
                 )
                 .child(
-                    button(
+                    icon_button_builder(
                         "explorer-toggle-hidden",
                         c.palette,
-                        ButtonVariant::Subtle,
-                        ButtonSize::IconXs,
-                    )
-                    .child(
                         if show_hidden {
                             IconName::EyeOff
                         } else {
                             IconName::Eye
-                        }
-                        .svg(c.muted)
-                        .size(px(13.0)),
+                        },
                     )
+                    .size(ButtonSize::IconXs)
+                    .tooltip("Toggle Hidden Files")
+                    .render()
                     .on_click(cx.listener(
                         move |this, _: &ClickEvent, _window, cx| this.toggle_show_hidden(cx),
                     )),
                 );
         } else {
             toolbar = toolbar.child(
-                button(
-                    "explorer-overflow",
-                    c.palette,
-                    ButtonVariant::Subtle,
-                    ButtonSize::IconXs,
-                )
-                .child(IconName::Ellipsis.svg(c.muted).size(px(13.0)))
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
-                        this.overflow_menu = Some(ev.position);
-                        cx.notify();
-                    }),
-                ),
+                icon_button_builder("explorer-overflow", c.palette, IconName::Ellipsis)
+                    .size(ButtonSize::IconXs)
+                    .tooltip("More")
+                    .render()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
+                            this.overflow_menu = Some(ev.position);
+                            cx.notify();
+                        }),
+                    ),
             );
         }
 

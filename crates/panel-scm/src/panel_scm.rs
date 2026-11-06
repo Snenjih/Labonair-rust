@@ -46,10 +46,10 @@ use crate::git_change_row::{git_change_row, StageState};
 use crate::theme::ThemeStore;
 use labonair_notifications::{notification_center, notify_err, Notification};
 use labonair_ui_kit::{
-    button_disabled, checkbox, context_menu, disclosure, h_stack, segmented_control,
-    text_area_surface, text_field, text_field_surface_sized, text_input, ButtonSize, ButtonVariant,
-    IconName, InputEvent, InputState, ListItem, MenuItem, Palette, SegmentSize, SegmentVariant,
-    TextFieldSize, TextFieldState,
+    button_disabled, checkbox, context_menu, disclosure, h_stack, icon_button_builder,
+    segmented_control, text_area_surface, text_field, text_field_surface_sized, text_input,
+    ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem, MenuItem, Palette,
+    SegmentSize, SegmentVariant, TextFieldSize, TextFieldState,
 };
 
 /// Build the Source Control contribution for the workspace-owned panel registry.
@@ -816,15 +816,15 @@ fn git_list_element(
             let actions = can_discard.then(|| {
                 let v = view.clone();
                 let p = path.clone();
-                labonair_ui_kit::button_no_hover(
+                icon_button_builder(
                     SharedString::from(format!("discard-{id}")),
                     c.palette,
-                    ButtonVariant::Subtle,
-                    ButtonSize::IconXs,
+                    IconName::Refresh,
                 )
-                .text_color(c.muted)
-                .hover(|s| s.text_color(c.error))
-                .child(IconName::Refresh.svg(c.muted).size(px(11.0)))
+                .size(ButtonSize::IconXs)
+                .icon_color(c.error)
+                .tooltip("Discard changes")
+                .render()
                 .on_click(move |_: &ClickEvent, _w, cx| {
                     cx.stop_propagation();
                     v.update(cx, |this, cx| this.discard_file(p.clone(), cx));
@@ -2391,9 +2391,19 @@ impl GitPanelView {
         cx: &mut Context<Self>,
         on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> gpui::Stateful<gpui::Div> {
-        labonair_ui_kit::button_no_hover(id, c.palette, ButtonVariant::Subtle, ButtonSize::Xs)
-            .text_color(c.muted)
-            .hover(|s| s.bg(c.border).text_color(c.fg))
+        self.tool_btn_as(ButtonVariant::Transparent, id, label, c, cx, on_click)
+    }
+
+    fn tool_btn_as(
+        &self,
+        variant: ButtonVariant,
+        id: &'static str,
+        label: impl Into<SharedString>,
+        c: Colors,
+        cx: &mut Context<Self>,
+        on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+    ) -> gpui::Stateful<gpui::Div> {
+        labonair_ui_kit::button(id, c.palette, variant, ButtonSize::Xs)
             .child(label.into())
             .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| on_click(this, w, cx)))
     }
@@ -2422,25 +2432,17 @@ impl GitPanelView {
         } else {
             &state.current_branch
         };
-        let branch_button = labonair_ui_kit::button_no_hover(
-            "git-branch-toggle",
-            c.palette,
-            ButtonVariant::Subtle,
-            ButtonSize::Xs,
-        )
-        .flex_none()
-        .justify_start()
-        .max_w(px(220.0))
-        .overflow_hidden()
-        .whitespace_nowrap()
-        .text_color(c.fg)
-        .hover(|s| s.bg(c.border))
-        .child(IconName::GitBranch.svg(c.muted).size(px(13.0)))
-        .child(SharedString::from(format!("{repo_name} / {branch_name}")))
-        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-            this.branch_picker_open = !this.branch_picker_open;
-            cx.notify();
-        }));
+        let branch_button =
+            icon_button_builder("git-branch-toggle", c.palette, IconName::GitBranch)
+                .size(ButtonSize::Xs)
+                .selected(self.branch_picker_open)
+                .label(format!("{repo_name} / {branch_name}"))
+                .render()
+                .max_w(px(220.0))
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                    this.branch_picker_open = !this.branch_picker_open;
+                    cx.notify();
+                }));
         let push_label = if self.current_branch_has_upstream() {
             "Push"
         } else {
@@ -2451,26 +2453,23 @@ impl GitPanelView {
         } else {
             push_label.to_string()
         };
-        let push_button = self
-            .tool_btn("git-push", push_text, c, cx, |this, _w, cx| this.push(cx))
-            .rounded(px(c.palette.radius.sm))
-            .border_1()
-            .border_color(c.border)
-            .text_color(c.fg);
-        let push_menu = labonair_ui_kit::button_no_hover(
-            "git-repo-menu",
-            c.palette,
+        let push_button = self.tool_btn_as(
             ButtonVariant::Outlined,
-            ButtonSize::IconXs,
-        )
-        .rounded(px(c.palette.radius.sm))
-        .text_color(c.fg)
-        .hover(|s| s.bg(c.border))
-        .child(IconName::ChevronDown.svg(c.muted).size(px(13.0)))
-        .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
-            this.panel_menu = Some((PanelMenu::Repo, ev.position()));
-            cx.notify();
-        }));
+            "git-push",
+            push_text,
+            c,
+            cx,
+            |this, _w, cx| this.push(cx),
+        );
+        let push_menu = icon_button_builder("git-repo-menu", c.palette, IconName::ChevronDown)
+            .variant(ButtonVariant::Outlined)
+            .size(ButtonSize::IconXs)
+            .tooltip("Repository menu")
+            .render()
+            .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
+                this.panel_menu = Some((PanelMenu::Repo, ev.position()));
+                cx.notify();
+            }));
 
         let mut row = div()
             .flex()
@@ -2558,15 +2557,13 @@ impl GitPanelView {
                 ButtonSize::Sm,
             )
         } else {
-            labonair_ui_kit::button_no_hover(
+            labonair_ui_kit::button(
                 "git-commit-btn",
                 c.palette,
                 ButtonVariant::Outlined,
                 ButtonSize::Sm,
             )
         }
-        .rounded(px(c.palette.radius.sm))
-        .text_color(c.fg)
         .child(commit_label);
         if let Some(desc) = disabled_desc {
             // The shared disabled builder removes focus and pointer affordance.
@@ -2580,20 +2577,15 @@ impl GitPanelView {
             }));
         }
 
-        let commit_menu = labonair_ui_kit::button_no_hover(
-            "git-commit-menu",
-            c.palette,
-            ButtonVariant::Outlined,
-            ButtonSize::IconXs,
-        )
-        .rounded(px(c.palette.radius.sm))
-        .text_color(c.fg)
-        .hover(|s| s.bg(c.border))
-        .child(IconName::ChevronDown.svg(c.muted).size(px(13.0)))
-        .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
-            this.panel_menu = Some((PanelMenu::Commit, ev.position()));
-            cx.notify();
-        }));
+        let commit_menu = icon_button_builder("git-commit-menu", c.palette, IconName::ChevronDown)
+            .variant(ButtonVariant::Outlined)
+            .size(ButtonSize::IconXs)
+            .tooltip("Commit options")
+            .render()
+            .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
+                this.panel_menu = Some((PanelMenu::Commit, ev.position()));
+                cx.notify();
+            }));
 
         div()
             .flex()
@@ -2644,21 +2636,15 @@ impl GitPanelView {
                     )
                     .child(div().flex_1())
                     .child(
-                        labonair_ui_kit::button_no_hover(
-                            "git-commit-expand",
-                            c.palette,
-                            ButtonVariant::Subtle,
-                            ButtonSize::IconXs,
-                        )
-                        .text_color(c.muted)
-                        .hover(|s| s.text_color(c.fg))
-                        .child(SharedString::from("\u{2922}"))
-                        .on_click(cx.listener(
-                            |this, _: &ClickEvent, _w, cx| {
+                        icon_button_builder("git-commit-expand", c.palette, IconName::Maximize)
+                            .size(ButtonSize::IconXs)
+                            .selected(self.commit_expanded)
+                            .tooltip("Expand message")
+                            .render()
+                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                                 this.commit_expanded = !this.commit_expanded;
                                 cx.notify();
-                            },
-                        )),
+                            })),
                     )
                     .child(commit_btn)
                     .child(commit_menu),
@@ -2716,16 +2702,16 @@ impl GitPanelView {
         for (id, label, color) in actions {
             let cb = on_action.clone();
             row = row.child(
-                labonair_ui_kit::button_no_hover(
+                labonair_ui_kit::button(
                     id,
                     c.palette,
-                    ButtonVariant::Outlined,
+                    if color == c.error {
+                        ButtonVariant::TintedError
+                    } else {
+                        ButtonVariant::Outlined
+                    },
                     ButtonSize::Xs,
                 )
-                .h(px(18.0))
-                .border_color(color)
-                .text_color(color)
-                .hover(|s| s.bg(color.opacity(0.15)))
                 .child(SharedString::from(label))
                 .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                     cx.stop_propagation();
@@ -3007,15 +2993,14 @@ impl GitPanelView {
         let mut trailing = h_stack().gap(px(4.0));
         if !is_current {
             trailing = trailing.child(
-                labonair_ui_kit::button_no_hover(
+                icon_button_builder(
                     SharedString::from(format!("git-branch-diff-{}", name)),
                     c.palette,
-                    ButtonVariant::Subtle,
-                    ButtonSize::IconXs,
+                    IconName::GitCompare,
                 )
-                .text_color(c.muted)
-                .hover(|s| s.text_color(c.fg))
-                .child(IconName::GitCompare.svg(c.muted).size(px(11.0)))
+                .size(ButtonSize::IconXs)
+                .tooltip("Compare with current")
+                .render()
                 .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                     cx.stop_propagation();
                     this.open_branch_diff(compare_base.clone(), compare_head.clone(), cx);
@@ -3024,15 +3009,14 @@ impl GitPanelView {
         }
         if !b.is_remote {
             trailing = trailing.child(
-                labonair_ui_kit::button_no_hover(
+                icon_button_builder(
                     SharedString::from(format!("git-branch-rn-{}", name)),
                     c.palette,
-                    ButtonVariant::Subtle,
-                    ButtonSize::IconXs,
+                    IconName::Pencil,
                 )
-                .text_color(c.muted)
-                .hover(|s| s.text_color(c.fg))
-                .child(IconName::Pencil.svg(c.muted).size(px(11.0)))
+                .size(ButtonSize::IconXs)
+                .tooltip("Rename")
+                .render()
                 .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
                     cx.stop_propagation();
                     this.rename_target = Some(rn_name.clone());
@@ -3043,15 +3027,15 @@ impl GitPanelView {
             );
             if !is_current {
                 trailing = trailing.child(
-                    labonair_ui_kit::button_no_hover(
+                    icon_button_builder(
                         SharedString::from(format!("git-branch-del-{}", name)),
                         c.palette,
-                        ButtonVariant::Subtle,
-                        ButtonSize::IconXs,
+                        IconName::X,
                     )
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.error))
-                    .child(SharedString::from("\u{2715}"))
+                    .size(ButtonSize::IconXs)
+                    .icon_color(c.error)
+                    .tooltip("Delete branch")
+                    .render()
                     .on_click(cx.listener(
                         move |this, _: &ClickEvent, _w, cx| {
                             cx.stop_propagation();
@@ -3162,21 +3146,16 @@ impl GitPanelView {
                     })),
                 )
                 .child(
-                    labonair_ui_kit::button_no_hover(
-                        "git-tags-new",
-                        c.palette,
-                        ButtonVariant::Subtle,
-                        ButtonSize::IconXs,
-                    )
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
-                    .child(SharedString::from("+"))
-                    .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
-                        this.new_tag_open = true;
-                        this.tags_collapsed = false;
-                        this.focus_text_field(Field::TagName, w, cx);
-                        cx.notify();
-                    })),
+                    icon_button_builder("git-tags-new", c.palette, IconName::Plus)
+                        .size(ButtonSize::IconXs)
+                        .tooltip("New tag")
+                        .render()
+                        .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
+                            this.new_tag_open = true;
+                            this.tags_collapsed = false;
+                            this.focus_text_field(Field::TagName, w, cx);
+                            cx.notify();
+                        })),
                 ),
         );
 
@@ -3274,15 +3253,14 @@ impl GitPanelView {
             let trailing = h_stack()
                 .gap(px(2.0))
                 .child(
-                    labonair_ui_kit::button_no_hover(
+                    icon_button_builder(
                         SharedString::from(format!("git-tag-push-{tag}")),
                         c.palette,
-                        ButtonVariant::Subtle,
-                        ButtonSize::IconXs,
+                        IconName::ArrowUp,
                     )
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
-                    .child(SharedString::from("\u{2191}"))
+                    .size(ButtonSize::IconXs)
+                    .tooltip("Push tag")
+                    .render()
                     .on_click(cx.listener(
                         move |this, _: &ClickEvent, _w, cx| {
                             this.push_tag(push_tag.clone(), cx);
@@ -3290,15 +3268,14 @@ impl GitPanelView {
                     )),
                 )
                 .child(
-                    labonair_ui_kit::button_no_hover(
+                    icon_button_builder(
                         SharedString::from(format!("git-tag-del-{tag}")),
                         c.palette,
-                        ButtonVariant::Subtle,
-                        ButtonSize::IconXs,
+                        IconName::X,
                     )
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.error))
-                    .child(SharedString::from("\u{2715}"))
+                    .size(ButtonSize::IconXs)
+                    .icon_color(c.error)
+                    .render()
                     .on_click(cx.listener(
                         move |this, _: &ClickEvent, _w, cx| {
                             this.delete_confirm_tag = Some(del_tag.clone());
@@ -3352,21 +3329,15 @@ impl GitPanelView {
                     })),
                 )
                 .child(
-                    labonair_ui_kit::button_no_hover(
-                        "git-stash-new",
-                        c.palette,
-                        ButtonVariant::Subtle,
-                        ButtonSize::IconXs,
-                    )
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
-                    .child(SharedString::from("+"))
-                    .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
-                        this.stash_form_open = true;
-                        this.stash_collapsed = false;
-                        this.focus_text_field(Field::StashMsg, w, cx);
-                        cx.notify();
-                    })),
+                    icon_button_builder("git-stash-new", c.palette, IconName::Plus)
+                        .size(ButtonSize::IconXs)
+                        .render()
+                        .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
+                            this.stash_form_open = true;
+                            this.stash_collapsed = false;
+                            this.focus_text_field(Field::StashMsg, w, cx);
+                            cx.notify();
+                        })),
                 ),
         );
 
@@ -3440,15 +3411,13 @@ impl GitPanelView {
             let trailing = h_stack()
                 .gap(px(4.0))
                 .child(
-                    labonair_ui_kit::button_no_hover(
+                    icon_button_builder(
                         SharedString::from(format!("git-stash-diff-{}", e.index)),
                         c.palette,
-                        ButtonVariant::Subtle,
-                        ButtonSize::IconXs,
+                        IconName::GitCompare,
                     )
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
-                    .child(IconName::GitCompare.svg(c.muted))
+                    .size(ButtonSize::IconXs)
+                    .render()
                     .on_click(cx.listener(
                         move |this, _: &ClickEvent, _w, cx| {
                             this.open_stash_diff(diff_hash.clone(), diff_message.clone(), cx);
@@ -3456,15 +3425,14 @@ impl GitPanelView {
                     )),
                 )
                 .child(
-                    labonair_ui_kit::button_no_hover(
+                    icon_button_builder(
                         SharedString::from(format!("git-stash-apply-{}", e.index)),
                         c.palette,
-                        ButtonVariant::Subtle,
-                        ButtonSize::IconXs,
+                        IconName::Check,
                     )
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
-                    .child(SharedString::from("A"))
+                    .size(ButtonSize::IconXs)
+                    .tooltip("Apply")
+                    .render()
                     .on_click(cx.listener(
                         move |this, _: &ClickEvent, _w, cx| {
                             this.stash_apply(apply_hash.clone(), false, cx);
@@ -3472,15 +3440,14 @@ impl GitPanelView {
                     )),
                 )
                 .child(
-                    labonair_ui_kit::button_no_hover(
+                    icon_button_builder(
                         SharedString::from(format!("git-stash-pop-{}", e.index)),
                         c.palette,
-                        ButtonVariant::Subtle,
-                        ButtonSize::IconXs,
+                        IconName::ArrowUp,
                     )
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
-                    .child(SharedString::from("P"))
+                    .size(ButtonSize::IconXs)
+                    .tooltip("Pop")
+                    .render()
                     .on_click(cx.listener(
                         move |this, _: &ClickEvent, _w, cx| {
                             this.stash_apply(pop_hash.clone(), true, cx);
@@ -3488,15 +3455,14 @@ impl GitPanelView {
                     )),
                 )
                 .child(
-                    labonair_ui_kit::button_no_hover(
+                    icon_button_builder(
                         SharedString::from(format!("git-stash-drop-{}", e.index)),
                         c.palette,
-                        ButtonVariant::Subtle,
-                        ButtonSize::IconXs,
+                        IconName::X,
                     )
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.error))
-                    .child(SharedString::from("\u{2715}"))
+                    .size(ButtonSize::IconXs)
+                    .icon_color(c.error)
+                    .render()
                     .on_click(cx.listener(
                         move |this, _: &ClickEvent, _w, cx| {
                             this.drop_confirm_stash = Some((drop_idx, drop_hash.clone()));
@@ -3572,31 +3538,19 @@ impl GitPanelView {
     ) -> gpui::AnyElement {
         let has_unstaged = !buckets.unstaged.is_empty() || !buckets.untracked.is_empty();
 
-        let view_diff = labonair_ui_kit::button_no_hover(
-            "git-view-diff",
-            c.palette,
-            ButtonVariant::Subtle,
-            ButtonSize::Xs,
-        )
-        .text_color(c.fg)
-        .hover(|s| s.bg(c.border))
-        .child(IconName::Plus.svg(c.muted).size(px(13.0)))
-        .child(SharedString::from("View Diff"))
-        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.emit_project_diff(None, cx)));
+        let view_diff = icon_button_builder("git-view-diff", c.palette, IconName::GitCompare)
+            .size(ButtonSize::Xs)
+            .label("View Diff")
+            .render()
+            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.emit_project_diff(None, cx)));
 
-        let view_options = labonair_ui_kit::button_no_hover(
-            "git-view-options",
-            c.palette,
-            ButtonVariant::Subtle,
-            ButtonSize::IconXs,
-        )
-        .text_color(c.muted)
-        .hover(|s| s.bg(c.border).text_color(c.fg))
-        .child(IconName::Settings.svg(c.muted).size(px(14.0)))
-        .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
-            this.panel_menu = Some((PanelMenu::ViewOptions, ev.position()));
-            cx.notify();
-        }));
+        let view_options = icon_button_builder("git-view-options", c.palette, IconName::Settings)
+            .size(ButtonSize::IconXs)
+            .render()
+            .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
+                this.panel_menu = Some((PanelMenu::ViewOptions, ev.position()));
+                cx.notify();
+            }));
 
         let stage_label = if has_unstaged {
             "Stage All"
@@ -3604,33 +3558,33 @@ impl GitPanelView {
             "Unstage All"
         };
         let stage_action = if has_unstaged {
-            self.tool_btn("git-stage-all", stage_label, c, cx, |this, _w, cx| {
-                this.stage_all(cx)
-            })
+            self.tool_btn_as(
+                ButtonVariant::Outlined,
+                "git-stage-all",
+                stage_label,
+                c,
+                cx,
+                |this, _w, cx| this.stage_all(cx),
+            )
         } else {
-            self.tool_btn("git-unstage-all", stage_label, c, cx, |this, _w, cx| {
-                this.unstage_all(cx)
-            })
-        }
-        .rounded(px(c.palette.radius.sm))
-        .border_1()
-        .border_color(c.border)
-        .text_color(c.fg);
+            self.tool_btn_as(
+                ButtonVariant::Outlined,
+                "git-unstage-all",
+                stage_label,
+                c,
+                cx,
+                |this, _w, cx| this.unstage_all(cx),
+            )
+        };
 
-        let stage_menu = labonair_ui_kit::button_no_hover(
-            "git-stage-menu",
-            c.palette,
-            ButtonVariant::Outlined,
-            ButtonSize::IconXs,
-        )
-        .rounded(px(c.palette.radius.sm))
-        .text_color(c.fg)
-        .hover(|s| s.bg(c.border))
-        .child(IconName::ChevronDown.svg(c.muted).size(px(13.0)))
-        .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
-            this.panel_menu = Some((PanelMenu::Overflow, ev.position()));
-            cx.notify();
-        }));
+        let stage_menu = icon_button_builder("git-stage-menu", c.palette, IconName::ChevronDown)
+            .variant(ButtonVariant::Outlined)
+            .size(ButtonSize::IconXs)
+            .render()
+            .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
+                this.panel_menu = Some((PanelMenu::Overflow, ev.position()));
+                cx.notify();
+            }));
 
         div()
             .flex()

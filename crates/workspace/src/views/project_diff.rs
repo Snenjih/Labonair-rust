@@ -705,20 +705,18 @@ impl Render for ProjectDiffView {
                 )
             })
             .child(
-                div()
-                    .id("project-diff-mode")
-                    .px(px(6.0))
-                    .py(px(1.0))
-                    .rounded_sm()
-                    .text_size(px(11.0))
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
-                    .child(SharedString::from(if is_split {
-                        "Unified"
-                    } else {
-                        "Split"
-                    }))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.toggle_mode(cx))),
+                button(
+                    "project-diff-mode",
+                    palette,
+                    ButtonVariant::Transparent,
+                    ButtonSize::Xs,
+                )
+                .child(SharedString::from(if is_split {
+                    "Unified"
+                } else {
+                    "Split"
+                }))
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.toggle_mode(cx))),
             );
 
         let body: gpui::AnyElement = if self.rows.is_empty() {
@@ -813,20 +811,20 @@ fn diff_row_element(
                 )
                 .when(show_action, |d| {
                     d.child(
-                        div()
-                            .id(SharedString::from(format!("pd-hunk-{idx}")))
-                            .px(px(6.0))
-                            .rounded_sm()
-                            .text_color(c.muted)
-                            .hover(|s| s.text_color(c.fg))
-                            .child(SharedString::from(if reverse {
-                                "Unstage hunk"
-                            } else {
-                                "Stage hunk"
-                            }))
-                            .on_click(move |_: &ClickEvent, _w, cx| {
-                                v.update(cx, |this, cx| this.apply_hunk(idx, reverse, cx));
-                            }),
+                        button(
+                            SharedString::from(format!("pd-hunk-{idx}")),
+                            palette,
+                            ButtonVariant::Transparent,
+                            ButtonSize::Xs,
+                        )
+                        .child(SharedString::from(if reverse {
+                            "Unstage hunk"
+                        } else {
+                            "Stage hunk"
+                        }))
+                        .on_click(move |_: &ClickEvent, _w, cx| {
+                            v.update(cx, |this, cx| this.apply_hunk(idx, reverse, cx));
+                        }),
                     )
                 })
                 .into_any_element()

@@ -8,7 +8,10 @@ use gpui::{
 };
 use labonair_panel::{StatusItem, StatusItemRegistration, StatusMenuEntry, StatusSide};
 use labonair_theme::store::ThemeStore;
-use labonair_ui_kit::{context_menu, icon_toggle_button, IconName, MenuItem, Palette};
+use labonair_ui_kit::{
+    button, context_menu, icon_button_builder, ButtonSize, ButtonVariant, IconName, MenuItem,
+    Palette,
+};
 
 use crate::cwd_breadcrumb as bc;
 use crate::Workspace;
@@ -125,12 +128,13 @@ impl CwdStatusItem {
                 if index == 1 {
                     row = row
                         .child(
-                            icon_toggle_button(
+                            icon_button_builder(
                                 "crumb-collapse",
                                 Palette::from_theme(self.theme.read(cx)),
                                 IconName::Ellipsis,
-                                false,
                             )
+                            .size(ButtonSize::IconXxs)
+                            .render()
                             .on_click(cx.listener(
                                 |this, _: &ClickEvent, _, cx| {
                                     this.expanded = true;
@@ -146,7 +150,6 @@ impl CwdStatusItem {
                 segment.clone(),
                 is_current,
                 current_is_dropdown,
-                text_size,
                 cx,
             ));
             if index != last_index || leaf.is_some() {
@@ -169,13 +172,9 @@ impl CwdStatusItem {
         segment: bc::Segment,
         is_current: bool,
         current_is_dropdown: bool,
-        text_size: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let (foreground, muted, border) = {
-            let theme = self.theme.read(cx);
-            (theme.foreground(), theme.muted_foreground(), theme.border())
-        };
+        let muted = self.theme.read(cx).muted_foreground();
         let label = if segment.is_home {
             "~".to_string()
         } else {
@@ -183,35 +182,31 @@ impl CwdStatusItem {
         };
         let show_chevron = is_current && current_is_dropdown;
         let clicked = segment.clone();
-        div()
-            .id(SharedString::from(format!("crumb-{}", segment.full_path)))
-            .flex()
-            .items_center()
-            .gap_1()
-            .px(px(6.0))
-            .py(px(1.0))
-            .rounded_full()
-            .border_1()
-            .border_color(border)
-            .text_size(px(text_size))
-            .text_color(if is_current { foreground } else { muted })
-            .hover(|style| style.text_color(foreground))
-            .when(segment.is_home, |element| {
-                element.child(IconName::Home.svg(muted))
-            })
-            .child(SharedString::from(label))
-            .when(show_chevron, |element| {
-                element.child(IconName::ChevronDown.svg(muted))
-            })
-            .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-                if show_chevron {
-                    this.open_subdir_menu(clicked.full_path.clone(), event.position(), cx);
-                } else {
-                    let path = clicked.full_path.clone();
-                    this.workspace
-                        .update(cx, |workspace, cx| workspace.send_cd(&path, cx));
-                }
-            }))
+        let palette = Palette::from_theme(self.theme.read(cx));
+        let crumb = button(
+            SharedString::from(format!("crumb-{}", segment.full_path)),
+            palette,
+            ButtonVariant::OutlinedGhost,
+            ButtonSize::Xxs,
+        )
+        .when(!is_current, |element| element.text_color(muted))
+        .when(segment.is_home, |element| {
+            element.child(IconName::Home.svg(muted))
+        })
+        .child(SharedString::from(label))
+        .when(show_chevron, |element| {
+            element.child(IconName::ChevronDown.svg(muted))
+        })
+        .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+            if show_chevron {
+                this.open_subdir_menu(clicked.full_path.clone(), event.position(), cx);
+            } else {
+                let path = clicked.full_path.clone();
+                this.workspace
+                    .update(cx, |workspace, cx| workspace.send_cd(&path, cx));
+            }
+        }));
+        crumb
     }
 
     fn render_subdir_menu(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -227,8 +222,12 @@ impl CwdStatusItem {
             }
         };
         let items: Vec<MenuItem> = match &entries {
-            None => vec![MenuItem::label("Loading…")],
-            Some(list) if list.is_empty() => vec![MenuItem::label("No subfolders")],
+            // Same row size as the folder entries, so the menu text does not
+            // jump when the listing arrives.
+            None => vec![MenuItem::new("subdir-loading", "Loading…").disabled(true)],
+            Some(list) if list.is_empty() => {
+                vec![MenuItem::new("subdir-empty", "No subfolders").disabled(true)]
+            }
             Some(list) => list
                 .iter()
                 .take(50)

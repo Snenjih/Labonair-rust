@@ -32,7 +32,7 @@ use gpui::{
 };
 use labonair_command_palette::Page as PalettePage;
 use labonair_settings::{Settings as _, SettingsStore, ThemeSettings};
-use labonair_ui_kit::{popover_menu, IconName, MenuItem, Palette};
+use labonair_ui_kit::{icon_button_builder, popover_menu, ButtonSize, IconName, MenuItem, Palette};
 
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
@@ -195,21 +195,12 @@ impl Titlebar {
             .relative()
             .flex_shrink_0()
             .child(
-                // T20-003: an icon-only 26px trigger — doesn't fit
-                // `icon_toggle_button`'s fixed 20/32/36px `ToggleSize` scale
-                // (the titlebar's single-button layout contract, doc-comment
-                // above, fixes this at 26px), documented exception.
-                div()
-                    .id("account-menu")
+                icon_button_builder("account-menu", c, IconName::Ellipsis)
+                    .size(ButtonSize::Icon)
+                    .selected(open)
+                    .tooltip("Menu")
+                    .render()
                     .relative()
-                    .size(px(26.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_md()
-                    .text_color(c.muted)
-                    .hover(move |s| s.bg(c.border).text_color(c.fg))
-                    .child(IconName::Ellipsis.svg(c.muted))
                     .child({
                         let weak = cx.weak_entity();
                         canvas(

@@ -424,36 +424,21 @@ fn ssh_tab_title(host_label: &str, jump_label: Option<&str>) -> String {
     }
 }
 
-/// Small action button for the SSH loading screen — the shared `button()`
-/// primitive (T20-003), with its per-call tint/border/fg re-applied after so
-/// the accent-vs-muted colors (which vary per call site, unlike `button()`'s
-/// fixed variant palette roles) stay exactly as before. Callers add
-/// `.on_click(..)`.
+/// Small action button for the SSH loading screen: the shared `button()`
+/// primitive — `Action` for the primary choice, `Outlined` otherwise. Callers
+/// add `.on_click(..)`.
 fn loading_btn(
     id: &'static str,
     label: &'static str,
     c: Palette,
-    tint: gpui::Hsla,
-    border: gpui::Hsla,
     primary: bool,
-    fg: gpui::Hsla,
 ) -> gpui::Stateful<gpui::Div> {
     let variant = if primary {
-        ButtonVariant::Filled
+        ButtonVariant::Action
     } else {
         ButtonVariant::Outlined
     };
-    let base = labonair_ui_kit::button_no_hover(id, c, variant, ButtonSize::Xs).child(label);
-    if primary {
-        base.bg(tint)
-            .text_color(fg)
-            .border_color(gpui::transparent_black())
-            .hover(|s| s.opacity(0.85))
-    } else {
-        base.text_color(tint)
-            .border_color(border)
-            .hover(|s| s.bg(border).text_color(fg))
-    }
+    labonair_ui_kit::button(id, c, variant, ButtonSize::Xs).child(label)
 }
 
 /// A blocking prompt raised mid-connect by the SSH backend.
@@ -5748,48 +5733,46 @@ impl Workspace {
         let mut actions = div().flex().gap_2().justify_end().pt_1();
         match entry.state {
             ConnectionState::Error => {
-                actions =
-                    actions
-                        .child(
-                            loading_btn("ssh-l-close", "Close", c, muted, border, false, fg)
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, _cx| {
-                                    if let Some(id) = tab_id {
-                                        this.pending_tab_close.push(id);
-                                    }
-                                })),
-                        )
-                        .child(
-                            loading_btn("ssh-l-edit", "Edit Host", c, muted, border, false, fg)
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.open_hosts_settings(cx)
-                                })),
-                        )
-                        .child(
-                            loading_btn("ssh-l-retry", "Retry", c, accent, border, true, fg)
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.ssh_prompt = None;
-                                    if is_sftp {
-                                        this.ssh_connection
-                                            .update(cx, |s, cx| s.resume(&ssh_id, cx));
-                                        if let Some(tid) = tab_id {
-                                            if let Some(view) = this.sftp_views.get(&tid).cloned() {
-                                                view.update(cx, |v, cx| v.reconnect(cx));
-                                            }
+                actions = actions
+                    .child(
+                        loading_btn("ssh-l-close", "Close", c, false).on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, _cx| {
+                                if let Some(id) = tab_id {
+                                    this.pending_tab_close.push(id);
+                                }
+                            },
+                        )),
+                    )
+                    .child(
+                        loading_btn("ssh-l-edit", "Edit Host", c, false).on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| this.open_hosts_settings(cx),
+                        )),
+                    )
+                    .child(
+                        loading_btn("ssh-l-retry", "Retry", c, true).on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
+                                this.ssh_prompt = None;
+                                if is_sftp {
+                                    this.ssh_connection
+                                        .update(cx, |s, cx| s.resume(&ssh_id, cx));
+                                    if let Some(tid) = tab_id {
+                                        if let Some(view) = this.sftp_views.get(&tid).cloned() {
+                                            view.update(cx, |v, cx| v.reconnect(cx));
                                         }
-                                    } else {
-                                        this.retry_ssh(&ssh_id, None, None, cx);
                                     }
-                                })),
-                        );
+                                } else {
+                                    this.retry_ssh(&ssh_id, None, None, cx);
+                                }
+                            },
+                        )),
+                    );
                 let _ = host_id;
             }
             ConnectionState::WaitingTrust => {
                 actions = actions
-                    .child(
-                        loading_btn("ssh-l-abort", "Abort", c, muted, border, false, fg).on_click(
-                            cx.listener(|this, _: &ClickEvent, _w, cx| this.cancel_prompt(cx)),
-                        ),
-                    )
+                    .child(loading_btn("ssh-l-abort", "Abort", c, false).on_click(
+                        cx.listener(|this, _: &ClickEvent, _w, cx| this.cancel_prompt(cx)),
+                    ))
                     .child(
                         loading_btn(
                             "ssh-l-trust",
@@ -5799,10 +5782,7 @@ impl Workspace {
                                 "Trust & Connect"
                             },
                             c,
-                            accent,
-                            border,
                             true,
-                            fg,
                         )
                         .on_click(
                             cx.listener(|this, _: &ClickEvent, _w, cx| this.submit_prompt(cx)),
@@ -5811,28 +5791,20 @@ impl Workspace {
             }
             _ if is_prompt => {
                 actions = actions
-                    .child(
-                        loading_btn("ssh-l-cancel", "Cancel", c, muted, border, false, fg)
-                            .on_click(
-                                cx.listener(|this, _: &ClickEvent, _w, cx| this.cancel_prompt(cx)),
-                            ),
-                    )
-                    .child(
-                        loading_btn("ssh-l-submit", "Submit", c, accent, border, true, fg)
-                            .on_click(
-                                cx.listener(|this, _: &ClickEvent, _w, cx| this.submit_prompt(cx)),
-                            ),
-                    );
+                    .child(loading_btn("ssh-l-cancel", "Cancel", c, false).on_click(
+                        cx.listener(|this, _: &ClickEvent, _w, cx| this.cancel_prompt(cx)),
+                    ))
+                    .child(loading_btn("ssh-l-submit", "Submit", c, true).on_click(
+                        cx.listener(|this, _: &ClickEvent, _w, cx| this.submit_prompt(cx)),
+                    ));
             }
             _ => {
-                actions = actions.child(
-                    loading_btn("ssh-l-cancel2", "Cancel", c, muted, border, false, fg).on_click(
-                        cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                            this.ssh_connection
-                                .update(cx, |s, cx| s.set_error(&ssh_id, "Cancelled by user.", cx));
-                        }),
-                    ),
-                );
+                actions = actions.child(loading_btn("ssh-l-cancel2", "Cancel", c, false).on_click(
+                    cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        this.ssh_connection
+                            .update(cx, |s, cx| s.set_error(&ssh_id, "Cancelled by user.", cx));
+                    }),
+                ));
             }
         }
 
@@ -6048,13 +6020,7 @@ impl Workspace {
 
     fn render_confirm(&mut self, id: u64, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
-        let (card, fg, border, accent, muted) = (
-            theme.card(),
-            theme.foreground(),
-            theme.border(),
-            theme.accent(),
-            theme.muted_foreground(),
-        );
+        let (card, fg, border) = (theme.card(), theme.foreground(), theme.border());
         let c = Palette::from_theme(theme);
         let label = self
             .tabs
@@ -6090,14 +6056,12 @@ impl Workspace {
                             .gap_2()
                             .justify_end()
                             .child(
-                                labonair_ui_kit::button_no_hover(
+                                labonair_ui_kit::button(
                                     "confirm-cancel",
                                     c,
                                     ButtonVariant::Subtle,
                                     ButtonSize::Sm,
                                 )
-                                .text_color(muted)
-                                .hover(|s| s.bg(border).text_color(fg))
                                 .child("Cancel")
                                 .on_click(cx.listener(
                                     |this, _: &ClickEvent, window, cx| {
@@ -6106,15 +6070,12 @@ impl Workspace {
                                 )),
                             )
                             .child(
-                                labonair_ui_kit::button_no_hover(
+                                labonair_ui_kit::button(
                                     "confirm-discard",
                                     c,
-                                    ButtonVariant::Subtle,
+                                    ButtonVariant::TintedError,
                                     ButtonSize::Sm,
                                 )
-                                .bg(accent)
-                                .text_color(fg)
-                                .hover(|s| s.opacity(0.85))
                                 .child("Discard")
                                 .on_click(cx.listener(
                                     move |this, _: &ClickEvent, window, cx| {

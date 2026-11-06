@@ -44,8 +44,9 @@ use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{
-    button, context_menu, keybinding_hint, text_field, text_field_surface, text_input, ButtonSize,
-    ButtonVariant, IconName, InputEvent, InputState, ListItem, MenuItem, Palette, TextFieldState,
+    button, context_menu, icon_button_builder, keybinding_hint, text_field, text_field_surface,
+    text_input, ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem, MenuItem,
+    Palette, TextFieldState, Tooltip,
 };
 
 // ── geometry ───────────────────────────────────────────────────────────────
@@ -1062,18 +1063,21 @@ impl GitGraphView {
                     .child(SharedString::from(info.author_email.clone())),
             )
             .child(
-                div()
-                    .id("git-graph-copy-hash")
-                    .font(mono.clone())
-                    .truncate()
-                    .hover(|s| s.text_color(c.fg))
-                    .child(SharedString::from(info.hash.clone()))
-                    .on_click({
-                        let h = info.hash.clone();
-                        cx.listener(move |_this, _: &ClickEvent, _w, cx| {
-                            cx.write_to_clipboard(ClipboardItem::new_string(h.clone()));
-                        })
-                    }),
+                button(
+                    "git-graph-copy-hash",
+                    c.palette,
+                    ButtonVariant::Transparent,
+                    ButtonSize::Xxs,
+                )
+                .font(mono.clone())
+                .tooltip(|window, cx| Tooltip::new("Copy hash").build(window, cx))
+                .child(SharedString::from(info.hash.clone()))
+                .on_click({
+                    let h = info.hash.clone();
+                    cx.listener(move |_this, _: &ClickEvent, _w, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(h.clone()));
+                    })
+                }),
             )
             .child(div().truncate().child(SharedString::from(format!(
                 "parents: {}",
@@ -1254,20 +1258,15 @@ impl GitGraphView {
                     .h(px(24.0))
                     .px(px(8.0))
                     .child(
-                        button(
-                            "git-graph-detail-close",
-                            c.palette,
-                            ButtonVariant::Subtle,
-                            ButtonSize::IconXs,
-                        )
-                        .child(IconName::X.svg(c.muted))
-                        .on_click(cx.listener(
-                            |this, _: &ClickEvent, _w, cx| {
+                        icon_button_builder("git-graph-detail-close", c.palette, IconName::X)
+                            .size(ButtonSize::IconXs)
+                            .tooltip("Close")
+                            .render()
+                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                                 this.selected = None;
                                 this.detail_numstat = None;
                                 cx.notify();
-                            },
-                        )),
+                            })),
                     ),
             )
             .child(header)
