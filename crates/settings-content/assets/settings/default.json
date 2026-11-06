@@ -31,6 +31,9 @@
     "animations": "system",
     // "comfortable" (floating panes) | "compact".
     "paneLayout": "comfortable",
+    "paneHighlight": false,
+    "paneHighlightColor": "#3b82f6",
+    "paneHighlightOpacity": 100,
     // Editor/terminal text (T20-007 theme_settings layer). Empty family = the
     // theme's own mono font.
     "bufferFontFamily": "",
@@ -44,6 +47,8 @@
     "translucentSurfaces": false,
     // "titlebar" or "sidebar".
     "tabsLocation": "titlebar",
+    "tabFillSpace": false,
+    "dimInactivePanes": false,
     "zenModeShowHeader": true,
     "zenModeShowStatusbar": true
   },

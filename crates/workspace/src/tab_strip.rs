@@ -165,6 +165,11 @@ impl Workspace {
             TabLayout::Horizontal
         };
         let label = display.label.clone();
+        // Fill mode (horizontal strip): unpinned tabs split the row equally.
+        let fill = !sidebar
+            && !tab.pinned
+            && labonair_settings::ThemeSettings::try_get(cx)
+                .is_some_and(|settings| settings.tab_fill_space());
 
         let label_content = match self.rename_tab.as_ref().filter(|(rid, _)| *rid == id) {
             Some((_, buf)) => div()
@@ -249,6 +254,11 @@ impl Workspace {
             .or_else(|| strip_end.then(|| tab_drop_marker(c, layout, TabDropSide::After)));
         tab_item
             .render()
+            // Basis 0 + equal grow = equal widths; the floor keeps a crowded
+            // strip scrolling instead of crushing titles.
+            .when(fill, |row| {
+                row.flex_1().flex_shrink().min_w(px(80.0)).max_w_full()
+            })
             .when(!renaming && display.pane_count < 2, |row| {
                 let tooltip = display.tooltip.clone();
                 row.tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
@@ -283,6 +293,9 @@ impl Workspace {
                     }
                 }),
             )
+            // The titlebar arms a window move on any bubbled left press; a tab
+            // press must start a tab drag, not drag the whole window.
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_drag(
                 DraggedTab {
                     id,
@@ -472,6 +485,8 @@ impl Workspace {
                 }),
             );
 
+        let fill_tabs = labonair_settings::ThemeSettings::try_get(cx)
+            .is_some_and(|settings| settings.tab_fill_space());
         div()
             .flex()
             .items_center()
@@ -479,7 +494,6 @@ impl Workspace {
             .h(titlebar_offset)
             .w_full()
             .flex_shrink_0()
-            .bg(c.toolbar_bg)
             .on_drag_move(
                 cx.listener(|this, ev: &DragMoveEvent<DraggedPane>, _window, cx| {
                     let hovered = ev.bounds.contains(&ev.event.position);
@@ -497,8 +511,6 @@ impl Workspace {
                         .flex()
                         .items_center()
                         .h_full()
-                        .border_r_1()
-                        .border_color(border)
                         .child(previous)
                         .child(next),
                 )
@@ -509,6 +521,7 @@ impl Workspace {
                     // Shrinkable and scrollable, unlike the kit default.
                     .flex_shrink()
                     .min_w_0()
+                    .when(fill_tabs, |strip| strip.flex_1())
                     .overflow_x_scroll()
                     .track_scroll(&self.tab_strip.scroll_h)
                     .on_drag_move(cx.listener(

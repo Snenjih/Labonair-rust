@@ -11901,8 +11901,11 @@ impl Render for EditorView {
             text_area = text_area.child(
                 div()
                     .absolute()
-                    .top(px(sticky_height + 12.0))
+                    .top(px(sticky_height))
                     .left(px(gutter_width + 12.0))
+                    .h(px(line_h))
+                    .flex()
+                    .items_center()
                     .text_xs()
                     .text_color(ui_palette.muted)
                     .child("Empty file · start typing"),

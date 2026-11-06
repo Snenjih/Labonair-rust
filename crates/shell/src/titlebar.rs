@@ -316,7 +316,7 @@ impl Render for Titlebar {
             .on_mouse_move(cx.listener(|this, _: &MouseMoveEvent, window, _cx| {
                 if this.should_move {
                     this.should_move = false;
-                    window.start_window_move();
+                    crate::window_drag::start(window);
                 }
             }))
             .on_click(cx.listener(|_, ev: &ClickEvent, window, _cx| {

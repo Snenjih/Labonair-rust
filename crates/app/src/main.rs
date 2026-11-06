@@ -93,6 +93,9 @@ fn main() {
                         traffic_light_position: Some(point(px(19.0), px((40.0 - 14.0) / 2.0))),
                     }),
                     window_min_size: Some(size(px(720.0), px(480.0))),
+                    // Moves start from the titlebar background only
+                    // (`labonair_shell::window_drag`), never via a tab.
+                    is_movable: false,
                     ..Default::default()
                 },
                 move |window, cx| {

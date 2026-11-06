@@ -12,7 +12,7 @@ use labonair_settings::{
 };
 use labonair_theme::ThemePreference;
 use labonair_theme::{
-    AnimationLevel, PaneLayout, ThemeMetrics, ThemeStore, UiDensity, VibrancyLayer,
+    parse_color, AnimationLevel, PaneLayout, ThemeMetrics, ThemeStore, UiDensity, VibrancyLayer,
 };
 
 /// Build the [`labonair_theme::FontOverrides`] snapshot from the
@@ -93,6 +93,10 @@ pub fn theme_metrics_from_settings(cx: &App) -> Option<ThemeMetrics> {
             PaneLayoutSetting::Comfortable => PaneLayout::Comfortable,
             PaneLayoutSetting::Compact => PaneLayout::Compact,
         },
+        pane_highlight: parse_color(s.pane_highlight_color())
+            .ok()
+            .filter(|_| s.pane_highlight())
+            .map(|color| color.opacity(s.pane_highlight_opacity() as f32 / 100.0)),
         // Owned by the background capability: `ThemeStore::set_metrics`
         // keeps the live value, `set_background_active` changes it.
         background_active: false,

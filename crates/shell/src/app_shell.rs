@@ -105,6 +105,18 @@ impl AppShell {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
         bridge_background_to_theme(&theme, &background, cx);
 
+        // When the focused node vanishes (a context menu / popover item that
+        // was clicked and then unmounted), park focus on the active pane so
+        // keybindings keep working without a re-click. A live modal manages
+        // its own focus.
+        cx.on_focus_lost(window, |this, window, cx| {
+            if this.modal_layer.read(cx).has_active_modal() {
+                return;
+            }
+            this.workspace.update(cx, |ws, cx| ws.focus(window, cx));
+        })
+        .detach();
+
         crate::bootstrap::bootstrap(
             theme,
             background,

@@ -136,6 +136,8 @@ pub struct ThemeMetrics {
     pub animations: AnimationLevel,
     /// Pane arrangement; see [`Self::pane_gap`].
     pub pane_layout: PaneLayout,
+    /// Outline colour of the active pane (`None` = no highlight).
+    pub pane_highlight: Option<gpui::Hsla>,
     /// `true` while a background image is shown in the window. Surface fills
     /// then resolve to translucent alphas ([`VibrancyLayer::resolve`]) so the
     /// image stays visible. Set by the shell from the background owner.
@@ -162,6 +164,7 @@ impl Default for ThemeMetrics {
             reduce_motion: false,
             animations: AnimationLevel::Full,
             pane_layout: PaneLayout::Comfortable,
+            pane_highlight: None,
             background_active: false,
             translucent_surfaces: false,
         }

@@ -671,6 +671,9 @@ pub struct Workspace {
     pub(crate) editor_aliases: HashMap<PaneId, crate::pane_items::EditorBinding>,
     /// Per-tab zoom overlay (runtime only).
     pub(crate) zoom: crate::zoom::ZoomState,
+    /// The pane created by the last split: the only one that fades in (the
+    /// split source must stay visible, it was fullscreen a frame ago).
+    pub(crate) fresh_pane: Option<crate::pane::PaneId>,
     /// Drag-over state of tab / pane drags (drop zones, tab hints).
     pub(crate) pane_dnd: crate::pane_drop::PaneDnd,
     /// Hover list of a pane-group tab (one shared popover).
@@ -1024,6 +1027,7 @@ impl Workspace {
             pane_meta: crate::pane_kind::PaneMetaStore::new(),
             editor_aliases: HashMap::new(),
             zoom: crate::zoom::ZoomState::default(),
+            fresh_pane: None,
             pane_dnd: crate::pane_drop::PaneDnd::default(),
             tab_hover: crate::tab_hover::TabHover::default(),
             pane_area: std::rc::Rc::new(std::cell::Cell::new(None)),

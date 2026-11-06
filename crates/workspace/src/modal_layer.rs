@@ -176,7 +176,11 @@ impl ModalLayer {
         }
         if let Some(active) = self.active_modal.take() {
             if let Some(previous_focus) = active.previous_focus_handle {
-                if active.focus_handle.contains_focused(window, cx) {
+                // Bare modals (palette, updater) don't mount `active.focus_handle`,
+                // so also check the modal's own handle.
+                if active.focus_handle.contains_focused(window, cx)
+                    || active.modal.focus_handle(cx).contains_focused(window, cx)
+                {
                     previous_focus.focus(window);
                 }
             }

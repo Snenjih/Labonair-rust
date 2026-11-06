@@ -6,9 +6,10 @@
 //! focus moves, divider drag) can re-solve the same tree against the measured
 //! pane area. Resize handles sit inside the gap strips. A single pane renders
 //! full-bleed without frame or bar; from two panes on every pane gets a
-//! [`pane_frame`] and a [`pane_bar`]. Zoom paints one pane as an overlay while
-//! the tree underneath keeps its layout, so no terminal is resized by zoom.
+//! [`pane_frame`] and a [`pane_bar`]. Zoom paints only the zoomed pane; the
+//! rest of the tree keeps its layout state but is not rendered until zoom ends.
 
+use labonair_settings::Settings as _;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     canvas, div, px, AnyElement, AppContext, ClickEvent, Context, DragMoveEvent,
@@ -89,6 +90,11 @@ struct TreeCtx {
     gap: f32,
     active: Option<PaneId>,
     zoomed: Option<PaneId>,
+    fresh: Option<PaneId>,
+    /// `appearance.dimInactivePanes`: darken every pane but the active one.
+    dim_inactive: bool,
+    /// `appearance.paneHighlightColor`: outline drawn around the active pane.
+    highlight: Option<gpui::Hsla>,
 }
 
 /// A flex child that takes `weight` of the free space (basis 0, no shrink).
@@ -150,14 +156,25 @@ impl Workspace {
             gap: metrics.gap,
             active: layout.active,
             zoomed,
+            fresh: self.fresh_pane,
+            dim_inactive: labonair_settings::ThemeSettings::try_get(cx)
+                .is_some_and(|settings| settings.dim_inactive_panes()),
+            highlight: self.theme.read(cx).metrics().pane_highlight,
         };
-        let tree = self.render_member(&root, &ctx, window, cx);
+        // Culling: while a pane is zoomed the rest of the tree is not rendered
+        // (the panes live on in their layout and items, only the elements go).
+        let tree = match zoomed {
+            Some(_) => None,
+            None => Some(self.render_member(&root, &ctx, window, cx)),
+        };
+        // `occlude` keeps pointer events away from anything painted below.
         let overlay = zoomed.map(|pane| {
-            let frame = self.render_pane_frame(pane, &ctx, true, window, cx);
+            let frame = self.render_pane_frame(pane, &ctx, window, cx);
             div()
                 .absolute()
                 .inset_0()
                 .bg(c.bg)
+                .occlude()
                 .child(frame)
                 .into_any_element()
         });
@@ -167,7 +184,7 @@ impl Workspace {
             .min_w_0()
             .min_h_0()
             .child(probe)
-            .child(tree)
+            .children(tree)
             .children(overlay)
             .on_drag_move(
                 cx.listener(move |this, ev: &DragMoveEvent<PaneResize>, _window, cx| {
@@ -229,7 +246,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         match node {
-            Member::Pane(pane) => self.render_pane_frame(*pane, ctx, false, window, cx),
+            Member::Pane(pane) => self.render_pane_frame(*pane, ctx, window, cx),
             Member::Axis(axis) => {
                 let row = axis.axis == SplitAxis::Horizontal;
                 let axis_id = axis.id;
@@ -310,14 +327,11 @@ impl Workspace {
             .into_any_element()
     }
 
-    /// One pane: frame, bar and body. `overlay` paints the zoomed copy; the
-    /// tree slot of a zoomed pane stays an empty frame so its siblings keep
-    /// their size.
+    /// One pane: frame, bar and body.
     fn render_pane_frame(
         &mut self,
         pane: PaneId,
         ctx: &TreeCtx,
-        overlay: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -325,13 +339,8 @@ impl Workspace {
         let spec = self.pane_spec(pane, cx);
         let focused = ctx.active == Some(pane);
         let is_zoomed = ctx.zoomed == Some(pane);
-        let hidden_by_zoom = is_zoomed && !overlay;
-        let body = if hidden_by_zoom {
-            div().size_full().into_any_element()
-        } else {
-            let body = self.pane_body(pane, window, cx);
-            Self::pane_context(body).into_any_element()
-        };
+        let body = self.pane_body(pane, window, cx);
+        let body = Self::pane_context(body).into_any_element();
         let tab_id = ctx.tab_id;
         let ws = cx.entity();
 
@@ -424,7 +433,7 @@ impl Workspace {
             .pb(inset)
             .child(body);
 
-        pane_frame(("pane-frame", pane), c, ctx.style, focused)
+        let frame = pane_frame(("pane-frame", pane), c, ctx.style, focused)
             .size_full()
             .on_mouse_down(
                 MouseButton::Left,
@@ -436,7 +445,34 @@ impl Workspace {
             )
             .child(bar)
             .child(body)
-            .motion_fade_in(("pane-in", pane), c)
-            .into_any_element()
+            .when(ctx.dim_inactive && !focused, |frame| {
+                let radius = if ctx.style.is_framed() { c.radius.lg } else { 0.0 };
+                frame.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .rounded(px(radius))
+                        .bg(c.bg.opacity(0.45)),
+                )
+            })
+            // An overlay, not a border: the outline must not shift the content.
+            .when_some(ctx.highlight.filter(|_| focused), |frame, color| {
+                let radius = if ctx.style.is_framed() { c.radius.lg } else { 0.0 };
+                frame.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .rounded(px(radius))
+                        .border_2()
+                        .border_color(color),
+                )
+            });
+        // Only the new pane fades in; fading the split source would blank it
+        // for a frame (it is first mounted as a frame here, at opacity 0).
+        if ctx.fresh == Some(pane) {
+            frame.motion_fade_in(("pane-in", pane), c).into_any_element()
+        } else {
+            frame.into_any_element()
+        }
     }
 }

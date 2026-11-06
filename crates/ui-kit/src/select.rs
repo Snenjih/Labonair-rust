@@ -29,16 +29,16 @@
 use std::rc::Rc;
 
 use gpui::{
-    deferred, div, list, prelude::FluentBuilder, px, AnyElement, App, ClickEvent, Div, ElementId,
-    FontWeight, InteractiveElement, IntoElement, ListSizingBehavior, ListState, ParentElement,
-    Pixels, Point, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
+    AnyElement, App, ClickEvent, Div, ElementId, FontWeight, InteractiveElement, IntoElement,
+    ListSizingBehavior, ListState, ParentElement, Pixels, Point, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, Window, deferred, div, list, prelude::FluentBuilder, px,
 };
 
+use crate::DISABLED_OPACITY;
 use crate::icon::IconName;
 use crate::palette::Palette;
 use crate::popover::anchored_popup;
 use crate::presence::{closing_guard, enter_or_popup};
-use crate::DISABLED_OPACITY;
 
 /// One `(token, label)` pair — the token is what gets stored, the label what is
 /// shown.
@@ -179,6 +179,9 @@ pub fn select_popover_with_exit(
     let row_on_select = on_select.clone();
     let row_id = id.clone();
     let rows = options.to_vec();
+    let list_height = c
+        .control_space(28.0 * options.len() as f32)
+        .min(c.space(320.0));
     let list = list(list_state, move |i, _, _| {
         let (token, label) = rows[i].clone();
         let on = token == selected;
@@ -208,6 +211,7 @@ pub fn select_popover_with_exit(
             .into_any_element()
     })
     .with_sizing_behavior(ListSizingBehavior::Infer)
+    .h(list_height)
     .max_h(c.space(320.0))
     .w_full();
 
