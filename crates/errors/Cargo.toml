@@ -9,4 +9,4 @@ russh = { version = "0.62.2", default-features = false, features = ["ring", "fla
 russh-sftp = "2.3.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = "1"
+thiserror = "2"
