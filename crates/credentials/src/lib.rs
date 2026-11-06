@@ -227,6 +227,15 @@ pub async fn credentials_delete(
     };
     {
         let connection = database.0.lock().map_err(|error| error.to_string())?;
+        // Hosts that authenticated through this credential would otherwise keep
+        // `auth_method = 'credential'` with no credential (the foreign key only
+        // nulls `credential_id`); fall back to asking for a password.
+        connection
+            .execute(
+                "UPDATE hosts SET auth_method='password' WHERE credential_id=?1 AND auth_method='credential'",
+                rusqlite::params![id],
+            )
+            .map_err(|error| error.to_string())?;
         connection
             .execute("DELETE FROM credentials WHERE id=?1", rusqlite::params![id])
             .map_err(|error| error.to_string())?;
@@ -422,5 +431,63 @@ mod tests {
         assert!(russh::keys::decode_secret_key(&pem, Some("wrong password")).is_err());
         russh::keys::decode_secret_key(&pem, Some("correct horse battery staple"))
             .expect("correct passphrase decodes key");
+    }
+
+    #[test]
+    fn deleting_a_credential_resets_dependent_hosts_to_password_auth() {
+        use crate::{credentials_create, credentials_delete};
+        use std::future::Future;
+        use std::sync::{Arc, Mutex};
+        use std::task::{Context, Poll, Waker};
+
+        fn block_on<T>(future: impl Future<Output = T>) -> T {
+            let mut future = std::pin::pin!(future);
+            match future
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+            {
+                Poll::Ready(value) => value,
+                Poll::Pending => unreachable!("credential store futures never suspend"),
+            }
+        }
+
+        let dir = std::env::temp_dir().join(format!("labonair-cred-{}", uuid::Uuid::new_v4()));
+        let connection = labonair_persistence::initialize_database(dir.clone()).unwrap();
+        let database = labonair_persistence::Database(Arc::new(Mutex::new(connection)));
+        let secrets = labonair_secrets::SecretsState::new(dir.clone());
+        let credential = block_on(credentials_create(
+            &database,
+            &secrets,
+            "deploy".into(),
+            "key".into(),
+            None,
+            None,
+            None,
+            None,
+        ))
+        .unwrap();
+        database
+            .0
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO hosts (id, name, host_address, port, username, auth_method, credential_id, created_at) \
+                 VALUES ('h1','h','example.com',22,'root','credential',?1,0)",
+                rusqlite::params![credential.id],
+            )
+            .unwrap();
+
+        block_on(credentials_delete(&database, &secrets, &dir, credential.id)).unwrap();
+
+        let auth: String = database
+            .0
+            .lock()
+            .unwrap()
+            .query_row("SELECT auth_method FROM hosts WHERE id='h1'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(auth, "password");
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

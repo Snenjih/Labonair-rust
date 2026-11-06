@@ -26,12 +26,15 @@ The settings system is not the owner of:
 - MCP/agent bridge runtime configuration;
 - statusbar item placement and panel visibility.
 
-There is no `Shortcuts`, `Hosts`, or `Icon Themes` settings category. The
+There is no `Shortcuts` or `Icon Themes` settings category. The
 `Themes` page only hosts the theme and background owners' surfaces inline
 (ADR 0006, below); it owns no catalog or state. The pinned Settings taxonomy has a `Keymap` page that opens the
 Keymap owner's canonical editor; it does not add a second binding editor or
-move binding state into Settings. Host and theme management remain separate
-capability surfaces.
+move binding state into Settings. The `Hosts` page, directly under `Keymap`,
+embeds the Hosts owner's management view as a full-page inline surface
+([ADR 0007](adr/0007-hosts-settings-page.md)); Hosts keeps all state and
+persistence, and Settings stores no host or credential data. Theme management
+remains a separate capability surface.
 
 Those capabilities have their own modules and entry points.
 
@@ -108,7 +111,8 @@ The macOS application receives that URL through GPUI's open-URL callback,
 validates the path against the Settings field registry, and opens Settings at
 the owning page and field. Unknown paths are ignored.
 
-Host management is not a Settings page, and theme and icon-theme catalogs are
+Host and credential management is the Hosts owner's full-page surface embedded
+on the `Hosts` page (ADR 0007), and theme and icon-theme catalogs are
 not Settings state, even when selected IDs or defaults are persisted through
 the settings storage layer; the Themes page embeds the theme owner's surfaces
 inline rather than duplicating them. The Keymap page is a navigation surface for the existing Keymap-owned
@@ -117,7 +121,7 @@ editor; keymap editing and persistence remain outside Settings.
 The Keymap editor is reachable from both the Settings navigation and the
 titlebar global menu; both entry points open the same Workspace-owned Keymap
 tab. Themes and Icon Themes open their respective pickers, and Hosts opens
-host selection/management. The themes and hosts modules own those flows;
+the Settings `Hosts` page. The themes and hosts modules own those flows;
 Settings may persist only a typed preference exposed by their contracts.
 
 Categories may be added for a capability-owned editor only when that category
@@ -163,9 +167,8 @@ The native Settings window has one dense tree rail and one content surface:
   listed above; persisted `SettingsContent` groups and group headings are not
   a second navigation taxonomy. Each category row shows a coloured
   `category_chip` and, when selected, the sunken fill with a semibold label;
-  the owner pages sit below the value categories with a gap (today only Keymap
-  registers one; ADR 0006 reserves a Hosts slot, but Hosts has no Settings
-  surface yet);
+  the owner pages sit below the value categories with a gap (Keymap and, below it,
+  Hosts register one; Hosts is a full-page inline surface, ADR 0007);
 - the rail uses 10 logical pixels of side and bottom inset and a 40-pixel
   macOS top inset below the native titlebar. Its shared search field is 28
   pixels high with a 12-pixel gap before navigation;

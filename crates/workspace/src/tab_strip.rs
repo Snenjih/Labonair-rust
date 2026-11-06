@@ -782,7 +782,7 @@ impl Workspace {
                         move |_, _w, cx| {
                             v.update(cx, |this, cx| {
                                 this.close_new_tab_menu(cx);
-                                this.open_hosts_tab(cx)
+                                this.open_hosts_settings(cx)
                             })
                         }
                     }),

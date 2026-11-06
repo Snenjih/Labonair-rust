@@ -144,7 +144,7 @@ contracts rather than the legacy name.
 
 The former `connections::OpenHostSettings` action is handled the same way: it
 is accepted only as a compatibility alias for the canonical
-`connections::OpenHosts` command. Hosts management is not a Settings action.
+`connections::OpenHosts` command, which opens the Settings `Hosts` page (ADR 0007).
 
 ## Theme registries
 

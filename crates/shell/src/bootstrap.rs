@@ -444,6 +444,9 @@ pub(crate) fn bootstrap(
         |this, _, event: &WorkspaceEvent, _window, cx| match event {
             WorkspaceEvent::OpenProject => open_project_picker(this.workspace.clone(), cx),
             WorkspaceEvent::NewProjectSpace => new_project_space_picker(this.workspace.clone(), cx),
+            WorkspaceEvent::OpenHosts => {
+                labonair_settings_ui::open_settings_window(Some("hosts"), cx)
+            }
         },
     )
     .detach();
@@ -545,12 +548,19 @@ pub(crate) fn bootstrap(
         .detach();
     }
     cx.observe(&host_manager, |_, _, cx| cx.notify()).detach();
-    cx.subscribe(&host_manager, |this, _, event: &HostManagerEvent, cx| {
-        let HostManagerEvent::Open(request) = event;
-        this.workspace.update(cx, |workspace, cx| {
-            workspace.enqueue_host_request(request.clone(), cx)
-        });
-    })
+    let main_window = window.window_handle();
+    cx.subscribe(
+        &host_manager,
+        move |this, _, event: &HostManagerEvent, cx| {
+            let HostManagerEvent::Open(request) = event;
+            this.workspace.update(cx, |workspace, cx| {
+                workspace.enqueue_host_request(request.clone(), cx)
+            });
+            // The Hosts page lives in the Settings window; the new connection
+            // opens as a tab in the main window, so bring it forward.
+            let _ = main_window.update(cx, |_, main_window, _| main_window.activate_window());
+        },
+    )
     .detach();
     // Auto-updater (T15-005). Create its owner entity before composing the
     // command registry so its command handler can be registered at startup.
@@ -604,7 +614,7 @@ pub(crate) fn bootstrap(
     crate::keymap_loader::reload_and_apply(cx, &command_registry);
     crate::keymap_loader::watch(cx, command_registry.clone());
     set_settings_deps(
-        settings_services(cx.entity(), window.window_handle()),
+        settings_services(cx.entity(), window.window_handle(), host_manager.clone()),
         tokio.clone(),
         cx,
     );
@@ -932,9 +942,7 @@ pub(crate) fn bootstrap(
                 });
             }
             TitlebarEvent::Hosts => {
-                this.workspace.update(cx, |workspace, cx| {
-                    workspace.open_hosts_tab(cx);
-                });
+                labonair_settings_ui::open_settings_window(Some("hosts"), cx);
             }
             TitlebarEvent::Palette(page) => {
                 this.show_command_palette(Some(*page), window, cx);

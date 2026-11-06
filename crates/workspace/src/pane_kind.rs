@@ -28,12 +28,11 @@ pub enum PaneKind {
     CommitDiff,
     AiDiff,
     Keymap,
-    Hosts,
 }
 
 impl PaneKind {
     /// Every kind, in a stable order (tests, menus).
-    pub const ALL: [PaneKind; 10] = [
+    pub const ALL: [PaneKind; 9] = [
         PaneKind::Terminal,
         PaneKind::Editor,
         PaneKind::Preview,
@@ -43,7 +42,6 @@ impl PaneKind {
         PaneKind::CommitDiff,
         PaneKind::AiDiff,
         PaneKind::Keymap,
-        PaneKind::Hosts,
     ];
 
     /// The tab kind this pane kind corresponds to.
@@ -58,7 +56,6 @@ impl PaneKind {
             PaneKind::CommitDiff => TabKind::CommitDiff,
             PaneKind::AiDiff => TabKind::AiDiff,
             PaneKind::Keymap => TabKind::Keymap,
-            PaneKind::Hosts => TabKind::Hosts,
         }
     }
 
@@ -80,11 +77,7 @@ impl PaneKind {
     pub fn is_singleton(self) -> bool {
         matches!(
             self,
-            PaneKind::GitGraph
-                | PaneKind::Diff
-                | PaneKind::CommitDiff
-                | PaneKind::Keymap
-                | PaneKind::Hosts
+            PaneKind::GitGraph | PaneKind::Diff | PaneKind::CommitDiff | PaneKind::Keymap
         )
     }
 
@@ -108,7 +101,6 @@ impl From<TabKind> for PaneKind {
             TabKind::CommitDiff => PaneKind::CommitDiff,
             TabKind::AiDiff => PaneKind::AiDiff,
             TabKind::Keymap => PaneKind::Keymap,
-            TabKind::Hosts => PaneKind::Hosts,
         }
     }
 }
@@ -281,7 +273,6 @@ mod tests {
             PaneKind::Diff,
             PaneKind::CommitDiff,
             PaneKind::Keymap,
-            PaneKind::Hosts,
         ] {
             assert!(k.is_singleton(), "{k:?}");
             assert!(!k.can_split(), "{k:?}");
@@ -327,7 +318,7 @@ mod tests {
         assert_eq!(s.get(1).map(PaneMeta::display_title), Some("zsh"));
 
         assert_eq!(s.find_singleton(PaneKind::Keymap), Some(9));
-        assert_eq!(s.find_singleton(PaneKind::Hosts), None);
+        assert_eq!(s.find_singleton(PaneKind::Diff), None);
         // Non-singleton kinds never report a "existing" pane.
         assert_eq!(s.find_singleton(PaneKind::Editor), None);
 

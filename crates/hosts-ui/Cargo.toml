@@ -21,6 +21,7 @@ labonair-hosts-host = { path = "../hosts-host" }
 labonair-credentials = { path = "../credentials" }
 labonair-persistence = { path = "../persistence" }
 labonair-secrets = { path = "../secrets" }
+labonair-settings = { path = "../settings" }
 labonair-snippets = { path = "../snippets" }
 labonair-ssh = { path = "../ssh" }
 labonair-errors = { path = "../errors" }

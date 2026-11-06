@@ -336,9 +336,9 @@ never discarded by layout recovery.
 
 The titlebar is a shell surface, not a feature owner. Its single global-menu
 button publishes `TitlebarEvent` intent. The composition root connects that
-intent to Settings, a Command Palette page, or `Workspace::open_keymap_tab` /
-`Workspace::open_hosts_tab` (the keymap and hosts-management surfaces are both
-workspace tabs, not OS windows — occasional-use tabs, never a startup tab).
+intent to Settings, a Command Palette page, or `Workspace::open_keymap_tab` (the keymap surface is a workspace tab, an
+occasional-use tab, never a startup tab) or the Settings `Hosts` page
+(`WorkspaceEvent::OpenHosts`, ADR 0007).
 The menu uses the shared `popover_menu` primitive and anchors it in window
 coordinates directly below the clicked button; it must not implement a second
 menu or feature-specific behavior.
@@ -354,9 +354,10 @@ existing dock chrome.
 `labonair-workspace::context` owns the UI-free distinction between workspace
 identity (`Standalone` or `Project`) and activity (`Empty` or `Active`). Tool
 tabs do not choose a second layout model for standalone use. Cross-surface
-requests the workspace can satisfy itself (opening the Keymap or Hosts tab)
+requests the workspace can satisfy itself (opening the Keymap tab)
 are plain methods on `Workspace`; only requests for a platform-specific
-surface it can't present itself (the native project-folder picker) are
+surface it can't present itself (the native project-folder picker, the
+Settings window) are
 emitted as a typed `WorkspaceEvent` for the shell to compose. Identity
 mutation uses the single typed
 `WorkspaceTransition` contract (`OpenProject` or `ReturnToStandalone`); a

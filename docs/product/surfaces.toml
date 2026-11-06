@@ -127,19 +127,19 @@ evidence = ["Pending: native dialog matrix"]
 status = "partial"
 
 [[surface]]
-id = "workspace.hosts-tab"
-display_name = "Hosts Management Tab"
+id = "settings.hosts"
+display_name = "Hosts Settings Page"
 owner_module = "hosts"
 canonical_crate = "labonair-hosts"
-kind = "workspace-tab"
+kind = "settings-page"
 canonical_entry_points = ["Global menu -> Hosts", "OpenHosts command"]
 alternate_entry_points = ["Command palette host submenu"]
 context = "project, standalone, remote"
 command_ids = ["OpenHosts", "NewSshConnection", "NewSftpTab", "ConnectSsh", "OpenSftp"]
-settings = ["none — Hosts owns host values and management UI"]
+settings = ["none — Hosts owns host values and the management view embedded on the Settings Hosts page"]
 notifications = ["Host persistence and connection failures use Notifications"]
 visual_states = ["host list", "empty", "host form", "validation error", "active tunnels", "loading"]
-source_files = ["crates/hosts-ui/src/hosts.rs", "crates/workspace/src/workspace.rs", "crates/hosts-host/src/lib.rs"]
+source_files = ["crates/hosts-ui/src/hosts.rs", "crates/hosts-ui/src/hosts/page.rs", "crates/settings-ui/src/panes/generic.rs", "crates/hosts-host/src/lib.rs"]
 tests = ["crates/hosts/src/lib.rs", "crates/hosts-ui/src/command_provider.rs"]
 evidence = ["Pending: native Hosts matrix"]
 status = "partial"

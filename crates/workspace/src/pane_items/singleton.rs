@@ -39,7 +39,6 @@ impl Workspace {
                 Some(view) => view.clone().into_any_element(),
                 None => placeholder(self, cx),
             },
-            PaneKind::Hosts => self.hosts.clone().into_any_element(),
             _ => placeholder(self, cx),
         }
     }

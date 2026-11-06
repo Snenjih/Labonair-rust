@@ -1529,6 +1529,11 @@ impl SettingsView {
             cx.stop_propagation();
             return;
         }
+        // A full-page owner surface (Hosts) handles its own keys; only Escape
+        // (when the surface left it unhandled) is Settings navigation.
+        if key != "escape" && self.full_page_active() {
+            return;
+        }
         if self.dropdown.is_some() {
             match key {
                 "escape" => {
@@ -1943,7 +1948,7 @@ impl Render for SettingsView {
                     .child(keybinding_hint("Navigate", ["↑", "↓", "Enter"], c)),
             );
 
-        let body = self.render_body(&c, cx);
+        let body = self.render_body(window, &c, cx);
         let windowed = self.windowed;
 
         let header = self.render_header(&c, cx);

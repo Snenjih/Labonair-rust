@@ -6,7 +6,7 @@ canonical_crate = "labonair-hosts"
 sibling_crates = ["labonair-hosts-host", "labonair-hosts-ui"]
 public_contract = ["Host", "HostStore", "HostPickerRow", "HostOpenRequest", "HostView"]
 canonical_entry_points = [
-  "Titlebar global menu -> Hosts workspace tab",
+  "Titlebar global menu -> Settings Hosts page",
   "Command Palette -> Hosts submenu",
 ]
 alternate_entry_points = ["SSH/SFTP connection commands and recent-host picker rows"]
@@ -24,7 +24,7 @@ registries = ["HostsCommandProvider", "CommandProvider", "owner-registered palet
 events = ["HostOpenRequest(host_id, mode)", "HostStatus and active-tunnel snapshots through HostView"]
 state_owner = "labonair-hosts owns HostStore and labonair-hosts-ui owns HostManagerView presentation state"
 persistence_owner = "Hosts-owned SQLite store; credential material remains in labonair-credentials/labonair-secrets"
-settings = ["none — Hosts is not a Settings category"]
+settings = ["none — the Settings Hosts page embeds the Hosts-owned management view (ADR 0007); no host value is a Settings field"]
 notifications = ["Connection, migration, and persistence failures publish through the notification registry"]
 ui_kit_components = ["ListItem", "button and input primitives", "empty/error states"]
 automation_tools = ["MCP host/session integration consumes typed host contracts; no Hosts-local tool registry"]
@@ -48,7 +48,7 @@ tests = [
   "tasks/rework/R04-002-host-management-and-connection-pickers.md",
 ]
 visual_states = [
-  "Hosts tab with saved hosts — Pending native capture",
+  "Settings Hosts page with saved hosts — Pending native capture",
   "empty host list — Pending native capture",
   "host form validation and failure — Pending native capture",
   "command-palette host submenu with SSH/SFTP secondary action — Pending native capture",
@@ -68,7 +68,7 @@ contract = ["HostOpenRequest, HostPickerRow, and Host are defined in crates/host
 unit = ["Host picker identity and transport intent tests live in crates/hosts/src/lib.rs"]
 integration = ["R04-002 records the composed HostManagerView, store, picker, and transport boundaries"]
 command = ["HostsCommandProvider owns OpenHosts and connection command descriptors"]
-surface = ["Workspace Hosts tab and command-palette host submenu are canonical entry points"]
+surface = ["Settings Hosts page and command-palette host submenu are canonical entry points"]
 persistence = ["HostStore is the Hosts-owned SQLite persistence boundary"]
 notification = ["R01-009 and R04-002 route passive operation failures to Notifications"]
 visual = ["Pending: docs/audits/product-surface-acceptance.md Hosts cells"]

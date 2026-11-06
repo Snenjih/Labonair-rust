@@ -96,8 +96,9 @@ No feature may add a new permanent global strip, badge row, or shell toolbar wit
 - Themes and icon themes are selected through command-palette submenus with live preview.
 - Hosts are selected through a command-palette submenu; `Enter` opens SSH and `Shift+Enter` opens SFTP.
 - The titlebar's global menu exposes Keymap, Themes, Icon Themes, and Hosts.
-  Hosts management is a dedicated management surface, not a settings category;
-  host selection remains a command-palette submenu.
+  Hosts management is the Hosts owner's full-page surface on the Settings
+  `Hosts` page (below Keymap, ADR 0007); host selection remains a
+  command-palette submenu.
 - Notifications are persistent entries in the statusbar notification dropdown. There is no toast system.
 - Transfers are represented by a statusbar item with progress and history.
 - Jump hosts are part of connection configuration and connection execution, not a standalone primary menu.

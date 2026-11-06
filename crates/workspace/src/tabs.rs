@@ -4,10 +4,9 @@
 //! descriptor with a [`TabKind`] discriminant (`workspace`, `editor`,
 //! `preview`, `sftp`, `git-graph`, `git-diff`, `commit-diff`, `ai-diff`,
 //! `keymap`) plus kind-specific data in [`TabData`]. The reference keeps this in the
-//! `useTabs` Zustand store; here it is the GPUI [`TabStore`] entity. The
-//! host-manager dashboard was a `TabKind::Hosts` tab through T17-009; T19-010
-//! removed it — host management is now owned by the Hosts capability
-//! surface, while connecting is the command palette's `Page::Hosts`.
+//! `useTabs` Zustand store; here it is the GPUI [`TabStore`] entity. Host
+//! management is not a tab: it is the Hosts page in Settings, while
+//! connecting is the command palette's `Page::Hosts`.
 //!
 //! "Tab" and "session" are deliberately **not** the same thing (mirrors the
 //! React version): the visible workspace tab is backed by a local PTY session
@@ -64,10 +63,6 @@ pub enum TabKind {
     CommitDiff,
     /// The keymap management surface (browse + rebind every command).
     Keymap,
-    /// The host management surface (create/edit hosts, groups, tunnels,
-    /// credentials, import/export) — an occasional utility tab, never a
-    /// startup tab (mirrors `Keymap`).
-    Hosts,
 }
 
 impl TabKind {
@@ -84,7 +79,6 @@ impl TabKind {
             TabKind::Diff => IconName::GitBranch,
             TabKind::CommitDiff => IconName::GitBranch,
             TabKind::Keymap => IconName::Command,
-            TabKind::Hosts => IconName::Server,
         }
     }
 
@@ -101,7 +95,6 @@ impl TabKind {
             TabKind::Diff => "Diffs",
             TabKind::CommitDiff => "Commit Diffs",
             TabKind::Keymap => "Keymaps",
-            TabKind::Hosts => "Hosts",
         }
     }
 
@@ -117,7 +110,6 @@ impl TabKind {
             TabKind::Diff => "Diff",
             TabKind::CommitDiff => "Commit",
             TabKind::Keymap => "Keymap",
-            TabKind::Hosts => "Hosts",
         }
     }
 }

@@ -24,6 +24,7 @@ impl SystemFontService for ThemeSystemFontService {
 pub(crate) fn settings_services(
     shell: Entity<AppShell>,
     main_window: AnyWindowHandle,
+    hosts: Entity<labonair_hosts_ui::HostManagerView>,
 ) -> SettingsServices {
     let mut surfaces = SettingsSurfaceRegistry::default();
     // The owner surfaces of the Themes page render inline in the Settings
@@ -73,6 +74,12 @@ pub(crate) fn settings_services(
                 },
             ),
         ),
+    );
+    log_surface_registration(
+        "hosts",
+        labonair_hosts_ui::register_settings_surfaces(&mut surfaces, hosts, |cx| {
+            labonair_settings_ui::open_settings_window(Some("hosts"), cx)
+        }),
     );
 
     let file_shell = shell.clone();

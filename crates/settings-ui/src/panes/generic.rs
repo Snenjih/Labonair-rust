@@ -973,14 +973,19 @@ impl SettingsView {
 
     // ── T19-004: top-level render dispatch ──────────────────────────────
 
-    pub(crate) fn render_body(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+    pub(crate) fn render_body(
+        &mut self,
+        window: &mut Window,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         // T19-007: search results occupy the main surface and use the same
         // canonical field renderer as ordinary category pages. The sidebar
         // remains stable, so search never replaces the user's orientation.
         if !self.search.trim().is_empty() {
             return self.render_search_body(c, cx);
         }
-        self.render_generated_body(c, cx)
+        self.render_generated_body(window, c, cx)
     }
 
     fn render_search_body(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -1071,7 +1076,20 @@ impl SettingsView {
     /// Render the active page as grouped cards: one `settings_group` card per
     /// section (title above it), with a trailing "Other" card for any field no
     /// curated group placed. Each section is one virtualized list item.
-    fn render_generated_body(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn render_generated_body(
+        &mut self,
+        window: &mut Window,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let PageBody::Generated(items) = self.active_body();
+        let surface_id = items.iter().find_map(|item| match item {
+            SettingsPageItem::OwnerSurface(id) => Some(*id),
+            _ => None,
+        });
+        if let Some(view) = surface_id.and_then(|id| self.full_page_surface(id, window, cx)) {
+            return view;
+        }
         let PageBody::Generated(items) = self.active_body();
         // The trailing "Other" fallback belongs on the category's main page only —
         // a sub-page shows just its own curated groups.
@@ -1163,6 +1181,54 @@ impl SettingsView {
             self.content_list.reset(count);
             self.content_list_key = Some(key);
         }
+    }
+
+    /// Whether the active page is a `full_page` inline surface: it owns the
+    /// keyboard (its own inputs and shortcuts), so typing must not reach the
+    /// Settings search.
+    pub(crate) fn full_page_active(&self) -> bool {
+        let PageBody::Generated(items) = self.active_body();
+        items.iter().any(|item| match item {
+            SettingsPageItem::OwnerSurface(id) => {
+                self.services.surface(*id).is_some_and(|surface| {
+                    surface.full_page && surface.mode == SettingsSurfaceMode::Inline
+                })
+            }
+            _ => false,
+        })
+    }
+
+    /// The embedded view of a page that is one `full_page` inline surface, laid
+    /// out in the whole content area (the surface scrolls itself).
+    fn full_page_surface(
+        &mut self,
+        id: SettingsSurfaceId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        let surface = self.services.surface(id)?;
+        if !(surface.full_page && surface.mode == SettingsSurfaceMode::Inline) {
+            return None;
+        }
+        if !self.inline_views.contains_key(&id) {
+            let view = self.services.inline_surface(id, window, cx)?;
+            self.inline_views.insert(id, view);
+        }
+        let view = self.inline_views.get(&id)?.clone();
+        Some(
+            div()
+                .id(SharedString::from(format!(
+                    "settings-inline-{}",
+                    id.as_str()
+                )))
+                .flex_1()
+                .min_h_0()
+                .w_full()
+                .flex()
+                .flex_col()
+                .child(view)
+                .into_any_element(),
+        )
     }
 
     /// One section: a 15px semibold title above a `settings_group` card of rows.

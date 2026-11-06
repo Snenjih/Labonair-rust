@@ -296,10 +296,6 @@ impl Workspace {
                     return;
                 }
             }
-            PaneKind::Hosts => {
-                window.focus(&gpui::Focusable::focus_handle(self.hosts.read(cx), cx));
-                return;
-            }
             _ => {}
         }
         window.focus(&self.focus_handle);

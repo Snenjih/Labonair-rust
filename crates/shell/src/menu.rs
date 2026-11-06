@@ -171,8 +171,65 @@ pub(crate) fn apply_keymap(
     commands: &crate::commands::CommandDispatcher,
 ) {
     cx.clear_key_bindings();
+    cx.bind_keys(text_input_bindings());
     cx.bind_keys(fixed_bindings());
     cx.bind_keys(bindings_from_keymap(effective, commands));
+}
+
+/// The editing bindings of the shared `gpui-component` text input. They are
+/// registered once by `gpui_component::init`, but `clear_key_bindings` above
+/// drops them, which left every input without Backspace, selection, clipboard
+/// and cursor movement. Context-scoped to `Input`, so they never shadow the
+/// workspace keymap.
+fn text_input_bindings() -> Vec<KeyBinding> {
+    use gpui_component::input::{
+        Backspace, Copy, Cut, Delete, DeleteToBeginningOfLine, DeleteToEndOfLine,
+        DeleteToNextWordEnd, DeleteToPreviousWordStart, Enter, Escape, MoveDown, MoveEnd, MoveHome,
+        MoveLeft, MoveRight, MoveToEnd, MoveToEndOfLine, MoveToNextWord, MoveToPreviousWord,
+        MoveToStart, MoveToStartOfLine, MoveUp, Paste, Redo, SelectAll, SelectToEnd,
+        SelectToEndOfLine, SelectToNextWordEnd, SelectToPreviousWordStart, SelectToStart,
+        SelectToStartOfLine, Undo,
+    };
+    const INPUT: Option<&str> = Some("Input");
+    vec![
+        KeyBinding::new("backspace", Backspace, INPUT),
+        KeyBinding::new("delete", Delete, INPUT),
+        KeyBinding::new("cmd-backspace", DeleteToBeginningOfLine, INPUT),
+        KeyBinding::new("cmd-delete", DeleteToEndOfLine, INPUT),
+        KeyBinding::new("alt-backspace", DeleteToPreviousWordStart, INPUT),
+        KeyBinding::new("alt-delete", DeleteToNextWordEnd, INPUT),
+        KeyBinding::new("enter", Enter { secondary: false }, INPUT),
+        KeyBinding::new("secondary-enter", Enter { secondary: true }, INPUT),
+        KeyBinding::new("escape", Escape, INPUT),
+        KeyBinding::new("up", MoveUp, INPUT),
+        KeyBinding::new("down", MoveDown, INPUT),
+        KeyBinding::new("left", MoveLeft, INPUT),
+        KeyBinding::new("right", MoveRight, INPUT),
+        KeyBinding::new("home", MoveHome, INPUT),
+        KeyBinding::new("end", MoveEnd, INPUT),
+        KeyBinding::new("cmd-left", MoveToStartOfLine, INPUT),
+        KeyBinding::new("cmd-right", MoveToEndOfLine, INPUT),
+        KeyBinding::new("ctrl-a", MoveToStartOfLine, INPUT),
+        KeyBinding::new("ctrl-e", MoveToEndOfLine, INPUT),
+        KeyBinding::new("cmd-up", MoveToStart, INPUT),
+        KeyBinding::new("cmd-down", MoveToEnd, INPUT),
+        KeyBinding::new("alt-left", MoveToPreviousWord, INPUT),
+        KeyBinding::new("alt-right", MoveToNextWord, INPUT),
+        KeyBinding::new("shift-home", SelectToStartOfLine, INPUT),
+        KeyBinding::new("shift-end", SelectToEndOfLine, INPUT),
+        KeyBinding::new("shift-cmd-left", SelectToStartOfLine, INPUT),
+        KeyBinding::new("shift-cmd-right", SelectToEndOfLine, INPUT),
+        KeyBinding::new("alt-shift-left", SelectToPreviousWordStart, INPUT),
+        KeyBinding::new("alt-shift-right", SelectToNextWordEnd, INPUT),
+        KeyBinding::new("cmd-shift-up", SelectToStart, INPUT),
+        KeyBinding::new("cmd-shift-down", SelectToEnd, INPUT),
+        KeyBinding::new("cmd-a", SelectAll, INPUT),
+        KeyBinding::new("cmd-c", Copy, INPUT),
+        KeyBinding::new("cmd-x", Cut, INPUT),
+        KeyBinding::new("cmd-v", Paste, INPUT),
+        KeyBinding::new("cmd-z", Undo, INPUT),
+        KeyBinding::new("cmd-shift-z", Redo, INPUT),
+    ]
 }
 
 /// Fixed / OS-reserved accelerators — never customizable, so they never go

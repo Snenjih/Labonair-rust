@@ -13,10 +13,12 @@ editor, not a general application-management window.
 2. **Typed fields first.** Every ordinary setting is represented by a typed
    field with a stable key, default, scope, validation, description, and reset
    behavior.
-3. **No management pages.** Hosts, credentials, themes, icon themes, keymaps,
-   notifications, transfers, and command registration are opened through their
-   own canonical surfaces; rule 18 allows the Themes page to embed the theme
-   and Background owner surfaces inline.
+3. **No management pages.** Themes, icon themes, keymaps, notifications,
+   transfers, and command registration are opened through their own canonical
+   surfaces; rule 18 allows the Themes page to embed the theme and Background
+   owner surfaces inline, and the Hosts page embeds the Hosts owner's
+   management view as a full-page inline surface
+   ([ADR 0007](adr/0007-hosts-settings-page.md)).
 4. **Persisted selections are not ownership.** A selected theme ID or similar
    value may be persisted by the settings storage layer while the owning module
    controls its registry and user flow.
@@ -86,7 +88,9 @@ editor, not a general application-management window.
     registered with `SettingsSurfaceMode::Inline` and an inline builder is
     embedded by the Settings window; the owner keeps all state, persistence and
     notifications. Settings gains no feature state, and no other module may add
-    a parallel Settings category.
+    a parallel Settings category. A surface marked `full_page` (Hosts) owns its
+    whole page, scrolls itself, and receives the keyboard: typing there is never
+    treated as Settings search.
 
 19. **Pages are section cards.** Group values into `settings_group` cards of
     `settings_row`s (title above the card). Pick the control by value shape:

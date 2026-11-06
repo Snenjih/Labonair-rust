@@ -70,8 +70,8 @@ pub fn register_keymap_handler(
         .expect("workspace keymap handler must have a unique id");
 }
 
-/// Register the host-management entry point owned by Workspace (the `Hosts`
-/// tab, mirrors `register_keymap_handler`).
+/// Register the host-management entry point owned by Workspace (opens the
+/// Settings Hosts page through the shell).
 pub fn register_hosts_handler(
     registry: &mut CommandHandlerRegistry,
     workspace: &Entity<Workspace>,
@@ -80,7 +80,7 @@ pub fn register_hosts_handler(
     registry
         .register(CommandId::OpenHosts, move |_window, cx| {
             workspace.update(cx, |workspace, cx| {
-                workspace.open_hosts_tab(cx);
+                workspace.open_hosts_settings(cx);
             });
         })
         .expect("workspace hosts handler must have a unique id");

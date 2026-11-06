@@ -36,7 +36,7 @@ removal conditions.
 | `snippets` | Snippet domain, SQLite store, and local/SSH execution contracts | snippets module | Shared run events and the SSH executor contract are standalone; `labonair-snippets-ssh` supplies the concrete russh adapter. |
 | `snippets-ssh` | Concrete SSH snippet execution adapter | snippets module | Dedicated integration sibling | Receives `SshState`, `Database`, and `EventBus` through the snippet execution contract; no application facade. |
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
-| `hosts-ui` | Host management UI and host-related dependencies | hosts module | Owns rendering (`HostManagerView`, which `labonair-workspace` hosts as the `Hosts` tab — window→tab migration, 2026-09-11, mirrors the Keymap tab) and consumes host, credential, snippet, database, and secret contracts directly; it emits typed open requests and operation failures publish through Notifications. `HostStatus` / `ActiveTunnelRow` live in `hosts-host`; the connection-status store lives in `workspace`. |
+| `hosts-ui` | Host management UI and host-related dependencies | hosts module | Owns rendering (`HostManagerView`, embedded by Settings as the full-page `Hosts` page, ADR 0007, and kept by `labonair-workspace` as the host-data hub) and consumes host, credential, snippet, database, and secret contracts directly; it emits typed open requests and operation failures publish through Notifications. `HostStatus` / `ActiveTunnelRow` live in `hosts-host`; the connection-status store lives in `workspace`. |
 | `hosts-host` | Host-view contract (`HostView` — catalog reads + connection-status / active-tunnel snapshot sinks; `HostStatus`, `ActiveTunnelRow`) | hosts module | Leaf (`gpui` + `labonair-hosts` for `HostPickerRow`); carries Workspace's continuous host-data needs (picker rows, tunnel status) independent of the `Hosts` tab's visibility — `workspace` additionally holds `Entity<HostManagerView>` directly to render that tab (supersedes R08-012's "no `hosts-ui` edge" rule). |
 | `notifications-core` | UI-free notification registry and lifecycle | notifications module | New owner of retention, ordering, deduplication, read state, and structured metadata. |
 | `notifications` | GPUI notification adapter and statusbar dropdown | notifications module | Owns the statusbar notification item; shell only registers it. |
@@ -88,8 +88,8 @@ edges; the dependency verifier rejects every unlisted edge.
 - `workspace` depends directly on AI, command palette, hosts UI, notifications, settings, SFTP capability contracts, and feature views; transfer lifecycle state and adapter event transport are no longer direct responsibilities.
 - Workspace identity/activity now has one UI-free owner in `workspace/context.rs`
   (`WorkspaceIdentity` + `WorkspaceState`). The previous Hosts shell callback
-  was removed; Hosts navigation is now a plain `Workspace::open_hosts_tab`
-  method call (mirrors `open_keymap_tab`), while the project-picker request
+  was removed; Hosts navigation is now `Workspace::open_hosts_settings`
+  (emits `WorkspaceEvent::OpenHosts`; the shell opens Settings on the Hosts page), while the project-picker request
   (a native OS dialog the workspace can't present itself) still uses
   `WorkspaceEvent` and a composition-root subscription. Project settings
   now follow explicit workspace identity rather than terminal cwd. Explorer
@@ -124,8 +124,9 @@ edges; the dependency verifier rejects every unlisted edge.
 - `hosts-ui` no longer depends on Settings or the backend facade; the shell
   composes one `HostManagerView`, injects its database, secret state, transport
   contracts, and the narrow MCP-revocation callback, then hands that entity to
-  `Workspace`, which renders it as the `Hosts` tab (window→tab migration,
-  2026-09-11 — same shape as the Keymap tab). Workspace also retains the
+  `Workspace`, which keeps it as the host-data hub while Settings embeds it as
+  the `Hosts` page (ADR 0007, 2026-11-06; supersedes the 2026-09-11
+  window→tab migration). Workspace also retains the
   injected `HostView` capability handle needed for connection/session
   orchestration, independent of the tab's visibility. Its notification
   publication uses the retained Notifications contract.

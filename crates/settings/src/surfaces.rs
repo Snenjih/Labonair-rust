@@ -84,6 +84,10 @@ pub struct SettingsSurface {
     pub action_label: &'static str,
     pub page: SettingsSurfacePage,
     pub mode: SettingsSurfaceMode,
+    /// An inline surface that owns its whole page: the Settings window gives
+    /// it the full content area instead of wrapping it in a section card, and
+    /// the surface scrolls itself.
+    pub full_page: bool,
 }
 
 impl SettingsSurface {
@@ -101,7 +105,14 @@ impl SettingsSurface {
             action_label,
             page,
             mode: SettingsSurfaceMode::Link,
+            full_page: false,
         }
+    }
+
+    /// Let an inline surface own its whole page (see [`Self::full_page`]).
+    pub const fn full_page(mut self) -> Self {
+        self.full_page = true;
+        self
     }
 
     /// Mark the surface as embeddable inline (see [`SettingsSurfaceMode`]).

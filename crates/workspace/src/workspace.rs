@@ -619,6 +619,8 @@ pub enum WorkspaceEvent {
     /// for a *new* space (T20-008 Spaces) — the current space's identity is
     /// left untouched.
     NewProjectSpace,
+    /// Ask the application shell to open Settings on the Hosts page.
+    OpenHosts,
 }
 
 /// The tabbed, split-pane workspace shell.
@@ -4531,18 +4533,15 @@ impl Workspace {
         });
     }
 
-    /// Open (or focus) the single host-management tab. Unlike
-    /// [`Self::open_keymap_tab`], `self.hosts` is never lazily created here —
-    /// the composition root builds it eagerly (it's also the live host-data
-    /// hub used regardless of tab visibility) — this only manages the tab.
-    pub fn open_hosts_tab(&mut self, cx: &mut Context<Self>) {
-        let existing = self.find_singleton_tab(crate::pane_kind::PaneKind::Hosts, cx);
-        self.tabs.update(cx, |s, cx| match existing {
-            Some(id) => s.set_active(id, cx),
-            None => {
-                s.open(TabKind::Hosts, TabData::default(), cx);
-            }
-        });
+    /// Ask the shell to open Settings on the Hosts page. Host management
+    /// lives there; `self.hosts` is only the live host-data hub here.
+    pub fn open_hosts_settings(&mut self, cx: &mut Context<Self>) {
+        cx.emit(WorkspaceEvent::OpenHosts);
+    }
+
+    /// The host manager entity, which Settings embeds as its Hosts page.
+    pub fn hosts_view(&self) -> Entity<HostManagerView> {
+        self.hosts.clone()
     }
 
     /// Open — or, if it already exists, focus and re-point — the single
@@ -5762,7 +5761,7 @@ impl Workspace {
                         .child(
                             loading_btn("ssh-l-edit", "Edit Host", c, muted, border, false, fg)
                                 .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.open_hosts_tab(cx)
+                                    this.open_hosts_settings(cx)
                                 })),
                         )
                         .child(

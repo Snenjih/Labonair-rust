@@ -4398,6 +4398,7 @@ dependencies = [
  "labonair-notifications",
  "labonair-persistence",
  "labonair-secrets",
+ "labonair-settings",
  "labonair-snippets",
  "labonair-ssh",
  "labonair-theme",

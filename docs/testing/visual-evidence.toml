@@ -49,7 +49,7 @@ state_status = { open = "Pending", "focused input" = "Pending", "validation erro
 next_action = "Capture dialog focus, validation, confirmation, loading, and failure states."
 
 [[surface]]
-id = "workspace.hosts-tab"
+id = "settings.hosts"
 state_status = { "host list" = "Pending", empty = "Pending", "host form" = "Pending", "validation error" = "Pending", "active tunnels" = "Pending", loading = "Pending" }
 next_action = "Capture host-list, empty, form, validation, tunnel, and loading states without real credentials."
 

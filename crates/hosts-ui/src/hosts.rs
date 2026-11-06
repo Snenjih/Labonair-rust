@@ -19,10 +19,10 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, uniform_list, App, AppContext, ClickEvent, ClipboardItem, Context, Entity,
-    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Task, UniformListScrollHandle, Window,
+    div, px, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, ListAlignment,
+    ListState, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
 use labonair_credentials::{self, Credential};
 use labonair_hosts::store::{HostCreateRequest, HostEventHandler, HostUpdateRequest};
@@ -42,8 +42,10 @@ use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
     caret, checkbox, context_menu, indicator, search_clear_button, search_field, search_input,
     text_field, text_field_surface, text_input, BlinkCursor, IconName, IndicatorSize, InputEvent,
-    InputState, ListItem, MenuItem, Palette, TextFieldState,
+    InputState, ListItem, MenuItem, Palette, SelectOption, TextFieldState,
 };
+
+mod page;
 
 /// Connection status + the active-tunnel row shape moved to the leaf
 /// `labonair-hosts-host` contract in R08-012; re-exported so existing
@@ -72,148 +74,13 @@ impl Render for HostDragGhost {
     }
 }
 
-/// Per-row data a `uniform_list` closure needs to draw one host row without
-/// borrowing `HostManagerView` — see [`HostManagerView::host_row_data`].
+/// Per-row data of one host row — see [`HostManagerView::host_row_data`].
 struct HostRowData {
-    id: String,
     name: String,
     subtitle: String,
     icon: IconName,
     pin_to_top: bool,
     status: HostStatus,
-    ping: Ping,
-    selected: bool,
-}
-
-#[derive(Clone, Copy)]
-struct FieldRenderState {
-    active: bool,
-    show_caret: bool,
-}
-
-/// Builds one host-list row. Runs inside the `uniform_list` render closure
-/// (list view, only the on-screen `range`) as well as directly from `render`
-/// (grid view, not yet virtualised) — both call sites only have `&mut App`
-/// available in the former case, so click/drag handlers go through
-/// `view.update(cx, ..)` rather than `cx.listener` (which needs
-/// `&mut Context<HostManagerView>`).
-///
-/// T20-003: migrated to the shared [`ListItem`] primitive — icon/label/
-/// subtitle/trailing use its `.child()`/`.trailing()` builder methods, and
-/// the click/right-click/drag-and-drop wiring (none of which `ListItem`
-/// has a named builder for) goes through its `.extra()` escape hatch,
-/// matching the tree-row pattern in `panel-explorer`'s
-/// `render_file_row` (T20-002). The bg/border chrome is fully
-/// re-applied in `.extra()` (rather than via `.selected()`) to keep the
-/// exact pre-migration look: a border-ring highlight with an
-/// accent-border hover (via `.hover_style()`), not `ListItem`'s default
-/// bg-tint hover.
-fn render_host_row(
-    row: &HostRowData,
-    p: &Palette,
-    view: &Entity<HostManagerView>,
-) -> gpui::AnyElement {
-    let id = row.id.clone();
-    let (id_click, id_right, id_drop) = (id.clone(), id.clone(), id.clone());
-    let accent = p.accent;
-    let card = p.card;
-    let border = p.border;
-    let selected = row.selected;
-
-    let v = view.clone();
-    let on_click = move |_: &ClickEvent, w: &mut Window, cx: &mut App| {
-        v.update(cx, |this, cx| {
-            if let Some(h) = this.hosts.iter().find(|h| h.id == id_click).cloned() {
-                this.select_host(&h, w, cx);
-            }
-        });
-    };
-    let v = view.clone();
-    let on_right_click = move |ev: &MouseDownEvent, _w: &mut Window, cx: &mut App| {
-        v.update(cx, |this, cx| {
-            this.host_menu = Some((id_right.clone(), ev.position));
-            cx.notify();
-        });
-    };
-    let v = view.clone();
-    let on_drop = move |dragged: &DraggedHost, _w: &mut Window, cx: &mut App| {
-        v.update(cx, |this, cx| {
-            this.reorder_hosts(&dragged.id, &id_drop, cx);
-        });
-    };
-
-    let ping_color = match row.ping {
-        Ping::Online => p.accent,
-        Ping::Offline => p.muted,
-        Ping::Checking => p.border,
-    };
-
-    ListItem::new(SharedString::from(format!("host-item-{id}")), *p)
-        .child(div().child(row.icon.svg(p.muted).size(px(14.0))))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_1()
-                        .when(row.pin_to_top, |d| {
-                            d.child(IconName::Bookmark.svg(p.accent).size(px(9.0)))
-                        })
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(p.fg)
-                                .child(SharedString::from(row.name.clone())),
-                        ),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(p.muted)
-                        .child(SharedString::from(row.subtitle.clone())),
-                ),
-        )
-        .trailing(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(indicator(IndicatorSize::Sm, ping_color))
-                .when(row.status != HostStatus::Disconnected, |d| {
-                    d.child(
-                        div()
-                            .text_size(px(9.0))
-                            .text_color(if row.status == HostStatus::Failed {
-                                p.fg
-                            } else {
-                                p.accent
-                            })
-                            .child(row.status.label()),
-                    )
-                }),
-        )
-        .on_click(on_click)
-        .hover_style(move |s| s.border_color(accent))
-        .extra(move |list_row| {
-            list_row
-                .py(px(8.0))
-                .rounded_md()
-                .bg(if selected { border } else { card })
-                .border_1()
-                .border_color(if selected { accent } else { border })
-                .on_mouse_down(MouseButton::Right, on_right_click)
-                .on_drag(DraggedHost { id: id.clone() }, |_, _, _, cx| {
-                    cx.new(|_| HostDragGhost)
-                })
-                .drag_over::<DraggedHost>(move |style, _, _, _| style.border_color(accent))
-                .on_drop(on_drop)
-        })
-        .into_any_element()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -228,12 +95,6 @@ enum AuthMethod {
 }
 
 impl AuthMethod {
-    const ALL: [AuthMethod; 4] = [
-        AuthMethod::Password,
-        AuthMethod::Key,
-        AuthMethod::Credential,
-        AuthMethod::None,
-    ];
     fn as_str(self) -> &'static str {
         match self {
             AuthMethod::Password => "password",
@@ -251,17 +112,9 @@ impl AuthMethod {
             _ => AuthMethod::Password,
         }
     }
-    fn title(self) -> &'static str {
-        match self {
-            AuthMethod::Password => "Password",
-            AuthMethod::Key => "SSH Key",
-            AuthMethod::Credential => "Credential",
-            AuthMethod::None => "None",
-        }
-    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum HostField {
     Name,
     Address,
@@ -378,17 +231,19 @@ struct HostForm {
     /// `true` once a sudo password is on file for this host (drives the
     /// "(set)" placeholder). From `Host::sudo_password_set`.
     sudo_password_set: bool,
+    /// Remove the stored sudo password on the next save.
+    sudo_clear: bool,
     keep_alive_interval: String,
     keep_alive_tries: String,
     notes: String,
     pin_to_top: bool,
-    /// `None` = no credential; `Some(idx)` indexes into `credentials`.
-    credential: Option<usize>,
-    /// `None` = no group; `Some(idx)` indexes into `groups`.
-    group: Option<usize>,
-    /// `None` = direct; `Some(idx)` indexes into `hosts` (the bastion to route
-    /// through). The host being edited is never a valid choice.
-    jump_host: Option<usize>,
+    /// Id of the saved credential this host authenticates with.
+    credential: Option<String>,
+    /// Id of the host's group.
+    group: Option<String>,
+    /// Id of the bastion host to route through. The host being edited is
+    /// never a valid choice.
+    jump_host: Option<String>,
     /// Configured local port-forwards (ProxyJump-independent).
     tunnels: Vec<TunnelDraft>,
     /// "Block AI Agent Access" — when set, the MCP bridge refuses to grant a
@@ -402,7 +257,6 @@ struct HostForm {
     snippet_mode: String,
     /// Which of the 4 form tabs is showing.
     tab: FormTab,
-    focus: HostField,
     /// Fallback edit target for a stale tunnel-field index (never rendered).
     scratch: String,
 }
@@ -416,22 +270,7 @@ enum FormTab {
     Tunnels,
 }
 
-impl FormTab {
-    const ALL: [FormTab; 4] = [
-        FormTab::General,
-        FormTab::Ssh,
-        FormTab::Sftp,
-        FormTab::Tunnels,
-    ];
-    fn title(self) -> &'static str {
-        match self {
-            FormTab::General => "General",
-            FormTab::Ssh => "SSH",
-            FormTab::Sftp => "SFTP",
-            FormTab::Tunnels => "Tunnels",
-        }
-    }
-}
+impl FormTab {}
 
 /// Curated host-avatar icon set (`lib/icons/` in the reference). Key stored in
 /// `hosts.icon`.
@@ -467,6 +306,7 @@ impl HostForm {
             password: String::new(),
             sudo_password: String::new(),
             sudo_password_set: false,
+            sudo_clear: false,
             keep_alive_interval: String::new(),
             keep_alive_tries: String::new(),
             notes: String::new(),
@@ -480,12 +320,11 @@ impl HostForm {
             snippet_id: None,
             snippet_mode: "execute".into(),
             tab: FormTab::General,
-            focus: HostField::Name,
             scratch: String::new(),
         }
     }
 
-    fn from_host(h: &Host, groups: &[Group], creds: &[Credential], hosts: &[Host]) -> Self {
+    fn from_host(h: &Host) -> Self {
         Self {
             editing_id: Some(h.id.clone()),
             name: h.name.clone(),
@@ -499,6 +338,7 @@ impl HostForm {
             password: String::new(),
             sudo_password: String::new(),
             sudo_password_set: h.sudo_password_set,
+            sudo_clear: false,
             keep_alive_interval: h
                 .keep_alive_interval
                 .map(|v| v.to_string())
@@ -509,18 +349,9 @@ impl HostForm {
                 .unwrap_or_default(),
             notes: h.notes.clone().unwrap_or_default(),
             pin_to_top: h.pin_to_top,
-            credential: h
-                .credential_id
-                .as_deref()
-                .and_then(|cid| creds.iter().position(|c| c.id == cid)),
-            group: h
-                .group_id
-                .as_deref()
-                .and_then(|gid| groups.iter().position(|g| g.id == gid)),
-            jump_host: h
-                .jump_host_id
-                .as_deref()
-                .and_then(|jid| hosts.iter().position(|c| c.id == jid && c.id != h.id)),
+            credential: h.credential_id.clone(),
+            group: h.group_id.clone(),
+            jump_host: h.jump_host_id.clone().filter(|jid| *jid != h.id),
             tunnels: parse_tunnels(&h.tunnels),
             block_agent_access: h.block_agent_access,
             icon: h.icon.clone(),
@@ -530,7 +361,6 @@ impl HostForm {
                 .clone()
                 .unwrap_or_else(|| "execute".into()),
             tab: FormTab::General,
-            focus: HostField::Name,
             scratch: String::new(),
         }
     }
@@ -595,13 +425,6 @@ impl HostForm {
     }
 }
 
-/// New-credential draft inside the credential manager.
-struct CredDraft {
-    name: String,
-    is_key: bool,
-}
-
-/// Cycle order for the import dialog's conflict-policy toggle.
 fn cycle_conflict(c: ImportConflict) -> ImportConflict {
     match c {
         ImportConflict::Skip => ImportConflict::Overwrite,
@@ -644,13 +467,6 @@ enum HostSort {
 }
 
 impl HostSort {
-    fn next(self) -> Self {
-        match self {
-            HostSort::LastConnected => HostSort::NameAsc,
-            HostSort::NameAsc => HostSort::NameDesc,
-            HostSort::NameDesc => HostSort::LastConnected,
-        }
-    }
     fn label(self) -> &'static str {
         match self {
             HostSort::LastConnected => "Last connected",
@@ -680,27 +496,128 @@ enum SaveState {
     Error,
 }
 
-impl SaveState {
-    fn label(self) -> &'static str {
-        match self {
-            SaveState::Idle => "",
-            SaveState::Pending => "Unsaved changes\u{2026}",
-            SaveState::Saving => "Saving\u{2026}",
-            SaveState::Saved => "Saved \u{2713}",
-            SaveState::Error => "Save failed",
-        }
-    }
-}
-
 /// Which hand-rolled focus region currently owns keyboard input — tracked by
 /// the `cx.on_focus`/`cx.on_blur` listeners wired once in `render()` for the
 /// remaining string-backed drafts and rename fields.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FocusRegion {
-    Form,
-    Cred,
     Group,
     GroupRename,
+}
+
+/// Fields of the credential form that are real text inputs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum CredField {
+    Name,
+    KeyPath,
+    Secret,
+}
+
+/// Key of one lazily created text input: a field of the host or credential form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum FieldKey {
+    Host(HostField),
+    Cred(CredField),
+}
+
+/// The Hosts | Credentials switch beside the search field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PageMode {
+    Hosts,
+    Credentials,
+}
+
+/// Editable state of one credential (the credential detail sub-page).
+#[derive(Debug, Clone, PartialEq)]
+struct CredForm {
+    editing_id: Option<String>,
+    name: String,
+    is_key: bool,
+    key_path: String,
+    key_type: Option<String>,
+    public_key: Option<String>,
+    /// Password (password credentials) or passphrase (key credentials). Empty
+    /// means "unchanged": the secret store never hands the value back.
+    secret: String,
+    has_secret: bool,
+    /// Remove the stored secret on the next save.
+    secret_clear: bool,
+    /// Host form that opened this one through "Create new credential"; going
+    /// back re-opens it with this credential selected.
+    origin_host: Option<String>,
+}
+
+impl CredForm {
+    fn blank(origin_host: Option<String>) -> Self {
+        Self {
+            editing_id: None,
+            name: String::new(),
+            is_key: false,
+            key_path: String::new(),
+            key_type: None,
+            public_key: None,
+            secret: String::new(),
+            has_secret: false,
+            secret_clear: false,
+            origin_host,
+        }
+    }
+
+    fn from_credential(c: &Credential) -> Self {
+        Self {
+            editing_id: Some(c.id.clone()),
+            name: c.name.clone(),
+            is_key: c.cred_type == "key",
+            key_path: c.key_path.clone().unwrap_or_default(),
+            key_type: c.key_type.clone(),
+            public_key: c.public_key.clone(),
+            secret: String::new(),
+            has_secret: c.has_secret,
+            secret_clear: false,
+            origin_host: None,
+        }
+    }
+
+    fn field(&self, f: CredField) -> &str {
+        match f {
+            CredField::Name => &self.name,
+            CredField::KeyPath => &self.key_path,
+            CredField::Secret => &self.secret,
+        }
+    }
+
+    fn field_mut(&mut self, f: CredField) -> &mut String {
+        match f {
+            CredField::Name => &mut self.name,
+            CredField::KeyPath => &mut self.key_path,
+            CredField::Secret => &mut self.secret,
+        }
+    }
+}
+
+/// Which select list is open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DropdownKind {
+    Group,
+    Credential,
+    JumpHost,
+    Snippet,
+    Sort,
+}
+
+/// The open select list: its options, current value and anchor.
+struct Dropdown {
+    kind: DropdownKind,
+    at: Point<Pixels>,
+    options: Vec<SelectOption>,
+    selected: String,
+}
+
+/// A destructive action waiting for confirmation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Confirm {
+    DeleteHost(String),
+    DeleteCredential(String),
 }
 
 pub struct HostManagerView {
@@ -718,14 +635,25 @@ pub struct HostManagerView {
     snippets: Vec<(String, String)>,
     statuses: Vec<(String, HostStatus)>,
     active_tunnels: Vec<ActiveTunnelRow>,
+    /// The host detail sub-page, `Some` while a host is open.
     form: Option<HostForm>,
-    form_focus: FocusHandle,
-    form_input: Option<Entity<InputState>>,
-    _form_input_subscription: Option<Subscription>,
-    form_input_focused: bool,
-    creds_open: bool,
-    cred_draft: Option<CredDraft>,
-    cred_focus: FocusHandle,
+    /// The credential detail sub-page, `Some` while a credential is open.
+    cred_form: Option<CredForm>,
+    mode: PageMode,
+    /// One real text input per form field, created lazily on first render and
+    /// dropped whenever a different form is opened.
+    inputs: HashMap<FieldKey, (Entity<InputState>, Subscription)>,
+    /// The field whose input currently has keyboard focus (focus ring).
+    focused_input: Option<FieldKey>,
+    dropdown: Option<Dropdown>,
+    dropdown_list: ListState,
+    confirm: Option<Confirm>,
+    /// Anchor of the open Import/Export overflow menu.
+    more_menu: Option<Point<Pixels>>,
+    /// The mode the search placeholder currently describes.
+    search_hint_mode: PageMode,
+    /// `Some(true)` = key credentials only, `Some(false)` = passwords only.
+    cred_filter: Option<bool>,
     /// Inline "new group" buffer, `Some` while the field is open.
     group_draft: Option<String>,
     group_focus: FocusHandle,
@@ -747,22 +675,21 @@ pub struct HostManagerView {
     _search_input_subscription: Option<Subscription>,
     search_input_focused: bool,
     sort: HostSort,
-    /// `true` = card grid, `false` = list.
-    grid_view: bool,
     /// `None` = all groups; `Some("")` = ungrouped only; `Some(id)` = that group.
     group_filter: Option<String>,
     /// Per-host reachability, refreshed by the ping worker.
     ping: HashMap<String, Ping>,
     save_state: SaveState,
-    /// Whether the detail-pane host-icon picker row is expanded.
+    /// Whether the host-icon picker is open.
     icon_picker_open: bool,
+    /// Bumped on every `Saved` transition so the saved badge replays its
+    /// entrance animation and the idle reset ignores stale timers.
+    saved_gen: u64,
     /// Bumped on every field edit; the debounced autosave task no-ops if it
     /// changed while the task was sleeping.
     edit_gen: u64,
     _ping_task: Task<()>,
     focus_handle: FocusHandle,
-    /// Virtualises the list-view host rows (`uniform_list`); unused in grid view.
-    list_scroll: UniformListScrollHandle,
     /// Shared blink driver for every hand-rolled field's caret (only one is
     /// ever focused at a time); repaints on every tick via `_blink_obs`.
     blink: Entity<BlinkCursor>,
@@ -818,13 +745,16 @@ impl HostManagerView {
             statuses: Vec::new(),
             active_tunnels: Vec::new(),
             form: None,
-            form_focus: cx.focus_handle(),
-            form_input: None,
-            _form_input_subscription: None,
-            form_input_focused: false,
-            creds_open: false,
-            cred_draft: None,
-            cred_focus: cx.focus_handle(),
+            cred_form: None,
+            mode: PageMode::Hosts,
+            inputs: HashMap::new(),
+            focused_input: None,
+            dropdown: None,
+            dropdown_list: ListState::new(0, ListAlignment::Top, px(320.0)),
+            confirm: None,
+            more_menu: None,
+            search_hint_mode: PageMode::Hosts,
+            cred_filter: None,
             group_draft: None,
             group_focus: cx.focus_handle(),
             import: None,
@@ -838,15 +768,14 @@ impl HostManagerView {
             _search_input_subscription: None,
             search_input_focused: false,
             sort: HostSort::LastConnected,
-            grid_view: false,
             group_filter: None,
             ping: HashMap::new(),
             save_state: SaveState::Idle,
             icon_picker_open: false,
+            saved_gen: 0,
             edit_gen: 0,
             _ping_task: ping_task,
             focus_handle: cx.focus_handle(),
-            list_scroll: UniformListScrollHandle::new(),
             blink,
             _blink_obs,
             blink_focus_wired: false,
@@ -1032,112 +961,39 @@ impl HostManagerView {
         });
     }
 
-    fn clear_form_input(&mut self) {
-        self.form_input = None;
-        self._form_input_subscription = None;
-        self.form_input_focused = false;
-    }
-
-    fn ensure_form_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(form) = self.form.as_ref() else {
-            self.clear_form_input();
-            return;
-        };
-        if self.form_input.is_some() {
-            return;
-        }
-
-        let field = form.focus;
-        let value = form.field(field).to_string();
-        let masked = matches!(field, HostField::Password | HostField::SudoPassword);
-        let input = cx.new(|cx| {
-            let mut state = text_field(window, cx).masked(masked);
-            if !value.is_empty() {
-                state.set_value(value, window, cx);
-            }
-            state
-        });
-        let subscription =
-            cx.subscribe(&input, |this, input, event: &InputEvent, cx| match event {
-                InputEvent::Change => {
-                    let value = input.read(cx).value().to_string();
-                    let field = this.form.as_ref().map(|form| form.focus);
-                    let changed = if let (Some(form), Some(field)) = (this.form.as_mut(), field) {
-                        if form.field(field) != value {
-                            *form.field_mut(field) = value;
-                            true
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    };
-                    if changed {
-                        this.schedule_autosave(cx);
-                    }
-                }
-                InputEvent::Focus => {
-                    this.form_input_focused = true;
-                    cx.notify();
-                }
-                InputEvent::Blur => {
-                    this.form_input_focused = false;
-                    cx.notify();
-                }
-                InputEvent::PressEnter { .. } => {
-                    this.submit_form(false, cx);
-                    cx.stop_propagation();
-                }
-            });
-        self.form_input = Some(input.clone());
-        self._form_input_subscription = Some(subscription);
-        input.update(cx, |state, cx| state.focus(window, cx));
-    }
-
-    fn focus_form_field(&mut self, field: HostField, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(form) = self.form.as_mut() else {
-            return;
-        };
-        form.focus = field;
-        let value = form.field(field).to_string();
-        let masked = matches!(field, HostField::Password | HostField::SudoPassword);
-        if let Some(input) = self.form_input.clone() {
-            input.update(cx, |state, cx| {
-                state.set_masked(masked, window, cx);
-                if state.value() != value {
-                    state.set_value(value, window, cx);
-                }
-                state.focus(window, cx);
-            });
-        } else {
-            window.focus(&self.form_focus);
-        }
-        cx.notify();
-    }
-
     // ── mutations ───────────────────────────────────────────────────────────
 
-    /// Debounced autosave: bump the generation, mark the form dirty, and after
-    /// 1s save it — unless the user kept typing (generation moved on).
+    /// Debounced autosave of the open host or credential: bump the generation,
+    /// mark the form dirty, and after 800ms save it — unless the user kept
+    /// typing (generation moved on) or a save is still in flight.
     fn schedule_autosave(&mut self, cx: &mut Context<Self>) {
-        if self
-            .form
-            .as_ref()
-            .and_then(|f| f.editing_id.clone())
-            .is_none()
-        {
-            return; // new host uses the explicit "Add Host" button
+        let ready = if let Some(form) = self.form.as_ref() {
+            // A new host is only created once it has an address.
+            form.editing_id.is_some() || !form.address.trim().is_empty()
+        } else if let Some(form) = self.cred_form.as_ref() {
+            form.editing_id.is_some() || !form.name.trim().is_empty()
+        } else {
+            false
+        };
+        if !ready {
+            return;
         }
         self.edit_gen = self.edit_gen.wrapping_add(1);
         self.save_state = SaveState::Pending;
         let gen = self.edit_gen;
         cx.spawn(async move |this, cx| {
             cx.background_executor()
-                .timer(Duration::from_millis(1000))
+                .timer(Duration::from_millis(800))
                 .await;
             let _ = this.update(cx, |this, cx| {
-                if this.edit_gen == gen {
-                    this.submit_form(true, cx);
+                if this.edit_gen != gen {
+                    return;
+                }
+                if this.save_state == SaveState::Saving {
+                    // A create is in flight; saving now would create twice.
+                    this.schedule_autosave(cx);
+                } else {
+                    this.save_open_form(cx);
                 }
             });
         })
@@ -1145,24 +1001,53 @@ impl HostManagerView {
         cx.notify();
     }
 
-    fn submit_form(&mut self, keep_form: bool, cx: &mut Context<Self>) {
-        let form = if keep_form {
-            match self.form.as_ref() {
-                Some(f) => f.clone(),
-                None => return,
-            }
+    /// Save whichever detail form is open.
+    fn save_open_form(&mut self, cx: &mut Context<Self>) {
+        if self.form.is_some() {
+            self.submit_form(cx);
+        } else if self.cred_form.is_some() {
+            self.submit_cred_form(cx);
+        }
+    }
+
+    /// Mark the save finished and, after a moment, fade the badge back to idle.
+    fn finish_save(&mut self, ok: bool, cx: &mut Context<Self>) {
+        self.save_state = if ok {
+            SaveState::Saved
         } else {
-            match self.form.take() {
-                Some(f) => f,
-                None => return,
-            }
+            SaveState::Error
         };
-        if !keep_form {
-            self.clear_form_input();
+        self.saved_gen = self.saved_gen.wrapping_add(1);
+        if !ok {
+            return;
         }
-        if keep_form {
-            self.save_state = SaveState::Saving;
+        let gen = self.saved_gen;
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(2200))
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.saved_gen == gen && this.save_state == SaveState::Saved {
+                    this.save_state = SaveState::Idle;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Persist a pending edit before the open form goes away.
+    fn flush_open_form(&mut self, cx: &mut Context<Self>) {
+        if self.save_state == SaveState::Pending {
+            self.save_open_form(cx);
         }
+    }
+
+    fn submit_form(&mut self, cx: &mut Context<Self>) {
+        let Some(form) = self.form.clone() else {
+            return;
+        };
+        self.save_state = SaveState::Saving;
         let database = self.database.clone();
         let secrets = self.secrets.clone();
         let host_event_handler = self.host_event_handler.clone();
@@ -1182,24 +1067,19 @@ impl HostManagerView {
         let password = (!form.password.is_empty()).then(|| form.password.clone());
         // On edit: only send `Some(_)` when the user actually typed a new
         // sudo password (the host store interprets `Some("")` as "clear").
-        let sudo_password = form.sudo_password.clone();
+        let sudo_password = if form.sudo_clear {
+            Some(String::new())
+        } else {
+            (!form.sudo_password.is_empty()).then(|| form.sudo_password.clone())
+        };
         let default_path_sftp = Some(form.default_path_sftp.trim().to_string());
         let keep_alive_interval: Option<i64> = form.keep_alive_interval.trim().parse().ok();
         let keep_alive_tries: Option<i64> = form.keep_alive_tries.trim().parse().ok();
         let notes = Some(form.notes.trim().to_string());
         let pin_to_top = form.pin_to_top;
-        let group_id = form
-            .group
-            .and_then(|i| self.groups.get(i))
-            .map(|g| g.id.clone());
-        let cred_id = form
-            .credential
-            .and_then(|i| self.credentials.get(i))
-            .map(|c| c.id.clone());
-        let jump_host_id = form
-            .jump_host
-            .and_then(|i| self.hosts.get(i))
-            .map(|h| h.id.clone());
+        let group_id = form.group.clone();
+        let cred_id = form.credential.clone();
+        let jump_host_id = form.jump_host.clone();
         let tunnels_json = serialize_tunnels(&form.tunnels);
         let block_agent_access = form.block_agent_access;
         let editing = form.editing_id.clone();
@@ -1216,7 +1096,7 @@ impl HostManagerView {
             group_id,
             tags: None,
             password,
-            sudo_password: (!sudo_password.is_empty()).then_some(sudo_password),
+            sudo_password,
             default_path_ssh: default_path,
             default_path_sftp,
             pin_to_top: Some(pin_to_top),
@@ -1271,37 +1151,40 @@ impl HostManagerView {
                         host_event_handler.as_deref(),
                     )
                     .await
-                    .map(|_| ())
+                    .map(|host| host.id)
                 }
                 None => host_store::hosts_create(&database, &secrets, create_request)
                     .await
-                    .map(|_| ()),
+                    .map(|host| host.id),
             }
         });
         cx.spawn(async move |this, cx| {
             let result = jh.await;
-            let ok = matches!(&result, Ok(Ok(())));
             let _ = this.update(cx, |this, cx| {
-                let error = match result {
-                    Ok(Ok(())) => None,
-                    Ok(Err(error)) => Some(error.to_string()),
-                    Err(error) => Some(error.to_string()),
+                let (saved_id, error) = match result {
+                    Ok(Ok(id)) => (Some(id), None),
+                    Ok(Err(error)) => (None, Some(error.to_string())),
+                    Err(error) => (None, Some(error.to_string())),
                 };
                 if let Some(error) = error {
                     this.notify_error("Save host failed", error, "hosts:save", cx);
                 }
-                if keep_form {
-                    this.save_state = if ok {
-                        SaveState::Saved
-                    } else {
-                        SaveState::Error
-                    };
-                    // Refresh the list rows (name / group / pin may have changed)
-                    // without disturbing the open form.
-                    this.reload_list_only(cx);
-                } else {
-                    this.reload(cx);
+                let ok = saved_id.is_some();
+                if let (Some(id), Some(form)) = (saved_id, this.form.as_mut()) {
+                    // A created host is now an existing one: later autosaves
+                    // update it instead of creating another. Typed secrets are
+                    // stored, so the form no longer re-sends them.
+                    form.editing_id = Some(id);
+                    form.password.clear();
+                    form.sudo_password_set |= !form.sudo_password.is_empty();
+                    form.sudo_password_set &= !form.sudo_clear;
+                    form.sudo_password.clear();
+                    form.sudo_clear = false;
                 }
+                this.finish_save(ok, cx);
+                // Refresh the list rows (name / group / pin may have changed)
+                // without disturbing the open form.
+                this.reload_list_only(cx);
                 cx.notify();
             });
         })
@@ -1376,9 +1259,7 @@ impl HostManagerView {
 
     fn delete_host(&mut self, id: String, cx: &mut Context<Self>) {
         if self.form.as_ref().and_then(|f| f.editing_id.as_deref()) == Some(id.as_str()) {
-            self.form = None;
-            self.clear_form_input();
-            self.save_state = SaveState::Idle;
+            self.reset_detail();
         }
         let database = self.database.clone();
         let secrets = self.secrets.clone();
@@ -1698,78 +1579,171 @@ impl HostManagerView {
         .detach();
     }
 
-    fn add_credential(&mut self, cx: &mut Context<Self>) {
-        let Some(draft) = self.cred_draft.take() else {
+    /// Create or update the open credential. A new credential is created once
+    /// it has a name; its secret is only sent when the user typed one.
+    fn submit_cred_form(&mut self, cx: &mut Context<Self>) {
+        let Some(form) = self.cred_form.clone() else {
             return;
         };
-        let name = if draft.name.trim().is_empty() {
-            "Credential".to_string()
-        } else {
-            draft.name.trim().to_string()
-        };
-        let is_key = draft.is_key;
+        self.save_state = SaveState::Saving;
         let database = self.database.clone();
         let secrets = self.secrets.clone();
-        let data_dir = self.data_dir.clone();
+        let name = form.name.trim().to_string();
+        let cred_type = if form.is_key { "key" } else { "password" }.to_string();
+        let key_path = form
+            .is_key
+            .then(|| form.key_path.trim().to_string())
+            .filter(|path| !path.is_empty());
+        let secret = if form.secret_clear {
+            Some(String::new())
+        } else {
+            (!form.secret.is_empty()).then(|| form.secret.clone())
+        };
+        let editing = form.editing_id.clone();
         let jh = self.tokio.spawn(async move {
-            let cred = labonair_credentials::credentials_create(
-                &database,
-                &secrets,
-                name,
-                if is_key { "key" } else { "password" }.to_string(),
-                None,
-                None,
-                None,
-                None,
-            )
-            .await?;
-            if is_key {
-                let res = labonair_credentials::credential_generate_keypair(
-                    &data_dir,
-                    &database,
-                    &secrets,
-                    cred.id.clone(),
-                    "ed25519".to_string(),
-                    None,
-                )
-                .await?;
-                return Ok::<Option<String>, String>(Some(res.public_key));
+            match editing {
+                Some(id) => {
+                    labonair_credentials::credentials_update(
+                        &database,
+                        &secrets,
+                        id,
+                        Some(name),
+                        Some(cred_type),
+                        key_path,
+                        None,
+                        None,
+                        secret,
+                    )
+                    .await
+                }
+                None => {
+                    labonair_credentials::credentials_create(
+                        &database, &secrets, name, cred_type, key_path, None, None, secret,
+                    )
+                    .await
+                }
             }
-            Ok(None)
         });
         cx.spawn(async move |this, cx| {
-            let out = jh.await;
+            let result = jh.await;
             let _ = this.update(cx, |this, cx| {
-                match &out {
-                    Ok(Ok(_)) => {}
-                    Ok(Err(error)) => this.notify_error(
-                        "Create credential failed",
-                        error.clone(),
-                        "hosts:create-credential",
-                        cx,
-                    ),
-                    Err(error) => this.notify_error(
-                        "Create credential failed",
-                        error.to_string(),
-                        "hosts:create-credential",
-                        cx,
-                    ),
+                let saved = match result {
+                    Ok(Ok(credential)) => Some(credential),
+                    Ok(Err(error)) => {
+                        this.notify_error("Save credential failed", error, "hosts:save-cred", cx);
+                        None
+                    }
+                    Err(error) => {
+                        this.notify_error(
+                            "Save credential failed",
+                            error.to_string(),
+                            "hosts:save-cred",
+                            cx,
+                        );
+                        None
+                    }
+                };
+                let ok = saved.is_some();
+                if let (Some(credential), Some(form)) = (saved, this.cred_form.as_mut()) {
+                    form.editing_id = Some(credential.id);
+                    form.has_secret = credential.has_secret;
+                    form.secret.clear();
+                    form.secret_clear = false;
                 }
-                if let Ok(Ok(Some(pubkey))) = out {
-                    this.notify(
-                        "SSH key generated",
-                        format!("Public key (add to the server's authorized_keys):\n{pubkey}"),
-                        cx,
-                    );
-                }
-                this.reload(cx);
+                this.finish_save(ok, cx);
+                this.reload_credentials(cx);
+                cx.notify();
             });
         })
         .detach();
         cx.notify();
     }
 
+    /// Re-fetch just the credential rows (after a credential save).
+    fn reload_credentials(&self, cx: &mut Context<Self>) {
+        let database = self.database.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { labonair_credentials::credentials_get_all(&database).await });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Ok(credentials)) = jh.await {
+                let _ = this.update(cx, |this, cx| {
+                    this.credentials = credentials;
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    /// Generate an ed25519 key pair for the open (already saved) key
+    /// credential. The private key stays in the app data dir; the public key
+    /// is shown on the credential page.
+    fn generate_key(&mut self, cx: &mut Context<Self>) {
+        let Some(form) = self.cred_form.as_ref() else {
+            return;
+        };
+        let Some(id) = form.editing_id.clone() else {
+            return;
+        };
+        let passphrase = (!form.secret.is_empty()).then(|| form.secret.clone());
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
+        let data_dir = self.data_dir.clone();
+        let jh = self.tokio.spawn(async move {
+            labonair_credentials::credential_generate_keypair(
+                &data_dir,
+                &database,
+                &secrets,
+                id,
+                "ed25519".to_string(),
+                passphrase,
+            )
+            .await
+        });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(Ok(generated)) => {
+                        if let Some(form) = this.cred_form.as_mut() {
+                            form.key_path = generated.key_path;
+                            form.key_type = Some("ed25519".into());
+                            form.public_key = Some(generated.public_key);
+                            form.has_secret |= !form.secret.is_empty();
+                            form.secret.clear();
+                        }
+                        // The path input holds the old text; recreate inputs
+                        // so it shows the generated path.
+                        this.inputs.clear();
+                        this.finish_save(true, cx);
+                        this.reload_credentials(cx);
+                    }
+                    Ok(Err(error)) => {
+                        this.notify_error("Generate key failed", error, "hosts:generate-key", cx)
+                    }
+                    Err(error) => this.notify_error(
+                        "Generate key failed",
+                        error.to_string(),
+                        "hosts:generate-key",
+                        cx,
+                    ),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn delete_credential(&mut self, id: String, cx: &mut Context<Self>) {
+        if self
+            .cred_form
+            .as_ref()
+            .and_then(|f| f.editing_id.as_deref())
+            == Some(id.as_str())
+        {
+            self.reset_detail();
+        }
         let database = self.database.clone();
         let secrets = self.secrets.clone();
         let data_dir = self.data_dir.clone();
@@ -2066,36 +2040,6 @@ impl HostManagerView {
         }
     }
 
-    fn on_form_key(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
-        if ev.keystroke.key.as_str() == "escape" {
-            if self.save_state == SaveState::Pending {
-                self.submit_form(true, cx);
-            }
-            self.form = None;
-            self.clear_form_input();
-            self.save_state = SaveState::Idle;
-            cx.stop_propagation();
-            cx.notify();
-        }
-    }
-
-    fn on_cred_key(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
-        let ks = &ev.keystroke;
-        match ks.key.as_str() {
-            "escape" => self.cred_draft = None,
-            "enter" => self.add_credential(cx),
-            _ => {
-                if let Some(d) = self.cred_draft.as_mut() {
-                    if Self::edit_str(&mut d.name, ks) {
-                        self.blink.update(cx, |b, cx| b.pause(cx));
-                    }
-                }
-            }
-        }
-        cx.stop_propagation();
-        cx.notify();
-    }
-
     fn on_group_key(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
         let ks = &ev.keystroke;
         match ks.key.as_str() {
@@ -2202,16 +2146,64 @@ impl HostManagerView {
     // ── master/detail helpers (T16-014) ────────────────────────────────────
 
     /// Load `host` into the detail-pane form.
-    fn select_host(&mut self, host: &Host, w: &mut Window, cx: &mut Context<Self>) {
-        self.clear_form_input();
-        self.form = Some(HostForm::from_host(
-            host,
-            &self.groups,
-            &self.credentials,
-            &self.hosts,
-        ));
+    fn select_host(&mut self, host: &Host, cx: &mut Context<Self>) {
+        self.reset_detail();
+        self.form = Some(HostForm::from_host(host));
+        cx.notify();
+    }
+
+    /// Open a blank host form (saved once it has an address).
+    fn new_host(&mut self, cx: &mut Context<Self>) {
+        self.reset_detail();
+        self.form = Some(HostForm::blank());
+        cx.notify();
+    }
+
+    fn select_credential(&mut self, credential: &Credential, cx: &mut Context<Self>) {
+        self.reset_detail();
+        self.cred_form = Some(CredForm::from_credential(credential));
+        cx.notify();
+    }
+
+    fn new_credential(&mut self, origin_host: Option<String>, cx: &mut Context<Self>) {
+        self.reset_detail();
+        self.cred_form = Some(CredForm::blank(origin_host));
+        cx.notify();
+    }
+
+    /// Close any open detail sub-page without saving.
+    fn reset_detail(&mut self) {
+        self.form = None;
+        self.cred_form = None;
+        self.inputs.clear();
+        self.focused_input = None;
+        self.dropdown = None;
+        self.icon_picker_open = false;
         self.save_state = SaveState::Idle;
-        w.focus(&self.form_focus);
+    }
+
+    /// Back from a detail sub-page to the list: saves a pending edit first.
+    /// A credential created from a host form returns to that host with the
+    /// new credential selected.
+    fn close_detail(&mut self, cx: &mut Context<Self>) {
+        self.flush_open_form(cx);
+        let back_to = self.cred_form.as_ref().and_then(|c| {
+            c.origin_host
+                .clone()
+                .map(|host| (host, c.editing_id.clone()))
+        });
+        self.reset_detail();
+        if let Some((host_id, credential)) = back_to {
+            self.mode = PageMode::Hosts;
+            if let Some(host) = self.hosts.iter().find(|h| h.id == host_id).cloned() {
+                self.select_host(&host, cx);
+                if let (Some(form), Some(credential)) = (self.form.as_mut(), credential) {
+                    form.credential = Some(credential);
+                    form.auth = AuthMethod::Credential;
+                    self.schedule_autosave(cx);
+                }
+            }
+        }
         cx.notify();
     }
 
@@ -2265,21 +2257,14 @@ impl HostManagerView {
         Some((user.to_string(), host.to_string(), port))
     }
 
-    /// Per-frame snapshot of a `visible_hosts()` row, precomputed *outside*
-    /// the `uniform_list` closure below: the closure gets only `&mut App`
-    /// (no `&self`), so anything derived from `self` — status, ping,
-    /// selection — must be resolved before the closure captures it.
+    /// Display snapshot of a `visible_hosts()` row.
     fn host_row_data(&self, host: &Host) -> HostRowData {
         HostRowData {
-            id: host.id.clone(),
             name: host.name.clone(),
             subtitle: format!("{}@{}:{}", host.username, host.host_address, host.port),
             icon: host_icon(host.icon.as_deref()),
             pin_to_top: host.pin_to_top,
             status: self.status_of(&host.id),
-            ping: self.ping.get(&host.id).copied().unwrap_or_default(),
-            selected: self.form.as_ref().and_then(|f| f.editing_id.as_deref())
-                == Some(host.id.as_str()),
         }
     }
 
@@ -2391,967 +2376,6 @@ impl HostManagerView {
             );
         }
         row.into_any_element()
-    }
-
-    fn labelled_field(
-        &self,
-        label: &'static str,
-        value: &str,
-        field: HostField,
-        state: FieldRenderState,
-        p: &Palette,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let content = if state.active {
-            self.form_input
-                .as_ref()
-                .map(|input| text_input(input, *p).into_any_element())
-                .unwrap_or_else(|| Self::static_field_value(value, state, p))
-        } else {
-            Self::static_field_value(value, state, p)
-        };
-        let field_state = if state.active && self.form_input_focused {
-            TextFieldState::Focused
-        } else {
-            TextFieldState::Normal
-        };
-        div()
-            .flex()
-            .flex_col()
-            .gap_0p5()
-            .child(div().text_xs().text_color(p.muted).child(label))
-            .child(
-                text_field_surface(
-                    SharedString::from(format!("field-{label}")),
-                    *p,
-                    field_state,
-                    content,
-                )
-                .cursor_text()
-                .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
-                    this.focus_form_field(field, w, cx);
-                })),
-            )
-    }
-
-    fn tunnel_field(
-        &self,
-        id: String,
-        value: &str,
-        field: HostField,
-        state: FieldRenderState,
-        p: &Palette,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let content = if state.active {
-            self.form_input
-                .as_ref()
-                .map(|input| text_input(input, *p).into_any_element())
-                .unwrap_or_else(|| Self::static_field_value(value, state, p))
-        } else {
-            Self::static_field_value(value, state, p)
-        };
-        let field_state = if state.active && self.form_input_focused {
-            TextFieldState::Focused
-        } else {
-            TextFieldState::Normal
-        };
-        text_field_surface(SharedString::from(id), *p, field_state, content)
-            .flex_1()
-            .cursor_text()
-            .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
-                this.focus_form_field(field, w, cx);
-            }))
-    }
-
-    fn static_field_value(value: &str, state: FieldRenderState, p: &Palette) -> gpui::AnyElement {
-        div()
-            .w_full()
-            .text_sm()
-            .text_color(p.fg)
-            .flex()
-            .items_center()
-            .child(SharedString::from(value.to_string()))
-            .when(state.show_caret, |d| d.child(caret(p.fg, 14.0)))
-            .into_any_element()
-    }
-
-    fn render_tunnels_section(
-        &self,
-        form: &HostForm,
-        p: &Palette,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let form_focused =
-            self.focused_region == Some(FocusRegion::Form) && self.blink.read(cx).visible();
-        let focus = form.focus;
-        let rows = form
-            .tunnels
-            .iter()
-            .enumerate()
-            .map(|(i, t)| {
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .p_2()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(p.border)
-                    .child(
-                        div()
-                            .flex()
-                            .gap_1()
-                            .child(self.tunnel_field(
-                                format!("tun-lp-{i}"),
-                                &t.local_port,
-                                HostField::TunnelLocalPort(i),
-                                FieldRenderState {
-                                    active: focus == HostField::TunnelLocalPort(i),
-                                    show_caret: form_focused
-                                        && focus == HostField::TunnelLocalPort(i),
-                                },
-                                p,
-                                cx,
-                            ))
-                            .child(self.tunnel_field(
-                                format!("tun-rh-{i}"),
-                                &t.remote_host,
-                                HostField::TunnelRemoteHost(i),
-                                FieldRenderState {
-                                    active: focus == HostField::TunnelRemoteHost(i),
-                                    show_caret: form_focused
-                                        && focus == HostField::TunnelRemoteHost(i),
-                                },
-                                p,
-                                cx,
-                            ))
-                            .child(self.tunnel_field(
-                                format!("tun-rp-{i}"),
-                                &t.remote_port,
-                                HostField::TunnelRemotePort(i),
-                                FieldRenderState {
-                                    active: focus == HostField::TunnelRemotePort(i),
-                                    show_caret: form_focused
-                                        && focus == HostField::TunnelRemotePort(i),
-                                },
-                                p,
-                                cx,
-                            )),
-                    )
-                    .child(
-                        labonair_ui_kit::button(
-                            SharedString::from(format!("tun-del-{i}")),
-                            *p,
-                            labonair_ui_kit::ButtonVariant::Outlined,
-                            labonair_ui_kit::ButtonSize::Xs,
-                        )
-                        .child("Remove tunnel")
-                        .on_click(cx.listener(
-                            move |this, _: &ClickEvent, _w, cx| {
-                                if let Some(f) = this.form.as_mut() {
-                                    if i < f.tunnels.len() {
-                                        f.tunnels.remove(i);
-                                    }
-                                }
-                                cx.notify();
-                            },
-                        )),
-                    )
-            })
-            .collect::<Vec<_>>();
-
-        div()
-            .flex()
-            .flex_col()
-            .gap_1()
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(p.muted)
-                    .child("Tunnels (local forward: local port \u{2192} host : port)"),
-            )
-            .children(rows)
-            .child(
-                self.btn("tun-add", "Add Tunnel", p, false, cx)
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        if let Some(f) = this.form.as_mut() {
-                            f.tunnels.push(TunnelDraft::new());
-                        }
-                        cx.notify();
-                    })),
-            )
-    }
-
-    /// Detail pane — the tabbed host form (T16-014). No longer a modal; lives
-    /// permanently in the right half of the master/detail split.
-    fn render_detail(&self, p: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let Some(form) = self.form.as_ref() else {
-            return div()
-                .size_full()
-                .flex()
-                .items_center()
-                .justify_center()
-                .bg(p.bg)
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(p.muted)
-                        .child("Select a host on the left, or add a new one."),
-                )
-                .into_any_element();
-        };
-        let is_new = form.editing_id.is_none();
-        let editing = form.editing_id.clone();
-        let auth = form.auth;
-        let cred_label = form
-            .credential
-            .and_then(|i| self.credentials.get(i))
-            .map(|c| c.name.clone())
-            .unwrap_or_else(|| "none".to_string());
-        let group_label = form
-            .group
-            .and_then(|i| self.groups.get(i))
-            .map(|g| g.name.clone())
-            .unwrap_or_else(|| "none".to_string());
-        let jump_label = form
-            .jump_host
-            .and_then(|i| self.hosts.get(i))
-            .map(|h| h.name.clone())
-            .unwrap_or_else(|| "direct".to_string());
-        let snippet_label = form
-            .snippet_id
-            .as_deref()
-            .and_then(|sid| self.snippets.iter().find(|(id, _)| id == sid))
-            .map(|(_, n)| n.clone())
-            .unwrap_or_else(|| "none".to_string());
-        let head_icon = host_icon(form.icon.as_deref());
-
-        // ── header ────────────────────────────────────────────────────────
-        let (id_conn, id_sftp) = (editing.clone(), editing.clone());
-        let header = div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .child(
-                self.btn("host-icon", "", p, false, cx)
-                    .child(head_icon.svg(p.fg).size(px(14.0)))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        this.icon_picker_open = !this.icon_picker_open;
-                        cx.notify();
-                    })),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .text_xs()
-                    .text_color(p.muted)
-                    .child(if is_new { "NEW HOST" } else { "HOST DETAILS" }),
-            )
-            .when(
-                matches!(
-                    self.save_state,
-                    SaveState::Pending | SaveState::Saving | SaveState::Saved
-                ),
-                |d| {
-                    d.child(
-                        div()
-                            .text_xs()
-                            .text_color(p.muted)
-                            .child(self.save_state.label()),
-                    )
-                },
-            )
-            .when(!is_new, |d| {
-                d.child(
-                    self.btn("hd-connect", "Connect", p, true, cx)
-                        .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
-                            if let Some(id) = id_conn.clone() {
-                                cx.emit(HostManagerEvent::Open(HostOpenRequest::ssh(id)));
-                            }
-                        })),
-                )
-                .child(
-                    self.btn("hd-sftp", "SFTP", p, false, cx)
-                        .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
-                            if let Some(id) = id_sftp.clone() {
-                                cx.emit(HostManagerEvent::Open(HostOpenRequest::sftp(id)));
-                            }
-                        })),
-                )
-                .child(
-                    self.btn("hd-test", "Test Connection", p, false, cx)
-                        .on_click(
-                            cx.listener(|this, _: &ClickEvent, _w, cx| this.test_connection(cx)),
-                        ),
-                )
-                .child(
-                    self.btn("hd-dup", "Duplicate", p, false, cx)
-                        .on_click(cx.listener({
-                            let id = editing.clone();
-                            move |this, _: &ClickEvent, _w, cx| {
-                                if let Some(id) = id.clone() {
-                                    this.duplicate_host(id, cx);
-                                }
-                            }
-                        })),
-                )
-                .child(
-                    self.btn("hd-del", "Delete", p, false, cx)
-                        .on_click(cx.listener({
-                            let id = editing.clone();
-                            move |this, _: &ClickEvent, _w, cx| {
-                                if let Some(id) = id.clone() {
-                                    this.delete_host(id, cx);
-                                }
-                            }
-                        })),
-                )
-            })
-            .child(
-                self.btn("hd-close", "", p, false, cx)
-                    .child(IconName::X.svg(p.muted).size(px(12.0)))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        if this.save_state == SaveState::Pending {
-                            this.submit_form(true, cx);
-                        }
-                        this.form = None;
-                        this.clear_form_input();
-                        this.save_state = SaveState::Idle;
-                        cx.notify();
-                    })),
-            );
-
-        let icon_row = self.icon_picker_open.then(|| {
-            div()
-                .flex()
-                .flex_wrap()
-                .gap_1()
-                .children(HOST_ICONS.iter().map(|(key, ic)| {
-                    let key = key.to_string();
-                    let active = form.icon.as_deref() == Some(key.as_str());
-                    self.btn("host-icon-opt", "", p, active, cx)
-                        .child(ic.svg(if active { p.fg } else { p.muted }).size(px(13.0)))
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                            if let Some(f) = this.form.as_mut() {
-                                f.icon = if f.icon.as_deref() == Some(key.as_str()) {
-                                    None
-                                } else {
-                                    Some(key.clone())
-                                };
-                            }
-                            this.icon_picker_open = false;
-                            this.schedule_autosave(cx);
-                        }))
-                }))
-        });
-
-        let tab_bar = div()
-            .flex()
-            .gap_1()
-            .children(FormTab::ALL.into_iter().map(|t| {
-                self.btn(
-                    match t {
-                        FormTab::General => "ft-gen",
-                        FormTab::Ssh => "ft-ssh",
-                        FormTab::Sftp => "ft-sftp",
-                        FormTab::Tunnels => "ft-tun",
-                    },
-                    t.title(),
-                    p,
-                    form.tab == t,
-                    cx,
-                )
-                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                    if let Some(f) = this.form.as_mut() {
-                        f.tab = t;
-                    }
-                    cx.notify();
-                }))
-            }));
-
-        let body = self.render_detail_tab(
-            form,
-            auth,
-            &cred_label,
-            &group_label,
-            &jump_label,
-            &snippet_label,
-            p,
-            cx,
-        );
-
-        let footer = is_new.then(|| {
-            div().flex().gap_2().justify_end().pt_2().child(
-                self.btn("hd-add", "Add Host", p, true, cx).on_click(
-                    cx.listener(|this, _: &ClickEvent, _w, cx| this.submit_form(false, cx)),
-                ),
-            )
-        });
-        div()
-            .track_focus(&self.form_focus)
-            .key_context("HostForm")
-            .on_key_down(cx.listener(Self::on_form_key))
-            .id("host-detail-scroll")
-            .size_full()
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .p_4()
-            .bg(p.bg)
-            .child(header)
-            .children(icon_row)
-            .child(tab_bar)
-            .child(body)
-            .children(footer)
-            .into_any_element()
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn render_detail_tab(
-        &self,
-        form: &HostForm,
-        auth: AuthMethod,
-        cred_label: &str,
-        group_label: &str,
-        jump_label: &str,
-        snippet_label: &str,
-        p: &Palette,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let form_focused =
-            self.focused_region == Some(FocusRegion::Form) && self.blink.read(cx).visible();
-        let container = div().flex().flex_col().gap_2();
-        match form.tab {
-            FormTab::General => container
-                .child(self.labelled_field(
-                    "Name",
-                    &form.name,
-                    HostField::Name,
-                    FieldRenderState {
-                        active: form.focus == HostField::Name,
-                        show_caret: form_focused && form.focus == HostField::Name,
-                    },
-                    p,
-                    cx,
-                ))
-                .child(self.labelled_field(
-                    "Address",
-                    &form.address,
-                    HostField::Address,
-                    FieldRenderState {
-                        active: form.focus == HostField::Address,
-                        show_caret: form_focused && form.focus == HostField::Address,
-                    },
-                    p,
-                    cx,
-                ))
-                .child(self.labelled_field(
-                    "Port",
-                    &form.port,
-                    HostField::Port,
-                    FieldRenderState {
-                        active: form.focus == HostField::Port,
-                        show_caret: form_focused && form.focus == HostField::Port,
-                    },
-                    p,
-                    cx,
-                ))
-                .child(self.labelled_field(
-                    "Username",
-                    &form.username,
-                    HostField::Username,
-                    FieldRenderState {
-                        active: form.focus == HostField::Username,
-                        show_caret: form_focused && form.focus == HostField::Username,
-                    },
-                    p,
-                    cx,
-                ))
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_0p5()
-                        .child(div().text_xs().text_color(p.muted).child("Auth method"))
-                        .child(
-                            div()
-                                .flex()
-                                .gap_1()
-                                .children(AuthMethod::ALL.into_iter().map(|m| {
-                                    self.btn(
-                                        match m {
-                                            AuthMethod::Password => "auth-pw",
-                                            AuthMethod::Key => "auth-key",
-                                            AuthMethod::Credential => "auth-cred",
-                                            AuthMethod::None => "auth-none",
-                                        },
-                                        m.title(),
-                                        p,
-                                        m == auth,
-                                        cx,
-                                    )
-                                    .on_click(cx.listener(
-                                        move |this, _: &ClickEvent, _w, cx| {
-                                            if let Some(f) = this.form.as_mut() {
-                                                f.auth = m;
-                                            }
-                                            this.schedule_autosave(cx);
-                                        },
-                                    ))
-                                })),
-                        ),
-                )
-                .when(auth == AuthMethod::Key, |el| {
-                    el.child(self.labelled_field(
-                        "Private key path",
-                        &form.key_path,
-                        HostField::KeyPath,
-                        FieldRenderState {
-                            active: form.focus == HostField::KeyPath,
-                            show_caret: form_focused && form.focus == HostField::KeyPath,
-                        },
-                        p,
-                        cx,
-                    ))
-                })
-                .when(auth == AuthMethod::Password, |el| {
-                    el.child(self.labelled_field(
-                        "Password (stored in the secret store)",
-                        &"\u{2022}".repeat(form.password.chars().count()),
-                        HostField::Password,
-                        FieldRenderState {
-                            active: form.focus == HostField::Password,
-                            show_caret: form_focused && form.focus == HostField::Password,
-                        },
-                        p,
-                        cx,
-                    ))
-                })
-                .when(auth == AuthMethod::Credential, |el| {
-                    el.child(
-                        self.btn(
-                            "cred-cycle",
-                            format!("Credential: {cred_label}"),
-                            p,
-                            false,
-                            cx,
-                        )
-                        .on_click(cx.listener(
-                            |this, _: &ClickEvent, _w, cx| {
-                                let n = this.credentials.len();
-                                if let Some(f) = this.form.as_mut() {
-                                    f.credential = match f.credential {
-                                        None if n > 0 => Some(0),
-                                        Some(i) if i + 1 < n => Some(i + 1),
-                                        _ => None,
-                                    };
-                                }
-                                this.schedule_autosave(cx);
-                            },
-                        )),
-                    )
-                })
-                .child(
-                    self.btn("group-cycle", format!("Group: {group_label}"), p, false, cx)
-                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                            let n = this.groups.len();
-                            if let Some(f) = this.form.as_mut() {
-                                f.group = match f.group {
-                                    None if n > 0 => Some(0),
-                                    Some(i) if i + 1 < n => Some(i + 1),
-                                    _ => None,
-                                };
-                            }
-                            this.schedule_autosave(cx);
-                        })),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_0p5()
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(p.muted)
-                                .child("Jump host (ProxyJump)"),
-                        )
-                        .child(
-                            self.btn("jump-cycle", format!("Route: {jump_label}"), p, false, cx)
-                                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                    let editing =
-                                        this.form.as_ref().and_then(|f| f.editing_id.clone());
-                                    let cands: Vec<usize> = this
-                                        .hosts
-                                        .iter()
-                                        .enumerate()
-                                        .filter(|(_, h)| Some(h.id.as_str()) != editing.as_deref())
-                                        .map(|(i, _)| i)
-                                        .collect();
-                                    if let Some(f) = this.form.as_mut() {
-                                        f.jump_host = match f.jump_host {
-                                            None => cands.first().copied(),
-                                            Some(cur) => {
-                                                match cands.iter().position(|&i| i == cur) {
-                                                    Some(pos) if pos + 1 < cands.len() => {
-                                                        Some(cands[pos + 1])
-                                                    }
-                                                    _ => None,
-                                                }
-                                            }
-                                        };
-                                    }
-                                    this.schedule_autosave(cx);
-                                })),
-                        ),
-                )
-                .child(
-                    self.btn(
-                        "pin-to-top",
-                        if form.pin_to_top {
-                            "Pinned \u{2014} always shown first"
-                        } else {
-                            "Not pinned \u{2014} click to always show first"
-                        },
-                        p,
-                        form.pin_to_top,
-                        cx,
-                    )
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        if let Some(f) = this.form.as_mut() {
-                            f.pin_to_top = !f.pin_to_top;
-                        }
-                        this.schedule_autosave(cx);
-                    })),
-                )
-                .child(self.labelled_field(
-                    "Notes / runbook",
-                    &form.notes,
-                    HostField::Notes,
-                    FieldRenderState {
-                        active: form.focus == HostField::Notes,
-                        show_caret: form_focused && form.focus == HostField::Notes,
-                    },
-                    p,
-                    cx,
-                ))
-                .into_any_element(),
-            FormTab::Ssh => container
-                .child(self.labelled_field(
-                    "Start directory (runs `cd <path>`)",
-                    &form.default_path,
-                    HostField::DefaultPath,
-                    FieldRenderState {
-                        active: form.focus == HostField::DefaultPath,
-                        show_caret: form_focused && form.focus == HostField::DefaultPath,
-                    },
-                    p,
-                    cx,
-                ))
-                .when(auth == AuthMethod::Password, |el| {
-                    el.child(
-                        self.labelled_field(
-                            "Sudo password autofill (OS keychain)",
-                            if form.sudo_password.is_empty() {
-                                if form.sudo_password_set {
-                                    "(set)".to_string()
-                                } else {
-                                    String::new()
-                                }
-                            } else {
-                                "\u{2022}".repeat(form.sudo_password.chars().count())
-                            }
-                            .as_str(),
-                            HostField::SudoPassword,
-                            FieldRenderState {
-                                active: form.focus == HostField::SudoPassword,
-                                show_caret: form_focused && form.focus == HostField::SudoPassword,
-                            },
-                            p,
-                            cx,
-                        ),
-                    )
-                })
-                .child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .child(self.labelled_field(
-                            "Keep-alive interval (s)",
-                            &form.keep_alive_interval,
-                            HostField::KeepAliveInterval,
-                            FieldRenderState {
-                                active: form.focus == HostField::KeepAliveInterval,
-                                show_caret: form_focused
-                                    && form.focus == HostField::KeepAliveInterval,
-                            },
-                            p,
-                            cx,
-                        ))
-                        .child(self.labelled_field(
-                            "Keep-alive max tries",
-                            &form.keep_alive_tries,
-                            HostField::KeepAliveTries,
-                            FieldRenderState {
-                                active: form.focus == HostField::KeepAliveTries,
-                                show_caret: form_focused && form.focus == HostField::KeepAliveTries,
-                            },
-                            p,
-                            cx,
-                        )),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_0p5()
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(p.muted)
-                                .child("Run on connect (startup snippet)"),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .gap_2()
-                                .child(
-                                    self.btn(
-                                        "snippet-cycle",
-                                        format!("Snippet: {snippet_label}"),
-                                        p,
-                                        false,
-                                        cx,
-                                    )
-                                    .on_click(cx.listener(
-                                        |this, _: &ClickEvent, _w, cx| {
-                                            let ids: Vec<String> = this
-                                                .snippets
-                                                .iter()
-                                                .map(|(id, _)| id.clone())
-                                                .collect();
-                                            if let Some(f) = this.form.as_mut() {
-                                                f.snippet_id = match &f.snippet_id {
-                                                    None => ids.first().cloned(),
-                                                    Some(cur) => {
-                                                        match ids.iter().position(|x| x == cur) {
-                                                            Some(i) if i + 1 < ids.len() => {
-                                                                Some(ids[i + 1].clone())
-                                                            }
-                                                            _ => None,
-                                                        }
-                                                    }
-                                                };
-                                            }
-                                            this.schedule_autosave(cx);
-                                        },
-                                    )),
-                                )
-                                .when(form.snippet_id.is_some(), |d| {
-                                    d.child(
-                                        self.btn(
-                                            "snippet-mode",
-                                            if form.snippet_mode == "inject" {
-                                                "Inject"
-                                            } else {
-                                                "Execute"
-                                            },
-                                            p,
-                                            true,
-                                            cx,
-                                        )
-                                        .on_click(
-                                            cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                                if let Some(f) = this.form.as_mut() {
-                                                    f.snippet_mode = if f.snippet_mode == "inject" {
-                                                        "execute".into()
-                                                    } else {
-                                                        "inject".into()
-                                                    };
-                                                }
-                                                this.schedule_autosave(cx);
-                                            }),
-                                        ),
-                                    )
-                                }),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_0p5()
-                        .child(div().text_xs().text_color(p.muted).child("AI Agent Access"))
-                        .child(
-                            self.btn(
-                                "agent-block",
-                                if form.block_agent_access {
-                                    "Blocked \u{2014} the AI agent bridge cannot use this host"
-                                } else {
-                                    "Allowed \u{2014} click to block AI agent bridge access"
-                                },
-                                p,
-                                form.block_agent_access,
-                                cx,
-                            )
-                            .on_click(cx.listener(
-                                |this, _: &ClickEvent, _w, cx| {
-                                    if let Some(f) = this.form.as_mut() {
-                                        f.block_agent_access = !f.block_agent_access;
-                                    }
-                                    this.schedule_autosave(cx);
-                                },
-                            )),
-                        ),
-                )
-                .into_any_element(),
-            FormTab::Sftp => container
-                .child(self.labelled_field(
-                    "SFTP start directory",
-                    &form.default_path_sftp,
-                    HostField::DefaultPathSftp,
-                    FieldRenderState {
-                        active: form.focus == HostField::DefaultPathSftp,
-                        show_caret: form_focused && form.focus == HostField::DefaultPathSftp,
-                    },
-                    p,
-                    cx,
-                ))
-                .into_any_element(),
-            FormTab::Tunnels => container
-                .child(self.render_tunnels_section(form, p, cx))
-                .into_any_element(),
-        }
-    }
-
-    fn render_credentials(&self, p: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let draft = self.cred_draft.as_ref();
-        let cred_focused =
-            self.focused_region == Some(FocusRegion::Cred) && self.blink.read(cx).visible();
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(crate::theme::modal_scrim())
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .w(px(480.0))
-                    .p_4()
-                    .rounded_lg()
-                    .bg(p.card)
-                    .border_1()
-                    .border_color(p.border)
-                    .child(div().text_sm().text_color(p.fg).child("Credentials"))
-                    .children(self.credentials.iter().map(|c| {
-                        let used = self
-                            .hosts
-                            .iter()
-                            .filter(|h| h.credential_id.as_deref() == Some(c.id.as_str()))
-                            .count();
-                        let id = c.id.clone();
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
-                            .border_1()
-                            .border_color(p.border)
-                            .child(div().flex_1().text_sm().text_color(p.fg).child(
-                                SharedString::from(format!(
-                                    "{}  \u{00b7}  {}{}  \u{00b7}  used by {used}",
-                                    c.name,
-                                    c.cred_type,
-                                    if c.has_secret { " (secret set)" } else { "" }
-                                )),
-                            ))
-                            .child(self.btn("cred-del", "Delete", p, false, cx).on_click(
-                                cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.delete_credential(id.clone(), cx)
-                                }),
-                            ))
-                    }))
-                    .child(match draft {
-                        Some(d) => div()
-                            .track_focus(&self.cred_focus)
-                            .key_context("CredDraft")
-                            .on_key_down(cx.listener(Self::on_cred_key))
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .px_2()
-                                    .py_1()
-                                    .rounded_md()
-                                    .bg(p.bg)
-                                    .border_1()
-                                    .border_color(p.accent)
-                                    .text_sm()
-                                    .text_color(p.fg)
-                                    .flex()
-                                    .items_center()
-                                    .child(SharedString::from(d.name.clone()))
-                                    .when(cred_focused, |el| el.child(caret(p.fg, 14.0))),
-                            )
-                            .child(
-                                self.btn(
-                                    "cred-type",
-                                    if d.is_key { "key" } else { "password" },
-                                    p,
-                                    false,
-                                    cx,
-                                )
-                                .on_click(cx.listener(
-                                    |this, _: &ClickEvent, _w, cx| {
-                                        if let Some(d) = this.cred_draft.as_mut() {
-                                            d.is_key = !d.is_key;
-                                        }
-                                        cx.notify();
-                                    },
-                                )),
-                            )
-                            .child(self.btn("cred-add", "Add", p, true, cx).on_click(
-                                cx.listener(|this, _: &ClickEvent, _w, cx| this.add_credential(cx)),
-                            ))
-                            .into_any_element(),
-                        None => div()
-                            .flex()
-                            .gap_2()
-                            .child(
-                                self.btn("cred-new", "New credential", p, false, cx)
-                                    .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
-                                        this.cred_draft = Some(CredDraft {
-                                            name: String::new(),
-                                            is_key: false,
-                                        });
-                                        w.focus(&this.cred_focus);
-                                        cx.notify();
-                                    })),
-                            )
-                            .into_any_element(),
-                    })
-                    .child(
-                        div().flex().justify_end().pt_2().child(
-                            self.btn("cred-close", "Close", p, false, cx)
-                                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                    this.creds_open = false;
-                                    this.cred_draft = None;
-                                    cx.notify();
-                                })),
-                        ),
-                    ),
-            )
-            .into_any_element()
     }
 
     fn modal_shell(&self, width: f32, p: &Palette) -> gpui::Div {
@@ -3677,296 +2701,6 @@ impl HostManagerView {
     }
 }
 
-impl Render for HostManagerView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if !self.blink_focus_wired {
-            self.blink_focus_wired = true;
-            for (handle, region) in [
-                (self.form_focus.clone(), FocusRegion::Form),
-                (self.cred_focus.clone(), FocusRegion::Cred),
-                (self.group_focus.clone(), FocusRegion::Group),
-                (self.group_rename_focus.clone(), FocusRegion::GroupRename),
-            ] {
-                self._blink_focus_subs
-                    .push(cx.on_focus(&handle, window, move |this, _w, cx| {
-                        this.focused_region = Some(region);
-                        this.blink.update(cx, |b, cx| b.start(cx));
-                    }));
-                self._blink_focus_subs
-                    .push(cx.on_blur(&handle, window, move |this, _w, cx| {
-                        if this.focused_region == Some(region) {
-                            this.focused_region = None;
-                        }
-                        this.blink.update(cx, |b, cx| b.stop(cx));
-                    }));
-            }
-        }
-        self.ensure_search_input(window, cx);
-        self.ensure_form_input(window, cx);
-        let p = self.palette(cx);
-        let accent = p.accent;
-        let p_card = p.card;
-        let visible = self.visible_hosts();
-        let quick = self.quick_connect_target();
-        let search_focused = self.search_input_focused;
-        let blink_visible = self.blink.read(cx).visible();
-
-        // ── left pane: search + quick-connect suggestion ──────────────────
-        let clear_button = (!self.search.is_empty()).then(|| {
-            search_clear_button(
-                "host-search-clear",
-                p,
-                cx.listener(|this, _: &ClickEvent, window, cx| {
-                    this.search.clear();
-                    if let Some(input) = this.search_input.clone() {
-                        input.update(cx, |state, cx| state.set_value(String::new(), window, cx));
-                    }
-                    cx.notify();
-                }),
-            )
-            .into_any_element()
-        });
-        let search_box = search_field(
-            "host-search",
-            p,
-            search_focused,
-            search_input(
-                self.search_input
-                    .as_ref()
-                    .expect("search input initialized"),
-                p,
-            ),
-            clear_button,
-        )
-        .key_context("HostSearch")
-        .on_key_down(cx.listener(Self::on_search_key));
-
-        let quick_card = quick.clone().map(|(user, host, port)| {
-            ListItem::new("quick-connect", p)
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(p.fg)
-                        .child(SharedString::from(format!(
-                            "Quick Connect  {user}@{host}:{port}"
-                        ))),
-                )
-                .trailing(IconName::Zap.svg(accent).size(px(12.0)))
-                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                    this.quick_connect(user.clone(), host.clone(), port, cx)
-                }))
-                .extra(move |row| row.rounded_md().border_1().border_color(accent).bg(p_card))
-        });
-
-        // ── left pane: actions toolbar ───────────────────────────────────
-        let toolbar = div()
-            .flex()
-            .flex_wrap()
-            .items_center()
-            .gap_1()
-            .child(
-                self.btn("new-host", "New Host", &p, true, cx)
-                    .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
-                        this.clear_form_input();
-                        this.form = Some(HostForm::blank());
-                        this.save_state = SaveState::Idle;
-                        w.focus(&this.form_focus);
-                        cx.notify();
-                    })),
-            )
-            .child(match self.group_draft.as_ref() {
-                Some(b) => div()
-                    .track_focus(&self.group_focus)
-                    .key_context("GroupDraft")
-                    .on_key_down(cx.listener(Self::on_group_key))
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .bg(p.bg)
-                    .border_1()
-                    .border_color(accent)
-                    .text_xs()
-                    .text_color(p.fg)
-                    .flex()
-                    .items_center()
-                    .child(SharedString::from(b.clone()))
-                    .when(
-                        self.focused_region == Some(FocusRegion::Group) && blink_visible,
-                        |el| el.child(caret(p.fg, 12.0)),
-                    )
-                    .into_any_element(),
-                None => self
-                    .btn("new-group", "New Group", &p, false, cx)
-                    .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
-                        this.group_draft = Some(String::new());
-                        w.focus(&this.group_focus);
-                        cx.notify();
-                    }))
-                    .into_any_element(),
-            })
-            .child(
-                self.btn(
-                    "sort-cycle",
-                    format!("Sort: {}", self.sort.label()),
-                    &p,
-                    false,
-                    cx,
-                )
-                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                    this.sort = this.sort.next();
-                    cx.notify();
-                })),
-            )
-            .child(
-                self.btn(
-                    "view-toggle",
-                    if self.grid_view { "Grid" } else { "List" },
-                    &p,
-                    false,
-                    cx,
-                )
-                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                    this.grid_view = !this.grid_view;
-                    cx.notify();
-                })),
-            )
-            .child(
-                self.btn("open-creds", "Credentials", &p, false, cx)
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        this.creds_open = true;
-                        cx.notify();
-                    })),
-            )
-            .child(
-                self.btn("import-ssh-config", "Import", &p, false, cx)
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.open_import(cx))),
-            )
-            .child(
-                self.btn("export-ssh-config", "Export", &p, false, cx)
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.open_export(cx))),
-            );
-
-        let list = if visible.is_empty() {
-            div()
-                .p_4()
-                .text_xs()
-                .text_color(p.muted)
-                .child("No hosts. Add one with \u{201c}New Host\u{201d}.")
-                .into_any_element()
-        } else if self.grid_view {
-            // Card grid wraps rows, which `uniform_list` (single-column,
-            // fixed row height) can't lay out — kept as a plain `.children()`
-            // div; grids are for at-a-glance browsing, not huge inventories.
-            let rows: Vec<HostRowData> = visible.iter().map(|h| self.host_row_data(h)).collect();
-            let view = cx.entity();
-            let items = rows
-                .iter()
-                .map(|row| render_host_row(row, &p, &view))
-                .collect::<Vec<_>>();
-            div()
-                .id("host-list")
-                .flex()
-                .flex_row()
-                .flex_wrap()
-                .gap_1()
-                .overflow_y_scroll()
-                .flex_1()
-                .min_h_0()
-                .children(items)
-                .into_any_element()
-        } else {
-            // Virtualised: only the on-screen `range` becomes elements, so
-            // large host inventories stay cheap to render (mirrors the SFTP
-            // browser / Explorer / SCM panes).
-            let rows: Vec<HostRowData> = visible.iter().map(|h| self.host_row_data(h)).collect();
-            let view = cx.entity();
-            uniform_list("host-list", rows.len(), move |range, _win, _cx| {
-                range
-                    .map(|i| render_host_row(&rows[i], &p, &view))
-                    .collect::<Vec<_>>()
-            })
-            .track_scroll(self.list_scroll.clone())
-            .flex_1()
-            .min_h_0()
-            .into_any_element()
-        };
-
-        let tunnels_panel = (!self.active_tunnels.is_empty()).then(|| {
-            div()
-                .flex()
-                .flex_col()
-                .gap_0p5()
-                .p_2()
-                .rounded_md()
-                .bg(p.card)
-                .border_1()
-                .border_color(p.border)
-                .child(div().text_xs().text_color(p.muted).child("Active tunnels"))
-                .children(self.active_tunnels.iter().map(|t| {
-                    div()
-                        .text_xs()
-                        .text_color(p.fg)
-                        .child(SharedString::from(format!(
-                            "{}  \u{00b7}  localhost:{} \u{2192} {}:{}",
-                            t.host_label, t.local_port, t.remote_host, t.remote_port
-                        )))
-                }))
-        });
-
-        let side_panel = div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .w(px(340.0))
-            .flex_shrink_0()
-            .h_full()
-            .p_3()
-            .border_r_1()
-            .border_color(p.border)
-            .bg(p.bg)
-            .child(search_box)
-            .children(quick_card)
-            .child(toolbar)
-            .child(self.render_group_chips(&p, cx))
-            .children(tunnels_panel)
-            .child(list);
-
-        let cred_overlay = self
-            .creds_open
-            .then(|| self.render_credentials(&p, cx).into_any_element());
-        let import_overlay = self
-            .import
-            .is_some()
-            .then(|| self.render_import(&p, cx).into_any_element());
-        let export_overlay = self
-            .export
-            .is_some()
-            .then(|| self.render_export(&p, cx).into_any_element());
-
-        div()
-            .track_focus(&self.focus_handle)
-            .relative()
-            .size_full()
-            .overflow_hidden()
-            .bg(p.bg)
-            .child(
-                div().size_full().flex().flex_row().child(side_panel).child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .h_full()
-                        .child(self.render_detail(&p, cx)),
-                ),
-            )
-            .children(cred_overlay)
-            .children(import_overlay)
-            .children(export_overlay)
-            .children(self.render_host_menu(&p, cx))
-            .children(self.render_group_menu(&p, cx))
-            .children(self.render_group_rename(&p, cx))
-    }
-}
-
 impl HostManagerView {
     /// Copy a single host's SSH-config block to the clipboard.
     fn export_host(&mut self, id: String, cx: &mut Context<Self>) {
@@ -4073,11 +2807,12 @@ impl HostManagerView {
                 .on_click({
                     let v = view.clone();
                     let host = host.clone();
-                    move |_, w, cx| {
+                    move |_, _w, cx| {
                         let host = host.clone();
                         v.update(cx, |this, cx| {
                             this.host_menu = None;
-                            this.select_host(&host, w, cx);
+                            this.mode = PageMode::Hosts;
+                            this.select_host(&host, cx);
                         });
                     }
                 }),
@@ -4116,7 +2851,8 @@ impl HostManagerView {
                         let id = id.clone();
                         v.update(cx, |this, cx| {
                             this.host_menu = None;
-                            this.delete_host(id, cx);
+                            this.confirm = Some(Confirm::DeleteHost(id));
+                            cx.notify();
                         });
                     }
                 }),
@@ -4439,7 +3175,7 @@ mod tests {
             icon: None,
             block_agent_access: false,
         };
-        let form = HostForm::from_host(&host, &[], &[], &[]);
+        let form = HostForm::from_host(&host);
         assert_eq!(form.name, "Web");
         assert_eq!(form.port, "2222");
         assert_eq!(form.auth, AuthMethod::Key);
@@ -4461,7 +3197,7 @@ mod tests {
         host.pin_to_top = true;
         host.sudo_password_set = true;
 
-        let form = HostForm::from_host(&host, &[], &[], &[]);
+        let form = HostForm::from_host(&host);
         assert_eq!(form.auth, AuthMethod::Credential);
         assert_eq!(form.default_path_sftp, "/var/www");
         assert_eq!(form.keep_alive_interval, "30");
@@ -4477,7 +3213,7 @@ mod tests {
         assert_eq!(AuthMethod::Credential.as_str(), "credential");
     }
 
-    fn host_stub(id: &str, name: &str) -> Host {
+    pub(super) fn host_stub(id: &str, name: &str) -> Host {
         Host {
             id: id.into(),
             name: name.into(),
@@ -4575,23 +3311,22 @@ mod tests {
     }
 
     #[test]
-    fn from_host_resolves_jump_host_index_and_never_points_at_self() {
-        let hosts = vec![host_stub("a", "Alpha"), host_stub("b", "Bastion")];
+    fn from_host_keeps_the_jump_host_id_and_never_points_at_self() {
         let mut target = host_stub("a", "Alpha");
         target.jump_host_id = Some("b".into());
         target.tunnels = Some(
             r#"[{"id":"t","type":"local","local_port":2201,"remote_host":"web","remote_port":80}]"#
                 .into(),
         );
-        let form = HostForm::from_host(&target, &[], &[], &hosts);
-        assert_eq!(form.jump_host, Some(1));
+        let form = HostForm::from_host(&target);
+        assert_eq!(form.jump_host.as_deref(), Some("b"));
         assert_eq!(form.tunnels.len(), 1);
         assert_eq!(form.tunnels[0].local_port, "2201");
 
         // A self-referential jump_host_id is ignored.
         let mut loopy = host_stub("a", "Alpha");
         loopy.jump_host_id = Some("a".into());
-        let form = HostForm::from_host(&loopy, &[], &[], &hosts);
+        let form = HostForm::from_host(&loopy);
         assert!(form.jump_host.is_none());
     }
 
@@ -4665,7 +3400,7 @@ mod tests {
         h.icon = Some("shield".into());
         h.startup_snippet_id = Some("s1".into());
         h.startup_snippet_mode = Some("inject".into());
-        let form = HostForm::from_host(&h, &[], &[], &[]);
+        let form = HostForm::from_host(&h);
         assert_eq!(form.icon.as_deref(), Some("shield"));
         assert_eq!(form.snippet_id.as_deref(), Some("s1"));
         assert_eq!(form.snippet_mode, "inject");
