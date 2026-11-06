@@ -78,7 +78,6 @@ mod tab;
 mod test_support;
 mod text_field;
 pub mod theme;
-mod toggle;
 mod tree_row;
 
 pub use animation::{
@@ -86,9 +85,7 @@ pub use animation::{
     MotionLevel, MotionPrefs, StateTransition, MOTION_FLOOR,
 };
 pub use banner::{banner, Banner, Severity};
-pub use button::{
-    button, button_disabled, button_no_hover, ButtonSize, ButtonVariant, DISABLED_OPACITY,
-};
+pub use button::{button, button_disabled, ButtonSize, ButtonVariant, DISABLED_OPACITY};
 pub use checkbox::{checkbox, Checkbox};
 /// Debug-only preview helper consumed by the component gallery (now in
 /// `labonair-shell`).
@@ -144,7 +141,6 @@ pub use text_field::{
     TextFieldState,
 };
 pub use theme::{ActiveThemeExt, UiTheme};
-pub use toggle::{icon_toggle_button, toggle_base, ToggleSize, ToggleVariant};
 pub use tree_row::{tree_row, TreeRow, TreeRowState, TREE_INDENT_STEP};
 
 // gpui-component primitives re-exported where their behaviour (not their
@@ -163,19 +159,18 @@ pub mod prelude {
     pub use crate::{
         banner, button, button_disabled, checkbox, chevron_icon_path, context_menu, dialog_surface,
         disclosure, divider, empty_state, fade_in, file_icon_path, folder_icon_path, h_stack,
-        icon_button, icon_button_builder, icon_button_disabled, icon_for_path, icon_toggle_button,
-        indicator, kbd, kbd_row, keybinding_hint, list_header, list_separator, modal_overlay,
-        number_field, popover, popover_menu, search_clear_button, search_field, search_input,
-        segmented_control, select_popover, select_trigger, select_trigger_disabled, selected_label,
-        slider, svg_path, text_area_surface, text_field_surface, text_field_surface_sized,
-        text_input, toggle_base, tree_row, v_stack,
+        icon_button, icon_button_builder, icon_button_disabled, icon_for_path, indicator, kbd,
+        kbd_row, keybinding_hint, list_header, list_separator, modal_overlay, number_field,
+        popover, popover_menu, search_clear_button, search_field, search_input, segmented_control,
+        select_popover, select_trigger, select_trigger_disabled, selected_label, slider, svg_path,
+        text_area_surface, text_field_surface, text_field_surface_sized, text_input, tree_row,
+        v_stack,
     };
     pub use crate::{
         Axis, Badge, Banner, ButtonSize, ButtonVariant, Checkbox, Density, IconButtonBuilder,
         IconButtonShape, IconName, IndicatorSize, ListItem, MenuClick, MenuItem, NumberField,
         Palette, ScrollableElement, SegmentSize, SegmentVariant, SegmentedControl, SelectOption,
         SelectPopoverAnchor, Severity, SliderEvent, SliderState, SliderValue, Switch,
-        TextFieldSize, TextFieldState, ToggleSize, ToggleVariant, Tooltip, TreeRow, TreeRowState,
-        UiTheme, DISABLED_OPACITY,
+        TextFieldSize, TextFieldState, Tooltip, TreeRow, TreeRowState, UiTheme, DISABLED_OPACITY,
     };
 }

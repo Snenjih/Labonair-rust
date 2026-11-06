@@ -1699,7 +1699,6 @@ impl SettingsView {
         let focus_handle = self.navigation_focus_handle(target, cx);
         let (hue, glyph) = category_style(page_key);
         let ring = c.ring;
-        let muted = c.muted;
         let palette = *c;
         let mut row = ListItem::new(
             SharedString::from(format!("settings-area-{}", page_key)),
@@ -1755,11 +1754,14 @@ impl SettingsView {
                 IconName::ChevronRight
             };
             row = row.trailing(
-                div()
-                    .id(SharedString::from(format!("settings-disclose-{page_key}")))
-                    .p(palette.space(2.0))
-                    .child(chevron.svg(muted).size(px(12.0)))
-                    .on_click({
+                icon_button_builder(
+                    SharedString::from(format!("settings-disclose-{page_key}")),
+                    palette,
+                    chevron,
+                )
+                .size(ButtonSize::IconXxs)
+                .render()
+                .on_click({
                         let view = view.clone();
                         move |_event, _window, app| {
                             view.update(app, |this, cx| this.toggle_area_expanded(i, cx));

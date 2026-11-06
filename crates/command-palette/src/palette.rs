@@ -27,8 +27,8 @@ use labonair_settings::{
 };
 use labonair_theme::{EditorThemeId, ThemePreference};
 use labonair_ui_kit::{
-    kbd, keybinding_hint, search_input, text_field, IconName, InputEvent, InputState, MotionExt,
-    Palette, UiTheme,
+    button, kbd, keybinding_hint, search_input, text_field, ButtonSize, ButtonVariant, IconName,
+    InputEvent, InputState, MotionExt, Palette, UiTheme,
 };
 
 use crate::fuzzy::{match_score, SearchMode};
@@ -1320,28 +1320,23 @@ where
                     );
                 }
                 let is_current = idx == last;
-                // T20-003: a breadcrumb pill that is a plain bg-fill on the
-                // current page and only hoverable/clickable on prior pages —
-                // no `ui-kit` primitive is a plain, non-square, conditionally
-                // interactive pill; documented exception (same shape as
-                // `hosts.rs`'s `render_group_chips`).
                 crumbs = crumbs.child(
-                    div()
-                        .id(("crumb", idx))
-                        .px(px(8.0))
-                        .py(px(2.0))
-                        .rounded(px(6.0))
-                        .text_size(px(11.0))
-                        .text_color(if is_current { fg } else { muted })
-                        .when(is_current, |d| d.bg(sel_fill))
-                        .when(!is_current, |d| {
-                            d.hover(|s| s.bg(hover_fill)).on_click(cx.listener(
-                                move |this, _: &ClickEvent, window, cx| {
-                                    this.go_back_to(idx, window, cx)
-                                },
-                            ))
-                        })
-                        .child(SharedString::from(pg.label())),
+                    button(
+                        ("crumb", idx),
+                        c,
+                        if is_current {
+                            ButtonVariant::Filled
+                        } else {
+                            ButtonVariant::Transparent
+                        },
+                        ButtonSize::Xs,
+                    )
+                    .when(!is_current, |d| {
+                        d.on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                            this.go_back_to(idx, window, cx)
+                        }))
+                    })
+                    .child(SharedString::from(pg.label())),
                 );
             }
             header = header.child(crumbs);
@@ -1397,24 +1392,14 @@ where
             .border_t_1()
             .border_color(border)
             .child(
-                // T20-003: a subtle bordered footer mode-indicator chip —
-                // `button()`'s pill (`rounded.xl4`) and fixed size scale
-                // would visibly change this small rectangular badge's shape;
-                // documented exception.
-                div()
-                    .id("palette-search-mode")
-                    .px(px(6.0))
-                    .py(px(2.0))
-                    .rounded(px(4.0))
-                    .border_1()
-                    .border_color(border)
-                    .text_size(px(10.0))
-                    .text_color(muted)
-                    .hover(|s| s.text_color(fg))
-                    .child(SharedString::from(mode.label()))
-                    .on_click(
-                        cx.listener(|this, _: &ClickEvent, _w, cx| this.cycle_search_mode(cx)),
-                    ),
+                button(
+                    "palette-search-mode",
+                    c,
+                    ButtonVariant::OutlinedGhost,
+                    ButtonSize::Xxs,
+                )
+                .child(SharedString::from(mode.label()))
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.cycle_search_mode(cx))),
             )
             .child(
                 div()

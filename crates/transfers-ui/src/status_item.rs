@@ -7,12 +7,12 @@ use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, AnyElement, App, AppContext, ClickEvent, Context, Entity, InteractiveElement,
-    IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled, Window,
+    div, px, AnyElement, App, AppContext, ClickEvent, Context, Entity, IntoElement, ParentElement,
+    Render, StatefulInteractiveElement, Styled, Window,
 };
 use labonair_panel::{AnyStatusItemHandle, StatusItem, StatusItemRegistration, StatusSide};
 use labonair_theme::store::ThemeStore;
-use labonair_ui_kit::{icon_toggle_button, IconName, Palette};
+use labonair_ui_kit::{icon_button_builder, ButtonSize, IconName, Palette};
 
 use crate::TransfersView;
 
@@ -23,8 +23,9 @@ fn simple_bar_button<T: 'static>(
     cx: &mut Context<T>,
     on_click: impl Fn(&mut T, &mut Window, &mut Context<T>) + 'static,
 ) -> AnyElement {
-    icon_toggle_button(key, palette, icon, false)
-        .tab_index(0)
+    icon_button_builder(key, palette, icon)
+        .size(ButtonSize::IconXxs)
+        .render()
         .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
             on_click(this, window, cx);
         }))

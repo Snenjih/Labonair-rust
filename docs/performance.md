@@ -159,7 +159,7 @@ Any Rust number materially worse than that is a regression to investigate.
   bar/border (`Palette::selected_fill` / `selected_accent` mirror these).
   Hover deliberately stays neutral. Applied to the active editor tab, Explorer
   / tree rows, command-palette selection, the Settings sidebar's active
-  category (+ left accent bar), and `icon_toggle_button`'s pressed state
+  category (+ left accent bar), and `icon_button_builder`'s selected state
   (dock rail, notification bell, snippet toggles).
 - **D2** — `ThemeStore::scrollbar_thumb()` / `scrollbar_thumb_hover()` =
   foreground at 22% → 34% alpha, `SCROLLBAR_SIZE = 10.0` — matches

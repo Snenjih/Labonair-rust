@@ -3,12 +3,12 @@
 use std::sync::Arc;
 
 use gpui::{
-    div, px, AnyElement, App, AppContext, ClickEvent, Context, Entity, InteractiveElement,
-    IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled, Window,
+    div, AnyElement, App, AppContext, ClickEvent, Context, Entity, IntoElement, Render,
+    StatefulInteractiveElement, Window,
 };
 use labonair_panel::{AnyStatusItemHandle, StatusItem, StatusItemRegistration, StatusSide};
 use labonair_theme::store::ThemeStore;
-use labonair_ui_kit::IconName;
+use labonair_ui_kit::{icon_button_builder, ButtonSize, IconName, IndicatorSize, Palette};
 
 use crate::{UpdaterStatus, UpdaterView};
 
@@ -68,30 +68,13 @@ impl StatusItem for UpdaterStatusItem {
         if !ready {
             return div().into_any_element();
         }
-        let (foreground, accent, border) = {
-            let theme = self.theme.read(cx);
-            (theme.foreground(), theme.accent(), theme.border())
-        };
-        div()
-            .id("bar-updater")
-            .relative()
-            .size(px(20.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_md()
-            .text_color(foreground)
-            .hover(|style| style.bg(border))
-            .child(IconName::Download.svg(foreground))
-            .child(
-                div()
-                    .absolute()
-                    .top(px(-1.0))
-                    .right(px(-1.0))
-                    .size(px(6.0))
-                    .rounded_full()
-                    .bg(accent),
-            )
+        let palette = Palette::from_theme(self.theme.read(cx));
+        icon_button_builder("bar-updater", palette, IconName::Download)
+            .size(ButtonSize::IconXxs)
+            .icon_color(palette.fg)
+            .indicator(IndicatorSize::Xs, palette.primary)
+            .tooltip("Update available")
+            .render()
             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                 this.updater
                     .update(cx, |updater, cx| updater.open_dialog(cx));

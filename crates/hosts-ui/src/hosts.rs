@@ -40,9 +40,10 @@ use tokio::runtime::Handle as TokioHandle;
 use crate::theme::ThemeStore;
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
-    caret, checkbox, context_menu, indicator, search_clear_button, search_field, search_input,
-    text_field, text_field_surface, text_input, BlinkCursor, IconName, IndicatorSize, InputEvent,
-    InputState, ListItem, MenuItem, Palette, SelectOption, TextFieldState,
+    button, caret, checkbox, context_menu, icon_button_builder, indicator, search_clear_button,
+    search_field, search_input, text_field, text_field_surface, text_input, BlinkCursor,
+    ButtonSize, ButtonVariant, IconName, IndicatorSize, InputEvent, InputState, ListItem, MenuItem,
+    Palette, SelectOption, TextFieldState,
 };
 
 mod page;
@@ -2268,37 +2269,30 @@ impl HostManagerView {
         }
     }
 
-    /// T20-003 documented exception: `ui-kit` has no "toggle pill with an
-    /// inline delete glyph" primitive. `toggle_base`/`icon_toggle_button`
-    /// come closest but use `radius.md` and a bg-tint hover, which would
-    /// visibly change this row's pill shape (`rounded(13px)`) and its
-    /// border-color hover — a behavior change the task disallows. Left
-    /// hand-rolled per the task's own allowance for documented exceptions.
     fn render_group_chips(&self, p: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let (c_accent, c_border, c_card, c_fg, c_muted) =
-            (p.accent, p.border, p.card, p.fg, p.muted);
+        let c_accent = p.accent;
+        let palette = *p;
         let chip = |id: &'static str,
                     label: String,
                     active: bool,
                     on_drop_group: Option<String>,
                     cx: &mut Context<Self>,
                     filter: Option<String>| {
-            let mut el = div()
-                .id(id)
-                .px_2()
-                .py_0p5()
-                .rounded(px(13.0))
-                .border_1()
-                .border_color(if active { c_accent } else { c_border })
-                .bg(if active { c_border } else { c_card })
-                .text_xs()
-                .text_color(if active { c_fg } else { c_muted })
-                .cursor_pointer()
-                .child(SharedString::from(label))
-                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                    this.group_filter = filter.clone();
-                    cx.notify();
-                }));
+            let mut el = button(
+                id,
+                palette,
+                if active {
+                    ButtonVariant::Filled
+                } else {
+                    ButtonVariant::Outlined
+                },
+                ButtonSize::Xs,
+            )
+            .child(SharedString::from(label))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                this.group_filter = filter.clone();
+                cx.notify();
+            }));
             if let Some(gid) = on_drop_group {
                 el = el
                     .drag_over::<DraggedHost>(move |s, _, _, _| s.border_color(c_accent))
@@ -2363,15 +2357,19 @@ impl HostManagerView {
                         Some(gid.clone()),
                     ))
                     .child(
-                        div()
-                            .id(SharedString::from(format!("gdel-{gid_del}")))
-                            .text_color(p.muted)
-                            .cursor_pointer()
-                            .hover(|s| s.text_color(p.fg))
-                            .child(IconName::X.svg(p.muted).size(px(10.0)))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        icon_button_builder(
+                            SharedString::from(format!("gdel-{gid_del}")),
+                            *p,
+                            IconName::X,
+                        )
+                        .size(ButtonSize::IconXxs)
+                        .tooltip("Delete group")
+                        .render()
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
                                 this.delete_group(gid_del.clone(), cx)
-                            })),
+                            },
+                        )),
                     ),
             );
         }

@@ -49,7 +49,7 @@ use crate::theme::ThemeStore;
 use labonair_notifications::{notification_center, Notification};
 use labonair_snippets_host::SnippetExecutionHost;
 use labonair_ui_kit::{
-    button, context_menu, dialog_surface, disclosure, icon_toggle_button, list_header,
+    button, context_menu, dialog_surface, disclosure, icon_button_builder, list_header,
     modal_overlay, segmented_control, text_area_surface, text_field, text_field_surface_sized,
     text_input, BlinkCursor, ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem,
     MenuItem, Palette, TextFieldSize, TextFieldState,
@@ -1483,13 +1483,15 @@ impl SnippetsView {
                         )),
                     )
                     .child(
-                        button(
+                        icon_button_builder(
                             SharedString::from(format!("snip-grp-del-{gid}")),
                             p,
-                            ButtonVariant::TintedError,
-                            ButtonSize::IconXs,
+                            IconName::X,
                         )
-                        .child(IconName::X.svg(p.destructive).size(px(10.0)))
+                        .variant(ButtonVariant::TintedError)
+                        .size(ButtonSize::IconXs)
+                        .tooltip("Delete Group")
+                        .render()
                         .on_click(cx.listener(
                             move |this, _: &ClickEvent, _w, cx| {
                                 this.delete_group(gid_del.clone(), cx);
@@ -1680,13 +1682,14 @@ impl SnippetsView {
                         )),
                     )
                     .child(
-                        button(
+                        icon_button_builder(
                             SharedString::from(format!("snip-edit-{}", s.id)),
                             p,
-                            ButtonVariant::Subtle,
-                            ButtonSize::IconXs,
+                            IconName::Pencil,
                         )
-                        .child(IconName::Pencil.svg(p.muted).size(px(11.0)))
+                        .size(ButtonSize::IconXs)
+                        .tooltip("Edit")
+                        .render()
                         .on_click(cx.listener(
                             move |this, _: &ClickEvent, _w, cx| {
                                 this.set_form(Some(FormState::from_snippet(&s_edit)));
@@ -1695,13 +1698,14 @@ impl SnippetsView {
                         )),
                     )
                     .child(
-                        button(
+                        icon_button_builder(
                             SharedString::from(format!("snip-dup-{}", s.id)),
                             p,
-                            ButtonVariant::Subtle,
-                            ButtonSize::IconXs,
+                            IconName::Copy,
                         )
-                        .child(IconName::Copy.svg(p.muted).size(px(11.0)))
+                        .size(ButtonSize::IconXs)
+                        .tooltip("Duplicate")
+                        .render()
                         .on_click(cx.listener(
                             move |this, _: &ClickEvent, _w, cx| {
                                 this.duplicate_snippet(&s_dup, cx);
@@ -1709,13 +1713,15 @@ impl SnippetsView {
                         )),
                     )
                     .child(
-                        button(
+                        icon_button_builder(
                             SharedString::from(format!("snip-del-{}", s.id)),
                             p,
-                            ButtonVariant::TintedError,
-                            ButtonSize::IconXs,
+                            IconName::Trash,
                         )
-                        .child(IconName::Trash.svg(p.destructive).size(px(11.0)))
+                        .variant(ButtonVariant::TintedError)
+                        .size(ButtonSize::IconXs)
+                        .tooltip("Delete")
+                        .render()
                         .on_click(cx.listener(
                             move |this, _: &ClickEvent, _w, cx| {
                                 this.delete_snippet(s_del_id.clone(), cx);
@@ -2294,19 +2300,14 @@ impl SnippetsView {
                                 },
                             ))
                             .child(
-                                button(
-                                    "snip-log-close",
-                                    p,
-                                    ButtonVariant::Subtle,
-                                    ButtonSize::IconXs,
-                                )
-                                .child(IconName::X.svg(p.muted).size(px(10.0)))
-                                .on_click(cx.listener(
-                                    |this, _: &ClickEvent, _w, cx| {
+                                icon_button_builder("snip-log-close", p, IconName::X)
+                                    .size(ButtonSize::IconXs)
+                                    .tooltip("Close")
+                                    .render()
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                                         this.log_open = false;
                                         cx.notify();
-                                    },
-                                )),
+                                    })),
                             ),
                     ),
             )
@@ -2376,7 +2377,10 @@ impl Render for SnippetsView {
                     .child("Snippets"),
             )
             .child(
-                icon_toggle_button("snip-search-toggle", p, IconName::Search, self.search_open)
+                icon_button_builder("snip-search-toggle", p, IconName::Search)
+                    .size(ButtonSize::IconXs)
+                    .selected(self.search_open)
+                    .render()
                     .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
                         this.search_open = !this.search_open;
                         if this.search_open {
@@ -2390,16 +2394,19 @@ impl Render for SnippetsView {
                     })),
             )
             .child(
-                icon_toggle_button("snip-log-toggle", p, IconName::Menu, self.log_open).on_click(
-                    cx.listener(|this, _: &ClickEvent, _w, cx| {
+                icon_button_builder("snip-log-toggle", p, IconName::Menu)
+                    .size(ButtonSize::IconXs)
+                    .selected(self.log_open)
+                    .render()
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                         this.log_open = !this.log_open;
                         cx.notify();
-                    }),
-                ),
+                    })),
             )
             .child(
-                button("snip-new", p, ButtonVariant::Subtle, ButtonSize::IconXs)
-                    .child(IconName::Plus.svg(p.muted))
+                icon_button_builder("snip-new", p, IconName::Plus)
+                    .size(ButtonSize::IconXs)
+                    .render()
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                         this.set_form(Some(FormState::empty()));
                         cx.notify();

@@ -12,7 +12,9 @@ use gpui::{
 use labonair_mcp_core::SessionKind;
 use labonair_panel::{StatusItem, StatusSide};
 use labonair_theme::store::ThemeStore;
-use labonair_ui_kit::{IconName, Palette};
+use labonair_ui_kit::{
+    icon_button_builder, ButtonSize, ButtonVariant, IconName, ListItem, Palette,
+};
 
 use crate::agent_access::{AgentAccessEntry, AgentAccessStore};
 use crate::Workspace;
@@ -58,25 +60,21 @@ impl AgentAccessStatusItem {
         entries: Vec<AgentAccessEntry>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let (fg, muted, border, accent) = {
+        let (fg, border, accent) = {
             let t = self.theme.read(cx);
-            (t.foreground(), t.muted_foreground(), t.border(), t.accent())
+            (t.foreground(), t.border(), t.accent())
         };
+        let palette = Palette::from_theme(self.theme.read(cx));
         let count = entries.len();
 
-        let badge = div()
-            .id("agent-access-badge")
+        let badge = icon_button_builder("agent-access-badge", palette, IconName::Shield)
+            .size(ButtonSize::IconXxs)
+            .selected(self.open)
+            .tooltip("AI agent access")
+            .render()
             .track_focus(&self.focus)
             .key_context("StatusPopover")
             .relative()
-            .size(px(20.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_md()
-            .text_color(muted)
-            .hover(|s| s.bg(border).text_color(fg))
-            .child(IconName::Shield.svg(muted))
             .child({
                 let weak = cx.weak_entity();
                 canvas(
@@ -167,39 +165,27 @@ impl AgentAccessStatusItem {
             .children(entries.into_iter().map(|entry| {
                 let tab_id = entry.tab_id;
                 let session_id = entry.session_id.clone();
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .px_3()
-                    .py_1p5()
-                    .hover(|s| s.bg(border))
+                ListItem::new(SharedString::from(format!("agent-jump-{tab_id}")), palette)
                     .child(
                         div()
-                            .id(SharedString::from(format!("agent-jump-{tab_id}")))
                             .flex_1()
                             .min_w_0()
                             .text_xs()
-                            .text_color(fg)
                             .truncate()
-                            .child(SharedString::from(entry.label.clone()))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                                this.open = false;
-                                this.workspace
-                                    .update(cx, |w, cx| w.reveal_tab(tab_id, window, cx));
-                                cx.notify();
-                            })),
+                            .child(SharedString::from(entry.label.clone())),
                     )
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("agent-revoke-{tab_id}")))
-                            .px_1()
-                            .rounded_sm()
-                            .text_xs()
-                            .text_color(muted)
-                            .hover(|s| s.text_color(fg))
-                            .child("\u{2715}")
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    .trailing(
+                        icon_button_builder(
+                            SharedString::from(format!("agent-revoke-{tab_id}")),
+                            palette,
+                            IconName::X,
+                        )
+                        .size(ButtonSize::IconXxs)
+                        .tooltip("Revoke access")
+                        .render()
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
+                                cx.stop_propagation();
                                 let session_id = session_id.clone();
                                 this.store.update(cx, |s, cx| {
                                     s.set_grant(
@@ -213,8 +199,15 @@ impl AgentAccessStatusItem {
                                     );
                                 });
                                 cx.notify();
-                            })),
+                            },
+                        )),
                     )
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.open = false;
+                        this.workspace
+                            .update(cx, |w, cx| w.reveal_tab(tab_id, window, cx));
+                        cx.notify();
+                    }))
             }))
             .into_any_element();
 
@@ -326,23 +319,13 @@ impl StatusItem for PreviewUrlStatusItem {
         let Some(url) = self.workspace.read(cx).active_preview_url(cx) else {
             return div().into_any_element();
         };
-        let (muted, foreground) = {
-            let theme = self.theme.read(cx);
-            (theme.muted_foreground(), theme.foreground())
-        };
+        let palette = Palette::from_theme(self.theme.read(cx));
         let open = url.clone();
-        div()
-            .id("bar-preview-url")
-            .flex()
-            .items_center()
-            .gap_1()
-            .text_size(px(11.0))
-            .text_color(muted)
-            .hover(|style| style.text_color(foreground))
-            .child(IconName::Globe.svg(muted).size(px(11.0)))
-            .child(SharedString::from(
-                url.strip_prefix("http://").unwrap_or(&url).to_string(),
-            ))
+        icon_button_builder("bar-preview-url", palette, IconName::Globe)
+            .variant(ButtonVariant::Transparent)
+            .size(ButtonSize::Xxs)
+            .label(url.strip_prefix("http://").unwrap_or(&url).to_string())
+            .render()
             .on_click(cx.listener(move |_, _: &ClickEvent, _window, cx| {
                 cx.open_url(&open);
             }))

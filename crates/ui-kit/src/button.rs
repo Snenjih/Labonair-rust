@@ -53,11 +53,14 @@ pub enum ButtonSize {
     Lg,
     /// 16 logical pixels at the reference UI font size.
     None,
+    /// 20 logical pixels, for the dense status bar (28px bar, 4px padding).
+    Xxs,
     Icon,
     IconXs,
     IconSm,
     IconLg,
     IconNone,
+    IconXxs,
 }
 
 impl ButtonSize {
@@ -68,11 +71,13 @@ impl ButtonSize {
             ButtonSize::Sm | ButtonSize::IconSm => 32.0,
             ButtonSize::Lg | ButtonSize::IconLg => 36.0,
             ButtonSize::None | ButtonSize::IconNone => 16.0,
+            ButtonSize::Xxs | ButtonSize::IconXxs => 20.0,
         }
     }
 
     fn horizontal_padding(self) -> f32 {
         match self {
+            ButtonSize::Xxs => 6.0,
             ButtonSize::Xs => 8.0,
             ButtonSize::Default | ButtonSize::Sm => 12.0,
             ButtonSize::Lg => 16.0,
@@ -81,12 +86,14 @@ impl ButtonSize {
             | ButtonSize::IconXs
             | ButtonSize::IconSm
             | ButtonSize::IconLg
-            | ButtonSize::IconNone => 0.0,
+            | ButtonSize::IconNone
+            | ButtonSize::IconXxs => 0.0,
         }
     }
 
     fn label_size(self) -> f32 {
         match self {
+            ButtonSize::Xxs | ButtonSize::IconXxs => 11.0,
             ButtonSize::Xs | ButtonSize::IconXs | ButtonSize::None | ButtonSize::IconNone => 12.0,
             ButtonSize::Default | ButtonSize::Sm | ButtonSize::Icon | ButtonSize::IconSm => 13.0,
             ButtonSize::Lg | ButtonSize::IconLg => 14.0,
@@ -95,7 +102,12 @@ impl ButtonSize {
 
     pub(crate) fn icon_size(self) -> f32 {
         match self {
-            ButtonSize::Xs | ButtonSize::IconXs | ButtonSize::None | ButtonSize::IconNone => 12.0,
+            ButtonSize::Xs
+            | ButtonSize::IconXs
+            | ButtonSize::None
+            | ButtonSize::IconNone
+            | ButtonSize::Xxs
+            | ButtonSize::IconXxs => 12.0,
             ButtonSize::Default | ButtonSize::Sm | ButtonSize::Icon | ButtonSize::IconSm => 14.0,
             ButtonSize::Lg | ButtonSize::IconLg => 16.0,
         }
@@ -108,6 +120,7 @@ impl ButtonSize {
             ButtonSize::Sm | ButtonSize::IconSm => ButtonSize::IconSm,
             ButtonSize::Lg | ButtonSize::IconLg => ButtonSize::IconLg,
             ButtonSize::None | ButtonSize::IconNone => ButtonSize::IconNone,
+            ButtonSize::Xxs | ButtonSize::IconXxs => ButtonSize::IconXxs,
         }
     }
 
@@ -118,6 +131,7 @@ impl ButtonSize {
             ButtonSize::Sm | ButtonSize::IconSm => ButtonSize::Sm,
             ButtonSize::Lg | ButtonSize::IconLg => ButtonSize::Lg,
             ButtonSize::None | ButtonSize::IconNone => ButtonSize::None,
+            ButtonSize::Xxs | ButtonSize::IconXxs => ButtonSize::Xxs,
         }
     }
 
@@ -129,6 +143,7 @@ impl ButtonSize {
                 | ButtonSize::IconSm
                 | ButtonSize::IconLg
                 | ButtonSize::IconNone
+                | ButtonSize::IconXxs
         )
     }
 }
@@ -145,8 +160,9 @@ pub fn button(
 }
 
 /// Same shared geometry and focus/pressed behavior without a hover handler.
-/// Use when a caller composes a custom hover state.
-pub fn button_no_hover(
+/// Kit-internal: the icon-button builder composes its selected state on it.
+/// Feature code picks a [`ButtonVariant`] instead of re-styling hover.
+pub(crate) fn button_no_hover(
     id: impl Into<gpui::ElementId>,
     c: Palette,
     variant: ButtonVariant,
@@ -302,11 +318,13 @@ mod tests {
                 ButtonSize::Sm,
                 ButtonSize::Lg,
                 ButtonSize::None,
+                ButtonSize::Xxs,
                 ButtonSize::Icon,
                 ButtonSize::IconXs,
                 ButtonSize::IconSm,
                 ButtonSize::IconLg,
                 ButtonSize::IconNone,
+                ButtonSize::IconXxs,
             ] {
                 let _ = button("enabled", c, variant, size);
                 let _ = button_no_hover("no-hover", c, variant, size);
@@ -321,6 +339,7 @@ mod tests {
         assert_eq!(ButtonSize::Sm.height(), 32.0);
         assert_eq!(ButtonSize::Default.height(), 28.0);
         assert_eq!(ButtonSize::Xs.height(), 24.0);
+        assert_eq!(ButtonSize::Xxs.height(), 20.0);
         assert_eq!(ButtonSize::None.height(), 16.0);
     }
 }

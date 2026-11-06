@@ -353,7 +353,6 @@ impl Workspace {
     /// reference `Header.tsx` where the `TabBar` lives in the titlebar.
     pub fn render_tab_bar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
-        let (muted, fg, border) = (theme.muted_foreground(), theme.foreground(), theme.border());
         let c = Palette::from_theme(theme);
         let titlebar_offset = Self::titlebar_offset(&c);
         let active_space_id = self.spaces.read(cx).active_id();
@@ -408,7 +407,7 @@ impl Workspace {
         let history_buttons_active = editor_history.is_some();
         let workspace = cx.entity();
         let previous = icon_button_builder("tab-previous", c, IconName::ArrowLeft)
-            .size(ButtonSize::IconLg)
+            .size(ButtonSize::Icon)
             .shape(IconButtonShape::Square)
             .disabled(!can_go_back)
             .tooltip(if history_buttons_active {
@@ -426,7 +425,7 @@ impl Workspace {
                 })
             });
         let next = icon_button_builder("tab-next", c, IconName::ArrowRight)
-            .size(ButtonSize::IconLg)
+            .size(ButtonSize::Icon)
             .shape(IconButtonShape::Square)
             .disabled(!can_go_forward)
             .tooltip(if history_buttons_active {
@@ -444,7 +443,7 @@ impl Workspace {
                 })
             });
         let new_tab = icon_button_builder("tab-new", c, IconName::PlusBold)
-            .size(ButtonSize::IconSm)
+            .size(ButtonSize::Icon)
             .shape(IconButtonShape::Square)
             .tooltip("New Tab")
             .render()
@@ -455,35 +454,22 @@ impl Workspace {
                 }),
             );
 
-        let spaces_trigger = div()
-            .id("spaces-trigger")
-            .flex_shrink_0()
-            .flex()
-            .items_center()
-            .gap_1()
-            .h(px(24.0))
-            .px_1p5()
-            .rounded_md()
-            .cursor_pointer()
-            .hover(|s| s.bg(border))
-            .child(IconName::Box.svg(muted).size(px(13.0)))
-            .when_some(active_space, |d, space| {
-                d.child(
-                    div()
-                        .max_w(px(96.0))
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .text_xs()
-                        .text_color(fg)
-                        .child(space.name),
-                )
-            })
+        let spaces_trigger = {
+            let trigger =
+                icon_button_builder("spaces-trigger", c, IconName::Box).size(ButtonSize::Default);
+            match active_space {
+                Some(space) => trigger.label(space.name),
+                None => trigger,
+            }
+            .render()
+            .max_w(px(140.0))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
                     this.open_spaces_menu(point(ev.position.x, titlebar_offset), cx);
                 }),
-            );
+            )
+        };
 
         let fill_tabs = labonair_settings::ThemeSettings::try_get(cx)
             .is_some_and(|settings| settings.tab_fill_space());
@@ -585,7 +571,7 @@ impl Workspace {
     /// rendered by [`Workspace::render`], anchored at the click position.
     pub fn render_tab_list_vertical(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let c = Palette::from_theme(self.theme.read(cx));
-        let (muted, fg, border) = (c.muted, c.fg, c.line_subtle);
+        let border = c.line_subtle;
         let spaces = self.spaces.read(cx).spaces().to_vec();
         let tabs = self.tabs.read(cx).tabs().to_vec();
         let active_id = self.tabs.read(cx).active_id();
@@ -676,17 +662,10 @@ impl Workspace {
                     .flex()
                     .justify_end()
                     .child(
-                        div()
-                            .id("sidebar-new-space")
-                            .size(px(28.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded_md()
-                            .text_color(muted)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(c.accent).text_color(fg))
-                            .child(IconName::FolderAdd.svg(muted).size(px(15.0)))
+                        icon_button_builder("sidebar-new-space", c, IconName::FolderAdd)
+                            .size(ButtonSize::Icon)
+                            .tooltip("New Space")
+                            .render()
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|this, ev: &MouseDownEvent, window, cx| {

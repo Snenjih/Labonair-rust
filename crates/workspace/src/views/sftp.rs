@@ -55,7 +55,7 @@ use labonair_transfers::TransferDirection;
 
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{
-    button, caret, context_menu, dialog_surface, divider, icon_for_path, icon_toggle_button,
+    button, caret, context_menu, dialog_surface, divider, icon_button_builder, icon_for_path,
     modal_overlay_with_exit, tree_row, Axis, BlinkCursor, ButtonSize, ButtonVariant, Density,
     IconName, MenuClick, MenuItem, Palette, Presence, Tooltip, TreeRowState,
 };
@@ -2164,15 +2164,17 @@ impl SftpView {
             ))
             .child(self.render_path_bar(side, pane, c, cx))
             .child(
-                icon_toggle_button(
+                icon_button_builder(
                     match side {
                         Side::Local => "sftp-local-search",
                         Side::Remote => "sftp-remote-search",
                     },
                     c.palette,
                     IconName::Search,
-                    pane.search_open,
                 )
+                .size(ButtonSize::IconXs)
+                .selected(pane.search_open)
+                .render()
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.toggle_search(side, cx);
                     if this.pane(side).search_open {
@@ -2189,7 +2191,7 @@ impl SftpView {
                 |this, side, cx| this.reload(side, cx),
             ))
             .child(
-                icon_toggle_button(
+                icon_button_builder(
                     match side {
                         Side::Local => "sftp-local-hidden",
                         Side::Remote => "sftp-remote-hidden",
@@ -2200,8 +2202,10 @@ impl SftpView {
                     } else {
                         IconName::EyeOff
                     },
-                    pane.show_hidden,
                 )
+                .size(ButtonSize::IconXs)
+                .selected(pane.show_hidden)
+                .render()
                 .on_click(
                     cx.listener(move |this, _: &ClickEvent, _w, cx| this.toggle_hidden(side, cx)),
                 ),
@@ -2411,26 +2415,20 @@ impl SftpView {
                         .enumerate()
                         .map(|(i, (label, seg_path))| {
                             let is_last = i == last_idx;
-                            let mut crumb = div()
-                                .id(SharedString::from(format!(
-                                    "sftp-crumb-{}-{}",
-                                    side_key(side),
-                                    i
-                                )))
-                                .flex_none()
-                                .px(px(2.0))
-                                .text_xs()
-                                .font_family("monospace")
-                                .rounded_sm()
-                                .text_color(if is_last { c.fg } else { c.muted })
-                                .child(SharedString::from(label));
-                            if !is_last {
-                                crumb = crumb.cursor_pointer().hover(|s| s.bg(c.card)).on_click(
-                                    cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                                        this.navigate(side, seg_path.clone(), cx);
-                                    }),
-                                );
-                            }
+                            let crumb = button(
+                                SharedString::from(format!("sftp-crumb-{}-{}", side_key(side), i)),
+                                c.palette,
+                                ButtonVariant::Transparent,
+                                ButtonSize::Xxs,
+                            )
+                            .font_family("monospace")
+                            .when(is_last, |b| b.text_color(c.fg))
+                            .child(SharedString::from(label))
+                            .when(!is_last, |b| {
+                                b.on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                                    this.navigate(side, seg_path.clone(), cx);
+                                }))
+                            });
                             if is_last {
                                 crumb.into_any_element()
                             } else {
@@ -2453,18 +2451,19 @@ impl SftpView {
                 .gap(px(2.0))
                 .child(crumbs)
                 .child(
-                    div()
-                        .id(match side {
+                    icon_button_builder(
+                        match side {
                             Side::Local => "sftp-local-path-edit",
                             Side::Remote => "sftp-remote-path-edit",
-                        })
-                        .flex_none()
-                        .cursor_pointer()
-                        .rounded_sm()
-                        .p(px(2.0))
-                        .hover(|s| s.bg(c.card))
-                        .child(IconName::Pencil.svg(c.muted).size(px(12.0)))
-                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        },
+                        c.palette,
+                        IconName::Pencil,
+                    )
+                    .size(ButtonSize::IconXxs)
+                    .tooltip("Edit path")
+                    .render()
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, window, cx| {
                             let p = match side {
                                 Side::Local => &mut this.local,
                                 Side::Remote => &mut this.remote,
@@ -2473,7 +2472,8 @@ impl SftpView {
                             p.path_editing = true;
                             window.focus(&this.edit_focus);
                             cx.notify();
-                        })),
+                        },
+                    )),
                 )
                 .into_any_element()
         }

@@ -592,13 +592,15 @@ impl HostManagerView {
             cx,
         );
 
-        let primary = button("hosts-new", *p, ButtonVariant::Filled, ButtonSize::Sm)
-            .child(IconName::Plus.svg(p.primary_fg).size(px(13.0)))
-            .child(if hosts_mode {
+        let primary = icon_button_builder("hosts-new", *p, IconName::Plus)
+            .variant(ButtonVariant::Filled)
+            .size(ButtonSize::Sm)
+            .label(if hosts_mode {
                 "New Host"
             } else {
                 "New Credential"
             })
+            .render()
             .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                 if hosts_mode {
                     this.new_host(cx);
@@ -644,9 +646,10 @@ impl HostManagerView {
                         |el| el.child(caret(p.fg, 12.0)),
                     )
                     .into_any_element(),
-                None => button("new-group", *p, ButtonVariant::Subtle, ButtonSize::Xs)
-                    .child(IconName::Plus.svg(p.muted).size(px(11.0)))
-                    .child("Group")
+                None => icon_button_builder("new-group", *p, IconName::Plus)
+                    .size(ButtonSize::Xs)
+                    .label("Group")
+                    .render()
                     .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
                         this.group_draft = Some(String::new());
                         w.focus(&this.group_focus);
@@ -664,9 +667,10 @@ impl HostManagerView {
                 HostSort::NameAsc => "asc",
                 HostSort::NameDesc => "desc",
             };
-            let sort = button("sort-cycle", *p, ButtonVariant::Subtle, ButtonSize::Xs)
-                .child(SharedString::from(format!("Sort: {}", self.sort.label())))
-                .child(IconName::ChevronDown.svg(p.muted).size(px(11.0)))
+            let sort = icon_button_builder("sort-cycle", *p, IconName::ChevronUpDown)
+                .size(ButtonSize::Xs)
+                .label(format!("Sort: {}", self.sort.label()))
+                .render()
                 .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
                     this.dropdown_list.reset(sort_options.len());
                     this.dropdown = Some(Dropdown {
@@ -934,19 +938,14 @@ impl HostManagerView {
                     settings_row("quick-connect", *p, "Quick connect")
                         .description(SharedString::from(label))
                         .control(
-                            button(
-                                "quick-connect-go",
-                                *p,
-                                ButtonVariant::Filled,
-                                ButtonSize::Xs,
-                            )
-                            .child(IconName::Zap.svg(p.primary_fg).size(px(12.0)))
-                            .child("Connect")
-                            .on_click(cx.listener(
-                                move |this, _: &ClickEvent, _w, cx| {
+                            icon_button_builder("quick-connect-go", *p, IconName::Zap)
+                                .variant(ButtonVariant::Filled)
+                                .size(ButtonSize::Xs)
+                                .label("Connect")
+                                .render()
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                                     this.quick_connect(user.clone(), host.clone(), port, cx)
-                                },
-                            )),
+                                })),
                         ),
                 ),
             );
@@ -1882,10 +1881,12 @@ impl HostManagerView {
                     ),
             );
         }
-        let add = button("ht-add", *p, ButtonVariant::Outlined, ButtonSize::Sm)
+        let add = icon_button_builder("ht-add", *p, IconName::Plus)
+            .variant(ButtonVariant::Outlined)
+            .size(ButtonSize::Sm)
+            .label("Add tunnel")
+            .render()
             .w_full()
-            .child(IconName::Plus.svg(p.fg).size(px(13.0)))
-            .child("Add tunnel")
             .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                 if let Some(form) = this.form.as_mut() {
                     form.tunnels.push(TunnelDraft::new());
@@ -2056,9 +2057,11 @@ impl HostManagerView {
                                 .child(SharedString::from(public_key)),
                         )
                         .control(
-                            button("cf-copy", *p, ButtonVariant::Outlined, ButtonSize::Xs)
-                                .child(IconName::Copy.svg(p.fg).size(px(12.0)))
-                                .child("Copy")
+                            icon_button_builder("cf-copy", *p, IconName::Copy)
+                                .variant(ButtonVariant::Outlined)
+                                .size(ButtonSize::Xs)
+                                .label("Copy")
+                                .render()
                                 .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                                     cx.write_to_clipboard(ClipboardItem::new_string(
                                         copy_value.clone(),
@@ -2170,25 +2173,13 @@ impl HostManagerView {
             return None;
         }
         let current = self.form.as_ref().and_then(|f| f.icon.clone());
-        let accent = p.accent;
         let tiles = HOST_ICONS.iter().map(|(key, icon)| {
             let key = key.to_string();
             let active = current.as_deref() == Some(key.as_str());
-            div()
-                .id(SharedString::from(format!("host-icon-{key}")))
-                .flex()
-                .items_center()
-                .justify_center()
-                .size(p.control_space(36.0))
-                .rounded(px(p.radius.md))
-                .cursor_pointer()
-                .bg(if active {
-                    p.selected_fill
-                } else {
-                    gpui::transparent_black()
-                })
-                .hover(move |s| s.bg(accent))
-                .child(icon.svg(if active { p.fg } else { p.muted }).size(px(16.0)))
+            icon_button_builder(SharedString::from(format!("host-icon-{key}")), *p, *icon)
+                .size(ButtonSize::IconLg)
+                .selected(active)
+                .render()
                 .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                     if let Some(form) = this.form.as_mut() {
                         form.icon = Some(key.clone());

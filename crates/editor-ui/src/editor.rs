@@ -8098,8 +8098,6 @@ impl EditorView {
                                         ButtonVariant::Subtle,
                                         ButtonSize::Sm,
                                     )
-                                    .text_color(muted)
-                                    .hover(|s| s.bg(border).text_color(fg))
                                     .child("Cancel")
                                     .on_click(cx.listener(
                                         |this, _: &ClickEvent, _w, cx| {
