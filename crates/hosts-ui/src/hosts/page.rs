@@ -95,6 +95,14 @@ fn below_trigger(click: Point<Pixels>) -> Point<Pixels> {
     }
 }
 
+/// Round the outer corners of a row that touches the card edge, so its hover
+/// fill follows the card's rounding (the card clips to a rectangle only).
+fn round_edges(row: Stateful<Div>, first: bool, last: bool, p: &Palette) -> Stateful<Div> {
+    let radius = px((p.radius.lg - 1.0).max(0.0));
+    row.when(first, |row| row.rounded_tl(radius).rounded_tr(radius))
+        .when(last, |row| row.rounded_bl(radius).rounded_br(radius))
+}
+
 /// A rounded icon tile (host / credential avatar).
 fn avatar(p: &Palette, icon: IconName, size: f32) -> Div {
     div()
@@ -1003,13 +1011,21 @@ impl HostManagerView {
         }
 
         let mut group = settings_group("hosts-list", *p);
-        for host in &visible {
-            group = group.row(self.host_row(host, p, cx));
+        let count = visible.len();
+        for (index, host) in visible.iter().enumerate() {
+            group = group.row(self.host_row(host, index == 0, index + 1 == count, p, cx));
         }
         page.child(group).into_any_element()
     }
 
-    fn host_row(&self, host: &Host, p: &Palette, cx: &mut Context<Self>) -> AnyElement {
+    fn host_row(
+        &self,
+        host: &Host,
+        first: bool,
+        last: bool,
+        p: &Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let data = self.host_row_data(host);
         let dot = self.status_dot(&host.id, p);
         let (id_click, id_menu, id_drop) = (host.id.clone(), host.id.clone(), host.id.clone());
@@ -1025,6 +1041,7 @@ impl HostManagerView {
             .py(p.control_space(8.0))
             .cursor_pointer()
             .hover(move |s| s.bg(accent))
+            .map(|row| round_edges(row, first, last, p))
             .child(avatar(p, data.icon, 32.0))
             .child(
                 v_stack()
@@ -1145,7 +1162,9 @@ impl HostManagerView {
         }
         let accent = p.accent;
         let mut group = settings_group("credentials-list", *p);
-        for credential in visible {
+        let count = visible.len();
+        for (index, credential) in visible.into_iter().enumerate() {
+            let (first, last) = (index == 0, index + 1 == count);
             let used = self
                 .hosts
                 .iter()
@@ -1164,6 +1183,7 @@ impl HostManagerView {
                     .py(p.control_space(8.0))
                     .cursor_pointer()
                     .hover(move |s| s.bg(accent))
+                    .map(|row| round_edges(row, first, last, p))
                     .child(avatar(p, credential_icon(&credential), 32.0))
                     .child(
                         v_stack()
@@ -2078,7 +2098,9 @@ impl HostManagerView {
                 );
             }
             let accent = p.accent;
-            for (host_id, name) in users {
+            let count = users.len();
+            for (index, (host_id, name)) in users.into_iter().enumerate() {
+                let (first, last) = (index == 0, index + 1 == count);
                 used = used.row(
                     div()
                         .id(SharedString::from(format!("cf-used-{host_id}")))
@@ -2089,6 +2111,7 @@ impl HostManagerView {
                         .min_h(p.control_space(44.0))
                         .cursor_pointer()
                         .hover(move |s| s.bg(accent))
+                        .map(|row| round_edges(row, first, last, p))
                         .child(IconName::Server.svg(p.muted).size(px(14.0)))
                         .child(
                             div()
