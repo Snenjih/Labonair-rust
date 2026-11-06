@@ -4737,6 +4737,8 @@ dependencies = [
  "labonair-updater",
  "labonair-updater-ui",
  "labonair-workspace",
+ "objc2",
+ "objc2-app-kit",
  "rust-embed",
  "serde",
  "serde_json",
