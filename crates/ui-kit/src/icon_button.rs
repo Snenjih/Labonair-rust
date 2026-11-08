@@ -13,10 +13,11 @@ use crate::{
 /// Width treatment for an icon button.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum IconButtonShape {
-    /// Uses the size's natural horizontal padding.
-    #[default]
+    /// Uses the size's natural horizontal padding. Opt-in; icon-only buttons
+    /// default to [`IconButtonShape::Square`].
     Wide,
     /// Uses equal width and height.
+    #[default]
     Square,
 }
 
@@ -55,7 +56,7 @@ impl IconButtonBuilder {
             variant: ButtonVariant::Subtle,
             selected_variant: None,
             size: ButtonSize::Default,
-            shape: IconButtonShape::Wide,
+            shape: IconButtonShape::default(),
             icon_color: None,
             selected_icon_color: None,
             icon_size: None,
@@ -237,8 +238,8 @@ impl IconButtonBuilder {
     }
 }
 
-/// Creates the common icon-button builder. New call sites should specify
-/// shape when their surrounding layout requires a square control.
+/// Creates the common icon-button builder. Icon-only buttons are square unless
+/// a call site opts into [`IconButtonShape::Wide`]; labelled ones are always wide.
 pub fn icon_button_builder(
     id: impl Into<ElementId>,
     c: Palette,
