@@ -11032,6 +11032,7 @@ impl Render for EditorView {
         let fg = theme.foreground();
         let muted = theme.muted_foreground();
         let accent = theme.accent();
+        let selection_bg = theme.theme().interaction.selection;
         let gutter_bg = theme.card();
         let mut font = theme.buffer_font();
         if let Some(family) = primary_editor_font_family(self.prefs.font_family()) {
@@ -11435,7 +11436,7 @@ impl Render for EditorView {
                         } else {
                             selection
                         };
-                        row = row.child(selection.bg(accent.opacity(0.3)));
+                        row = row.child(selection.bg(selection_bg));
                     }
                     }
                 }
@@ -11841,13 +11842,20 @@ impl Render for EditorView {
         // Caret + current-line band use the same display map as mouse mapping.
         self.editor_focused = self.focus_handle.is_focused(window);
         let caret_point = display.position_to_display(cursor);
+        // An editor without focus (inactive pane, modal on top) keeps its caret
+        // as a non-blinking outline so only the focused editor looks active.
+        let caret_active =
+            self.focus_handle.contains_focused(window, cx) && window.is_window_active();
         let show_caret = !self.prefs.cursor_blink() || !self.editor_focused || self.cursor_blink_on;
         let caret = show_caret
             .then_some(caret_point)
             .flatten()
             .map(|(visual_row, column)| {
-                let cursor_style =
-                    effective_cursor_style(&self.prefs, self.vim.as_ref().map(Vim::mode));
+                let cursor_style = if caret_active {
+                    effective_cursor_style(&self.prefs, self.vim.as_ref().map(Vim::mode))
+                } else {
+                    EditorCursorStyle::Hollow
+                };
                 let (top, width, height, bg_color) = match cursor_style {
                     EditorCursorStyle::Bar => (0.0, 2.0, line_h, accent),
                     EditorCursorStyle::Underline => {
@@ -11874,9 +11882,7 @@ impl Render for EditorView {
                 }
             });
 
-        let current_line = self
-            .prefs
-            .highlight_current_line()
+        let current_line = (self.prefs.highlight_current_line() && caret_active)
             .then(|| {
                 caret_point.map(|(visual_row, _)| {
                     div()

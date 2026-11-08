@@ -496,6 +496,7 @@ impl Render for TerminalView {
         // Blink: hide the cursor on the "off" phase, but only while the view is
         // focused and no key/output landed within the last blink interval.
         self.focused = self.focus_handle.is_focused(window);
+        let active = self.focused && window.is_window_active();
         let blink_ms = labonair_settings::TerminalSettings::try_get(cx)
             .map(|s| s.cursor_blink_interval_ms())
             .unwrap_or(1_000);
@@ -509,6 +510,7 @@ impl Render for TerminalView {
             cell_h,
             to_hsla(colors.cursor, 1.0),
             cursor_hidden,
+            active,
         );
 
         let view = cx.weak_entity();
@@ -796,6 +798,7 @@ fn cursor_overlay(
     cell_h: f32,
     color: Hsla,
     blink_hidden: bool,
+    active: bool,
 ) -> Option<gpui::Div> {
     if blink_hidden || screen.display_offset != 0 {
         return None;
@@ -807,7 +810,14 @@ fn cursor_overlay(
     let x = px(cur.column as f32 * cell_w);
     let y = px(cur.line as f32 * cell_h);
     let base = div().absolute();
-    Some(match cur.shape {
+    // Without focus every shape degrades to the outline (xterm's
+    // `cursorInactiveStyle: "outline"`), so only the focused pane looks live.
+    let shape = if active || cur.shape == CursorShape::Hidden {
+        cur.shape
+    } else {
+        CursorShape::HollowBlock
+    };
+    Some(match shape {
         CursorShape::Hidden => return None,
         // xterm's bar cursor is `cursorWidth` CSS px wide (default 1, and the
         // reference never overrides it — `rendererPool.ts::termOptions`).

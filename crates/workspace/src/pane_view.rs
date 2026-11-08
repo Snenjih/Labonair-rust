@@ -12,8 +12,8 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
     canvas, div, px, AnyElement, AppContext, ClickEvent, Context, DragMoveEvent,
-    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point,
-    Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    InteractiveElement, IntoElement, MouseDownEvent, ParentElement, Pixels, Point, Render,
+    SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use labonair_settings::Settings as _;
 use labonair_ui_kit::{
@@ -435,14 +435,13 @@ impl Workspace {
 
         let frame = pane_frame(("pane-frame", pane), c, ctx.style, focused)
             .size_full()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _: &MouseDownEvent, window, cx| {
-                    if this.focused_pane(tab_id) != pane {
-                        this.activate_pane(pane, window, cx);
-                    }
-                }),
-            )
+            // Capture phase: editors and terminals handle (and stop) their own
+            // clicks, so a bubble listener here never sees them.
+            .capture_any_mouse_down(cx.listener(move |this, _: &MouseDownEvent, window, cx| {
+                if this.focused_pane(tab_id) != pane {
+                    this.activate_pane(pane, window, cx);
+                }
+            }))
             .child(bar)
             .child(body)
             .when(ctx.dim_inactive && !focused, |frame| {
