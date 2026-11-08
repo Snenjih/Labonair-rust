@@ -72,9 +72,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tab_bar_controls_default_visible_and_parse_from_settings() {
+    fn tab_bar_controls_defaults_and_parse_from_settings() {
         let defaults = serde_json::to_value(WorkspaceContent::defaults()).expect("defaults");
-        assert_eq!(defaults["showNavHistoryButtons"], true);
+        assert_eq!(defaults["showNavHistoryButtons"], false);
         assert_eq!(defaults["showTabBarButtons"], true);
         assert_eq!(defaults["showEditorTabGitStatus"], true);
         assert_eq!(defaults["showEditorTabDiagnostics"], false);

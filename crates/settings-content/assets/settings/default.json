@@ -229,7 +229,7 @@
     "commandPalettePosition": "top",
     "commandPaletteHistorySize": 5,
     "commandPaletteCloseOnOverlayClick": true,
-    "showNavHistoryButtons": true,
+    "showNavHistoryButtons": false,
     "showTabBarButtons": true,
     "showEditorTabGitStatus": true,
     "showEditorTabDiagnostics": false,
