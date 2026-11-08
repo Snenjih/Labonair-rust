@@ -736,7 +736,11 @@ impl ThemeStore {
     /// surface accessor below resolves through this.
     pub fn surface_material(&self) -> SurfaceMaterial {
         let m = self.active.metrics();
-        SurfaceMaterial::new(m.translucent_surfaces, m.background_active)
+        SurfaceMaterial::new(
+            m.translucent_surfaces,
+            m.background_active,
+            m.glass_transparency,
+        )
     }
 
     /// The terminal surface fill. Opaque unless a background image shows

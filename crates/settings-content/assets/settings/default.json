@@ -45,6 +45,8 @@
     "cornerRadiusScale": 1.0,
     // Translucent window chrome/surfaces over the native blur (false = opaque).
     "translucentSurfaces": false,
+    // How transparent Glassy surfaces are, 0-100 (only with Glassy).
+    "glassTransparency": 30,
     // "titlebar" or "sidebar".
     "tabsLocation": "titlebar",
     "tabFillSpace": false,

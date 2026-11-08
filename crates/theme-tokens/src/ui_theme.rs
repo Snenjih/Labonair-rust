@@ -44,7 +44,11 @@ pub trait UiTheme {
     /// use, so surfaces turn translucent while a background image is showing.
     fn surface_material(&self) -> SurfaceMaterial {
         let m = self.metrics();
-        SurfaceMaterial::new(m.translucent_surfaces, m.background_active)
+        SurfaceMaterial::new(
+            m.translucent_surfaces,
+            m.background_active,
+            m.glass_transparency,
+        )
     }
 
     /// `--muted-foreground`.

@@ -101,6 +101,7 @@ pub fn theme_metrics_from_settings(cx: &App) -> Option<ThemeMetrics> {
         // keeps the live value, `set_background_active` changes it.
         background_active: false,
         translucent_surfaces: s.translucent_surfaces(),
+        glass_transparency: s.glass_transparency(),
     })
 }
 

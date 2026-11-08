@@ -34,6 +34,7 @@ pub use metrics::{
 pub use tokens::{
     Animation, AnsiColors, BorderVariants, CoreColors, CubicBezier, InteractionColors,
     MonoFontWeight, RadiusScale, ShadowLayer, Shadows, SidebarColors, StatusColors, SurfaceColors,
-    SurfaceMaterial, TerminalPalette, Theme, Typography, VibrancyLayer, TAB_IN_FROM_SCALE,
+    SurfaceMaterial, TerminalPalette, Theme, Typography, VibrancyLayer, GLASS_TRANSPARENCY_DEFAULT,
+    TAB_IN_FROM_SCALE,
 };
 pub use ui_theme::{ActiveThemeExt, UiTheme};

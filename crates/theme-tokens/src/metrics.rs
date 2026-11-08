@@ -147,6 +147,9 @@ pub struct ThemeMetrics {
     /// blurred window material; `false` (default) keeps Ciel's opaque,
     /// fill-contrast surfaces.
     pub translucent_surfaces: bool,
+    /// Glass transparency 0–100 (`appearance.glassTransparency`), only used
+    /// while `translucent_surfaces` is on.
+    pub glass_transparency: u8,
 }
 
 impl Default for ThemeMetrics {
@@ -167,6 +170,7 @@ impl Default for ThemeMetrics {
             pane_highlight: None,
             background_active: false,
             translucent_surfaces: false,
+            glass_transparency: crate::GLASS_TRANSPARENCY_DEFAULT,
         }
     }
 }

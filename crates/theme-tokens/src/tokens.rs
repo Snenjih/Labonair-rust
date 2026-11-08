@@ -99,35 +99,40 @@ pub enum SurfaceMaterial {
     #[default]
     Opaque,
     /// Surfaces over the native window blur (Glassy, no background image).
-    Glassy,
+    Glassy(u8),
     /// Classic with a background image: no native blur behind, so the fills
     /// carry just enough transparency to let the image read through.
     ImageClassic,
     /// Glassy with a background image: the image sits over the native blur and
     /// the fills are the most transparent.
-    ImageGlassy,
+    ImageGlassy(u8),
 }
 
+/// Default glass transparency (`appearance.glassTransparency`, 0–100): the
+/// strength at which the [`VibrancyLayer`] tables apply unscaled.
+pub const GLASS_TRANSPARENCY_DEFAULT: u8 = 30;
+
 impl SurfaceMaterial {
-    /// Pick the material from the two independent inputs.
-    pub fn new(glassy: bool, background_image: bool) -> Self {
+    /// Pick the material from the independent inputs; `glass` is the 0–100
+    /// glass transparency and only matters when `glassy`.
+    pub fn new(glassy: bool, background_image: bool, glass: u8) -> Self {
         match (glassy, background_image) {
             (false, false) => Self::Opaque,
-            (true, false) => Self::Glassy,
+            (true, false) => Self::Glassy(glass),
             (false, true) => Self::ImageClassic,
-            (true, true) => Self::ImageGlassy,
+            (true, true) => Self::ImageGlassy(glass),
         }
     }
 
     /// Whether a background image is showing through the surfaces.
     pub fn has_image(self) -> bool {
-        matches!(self, Self::ImageClassic | Self::ImageGlassy)
+        matches!(self, Self::ImageClassic | Self::ImageGlassy(_))
     }
 }
 
 impl From<bool> for SurfaceMaterial {
     fn from(glassy: bool) -> Self {
-        Self::new(glassy, false)
+        Self::new(glassy, false, GLASS_TRANSPARENCY_DEFAULT)
     }
 }
 
@@ -173,10 +178,10 @@ impl VibrancyLayer {
     /// so the image reads through them; floating layers (`Popover`) stay near
     /// opaque so menus remain readable on any image, and controls/cards keep
     /// enough fill to hold their text. Dividers do not change.
-    pub const fn opacity_in(self, material: SurfaceMaterial) -> f32 {
+    pub fn opacity_in(self, material: SurfaceMaterial) -> f32 {
         match material {
             SurfaceMaterial::Opaque => 1.0,
-            SurfaceMaterial::Glassy => self.opacity(),
+            SurfaceMaterial::Glassy(glass) => self.glass_scaled(self.opacity(), glass),
             SurfaceMaterial::ImageClassic => match self {
                 Self::Canvas | Self::Toolbar | Self::Sidebar => 0.78,
                 Self::Terminal => 0.74,
@@ -185,15 +190,29 @@ impl VibrancyLayer {
                 Self::Control => 0.88,
                 Self::Divider => 0.56,
             },
-            SurfaceMaterial::ImageGlassy => match self {
-                Self::Canvas | Self::Toolbar | Self::Sidebar => 0.6,
-                Self::Terminal => 0.55,
-                Self::Card => 0.74,
-                Self::Popover => 0.94,
-                Self::Control => 0.8,
-                Self::Divider => 0.5,
-            },
+            SurfaceMaterial::ImageGlassy(glass) => self.glass_scaled(
+                match self {
+                    Self::Canvas | Self::Toolbar | Self::Sidebar => 0.6,
+                    Self::Terminal => 0.55,
+                    Self::Card => 0.74,
+                    Self::Popover => 0.94,
+                    Self::Control => 0.8,
+                    Self::Divider => 0.5,
+                },
+                glass,
+            ),
         }
+    }
+
+    /// Scale how far `base` sits below fully opaque by `glass` relative to
+    /// [`GLASS_TRANSPARENCY_DEFAULT`] (0 = opaque, default = `base`). Dividers
+    /// never change and nothing drops below 0.2 so text stays legible.
+    fn glass_scaled(self, base: f32, glass: u8) -> f32 {
+        if self == Self::Divider {
+            return base;
+        }
+        let k = f32::from(glass.min(100)) / f32::from(GLASS_TRANSPARENCY_DEFAULT);
+        (1.0 - (1.0 - base) * k).max(0.2)
     }
 
     /// Resolve the surface color for this role. With an opaque material (the
@@ -816,6 +835,18 @@ mod tests {
     }
 
     #[test]
+    fn glass_transparency_scales_surfaces() {
+        let at = |g| VibrancyLayer::Toolbar.opacity_in(SurfaceMaterial::Glassy(g));
+        assert_eq!(at(0), 1.0);
+        assert!((at(GLASS_TRANSPARENCY_DEFAULT) - VibrancyLayer::Toolbar.opacity()).abs() < 1e-6);
+        assert!(at(100) < at(GLASS_TRANSPARENCY_DEFAULT) && at(100) >= 0.2);
+        assert_eq!(
+            VibrancyLayer::Divider.opacity_in(SurfaceMaterial::Glassy(100)),
+            VibrancyLayer::Divider.opacity()
+        );
+    }
+
+    #[test]
     fn background_image_makes_large_surfaces_more_transparent() {
         use SurfaceMaterial::*;
         for layer in [
@@ -824,13 +855,19 @@ mod tests {
             VibrancyLayer::Sidebar,
             VibrancyLayer::Terminal,
         ] {
-            assert!(layer.opacity_in(ImageClassic) < layer.opacity_in(Glassy));
-            assert!(layer.opacity_in(ImageGlassy) < layer.opacity_in(ImageClassic));
+            assert!(
+                layer.opacity_in(ImageClassic)
+                    < layer.opacity_in(Glassy(GLASS_TRANSPARENCY_DEFAULT))
+            );
+            assert!(
+                layer.opacity_in(ImageGlassy(GLASS_TRANSPARENCY_DEFAULT))
+                    < layer.opacity_in(ImageClassic)
+            );
             assert!(layer.opacity_in(ImageClassic) < 1.0);
         }
         assert_eq!(VibrancyLayer::Canvas.opacity_in(ImageClassic), 0.78);
         // Floating layers stay readable on any image.
-        assert!(VibrancyLayer::Popover.opacity_in(ImageGlassy) >= 0.9);
+        assert!(VibrancyLayer::Popover.opacity_in(ImageGlassy(GLASS_TRANSPARENCY_DEFAULT)) >= 0.9);
         // Opaque never changes a color; `bool` keeps the legacy meaning.
         let base = oklch_a(55.0, 0.03, 250.0, 1.0);
         assert_eq!(VibrancyLayer::Canvas.resolve(base, Opaque), base);
@@ -839,8 +876,8 @@ mod tests {
             VibrancyLayer::Canvas.resolve(base, true).a,
             VibrancyLayer::Canvas.opacity()
         );
-        assert!(SurfaceMaterial::new(false, true).has_image());
-        assert!(!SurfaceMaterial::new(true, false).has_image());
+        assert!(SurfaceMaterial::new(false, true, 30).has_image());
+        assert!(!SurfaceMaterial::new(true, false, 30).has_image());
     }
 
     #[test]

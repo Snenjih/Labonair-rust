@@ -247,8 +247,7 @@ macro_rules! field {
 /// (`pages.rs`) decides on-screen placement, not this list.
 pub fn all_fields() -> Vec<AnyField> {
     use FieldControl::{
-        Color, Float, FontFamily, Int, Segmented, Select, SftpColumns, Slider, Switch, Text,
-        Tiles,
+        Color, Float, FontFamily, Int, Segmented, Select, SftpColumns, Slider, Switch, Text, Tiles,
     };
     let fields = vec![
         // ── general ─────────────────────────────────────────────────────
@@ -378,6 +377,15 @@ pub fn all_fields() -> Vec<AnyField> {
             Tiles(INTERFACE_STYLE_TILES),
             "Interface style",
             "Classic keeps surfaces opaque; Glassy lets window chrome and panels show the blurred desktop behind them."
+        ),
+        field_with_details!(
+            appearance.glass_transparency,
+            "glassTransparency",
+            Slider { min: 0.0, max: 100.0, step: 1.0, int: true },
+            "Glass transparency",
+            "How see-through Glassy surfaces are. Only applies with the Glassy interface style.",
+            "%",
+            "0% is opaque, 100% is the most transparent."
         ),
         field!(
             appearance.buffer_font_family,

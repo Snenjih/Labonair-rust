@@ -217,6 +217,11 @@ impl ThemeSettings {
     pub fn translucent_surfaces(&self) -> bool {
         self.0.translucent_surfaces.unwrap_or(false)
     }
+
+    /// Glass transparency 0–100 (default 30).
+    pub fn glass_transparency(&self) -> u8 {
+        self.0.glass_transparency.unwrap_or(30).min(100) as u8
+    }
 }
 
 /// `terminal` area.
