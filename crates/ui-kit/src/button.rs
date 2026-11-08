@@ -36,6 +36,10 @@ pub enum ButtonVariant {
     Link,
     /// Transparent foreground-only control.
     Transparent,
+    /// Muted, plain-text readout (cursor position, language, …) that takes the
+    /// neutral button hover and pressed surface. Pair with [`ButtonSize::Xxs`]
+    /// in the status bar; use [`button_disabled`] for a non-interactive readout.
+    Info,
 }
 
 /// Shared button heights on Ciel's control scale. Values use the app font
@@ -238,7 +242,9 @@ fn apply_variant(el: Stateful<Div>, variant: ButtonVariant, c: Palette) -> State
             .text_color(c.fg),
         ButtonVariant::TintedError => el.bg(c.error.opacity(0.10)).text_color(c.error),
         ButtonVariant::Link => el.bg(transparent_black()).text_color(c.primary),
-        ButtonVariant::Transparent => el.bg(transparent_black()).text_color(c.muted),
+        ButtonVariant::Transparent | ButtonVariant::Info => {
+            el.bg(transparent_black()).text_color(c.muted)
+        }
     }
 }
 
@@ -253,7 +259,8 @@ fn disabled_style(el: Stateful<Div>, variant: ButtonVariant, c: Palette) -> Stat
         ButtonVariant::Subtle
         | ButtonVariant::Filled
         | ButtonVariant::Link
-        | ButtonVariant::Transparent => el.text_color(c.muted),
+        | ButtonVariant::Transparent
+        | ButtonVariant::Info => el.text_color(c.muted),
     }
 }
 
@@ -263,6 +270,7 @@ fn variant_hover(
 ) -> impl Fn(StyleRefinement) -> StyleRefinement {
     move |style| match variant {
         ButtonVariant::Subtle | ButtonVariant::OutlinedGhost => style.bg(c.accent),
+        ButtonVariant::Info => style.bg(c.accent).text_color(c.fg),
         ButtonVariant::Filled => style.bg(c.hover_strong),
         ButtonVariant::Outlined => style.bg(c.accent).border_color(c.line_strong),
         ButtonVariant::Action => style.bg(c.action_hover),
@@ -285,7 +293,9 @@ fn focus_style(style: StyleRefinement, variant: ButtonVariant, c: Palette) -> St
 
 fn active_style(style: StyleRefinement, variant: ButtonVariant, c: Palette) -> StyleRefinement {
     match variant {
-        ButtonVariant::Subtle | ButtonVariant::OutlinedGhost => style.bg(c.hover_strong),
+        ButtonVariant::Subtle | ButtonVariant::OutlinedGhost | ButtonVariant::Info => {
+            style.bg(c.hover_strong)
+        }
         ButtonVariant::Filled | ButtonVariant::Outlined => style.bg(c.hover_strong),
         ButtonVariant::Action => style.bg(c.action_active),
         ButtonVariant::TintedError => style.bg(c.error.opacity(0.30)),
@@ -311,6 +321,7 @@ mod tests {
             ButtonVariant::Action,
             ButtonVariant::Link,
             ButtonVariant::Transparent,
+            ButtonVariant::Info,
         ] {
             for size in [
                 ButtonSize::Default,

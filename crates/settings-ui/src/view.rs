@@ -1762,12 +1762,12 @@ impl SettingsView {
                 .size(ButtonSize::IconXxs)
                 .render()
                 .on_click({
-                        let view = view.clone();
-                        move |_event, _window, app| {
-                            view.update(app, |this, cx| this.toggle_area_expanded(i, cx));
-                            app.stop_propagation();
-                        }
-                    }),
+                    let view = view.clone();
+                    move |_event, _window, app| {
+                        view.update(app, |this, cx| this.toggle_area_expanded(i, cx));
+                        app.stop_propagation();
+                    }
+                }),
             );
         }
 

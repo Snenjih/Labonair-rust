@@ -58,7 +58,7 @@ impl WorkspaceContent {
             command_palette_position: Some("top".to_string()),
             command_palette_history_size: Some(5),
             command_palette_close_on_overlay_click: Some(true),
-            show_nav_history_buttons: Some(true),
+            show_nav_history_buttons: Some(false),
             show_tab_bar_buttons: Some(true),
             show_editor_tab_git_status: Some(true),
             show_editor_tab_diagnostics: Some(false),

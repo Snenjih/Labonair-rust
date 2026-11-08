@@ -282,7 +282,7 @@ fn default_icon_color(c: Palette, variant: ButtonVariant) -> Hsla {
     match variant {
         // Ghost toolbar glyphs rest muted and brighten when selected, the one
         // rule every icon-only control in the app follows.
-        ButtonVariant::Subtle | ButtonVariant::Transparent => c.muted,
+        ButtonVariant::Subtle | ButtonVariant::Transparent | ButtonVariant::Info => c.muted,
         ButtonVariant::Filled | ButtonVariant::Outlined | ButtonVariant::OutlinedGhost => c.fg,
         ButtonVariant::TintedError => c.error,
         ButtonVariant::Action => c.action_fg,

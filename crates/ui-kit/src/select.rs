@@ -29,16 +29,16 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, ClickEvent, Div, ElementId, FontWeight, InteractiveElement, IntoElement,
-    ListSizingBehavior, ListState, ParentElement, Pixels, Point, SharedString, Stateful,
-    StatefulInteractiveElement, Styled, Window, deferred, div, list, prelude::FluentBuilder, px,
+    deferred, div, list, prelude::FluentBuilder, px, AnyElement, App, ClickEvent, Div, ElementId,
+    FontWeight, InteractiveElement, IntoElement, ListSizingBehavior, ListState, ParentElement,
+    Pixels, Point, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
 };
 
-use crate::DISABLED_OPACITY;
 use crate::icon::IconName;
 use crate::palette::Palette;
 use crate::popover::anchored_popup;
 use crate::presence::{closing_guard, enter_or_popup};
+use crate::DISABLED_OPACITY;
 
 /// One `(token, label)` pair — the token is what gets stored, the label what is
 /// shown.

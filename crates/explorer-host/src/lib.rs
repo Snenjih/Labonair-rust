@@ -27,6 +27,8 @@ type OpenFileFn = Rc<dyn Fn(String, bool, &mut Window, &mut App)>;
 type OpenTerminalFn = Rc<dyn Fn(String, &mut Window, &mut App)>;
 type OpenPreviewFn = Rc<dyn Fn(String, &mut Window, &mut App)>;
 type ActiveFilePathFn = Rc<dyn Fn(&App) -> Option<String>>;
+type FollowStateFn = Rc<dyn Fn(&App) -> bool>;
+type ToggleFollowFn = Rc<dyn Fn(&mut App)>;
 
 /// A future returned by the Explorer's remote-directory contract.
 pub type RemoteExplorerFuture<T> =
@@ -81,6 +83,7 @@ pub struct ExplorerHost {
     open_preview: OpenPreviewFn,
     active_file_path: ActiveFilePathFn,
     remote: Arc<dyn RemoteExplorerService>,
+    follow: Option<(FollowStateFn, ToggleFollowFn)>,
 }
 
 impl ExplorerHost {
@@ -116,6 +119,29 @@ impl ExplorerHost {
             open_preview: Rc::new(open_preview),
             active_file_path: Rc::new(active_file_path),
             remote,
+            follow: None,
+        }
+    }
+
+    /// Wire the per-pane "follow the pane's cwd" switch shown in the toolbar.
+    pub fn with_follow(
+        mut self,
+        state: impl Fn(&App) -> bool + 'static,
+        toggle: impl Fn(&mut App) + 'static,
+    ) -> Self {
+        self.follow = Some((Rc::new(state), Rc::new(toggle)));
+        self
+    }
+
+    /// Whether the Explorer follows the focused pane; `None` when the host
+    /// has no such switch.
+    pub fn follows(&self, cx: &App) -> Option<bool> {
+        self.follow.as_ref().map(|(state, _)| state(cx))
+    }
+
+    pub fn toggle_follow(&self, cx: &mut App) {
+        if let Some((_, toggle)) = &self.follow {
+            toggle(cx);
         }
     }
 

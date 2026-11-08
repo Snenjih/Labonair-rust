@@ -18,6 +18,9 @@
 //! pane covers the tree, so the zones would not match what the user sees);
 //! moving a pane or merging a tab ends the zoom of both tabs involved.
 
+use std::time::Duration;
+
+use gpui::prelude::FluentBuilder;
 use gpui::{
     div, point, px, AnyElement, App, Bounds, Context, Div, DragMoveEvent, InteractiveElement,
     IntoElement, KeyDownEvent, ParentElement, Pixels, Point, Styled, Window,
@@ -27,13 +30,17 @@ use labonair_ui_kit::{Density, MotionExt, Palette};
 use crate::pane::PaneId;
 use crate::pane_dnd::{
     drop_allowed, edge_scroll, hit_test, plan_detach, plan_pane_drop, plan_tab_drop, preview_rect,
-    DropError, DropGuard, DropPlan, Payload, SourceAfter,
+    spring_candidate, verdict_of, DropError, DropGuard, DropPlan, Payload, SourceAfter, Verdict,
 };
 use crate::pane_kind::PaneKind;
 use crate::pane_ops::DropZone;
 use crate::tabs::TabData;
 use crate::tiling::{self, PxRect};
 use crate::{DraggedPane, DraggedTab, Workspace};
+
+/// How long a drag rests on a tab block before that tab opens (spring-loaded
+/// tabs), so the user can drop into its panes.
+const SPRING_DELAY: Duration = Duration::from_millis(500);
 
 /// The drop target currently highlighted in a pane area.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -44,6 +51,8 @@ pub(crate) struct DropHover {
     pub zone: DropZone,
     /// Highlight rectangle in window coordinates.
     pub preview: PxRect,
+    /// Whether the drop would succeed; decided by a dry run of the plan.
+    pub verdict: Verdict,
 }
 
 /// Transient drag-over state. Only meaningful while a drag is active; every
@@ -53,25 +62,40 @@ pub(crate) struct PaneDnd {
     /// Pane-area zone under the pointer.
     pub hover: Option<DropHover>,
     /// A pane dragged over this tab block (it would join the group).
-    pub tab_join: Option<u64>,
+    pub tab_join: Option<(u64, Verdict)>,
     /// The tab block under a dragged pane, whether or not it accepts the
     /// drop: the strip's new-tab marker only shows between blocks.
     pub over_block: Option<u64>,
     /// A pane dragged over empty strip space: the tab after which the new
     /// tab would appear (the last tab of the pane's Space).
     pub strip_end: Option<u64>,
+    /// The tab block the drag rests on; it opens after [`SPRING_DELAY`].
+    pub spring: Option<u64>,
+    /// Bumped on every spring start / reset so stale timers do nothing. Kept
+    /// across [`Workspace::clear_pane_dnd`] (a reset must not revive a timer).
+    pub spring_gen: u64,
+}
+
+/// Fill and border of a drop highlight: primary when the drop fits, warning
+/// when it would not.
+fn verdict_colors(c: Palette, verdict: Verdict) -> (gpui::Hsla, gpui::Hsla) {
+    match verdict {
+        Verdict::Fits => (c.primary.opacity(0.18), c.primary.opacity(0.7)),
+        Verdict::NoRoom => (c.warning.opacity(0.14), c.warning.opacity(0.8)),
+    }
 }
 
 /// Highlight for a tab block that a dragged pane would join. Absolutely
 /// positioned: add it as a child of the (relative) tab block.
-pub(crate) fn tab_join_highlight(c: Palette) -> Div {
+pub(crate) fn tab_join_highlight(c: Palette, verdict: Verdict) -> Div {
+    let (bg, border) = verdict_colors(c, verdict);
     div()
         .absolute()
         .inset_0()
         .rounded(px(c.radius.md))
-        .bg(c.primary.opacity(0.18))
+        .bg(bg)
         .border_1()
-        .border_color(c.primary.opacity(0.7))
+        .border_color(border)
 }
 
 fn to_f32(p: Pixels) -> f32 {
@@ -82,7 +106,10 @@ impl Workspace {
     // ── hover state ────────────────────────────────────────────────────
 
     pub(crate) fn clear_pane_dnd(&mut self, cx: &mut Context<Self>) {
-        self.pane_dnd = PaneDnd::default();
+        self.pane_dnd = PaneDnd {
+            spring_gen: self.pane_dnd.spring_gen.wrapping_add(1),
+            ..PaneDnd::default()
+        };
         self.tab_strip.drop_target = None;
         cx.notify();
     }
@@ -124,13 +151,59 @@ impl Workspace {
 
     // ── pane area ──────────────────────────────────────────────────────
 
+    /// Dry-run the drop of `payload` onto `target` of tab `dst`. `None`: the
+    /// drop would do nothing. Layouts that do not exist yet (a tab never
+    /// shown) cannot be judged and count as fitting; the real drop creates
+    /// them and decides.
+    fn dry_run(
+        &self,
+        payload: Payload,
+        dst: u64,
+        target: PaneId,
+        zone: DropZone,
+        cx: &App,
+    ) -> Option<Verdict> {
+        let (Some(dst_layout), (_, metrics)) = (self.layouts.get(&dst), self.pane_style(cx)) else {
+            return Some(Verdict::Fits);
+        };
+        let container = self.pane_container_px();
+        // Throwaway ids: a hover must not consume the real pane id counter.
+        let mut next = u64::MAX / 2;
+        let mut alloc = move || {
+            next += 1;
+            next
+        };
+        let plan = match payload {
+            Payload::Pane { pane, tab: src } => {
+                let Some(src_layout) = self.layouts.get(&src) else {
+                    return Some(Verdict::Fits);
+                };
+                let dst_layout = (src != dst).then_some(dst_layout);
+                plan_pane_drop(
+                    src_layout, dst_layout, pane, target, zone, container, &metrics, &mut alloc,
+                )
+            }
+            Payload::Tab { tab: src } => {
+                let Some(src_layout) = self.layouts.get(&src) else {
+                    return Some(Verdict::Fits);
+                };
+                plan_tab_drop(
+                    src_layout, dst_layout, target, zone, container, &metrics, &mut alloc,
+                )
+            }
+        };
+        verdict_of(&plan)
+    }
+
     /// The zone of tab `tab`'s pane area under `pos`, if `payload` may drop
-    /// there.
+    /// there. `prev` is the current hover: the dry run only repeats when the
+    /// pane or zone changed.
     fn drop_hover(
         &self,
         tab: u64,
         payload: Payload,
         pos: Point<Pixels>,
+        prev: Option<DropHover>,
         cx: &App,
     ) -> Option<DropHover> {
         let layout = self.layouts.get(&tab)?;
@@ -149,11 +222,17 @@ impl Workspace {
         if matches!(payload, Payload::Pane { pane, tab: t } if t == tab && pane == hit.pane) {
             return None;
         }
+        let same = |p: &DropHover| p.tab == tab && p.pane == hit.pane && p.zone == hit.zone;
+        let verdict = match prev.filter(same) {
+            Some(p) => p.verdict,
+            None => self.dry_run(payload, tab, hit.pane, hit.zone, cx)?,
+        };
         Some(DropHover {
             tab,
             pane: hit.pane,
             zone: hit.zone,
             preview: preview_rect(payload, tab, hit),
+            verdict,
         })
     }
 
@@ -167,7 +246,7 @@ impl Workspace {
     ) {
         let next = bounds
             .contains(&pos)
-            .then(|| self.drop_hover(tab, payload, pos, cx))
+            .then(|| self.drop_hover(tab, payload, pos, self.pane_dnd.hover, cx))
             .flatten();
         if self.pane_dnd.hover != next {
             self.pane_dnd.hover = next;
@@ -228,6 +307,7 @@ impl Workspace {
             DropZone::Bottom => 3,
             DropZone::Centre => 4,
         };
+        let (bg, border) = verdict_colors(c, hover.verdict);
         Some(
             div()
                 .absolute()
@@ -236,9 +316,19 @@ impl Workspace {
                 .w(px(r.w))
                 .h(px(r.h))
                 .rounded(px(c.radius.md))
-                .bg(c.primary.opacity(0.18))
+                .bg(bg)
                 .border_1()
-                .border_color(c.primary.opacity(0.7))
+                .border_color(border)
+                .when(hover.verdict == Verdict::NoRoom, |zone| {
+                    zone.flex()
+                        .items_center()
+                        .justify_center()
+                        .p_2()
+                        .text_xs()
+                        .text_center()
+                        .text_color(c.warning)
+                        .child("No room: panes need at least 240 x 120 px")
+                })
                 .motion_fade_in(("pane-drop-zone", hover.pane * 8 + zone_ix), c)
                 .into_any_element(),
         )
@@ -251,7 +341,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let hit = self.drop_hover(tab, payload, window.mouse_position(), cx);
+        let hit = self.drop_hover(tab, payload, window.mouse_position(), None, cx);
         self.clear_pane_dnd(cx);
         let Some(hit) = hit else {
             return;
@@ -282,14 +372,18 @@ impl Workspace {
             tab: drag.tab_id,
         };
         let (join, over) = if hovered {
-            let join =
-                (drag.tab_id != tab && self.payload_allowed(payload, tab, cx)).then_some(tab);
+            let join = (drag.tab_id != tab && self.payload_allowed(payload, tab, cx))
+                .then(|| {
+                    let target = self.focused_pane(tab);
+                    self.dry_run(payload, tab, target, DropZone::Centre, cx)
+                })
+                .flatten()
+                .map(|verdict| (tab, verdict));
             (join, Some(tab))
         } else {
-            let clear = |current: Option<u64>| if current == Some(tab) { None } else { current };
             (
-                clear(self.pane_dnd.tab_join),
-                clear(self.pane_dnd.over_block),
+                self.pane_dnd.tab_join.filter(|(t, _)| *t != tab),
+                self.pane_dnd.over_block.filter(|t| *t != tab),
             )
         };
         if join != self.pane_dnd.tab_join || over != self.pane_dnd.over_block {
@@ -327,6 +421,52 @@ impl Workspace {
             window,
             cx,
         );
+    }
+
+    /// A drag moved over (`hovered`) or away from tab block `tab`. Resting on
+    /// another tab for [`SPRING_DELAY`] opens it, so a tab or pane can be
+    /// dropped into panes of a tab that is not active yet.
+    pub(crate) fn tab_drag_spring(
+        &mut self,
+        tab: u64,
+        hovered: bool,
+        payload: Payload,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !hovered {
+            if self.pane_dnd.spring == Some(tab) {
+                self.pane_dnd.spring = None;
+                self.pane_dnd.spring_gen = self.pane_dnd.spring_gen.wrapping_add(1);
+            }
+            return;
+        }
+        let src = match payload {
+            Payload::Pane { tab, .. } | Payload::Tab { tab } => tab,
+        };
+        let active = self.tabs.read(cx).active_id();
+        if self.pane_dnd.spring == Some(tab)
+            || !spring_candidate(payload, tab, active, self.same_space(src, tab, cx))
+        {
+            return;
+        }
+        self.pane_dnd.spring = Some(tab);
+        self.pane_dnd.spring_gen = self.pane_dnd.spring_gen.wrapping_add(1);
+        let generation = self.pane_dnd.spring_gen;
+        cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor().timer(SPRING_DELAY).await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                let due = this.pane_dnd.spring_gen == generation
+                    && this.pane_dnd.spring == Some(tab)
+                    && cx.has_active_drag();
+                if due {
+                    this.pane_dnd.spring = None;
+                    this.pane_dnd.hover = None;
+                    this.select_tab(tab, window, cx);
+                }
+            });
+        })
+        .detach();
     }
 
     // ── tab strip / sidebar ────────────────────────────────────────────
@@ -684,10 +824,14 @@ impl Workspace {
     }
 
     /// The tab marker state for block `id` while a drag is active:
-    /// `(join highlight, end-of-strip marker)`.
-    pub(crate) fn tab_drop_hints(&self, id: u64, cx: &App) -> (bool, bool) {
+    /// `(join highlight with its verdict, end-of-strip marker)`.
+    pub(crate) fn tab_drop_hints(&self, id: u64, cx: &App) -> (Option<Verdict>, bool) {
         let dragging = cx.has_active_drag();
-        let join = dragging && self.pane_dnd.tab_join == Some(id);
+        let join = self
+            .pane_dnd
+            .tab_join
+            .filter(|(t, _)| dragging && *t == id)
+            .map(|(_, verdict)| verdict);
         let end =
             dragging && self.pane_dnd.over_block.is_none() && self.pane_dnd.strip_end == Some(id);
         (join, end)

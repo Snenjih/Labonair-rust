@@ -142,6 +142,46 @@ pub fn resolve_filesystem_root(
         .or_else(|| home.map(|path| path.to_string_lossy().into_owned()))
 }
 
+/// `(path, ssh_session_id)` the Explorer browses; `Some` id = remote host.
+pub type ExplorerTarget = (String, Option<String>);
+
+/// Per-pane override of whether the Explorer follows the pane's cwd.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExplorerMode {
+    Follow,
+    /// Stay put: at the stored target, or at the project root when `None`.
+    Pinned(Option<ExplorerTarget>),
+}
+
+/// Resolve the Explorer root for the focused pane; returns `(target, follows)`.
+///
+/// Without an override, standalone spaces and SSH panes follow the pane's cwd
+/// while project spaces stay on their project root. A pane without a live cwd
+/// (an editor) keeps the last followed target (`sticky`) instead of snapping
+/// to home.
+pub fn resolve_explorer_root(
+    mode: Option<&ExplorerMode>,
+    project_root: Option<PathBuf>,
+    live: Option<ExplorerTarget>,
+    sticky: Option<ExplorerTarget>,
+    home: Option<PathBuf>,
+) -> (Option<ExplorerTarget>, bool) {
+    let follows = match mode {
+        Some(mode) => *mode == ExplorerMode::Follow,
+        None => project_root.is_none() || live.as_ref().is_some_and(|(_, ssh)| ssh.is_some()),
+    };
+    let local = |path: PathBuf| (path.to_string_lossy().into_owned(), None);
+    let target = if follows {
+        live.or(sticky).or(project_root.map(local))
+    } else {
+        match mode {
+            Some(ExplorerMode::Pinned(Some(target))) => Some(target.clone()),
+            _ => project_root.map(local).or(sticky),
+        }
+    };
+    (target.or(home.map(local)), follows)
+}
+
 /// Resolve the repository root used by workspace-owned Git surfaces.
 ///
 /// Git deliberately has no home-directory fallback: an unscoped standalone
@@ -174,6 +214,30 @@ pub fn resolve_terminal_cwd(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn explorer_root_defaults_and_overrides() {
+        let t = |p: &str| (p.to_string(), None);
+        let proj = Some(PathBuf::from("/proj"));
+        let home = Some(PathBuf::from("/home"));
+        // Standalone follows the live cwd; an editor (no cwd) keeps the sticky one.
+        let r = |mode, project: Option<PathBuf>, live, sticky| {
+            resolve_explorer_root(mode, project, live, sticky, home.clone())
+        };
+        assert_eq!(r(None, None, Some(t("/a")), None), (Some(t("/a")), true));
+        assert_eq!(r(None, None, None, Some(t("/a"))), (Some(t("/a")), true));
+        assert_eq!(r(None, None, None, None), (Some(t("/home")), true));
+        // Project spaces stay on the project root by default.
+        assert_eq!(r(None, proj.clone(), Some(t("/a")), None), (Some(t("/proj")), false));
+        // Opt in to following, and pin at a path.
+        let follow = ExplorerMode::Follow;
+        assert_eq!(r(Some(&follow), proj.clone(), Some(t("/a")), None), (Some(t("/a")), true));
+        let pinned = ExplorerMode::Pinned(Some(t("/pin")));
+        assert_eq!(r(Some(&pinned), None, Some(t("/a")), None), (Some(t("/pin")), false));
+        // SSH panes follow even inside a project space.
+        let ssh = ("/remote".to_string(), Some("s1".to_string()));
+        assert_eq!(r(None, proj, Some(ssh.clone()), None), (Some(ssh), true));
+    }
     use super::*;
 
     #[test]

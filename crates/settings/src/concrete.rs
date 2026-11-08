@@ -918,7 +918,7 @@ impl WorkspaceSettings {
     }
 
     pub fn show_nav_history_buttons(&self) -> bool {
-        self.0.show_nav_history_buttons.unwrap_or(true)
+        self.0.show_nav_history_buttons.unwrap_or(false)
     }
 
     pub fn show_tab_bar_buttons(&self) -> bool {

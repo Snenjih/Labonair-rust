@@ -278,6 +278,17 @@ rejection changes nothing:
 | tab | pane zone or bar, centre | same, along the target's longer axis, other axis as fallback |
 | tab | tab block | reorder (`TabStore::reorder`, pinned and Space guards unchanged) |
 
+Feedback while dragging. Every hover dry-runs the plan on the layouts
+(`DropHover::verdict`, `tab_join`): a fitting drop is highlighted in the primary
+colour, one that would fall below the 240 x 120 px minimum in the warning colour
+with "No room", and a drop that would do nothing gets no highlight. The dry run
+repeats only when the pane or zone changes and uses throwaway pane ids. Resting a
+drag on another tab block of the same Space for 500 ms opens that tab
+(`tab_drag_spring`, `spring_candidate`), so the dragged tab or pane can be
+dropped into its panes; the active tab, the drag's own tab and other Spaces never
+spring. The rows of the hover list are `DraggedPane` sources (the list closes
+once the drag is active).
+
 `pane_drop` owns the hover state (`PaneDnd`), registers the typed handlers
 (`on_drag_move` / `on_drop` for `DraggedPane` and `DraggedTab` on the pane
 area, `DraggedPane` on tab blocks and the strip), paints the zone overlay and

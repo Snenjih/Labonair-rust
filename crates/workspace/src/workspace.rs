@@ -654,6 +654,12 @@ pub struct Workspace {
     /// Kind / title / dirty metadata of every pane (the pure half of the
     /// `PaneId`-keyed store; the views live in the maps below).
     pub(crate) pane_meta: crate::pane_kind::PaneMetaStore,
+    /// Per-pane Explorer follow/pin override (runtime only; default comes from
+    /// the space kind, see `context::resolve_explorer_root`).
+    pub(crate) explorer_modes: HashMap<PaneId, context::ExplorerMode>,
+    /// Last Explorer target a following pane reported, kept for panes that
+    /// have no live cwd (editors).
+    explorer_sticky: std::cell::RefCell<Option<context::ExplorerTarget>>,
     /// Editor panes that are not the first pane of their document.
     pub(crate) editor_aliases: HashMap<PaneId, crate::pane_items::EditorBinding>,
     /// Per-tab zoom overlay (runtime only).
@@ -1012,6 +1018,8 @@ impl Workspace {
             svg_previews: HashMap::new(),
             editor_side_previews: HashMap::new(),
             pane_meta: crate::pane_kind::PaneMetaStore::new(),
+            explorer_modes: HashMap::new(),
+            explorer_sticky: std::cell::RefCell::new(None),
             editor_aliases: HashMap::new(),
             zoom: crate::zoom::ZoomState::default(),
             fresh_pane: None,
@@ -1240,17 +1248,55 @@ impl Workspace {
     }
 
     /// The `(path, ssh_session_id)` pair the sidebar Explorer should browse.
-    /// `ssh_session_id` is `Some` while the active tab is a connected SSH
+    /// `ssh_session_id` is `Some` while the focused pane is a connected SSH
     /// terminal, so Explorer lists the remote host over SFTP instead of the
-    /// local disk. `active_cwd` already reports the *remote* OSC-7 cwd for an
-    /// SSH terminal — feeding that straight into `filesystem_root`'s local
-    /// resolution used to point Explorer at a path that only exists on the
-    /// remote host, which is why it rendered empty during SSH sessions.
-    pub fn explorer_root(&self, cx: &App) -> Option<(String, Option<String>)> {
-        if let Some(ssh_id) = self.active_ssh_session_id(cx) {
-            return self.active_cwd(cx).map(|cwd| (cwd, Some(ssh_id)));
+    /// local disk. Whether it follows the pane's cwd or stays put is decided
+    /// per pane (`context::resolve_explorer_root`).
+    pub fn explorer_root(&self, cx: &App) -> Option<context::ExplorerTarget> {
+        self.explorer_resolve(cx).0
+    }
+
+    /// Whether the Explorer currently follows the focused pane's cwd.
+    pub fn explorer_follows(&self, cx: &App) -> bool {
+        self.explorer_resolve(cx).1
+    }
+
+    /// Flip the focused pane between following and staying at its current root.
+    pub fn toggle_explorer_follow(&mut self, cx: &mut Context<Self>) {
+        let Some((_, pane)) = self.active_pane(cx) else {
+            return;
+        };
+        let (target, follows) = self.explorer_resolve(cx);
+        let mode = if follows {
+            context::ExplorerMode::Pinned(target)
+        } else {
+            context::ExplorerMode::Follow
+        };
+        self.explorer_modes.insert(pane, mode);
+        cx.notify();
+    }
+
+    fn explorer_resolve(&self, cx: &App) -> (Option<context::ExplorerTarget>, bool) {
+        let mode = self
+            .active_pane(cx)
+            .and_then(|(_, pane)| self.explorer_modes.get(&pane));
+        let live = self
+            .active_cwd(cx)
+            .map(|cwd| (cwd, self.active_ssh_session_id(cx)));
+        let (target, follows) = context::resolve_explorer_root(
+            mode,
+            self.context
+                .identity()
+                .project_root()
+                .map(std::path::Path::to_path_buf),
+            live.clone(),
+            self.explorer_sticky.borrow().clone(),
+            dirs::home_dir(),
+        );
+        if follows && live.is_some() {
+            *self.explorer_sticky.borrow_mut() = live;
         }
-        self.filesystem_root(cx).map(|root| (root, None))
+        (target, follows)
     }
 
     /// The live SSH connection id backing the active tab's terminal, if any.

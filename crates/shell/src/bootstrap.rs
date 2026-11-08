@@ -738,8 +738,18 @@ pub(crate) fn bootstrap(
                     ws.update(cx, |w, cx| w.open_preview(target, window, cx));
                 }
             },
-            move |cx| ws.read(cx).active_file_path(cx),
+            {
+                let ws = ws.clone();
+                move |cx| ws.read(cx).active_file_path(cx)
+            },
             explorer_remote,
+        )
+        .with_follow(
+            {
+                let ws = ws.clone();
+                move |cx| ws.read(cx).explorer_follows(cx)
+            },
+            move |cx| ws.update(cx, |w, cx| w.toggle_explorer_follow(cx)),
         )
     };
     let explorer = cx.new(|cx| ExplorerView::new(theme.clone(), explorer_host, tokio.clone(), cx));
@@ -758,6 +768,7 @@ pub(crate) fn bootstrap(
             explorer.update(cx, |e, cx| {
                 e.set_root_str(root, ssh_id.flatten(), cx);
                 e.notify_active_file_changed(cx);
+                cx.notify();
             });
         }
     })

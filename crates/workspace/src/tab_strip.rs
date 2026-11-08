@@ -21,6 +21,7 @@ use labonair_ui_kit::{
     MenuItem, MotionExt, Palette, SubmenuHoverSource, TabDropSide, TabLayout, TabStyle, Tooltip,
 };
 
+use crate::pane_dnd::Payload;
 use crate::pane_drop::tab_join_highlight;
 use crate::pane_group_naming::group_label;
 use crate::pane_view::PaneDragChip;
@@ -264,7 +265,9 @@ impl Workspace {
                 row.tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
             })
             .children(marker)
-            .when(join, |row| row.child(tab_join_highlight(c)))
+            .when_some(join, |row, verdict| {
+                row.child(tab_join_highlight(c, verdict))
+            })
             .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
                 let pos = window.mouse_position();
                 let anchor = if sidebar {
@@ -307,18 +310,27 @@ impl Workspace {
                 },
             )
             .on_drag_move(
-                cx.listener(move |this, ev: &DragMoveEvent<DraggedPane>, _window, cx| {
+                cx.listener(move |this, ev: &DragMoveEvent<DraggedPane>, window, cx| {
                     let hovered = ev.bounds.contains(&ev.event.position);
                     let drag = ev.drag(cx).clone();
                     this.tab_pane_drag_over(id, hovered, &drag, cx);
+                    let payload = Payload::Pane {
+                        pane: drag.pane_id,
+                        tab: drag.tab_id,
+                    };
+                    this.tab_drag_spring(id, hovered, payload, window, cx);
                 }),
             )
             .on_drop(cx.listener(move |this, dragged: &DraggedPane, window, cx| {
                 this.drop_pane_on_tab(dragged, id, window, cx);
             }))
             .on_drag_move(
-                cx.listener(move |this, ev: &DragMoveEvent<DraggedTab>, _window, cx| {
+                cx.listener(move |this, ev: &DragMoveEvent<DraggedTab>, window, cx| {
                     let hovered = ev.bounds.contains(&ev.event.position);
+                    let payload = Payload::Tab {
+                        tab: ev.drag(cx).id,
+                    };
+                    this.tab_drag_spring(id, hovered, payload, window, cx);
                     let current = this.tab_strip.drop_target;
                     let next = if hovered {
                         let dragged = ev.drag(cx).id;
@@ -399,7 +411,7 @@ impl Workspace {
                     settings.show_tab_bar_buttons(),
                 )
             })
-            .unwrap_or((true, true));
+            .unwrap_or((false, true));
         let editor_history = self.active_editor_history_state(cx);
         let can_cycle_tabs = tabs.len() > 1;
         let (can_go_back, can_go_forward) =

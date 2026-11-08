@@ -9,13 +9,13 @@
 //! [`pane_frame`] and a [`pane_bar`]. Zoom paints only the zoomed pane; the
 //! rest of the tree keeps its layout state but is not rendered until zoom ends.
 
-use labonair_settings::Settings as _;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     canvas, div, px, AnyElement, AppContext, ClickEvent, Context, DragMoveEvent,
     InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point,
     Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
+use labonair_settings::Settings as _;
 use labonair_ui_kit::{
     pane_bar, pane_frame, IconName, MotionExt, Palette, PaneAction, PaneLayoutStyle,
 };
@@ -446,7 +446,11 @@ impl Workspace {
             .child(bar)
             .child(body)
             .when(ctx.dim_inactive && !focused, |frame| {
-                let radius = if ctx.style.is_framed() { c.radius.lg } else { 0.0 };
+                let radius = if ctx.style.is_framed() {
+                    c.radius.lg
+                } else {
+                    0.0
+                };
                 frame.child(
                     div()
                         .absolute()
@@ -457,7 +461,11 @@ impl Workspace {
             })
             // An overlay, not a border: the outline must not shift the content.
             .when_some(ctx.highlight.filter(|_| focused), |frame, color| {
-                let radius = if ctx.style.is_framed() { c.radius.lg } else { 0.0 };
+                let radius = if ctx.style.is_framed() {
+                    c.radius.lg
+                } else {
+                    0.0
+                };
                 frame.child(
                     div()
                         .absolute()
@@ -470,7 +478,9 @@ impl Workspace {
         // Only the new pane fades in; fading the split source would blank it
         // for a frame (it is first mounted as a frame here, at opacity 0).
         if ctx.fresh == Some(pane) {
-            frame.motion_fade_in(("pane-in", pane), c).into_any_element()
+            frame
+                .motion_fade_in(("pane-in", pane), c)
+                .into_any_element()
         } else {
             frame.into_any_element()
         }

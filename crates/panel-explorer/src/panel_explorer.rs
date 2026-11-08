@@ -1872,6 +1872,22 @@ impl Render for ExplorerView {
                         this.toggle_search(window, cx)
                     })),
             );
+        if let Some(follows) = self.host.follows(cx) {
+            toolbar = toolbar.child(
+                icon_button_builder("explorer-follow", c.palette, IconName::Link)
+                    .size(ButtonSize::IconXs)
+                    .selected(follows)
+                    .tooltip(if follows {
+                        "Following this pane's folder — click to stay here"
+                    } else {
+                        "Staying put — click to follow this pane's folder"
+                    })
+                    .render()
+                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                        this.host.toggle_follow(cx)
+                    })),
+            );
+        }
 
         if show_inline_actions {
             let nf_root = root.clone();

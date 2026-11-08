@@ -340,6 +340,7 @@ impl Workspace {
         self.retire_preview_pane(pane);
         self.retire_sftp_pane(pane, cx);
         self.pane_meta.remove(pane);
+        self.explorer_modes.remove(&pane);
     }
 
     /// Refresh the metadata the tab label and close confirmation read.

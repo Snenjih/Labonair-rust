@@ -16,14 +16,15 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, AnyElement, App, Context, InteractiveElement, IntoElement, ParentElement, Pixels,
-    Point, StatefulInteractiveElement, Styled, Window,
+    div, px, AnyElement, App, AppContext, Context, InteractiveElement, IntoElement, ParentElement,
+    Pixels, Point, StatefulInteractiveElement, Styled, Window,
 };
 use labonair_ui_kit::{popover_with_exit, IconName, ListItem, Palette, PresenceSlot};
 
 use crate::pane::PaneId;
 use crate::pane_group_naming::{hover_list_allowed, pane_list, HoverGate};
-use crate::Workspace;
+use crate::pane_view::PaneDragChip;
+use crate::{DraggedPane, Workspace};
 
 /// How long the pointer must rest on a tab before the list opens.
 pub(crate) const HOVER_DELAY: Duration = Duration::from_millis(350);
@@ -204,6 +205,12 @@ impl Workspace {
             .into_iter()
             .map(|entry| {
                 let pane: PaneId = entry.id;
+                let drag = DraggedPane {
+                    pane_id: pane,
+                    tab_id: target.tab,
+                    label: entry.title.clone().into(),
+                    icon: entry.icon,
+                };
                 ListItem::new(("tab-hover-pane", pane), c)
                     .icon(entry.icon)
                     .selected(entry.active)
@@ -223,6 +230,13 @@ impl Workspace {
                         this.close_tab_hover(cx);
                         this.activate_pane(pane, window, cx);
                     }))
+                    // Drag a pane out of the list into any pane area or tab;
+                    // the list closes itself once the drag is active.
+                    .extra(move |row| {
+                        row.on_drag(drag, move |drag, grab, _, cx| {
+                            cx.new(|_| PaneDragChip::new(drag.label.clone(), drag.icon, c, grab))
+                        })
+                    })
                     .into_any_element()
             })
             .collect();

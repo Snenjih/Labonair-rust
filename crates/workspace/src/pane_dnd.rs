@@ -89,6 +89,40 @@ pub(crate) fn drop_allowed(payload: Payload, dst_tab: u64, guard: DropGuard) -> 
         }
 }
 
+/// What a hover tells the user about the drop it would trigger.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Verdict {
+    /// The drop would succeed.
+    Fits,
+    /// The drop is meaningful but a pane would fall below the pixel minimum.
+    NoRoom,
+}
+
+/// Verdict of a dry-run plan; `None` for a drop that does nothing (no
+/// highlight at all).
+pub(crate) fn verdict_of(plan: &Result<DropPlan, DropError>) -> Option<Verdict> {
+    match plan {
+        Ok(_) => Some(Verdict::Fits),
+        Err(DropError::NoRoom) => Some(Verdict::NoRoom),
+        Err(DropError::Invalid) => None,
+    }
+}
+
+/// Whether resting a drag on tab block `hovered` should switch to that tab
+/// (spring-loaded tabs), so the user can drop into its panes. Never the
+/// active tab, the drag's own tab, or a tab of another Space.
+pub(crate) fn spring_candidate(
+    payload: Payload,
+    hovered: u64,
+    active: u64,
+    same_space: bool,
+) -> bool {
+    let src = match payload {
+        Payload::Pane { tab, .. } | Payload::Tab { tab } => tab,
+    };
+    same_space && hovered != active && hovered != src
+}
+
 // ───────────────────────────── hit testing ───────────────────────────────
 
 /// The pane under the pointer, its raw zone and its rectangle.
@@ -467,6 +501,54 @@ mod tests {
         // Panes may leave a pinned group: the tab keeps at least one pane.
         let pane = Payload::Pane { pane: 5, tab: 1 };
         assert!(drop_allowed(pane, 2, guard(true, true, 1)));
+    }
+
+    #[test]
+    fn spring_skips_active_own_and_foreign_space_tabs() {
+        let pane = Payload::Pane { pane: 5, tab: 1 };
+        let tab = Payload::Tab { tab: 1 };
+        for p in [pane, tab] {
+            assert!(spring_candidate(p, 2, 3, true));
+            assert!(!spring_candidate(p, 3, 3, true), "already active");
+            assert!(!spring_candidate(p, 1, 3, true), "the drag's own tab");
+            assert!(!spring_candidate(p, 2, 3, false), "other Space");
+        }
+    }
+
+    #[test]
+    fn verdict_separates_no_room_from_a_no_op() {
+        let mut alloc = alloc_from(100);
+        let fits = plan_tab_drop(
+            &single(1),
+            &single(10),
+            10,
+            DropZone::Centre,
+            CONTAINER,
+            &metrics(),
+            &mut alloc,
+        );
+        assert_eq!(verdict_of(&fits), Some(Verdict::Fits));
+        let tiny = PxRect::new(0.0, 0.0, 300.0, 200.0);
+        let no_room = plan_tab_drop(
+            &single(1),
+            &single(10),
+            10,
+            DropZone::Centre,
+            tiny,
+            &metrics(),
+            &mut alloc,
+        );
+        assert_eq!(verdict_of(&no_room), Some(Verdict::NoRoom));
+        let invalid = plan_tab_drop(
+            &single(1),
+            &single(10),
+            99,
+            DropZone::Centre,
+            CONTAINER,
+            &metrics(),
+            &mut alloc,
+        );
+        assert_eq!(verdict_of(&invalid), None);
     }
 
     // ── pane moves ─────────────────────────────────────────────────────

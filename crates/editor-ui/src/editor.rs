@@ -78,9 +78,9 @@ use labonair_notifications::{notification_center, Notification};
 use labonair_theme::{modal_scrim, ThemeStore};
 use labonair_ui_kit::{
     banner, button, button_disabled, context_menu, icon_button_builder, popover_menu,
-    select_popover, select_trigger, text_field, text_field_surface, text_input, ButtonSize,
-    ButtonVariant, IconButtonShape, IconName, InputEvent, InputState, ListItem, MenuItem, Palette,
-    SelectOption, SelectPopoverAnchor, Severity, SubmenuHoverSource, TextFieldState, Tooltip,
+    select_popover, text_field, text_field_surface, text_input, ButtonSize, ButtonVariant,
+    IconButtonShape, IconName, InputEvent, InputState, ListItem, MenuItem, Palette, SelectOption,
+    SelectPopoverAnchor, Severity, SubmenuHoverSource, TextFieldState, Tooltip,
 };
 
 type CallHierarchyNavigator = Rc<dyn Fn(String, LspPosition, &mut Window, &mut App)>;
@@ -8575,6 +8575,7 @@ impl EditorView {
     pub fn mirror_element(
         &mut self,
         group: labonair_editor::EditorGroupId,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let theme = self.theme.read(cx);
@@ -8617,9 +8618,34 @@ impl EditorView {
                     )
                     .child(SharedString::from(row.text(&snapshot)))
             });
-        div()
+        // Same toolbar as the live pane, so an unfocused editor pane keeps its
+        // title/breadcrumb and actions. Pressing it focuses the group first.
+        let symbols = self.symbols_for_snapshot(&snapshot);
+        let breadcrumb_state = build_breadcrumb_state(
+            self.doc.file_state(),
+            self.doc.path.as_deref(),
+            &symbols,
+            self.doc.cursor.line,
+            EDITOR_BREADCRUMB_MAX_PATH_CHARS,
+        );
+        let toolbar = self
+            .render_editor_toolbar(breadcrumb_state, palette, true, window, cx)
+            .map(|toolbar| {
+                div().w_full().flex_shrink_0().child(toolbar).on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _: &MouseDownEvent, _window, cx| {
+                        if this.focus_editor_group(group) {
+                            cx.emit(EditorEvent::GroupFocused(group));
+                            cx.emit(EditorEvent::Changed);
+                            cx.notify();
+                        }
+                    }),
+                )
+            });
+        let body = div()
             .id(("editor-mirror", group.value()))
-            .size_full()
+            .flex_1()
+            .min_h_0()
             .overflow_hidden()
             .bg(bg)
             .children(rows)
@@ -8647,7 +8673,13 @@ impl EditorView {
                     }
                     cx.stop_propagation();
                 }),
-            )
+            );
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .children(toolbar)
+            .child(body)
             .into_any_element()
     }
 
@@ -8664,14 +8696,18 @@ impl EditorView {
             .iter()
             .map(|range| snapshot.text_range(*range).chars().count())
             .sum::<usize>();
-        let mut left = div().flex().items_center().gap_2();
+        let info = |id: &'static str, text: String| {
+            button_disabled(id, palette, ButtonVariant::Info, ButtonSize::Xxs)
+                .child(SharedString::from(text))
+        };
+        let mut left = div().flex().items_center().gap_1();
         if self.prefs.show_cursor_position() {
             left = left.child(
                 button(
                     "editor-cursor-position",
                     palette,
-                    ButtonVariant::Transparent,
-                    ButtonSize::Xs,
+                    ButtonVariant::Info,
+                    ButtonSize::Xxs,
                 )
                 .child(SharedString::from(format!(
                     "Ln {}, Col {}",
@@ -8686,14 +8722,17 @@ impl EditorView {
         }
         if self.prefs.show_selection_stats() {
             if self.prefs.show_cursor_position() {
-                left = left.child(SharedString::from("·"));
+                left = left.child(info("editor-separator", "·".into()));
             }
-            left = left.child(SharedString::from(format!(
-                "{} selection{} · {} chars",
-                selection_set.len(),
-                if selection_set.len() == 1 { "" } else { "s" },
-                selected_chars
-            )));
+            left = left.child(info(
+                "editor-selection-stats",
+                format!(
+                    "{} selection{} · {} chars",
+                    selection_set.len(),
+                    if selection_set.len() == 1 { "" } else { "s" },
+                    selected_chars
+                ),
+            ));
         }
         if let Some(vim) = self.vim.as_ref() {
             let label = vim.command_line().map_or_else(
@@ -8707,18 +8746,22 @@ impl EditorView {
                 },
                 |(prefix, text)| format!("{prefix}{text}"),
             );
-            left = left.child(SharedString::from(format!("VIM · {label}")));
+            left = left.child(info("editor-vim-status", format!("VIM · {label}")));
         }
         if let Some(helix) = self.helix.as_ref() {
-            left = left.child(SharedString::from(format!("HELIX · {}", helix.status())));
+            left = left.child(info(
+                "editor-helix-status",
+                format!("HELIX · {}", helix.status()),
+            ));
         }
         let language = self.doc.language;
-        let language_trigger = select_trigger(
+        let language_trigger = button(
             "editor-language-menu",
             palette,
-            language.label(),
-            self.language_menu_anchor.is_some(),
+            ButtonVariant::Info,
+            ButtonSize::Xxs,
         )
+        .child(SharedString::from(language.label()))
         .tooltip(|window, cx| Tooltip::new("Select language mode").build(window, cx))
         .on_click(cx.listener(|this, event: &ClickEvent, _window, cx| {
             this.language_menu_anchor = Some(Point {
@@ -8731,20 +8774,20 @@ impl EditorView {
         let mut right = div()
             .flex()
             .items_center()
-            .gap_2()
+            .gap_1()
             .child(language_trigger)
-            .child(SharedString::from(format!(
-                "{} lines",
-                snapshot.line_count()
-            )));
+            .child(info(
+                "editor-line-count",
+                format!("{} lines", snapshot.line_count()),
+            ));
         if language_service_controls_available(&self.language_service_snapshot) {
             let service_label =
                 language_service_status_label(self.language_service_snapshot.status);
             let trigger = button(
                 "editor-language-service-status",
                 palette,
-                ButtonVariant::Transparent,
-                ButtonSize::Xs,
+                ButtonVariant::Info,
+                ButtonSize::Xxs,
             )
             .child(SharedString::from(format!("LSP · {service_label}")))
             .tooltip(|window, cx| {
@@ -8780,8 +8823,8 @@ impl EditorView {
                 button(
                     "editor-diagnostics-status",
                     palette,
-                    ButtonVariant::Transparent,
-                    ButtonSize::Xs,
+                    ButtonVariant::Info,
+                    ButtonSize::Xxs,
                 )
                 .child(SharedString::from(label))
                 .tooltip(move |window, cx| Tooltip::new(tooltip).build(window, cx))
@@ -8818,11 +8861,7 @@ impl EditorView {
                 blame.summary
             );
             right = right.child(
-                div()
-                    .id("editor-git-blame-status")
-                    .text_xs()
-                    .text_color(theme.muted_foreground())
-                    .child(SharedString::from(label))
+                info("editor-git-blame-status", label)
                     .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx)),
             );
         }
@@ -8845,8 +8884,8 @@ impl EditorView {
                 let trigger = button(
                     "editor-line-ending-menu",
                     palette,
-                    ButtonVariant::Transparent,
-                    ButtonSize::Xs,
+                    ButtonVariant::Info,
+                    ButtonSize::Xxs,
                 )
                 .child(SharedString::from(ending_label))
                 .tooltip(|window, cx| Tooltip::new("Change line ending").build(window, cx))
@@ -8863,7 +8902,7 @@ impl EditorView {
                 );
                 right = right.child(trigger);
             } else {
-                right = right.child(SharedString::from(ending_label));
+                right = right.child(info("editor-line-ending", ending_label.to_string()));
             }
             let can_reopen_encoding = self.doc.path.is_some()
                 && matches!(
@@ -8874,8 +8913,8 @@ impl EditorView {
                 let trigger = button(
                     "editor-encoding-menu",
                     palette,
-                    ButtonVariant::Transparent,
-                    ButtonSize::Xs,
+                    ButtonVariant::Info,
+                    ButtonSize::Xxs,
                 )
                 .child(SharedString::from(format.encoding.as_str()))
                 .tooltip(|window, cx| Tooltip::new("Reopen with encoding").build(window, cx))
@@ -8892,18 +8931,19 @@ impl EditorView {
                 );
                 right = right.child(trigger);
             } else {
-                right = right.child(SharedString::from(format.encoding.as_str()));
+                right = right.child(info(
+                    "editor-encoding",
+                    format.encoding.as_str().to_string(),
+                ));
             }
             if format.bom != labonair_editor::lifecycle::Bom::None {
-                right = right.child("BOM");
+                right = right.child(info("editor-bom", "BOM".to_string()));
             }
         }
         div()
             .flex()
             .items_center()
-            .gap_2()
-            .text_xs()
-            .text_color(palette.muted)
+            .gap_1()
             .child(left)
             .child(div().w(px(1.0)).h(px(14.0)).bg(palette.border))
             .child(right)
@@ -9098,6 +9138,7 @@ impl EditorView {
         &mut self,
         breadcrumb_state: BreadcrumbState,
         palette: Palette,
+        mirror: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
@@ -9294,7 +9335,8 @@ impl EditorView {
 
         row = row.child(actions);
         let mut toolbar = div().flex().flex_col().w_full().flex_shrink_0().child(row);
-        if quick_actions && self.buffer_search_open {
+        // The search bar belongs to the focused group, never to a mirror.
+        if quick_actions && self.buffer_search_open && !mirror {
             toolbar = toolbar.children(self.render_buffer_search_bar(palette, window, cx));
         }
         Some(toolbar.into_any_element())
@@ -11964,6 +12006,7 @@ impl Render for EditorView {
         buffer_surface = buffer_surface.children(self.render_editor_toolbar(
             breadcrumb_state,
             ui_palette,
+            false,
             window,
             cx,
         ));

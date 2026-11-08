@@ -37,7 +37,7 @@ impl Workspace {
     pub(super) fn editor_pane_body(
         &mut self,
         pane: PaneId,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let Some((editor, group)) = self.editor_binding(pane, cx) else {
@@ -46,7 +46,7 @@ impl Workspace {
         if editor.read(cx).active_group() == group {
             editor.into_any_element()
         } else {
-            editor.update(cx, |e, cx| e.mirror_element(group, cx))
+            editor.update(cx, |e, cx| e.mirror_element(group, window, cx))
         }
     }
 
