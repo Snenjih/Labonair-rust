@@ -601,7 +601,33 @@ impl SettingsView {
                 let readout = slider_readout(current, int, field.meta.unit);
                 match self.slider_state(field, current, window, cx) {
                     Some(state) => {
-                        slider_control(&state, *c, readout, field_disabled).into_any_element()
+                        // Keyboard focus rings the slider itself (rounded, like the
+                        // switch above), not the whole row.
+                        let surface = div()
+                            .id(SharedString::from(format!("settings-slider-{json_path}")))
+                            .rounded(px(c.radius.sm))
+                            .border_1()
+                            .border_color(gpui::transparent_black())
+                            .child(slider_control(&state, *c, readout, field_disabled));
+                        if field_disabled {
+                            surface.into_any_element()
+                        } else {
+                            surface
+                                .tab_index(0)
+                                .focus(|style| style.border_color(c.ring))
+                                .on_key_down(cx.listener(
+                                    move |this, event: &KeyDownEvent, _w, cx| {
+                                        let direction = match event.keystroke.key.as_str() {
+                                            "left" | "down" => -1.0,
+                                            "right" | "up" => 1.0,
+                                            _ => return,
+                                        };
+                                        this.step_slider(json_path, direction, cx);
+                                        cx.stop_propagation();
+                                    },
+                                ))
+                                .into_any_element()
+                        }
                     }
                     None => div().into_any_element(),
                 }
@@ -760,26 +786,12 @@ impl SettingsView {
             row.control(control).into_any_element()
         };
 
-        let is_slider = matches!(field.control, FieldControl::Slider { .. });
         div()
             .id(SharedString::from(format!("field-row-{json_path}")))
             .group("settings-field-row")
             .w_full()
             .min_w_0()
             .when(highlighted, |d| d.bg(c.selected_fill.opacity(0.7)))
-            .when(is_slider && !field_disabled, |d| {
-                d.tab_index(0)
-                    .focus(|style| style.bg(c.accent))
-                    .on_key_down(cx.listener(move |this, event: &KeyDownEvent, _w, cx| {
-                        let direction = match event.keystroke.key.as_str() {
-                            "left" | "down" => -1.0,
-                            "right" | "up" => 1.0,
-                            _ => return,
-                        };
-                        this.step_slider(json_path, direction, cx);
-                        cx.stop_propagation();
-                    }))
-            })
             .child(content)
             .into_any_element()
     }
