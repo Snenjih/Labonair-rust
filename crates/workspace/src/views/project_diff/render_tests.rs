@@ -47,6 +47,8 @@ struct FakeGit {
     diffs: Mutex<HashMap<(String, bool), String>>,
     /// Whole-file patches answered by `diff_full`; absent paths fall back.
     fulls: Mutex<HashMap<(String, bool), String>>,
+    /// Patch answered by `commit_diff`.
+    commit_patch: Mutex<Option<String>>,
     calls: Arc<Mutex<Vec<String>>>,
 }
 
@@ -176,7 +178,27 @@ impl GitService for FakeGit {
         _hash: String,
         _session_id: Option<String>,
     ) -> GitFuture<String> {
-        unsupported()
+        match self.commit_patch.lock().unwrap().clone() {
+            Some(text) => Box::pin(async move { Ok(text) }),
+            None => unsupported(),
+        }
+    }
+
+    fn commit_header(
+        &self,
+        _path: String,
+        hash: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<CommitHeader> {
+        Box::pin(async move {
+            Ok(CommitHeader {
+                hash,
+                author_name: "Ada".into(),
+                author_email: "ada@example.dev".into(),
+                timestamp: 1_700_000_000,
+                message: "Fix the thing\n\nBecause it was broken.".into(),
+            })
+        })
     }
 
     fn stash_diff(
@@ -872,4 +894,30 @@ fn cursor_moves_tell_the_host_which_file_is_active(cx: &mut TestAppContext) {
     h.view
         .update(cx, |v, cx| v.perform(DiffAction::GoToHunk, cx));
     assert_eq!(seen.lock().unwrap().len(), 1);
+}
+
+#[gpui::test]
+fn commit_source_shows_header_and_read_only_files(cx: &mut TestAppContext) {
+    let (h, cx) = harness_with(cx, |git| {
+        *git.commit_patch.lock().unwrap() = Some(STAGED.to_string());
+    });
+    let mut req = request();
+    req.source = DiffSource::Commit {
+        hash: "abc1234def".into(),
+        subject: "Fix the thing".into(),
+    };
+    req.files.clear();
+    h.view.update(cx, |v, cx| v.apply_request(req, cx));
+    wait_until(cx, |cx| {
+        h.view
+            .read_with(cx, |v, _| !v.doc.is_empty() && v.commit_header.is_some())
+    });
+    draw(cx, &h.view, 1200.0);
+    h.view.read_with(cx, |v, _| {
+        let header = v.commit_header.as_ref().unwrap();
+        assert_eq!(header.hash, "abc1234def");
+        assert_eq!(header.author_name, "Ada");
+        assert!(!v.supports_staging());
+        assert_eq!(v.doc.files[0].hunks[0].stage, HunkStage::ReadOnly);
+    });
 }

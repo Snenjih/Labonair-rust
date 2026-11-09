@@ -26,6 +26,18 @@ pub struct CommitInfo {
     pub deletions: u32,
 }
 
+/// The message block of one commit (what the diff view shows above its files).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitHeader {
+    pub hash: String,
+    pub author_name: String,
+    pub author_email: String,
+    /// Author time, seconds since the Unix epoch.
+    pub timestamp: i64,
+    /// Full commit message (subject, blank line, body).
+    pub message: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SubmoduleState {
@@ -176,6 +188,15 @@ pub trait GitService: Send + Sync {
         session_id: Option<String>,
     ) -> GitFuture<String> {
         self.diff(path, file, staged, Some(false), is_untracked, session_id)
+    }
+    /// Author, time and full message of `hash`.
+    fn commit_header(
+        &self,
+        _path: String,
+        _hash: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<CommitHeader> {
+        Box::pin(async { Err("commit details are not available".to_string()) })
     }
     fn blame_line(
         &self,

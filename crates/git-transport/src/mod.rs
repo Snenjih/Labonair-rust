@@ -1380,6 +1380,49 @@ pub async fn git_get_commit_diff(
     Ok(truncate_diff(&stdout, MAX_DIFF_BYTES))
 }
 
+/// Author, author time and full message of one commit.
+pub async fn git_get_commit_header(
+    path: String,
+    hash: String,
+    session_id: Option<String>,
+    sftp_state: &SshState,
+    events: EventBus,
+) -> Result<labonair_git::CommitHeader, String> {
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
+    let out = executor
+        .run(&[
+            "show",
+            "-s",
+            "--format=%H%x1f%an%x1f%ae%x1f%at%x1f%B",
+            &hash,
+        ])
+        .await?;
+    parse_commit_header(&out)
+}
+
+fn parse_commit_header(out: &str) -> Result<labonair_git::CommitHeader, String> {
+    let mut fields = out.splitn(5, '\u{1f}');
+    let (Some(hash), Some(name), Some(email), Some(time), Some(message)) = (
+        fields.next(),
+        fields.next(),
+        fields.next(),
+        fields.next(),
+        fields.next(),
+    ) else {
+        return Err("unexpected `git show` output".to_string());
+    };
+    Ok(labonair_git::CommitHeader {
+        hash: hash.trim().to_string(),
+        author_name: name.to_string(),
+        author_email: email.to_string(),
+        timestamp: time
+            .trim()
+            .parse()
+            .map_err(|_| "bad commit time".to_string())?,
+        message: message.trim().to_string(),
+    })
+}
+
 pub async fn git_get_stash_diff(
     path: String,
     hash: String,
@@ -1822,6 +1865,18 @@ pub async fn git_init(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn commit_header_splits_fields_and_keeps_the_body() {
+        let out =
+            "abc123\u{1f}Ada\u{1f}ada@x.dev\u{1f}1700000000\u{1f}Fix it\n\nLong body\nline two\n\n";
+        let header = super::parse_commit_header(out).unwrap();
+        assert_eq!(header.hash, "abc123");
+        assert_eq!(header.author_name, "Ada");
+        assert_eq!(header.timestamp, 1_700_000_000);
+        assert_eq!(header.message, "Fix it\n\nLong body\nline two");
+        assert!(super::parse_commit_header("garbage").is_err());
+    }
+
     use super::*;
 
     #[test]

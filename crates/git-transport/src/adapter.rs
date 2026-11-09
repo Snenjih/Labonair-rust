@@ -291,6 +291,19 @@ impl GitService for GitTransportService {
         })
     }
 
+    fn commit_header(
+        &self,
+        path: String,
+        hash: String,
+        session_id: Option<String>,
+    ) -> GitFuture<labonair_git::CommitHeader> {
+        let ssh_state = self.ssh_state.clone();
+        let events = self.events.clone();
+        Box::pin(async move {
+            super::git_get_commit_header(path, hash, session_id, &ssh_state, events.clone()).await
+        })
+    }
+
     fn blame_line(
         &self,
         path: String,

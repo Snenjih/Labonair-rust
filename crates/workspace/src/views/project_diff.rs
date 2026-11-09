@@ -193,6 +193,8 @@ pub struct ProjectDiffView {
     /// File whose header is currently pinned over the list.
     sticky: Option<usize>,
 
+    /// Author / date / message block of a Commit source.
+    commit_header: Option<labonair_git::CommitHeader>,
     loading: bool,
     busy: bool,
     /// Generation guard so a slow response for a previous load cannot
@@ -243,6 +245,7 @@ impl ProjectDiffView {
             confirm_restore: None,
             pending_scroll: None,
             sticky: None,
+            commit_header: None,
             loading: false,
             busy: false,
             gen: 0,
@@ -417,6 +420,29 @@ impl ProjectDiffView {
         let source = self.source.clone();
         let files = self.files.clone();
         let tokio = self.tokio.clone();
+        self.commit_header = None;
+        if let DiffSource::Commit { hash, .. } = &self.source {
+            let (git, root, session, hash) = (
+                self.git.clone(),
+                self.repo_root.clone().unwrap_or_default(),
+                self.session_id.clone(),
+                hash.clone(),
+            );
+            let header = self
+                .tokio
+                .spawn(async move { git.commit_header(root, hash, session).await });
+            cx.spawn(async move |this, cx| {
+                if let Ok(Ok(header)) = header.await {
+                    let _ = this.update(cx, |this, cx| {
+                        if this.gen == generation {
+                            this.commit_header = Some(header);
+                            cx.notify();
+                        }
+                    });
+                }
+            })
+            .detach();
+        }
         // Parsing and syntax-highlighting the patches stays off the UI thread.
         let task = self.tokio.spawn(async move {
             let inputs = match source {
@@ -1071,6 +1097,7 @@ impl Render for ProjectDiffView {
             .bg(c.bg)
             .text_color(c.fg)
             .child(self.render_toolbar(c, palette, cx))
+            .children(self.render_commit_header(c, palette))
             .child(
                 div()
                     .relative()
@@ -1084,6 +1111,81 @@ impl Render for ProjectDiffView {
 }
 
 impl ProjectDiffView {
+    /// Spec §1 Commit View: author, date, SHA copy button and the message.
+    fn render_commit_header(&self, c: Colors, palette: Palette) -> Option<gpui::Div> {
+        let header = self.commit_header.as_ref()?;
+        let (subject, body) = header
+            .message
+            .split_once('\n')
+            .map_or((header.message.as_str(), ""), |(s, b)| (s, b.trim()));
+        let when = chrono::DateTime::from_timestamp(header.timestamp, 0)
+            .map(|t| {
+                t.with_timezone(&chrono::Local)
+                    .format("%b %-d, %Y %H:%M")
+                    .to_string()
+            })
+            .unwrap_or_default();
+        let short: String = header.hash.chars().take(8).collect();
+        let hash = header.hash.clone();
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .flex_none()
+                .gap(px(4.0))
+                .px(px(12.0))
+                .py(px(8.0))
+                .border_b_1()
+                .border_color(c.border)
+                .bg(c.card)
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .child(
+                            div()
+                                .text_size(px(13.0))
+                                .child(SharedString::from(subject.to_string())),
+                        )
+                        .child(div().flex_1())
+                        .child(
+                            button(
+                                "pd-copy-sha",
+                                palette,
+                                ButtonVariant::Outlined,
+                                ButtonSize::Xs,
+                            )
+                            .child(SharedString::from(short))
+                            .tooltip(|window, cx| Tooltip::new("Copy Commit SHA").build(window, cx))
+                            .on_click(move |_: &ClickEvent, _w, cx| {
+                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                    hash.clone(),
+                                ));
+                            }),
+                        ),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(c.muted)
+                        .child(SharedString::from(format!(
+                            "{} <{}> \u{b7} {when}",
+                            header.author_name, header.author_email
+                        ))),
+                )
+                .when(!body.is_empty(), |d| {
+                    d.child(
+                        div()
+                            .text_size(px(12.0))
+                            .max_h(px(120.0))
+                            .overflow_hidden()
+                            .child(SharedString::from(body.to_string())),
+                    )
+                }),
+        )
+    }
+
     fn render_empty(
         &self,
         c: Colors,
