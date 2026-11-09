@@ -1060,3 +1060,54 @@ fn restore_and_next_discards_the_cursor_hunk_and_advances(cx: &mut TestAppContex
         Some(HunkId { file: 1, hunk: 1 })
     );
 }
+
+#[gpui::test]
+fn conflict_blocks_list_and_resolve_by_rewriting_the_file(cx: &mut TestAppContext) {
+    use labonair_editor::conflict::Resolution;
+
+    let root = std::env::temp_dir()
+        .canonicalize()
+        .unwrap()
+        .join(format!("labonair-diff-conflict-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join("c.txt"),
+        "top\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> topic\nbottom\n",
+    )
+    .unwrap();
+    let (h, cx) = harness_with(cx, |git| {
+        git.diffs.lock().unwrap().insert(
+            ("c.txt".into(), false),
+            "diff --cc c.txt\nindex 1,2..3\n--- a/c.txt\n+++ b/c.txt\n".into(),
+        );
+    });
+    let mut req = request();
+    req.repo_root = root.to_string_lossy().into_owned();
+    req.files = vec![ProjectDiffFile {
+        path: "c.txt".into(),
+        staged: false,
+        untracked: false,
+        conflicted: true,
+    }];
+    h.view.update(cx, |v, cx| v.apply_request(req, cx));
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
+    draw(cx, &h.view, 1200.0);
+    h.view.read_with(cx, |v, _| {
+        assert_eq!(v.doc.files[0].conflicts.len(), 1);
+        assert!(v
+            .rows
+            .iter()
+            .any(|r| matches!(r, FlatRow::ConflictHeader { .. })));
+    });
+
+    h.view
+        .update(cx, |v, cx| v.resolve_conflict(0, 0, Resolution::Theirs, cx));
+    wait_until(cx, |_| {
+        std::fs::read_to_string(root.join("c.txt")).unwrap() == "top\ntheirs\nbottom\n"
+    });
+    wait_until(cx, |cx| {
+        h.view
+            .read_with(cx, |v, _| v.doc.files[0].conflicts.is_empty())
+    });
+    let _ = std::fs::remove_dir_all(&root);
+}

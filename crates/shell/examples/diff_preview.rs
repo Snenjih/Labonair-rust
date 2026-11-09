@@ -67,13 +67,21 @@ fn main() {
                     cx.spawn(async move |cx| {
                         let state = task.await.expect("join").expect("git status");
                         let mut files = Vec::new();
+                        let conflicted: Vec<String> = state
+                            .status
+                            .unstaged
+                            .iter()
+                            .chain(state.status.staged.iter())
+                            .filter(|f| f.conflicted)
+                            .map(|f| f.path.clone())
+                            .collect();
                         let mut push = |paths: Vec<String>, staged, untracked| {
                             for path in paths {
                                 files.push(ProjectDiffFile {
+                                    conflicted: conflicted.contains(&path),
                                     path,
                                     staged,
                                     untracked,
-                                    conflicted: false,
                                 });
                             }
                         };

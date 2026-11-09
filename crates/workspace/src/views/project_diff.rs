@@ -31,6 +31,7 @@ use gpui::{
     IntoElement, ListAlignment, ListOffset, ListSizingBehavior, ListState, ParentElement, Render,
     SharedString, StatefulInteractiveElement, Styled, StyledText, Transformation, Window,
 };
+use labonair_editor::conflict::Resolution;
 use labonair_editor::diff_document::{
     DiffDocument, DiffLine, DiffStyle, ExpandKey, Expansion, FileInput, FileKind, FlatRow, HunkId,
     HunkOperation, HunkStage, HunkView, LineKind,
@@ -535,6 +536,7 @@ impl ProjectDiffView {
                                 path: title.clone(),
                                 untracked: false,
                                 conflicted: false,
+                                conflict_text: None,
                                 diffs: vec![(HunkStage::ReadOnly, diff)],
                                 raw: Vec::new(),
                             }]
@@ -875,6 +877,39 @@ impl ProjectDiffView {
         });
     }
 
+    /// Rewrite a conflicted (local) file with one conflict block resolved,
+    /// then reload. Staging the file stays the user's decision.
+    fn resolve_conflict(
+        &mut self,
+        file: usize,
+        block: usize,
+        resolution: Resolution,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(path) = self.doc.files.get(file).map(|f| f.path.clone()) else {
+            return;
+        };
+        self.run_git(
+            "Resolve conflict failed",
+            cx,
+            move |_git, root, _session| {
+                Box::pin(async move {
+                    let full = std::path::Path::new(&root).join(&path);
+                    let text = tokio::fs::read_to_string(&full)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    let resolved = labonair_editor::conflict::resolve(&text, block, resolution)
+                        .ok_or_else(|| {
+                            "The conflict changed on disk; reload and retry.".to_string()
+                        })?;
+                    tokio::fs::write(&full, resolved)
+                        .await
+                        .map_err(|e| e.to_string())
+                })
+            },
+        );
+    }
+
     fn stage_file(&mut self, path: String, stage: bool, cx: &mut Context<Self>) {
         self.run_git(stage_failure(!stage), cx, move |git, root, session| {
             if stage {
@@ -1015,6 +1050,7 @@ fn read_only_inputs(text: &str) -> Vec<FileInput> {
             path: diff.path.clone(),
             untracked: false,
             conflicted: false,
+            conflict_text: None,
             diffs: vec![(HunkStage::ReadOnly, diff)],
             raw: Vec::new(),
         })
@@ -1086,6 +1122,14 @@ async fn load_working_tree(
                     path: file.path.clone(),
                     untracked: file.untracked,
                     conflicted: file.conflicted,
+                    // Local conflicted files list their blocks for resolution.
+                    conflict_text: if file.conflicted && session.is_none() {
+                        tokio::fs::read_to_string(std::path::Path::new(&root).join(&file.path))
+                            .await
+                            .ok()
+                    } else {
+                        None
+                    },
                     diffs: Vec::new(),
                     raw: Vec::new(),
                 });
@@ -1671,6 +1715,54 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
         FlatRow::File(file) => render_file_header(ctx, *file, ix, cx),
         FlatRow::HunkHeader(id) => render_hunk_header(ctx, *id, ix),
         FlatRow::Expand { id, up } => render_expand(ctx, *id, *up, ix),
+        FlatRow::ConflictHeader { file, block } => render_conflict_header(ctx, *file, *block, ix),
+        FlatRow::ConflictLine {
+            file,
+            block,
+            ours,
+            line,
+        } => {
+            let text = ctx
+                .doc
+                .files
+                .get(*file)
+                .and_then(|f| f.conflicts.get(*block))
+                .and_then(|b| {
+                    if *ours {
+                        b.ours.get(*line)
+                    } else {
+                        b.theirs.get(*line)
+                    }
+                })
+                .cloned()
+                .unwrap_or_default();
+            let tint = if *ours { ctx.c.success } else { ctx.c.warning };
+            div()
+                .flex()
+                .h(px(LINE_H))
+                .w_full()
+                .bg(tint.opacity(0.12))
+                .child(
+                    div()
+                        .w(px(NUM_W))
+                        .flex_none()
+                        .pr(px(8.0))
+                        .flex()
+                        .justify_end()
+                        .text_size(px(10.0))
+                        .text_color(ctx.c.muted)
+                        .child(SharedString::from(if *ours { "ours" } else { "theirs" })),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .child(SharedString::from(text.replace('\t', "    "))),
+                )
+                .into_any_element()
+        }
         FlatRow::Line { id, line } => {
             let Some(hunk) = ctx.doc.hunk(*id) else {
                 return div().into_any_element();
@@ -1959,6 +2051,61 @@ fn split_cell(
     .child(num_cell(number, ctx.c))
     .child(marker_bar(line.kind, is_hollow(ctx, hunk), ctx))
     .child(code_text(ctx, line))
+}
+
+/// Header of one conflict block: labels plus Ours / Theirs / Both buttons.
+fn render_conflict_header(
+    ctx: &Rc<RowCtx>,
+    file: usize,
+    block: usize,
+    ix: usize,
+) -> gpui::AnyElement {
+    let Some(conflict) = ctx.doc.files.get(file).and_then(|f| f.conflicts.get(block)) else {
+        return div().into_any_element();
+    };
+    let c = ctx.c;
+    let choice = |id: &'static str, label: &'static str, resolution: Resolution| {
+        let view = ctx.view.clone();
+        button(
+            (id, ix),
+            ctx.palette,
+            ButtonVariant::Outlined,
+            ButtonSize::Xs,
+        )
+        .child(SharedString::from(label))
+        .on_click(move |_: &ClickEvent, _w, cx| {
+            view.update(cx, |this, cx| {
+                this.resolve_conflict(file, block, resolution, cx)
+            });
+        })
+    };
+    div()
+        .flex()
+        .items_center()
+        .gap(px(6.0))
+        .h(px(HUNK_H))
+        .w_full()
+        .px(px(8.0))
+        .text_size(px(11.0))
+        .text_color(c.warning)
+        .bg(c.warning.opacity(0.10))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .child(SharedString::from(format!(
+                    "Conflict {} \u{b7} {} \u{2194} {}",
+                    block + 1,
+                    conflict.ours_label,
+                    conflict.theirs_label
+                ))),
+        )
+        .child(choice("pd-use-ours", "Use Ours", Resolution::Ours))
+        .child(choice("pd-use-theirs", "Use Theirs", Resolution::Theirs))
+        .child(choice("pd-use-both", "Use Both", Resolution::Both))
+        .into_any_element()
 }
 
 /// Control row that reveals more unchanged lines next to a hunk's excerpt.

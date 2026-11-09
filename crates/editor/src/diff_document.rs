@@ -108,6 +108,8 @@ pub struct FileSection {
     pub added: u32,
     pub removed: u32,
     sources: Vec<(HunkStage, FileDiff)>,
+    /// Conflict blocks of a conflicted file (empty otherwise).
+    pub conflicts: Vec<crate::conflict::ConflictBlock>,
     /// Whole-file line table per source (when the patch carried the file).
     tables: Vec<Option<Vec<DiffLine>>>,
 }
@@ -139,6 +141,8 @@ pub struct FileInput {
     pub untracked: bool,
     /// Merge conflicts: listed first and flagged.
     pub conflicted: bool,
+    /// Worktree text of a conflicted file, for conflict-block resolution.
+    pub conflict_text: Option<String>,
     pub diffs: Vec<(HunkStage, FileDiff)>,
     /// Fallback text when no patch has hunks.
     pub raw: Vec<String>,
@@ -166,6 +170,16 @@ pub enum FlatRow {
     },
     Raw {
         file: usize,
+        line: usize,
+    },
+    /// Header of conflict block `block` of a conflicted file: the ours /
+    /// theirs / both resolution buttons.
+    ConflictHeader { file: usize, block: usize },
+    /// One line of a conflict block's ours (`ours`) or theirs side.
+    ConflictLine {
+        file: usize,
+        block: usize,
+        ours: bool,
         line: usize,
     },
     /// Control row that reveals more unchanged lines above (`up`) or below
@@ -273,7 +287,21 @@ impl DiffDocument {
                     rows.push(FlatRow::Expand { id, up: false });
                 }
             }
-            rows.extend((0..section.raw.len()).map(|line| FlatRow::Raw { file, line }));
+            for (block, conflict) in section.conflicts.iter().enumerate() {
+                rows.push(FlatRow::ConflictHeader { file, block });
+                for (ours, side) in [(true, &conflict.ours), (false, &conflict.theirs)] {
+                    rows.extend((0..side.len()).map(|line| FlatRow::ConflictLine {
+                        file,
+                        block,
+                        ours,
+                        line,
+                    }));
+                }
+            }
+            // Parsed conflict blocks replace the combined-diff text.
+            if section.conflicts.is_empty() {
+                rows.extend((0..section.raw.len()).map(|line| FlatRow::Raw { file, line }));
+            }
         }
         rows
     }
@@ -366,6 +394,7 @@ fn build_section(input: FileInput) -> FileSection {
         path,
         untracked,
         conflicted,
+        conflict_text,
         diffs,
         raw,
     } = input;
@@ -450,6 +479,10 @@ fn build_section(input: FileInput) -> FileSection {
         removed,
         sources: diffs,
         tables,
+        conflicts: conflict_text
+            .as_deref()
+            .map(crate::conflict::parse_conflicts)
+            .unwrap_or_default(),
     }
 }
 
@@ -684,6 +717,7 @@ mod tests {
             path: path.into(),
             untracked: false,
             conflicted: false,
+            conflict_text: None,
             diffs,
             raw: Vec::new(),
         }
@@ -920,6 +954,7 @@ mod tests {
                 path: "n.rs".into(),
                 untracked: false,
                 conflicted: false,
+                conflict_text: None,
                 diffs: vec![(
                     HunkStage::Unstaged,
                     patch(&[
