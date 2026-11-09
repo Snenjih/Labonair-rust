@@ -19,7 +19,7 @@
 //! navigation, patch building) lives in `labonair_editor::diff_document`; this
 //! file only loads, paints and routes actions.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -31,10 +31,10 @@ use gpui::{
     Styled, StyledText, Window,
 };
 use labonair_editor::diff_document::{
-    DiffDocument, DiffLine, DiffStyle, FileInput, FileKind, FlatRow, HunkId, HunkOperation,
-    HunkStage, HunkView, LineKind,
+    DiffDocument, DiffLine, DiffStyle, ExpandKey, Expansion, FileInput, FileKind, FlatRow, HunkId,
+    HunkOperation, HunkStage, HunkView, LineKind,
 };
-use labonair_editor::unified::{parse_diff_hunks, FileDiff};
+use labonair_editor::unified::{parse_diff_hunks, regroup_full_context, FileDiff};
 use labonair_editor_ui::EditorPalette;
 use labonair_git::GitService;
 use labonair_notifications::{notification_center, notify_err, Notification};
@@ -62,6 +62,11 @@ const HUNK_H: f32 = 24.0;
 const FILE_H: f32 = 32.0;
 /// Width of one line-number column.
 const NUM_W: f32 = 44.0;
+/// Height of an expand-context control row.
+const EXPAND_H: f32 = 22.0;
+/// Fallbacks for `editorDiffExcerptContextLines` / `editorDiffExpandExcerptLines`.
+const DEFAULT_CONTEXT_LINES: usize = 2;
+const DEFAULT_EXPAND_LINES: usize = 5;
 /// Fallback for `editorMinimumSplitDiffWidth` when settings are unavailable.
 const DEFAULT_MIN_SPLIT_COLUMNS: f32 = 100.0;
 
@@ -155,6 +160,11 @@ pub struct ProjectDiffView {
     last_em: f32,
     /// `editorMinimumSplitDiffWidth`, in editor columns (0 = never suspend).
     min_split_columns: f32,
+    /// `editorDiffExcerptContextLines` / `editorDiffExpandExcerptLines`.
+    context_lines: usize,
+    expand_lines: usize,
+    /// Context revealed beyond the base excerpt, per hunk.
+    expansions: HashMap<ExpandKey, Expansion>,
 
     doc: Rc<DiffDocument>,
     rows: Rc<Vec<FlatRow>>,
@@ -204,6 +214,9 @@ impl ProjectDiffView {
             last_width: None,
             last_em: 7.2,
             min_split_columns: DEFAULT_MIN_SPLIT_COLUMNS,
+            context_lines: DEFAULT_CONTEXT_LINES,
+            expand_lines: DEFAULT_EXPAND_LINES,
+            expansions: HashMap::new(),
             doc: Rc::new(DiffDocument::default()),
             rows: Rc::new(Vec::new()),
             list: ListState::new(0, ListAlignment::Top, px(600.0)),
@@ -234,11 +247,21 @@ impl ProjectDiffView {
             DiffStyle::Unified
         };
         let min_columns = settings.minimum_split_diff_width() as f32;
-        if style == self.style && min_columns == self.min_split_columns {
+        let context_lines = settings.diff_excerpt_context_lines() as usize;
+        let expand_lines = settings.diff_expand_excerpt_lines() as usize;
+        self.expand_lines = expand_lines;
+        if style == self.style
+            && min_columns == self.min_split_columns
+            && context_lines == self.context_lines
+        {
             return;
         }
         self.style = style;
         self.min_split_columns = min_columns;
+        if context_lines != self.context_lines {
+            self.context_lines = context_lines;
+            Rc::make_mut(&mut self.doc).apply_display(context_lines, &self.expansions);
+        }
         self.refresh_narrowness();
         self.rebuild_rows();
         cx.notify();
@@ -280,6 +303,7 @@ impl ProjectDiffView {
         };
         if !same_source {
             self.known_files.clear();
+            self.expansions.clear();
             self.folded.clear();
             self.cursor = None;
         }
@@ -393,7 +417,8 @@ impl ProjectDiffView {
         cx.notify();
     }
 
-    fn set_document(&mut self, doc: DiffDocument) {
+    fn set_document(&mut self, mut doc: DiffDocument) {
+        doc.apply_display(self.context_lines, &self.expansions);
         for section in &doc.files {
             // Spec §2: only a file's first appearance auto-folds it.
             if self.known_files.insert(section.path.clone()) && section.kind == FileKind::Deleted {
@@ -450,6 +475,23 @@ impl ProjectDiffView {
             self.confirm_restore = None;
             cx.notify();
         }
+    }
+
+    /// Reveal `expand_lines` more unchanged lines above or below a hunk.
+    fn expand(&mut self, id: HunkId, up: bool, cx: &mut Context<Self>) {
+        let Some(key) = self.doc.expand_key(id) else {
+            return;
+        };
+        let step = self.expand_lines;
+        let entry = self.expansions.entry(key).or_insert((0, 0));
+        if up {
+            entry.0 += step;
+        } else {
+            entry.1 += step;
+        }
+        Rc::make_mut(&mut self.doc).apply_display(self.context_lines, &self.expansions);
+        self.rebuild_rows();
+        cx.notify();
     }
 
     fn toggle_fold(&mut self, path: &str, all: bool, cx: &mut Context<Self>) {
@@ -762,15 +804,31 @@ async fn load_working_tree(
         jobs.push((
             file.clone(),
             tokio.spawn(async move {
-                git.diff(
-                    root,
-                    file.path,
-                    file.staged,
-                    Some(false),
-                    Some(file.untracked),
-                    session,
-                )
-                .await
+                // Whole-file context feeds expandable excerpts; very large
+                // files overflow the cap and fall back to the plain patch.
+                let full = git
+                    .diff_full(
+                        root.clone(),
+                        file.path.clone(),
+                        file.staged,
+                        Some(file.untracked),
+                        session.clone(),
+                    )
+                    .await;
+                match full {
+                    Ok(text) if !text.contains("[diff truncated") => Ok(text),
+                    _ => {
+                        git.diff(
+                            root,
+                            file.path,
+                            file.staged,
+                            Some(false),
+                            Some(file.untracked),
+                            session,
+                        )
+                        .await
+                    }
+                }
             }),
         ));
     }
@@ -802,7 +860,9 @@ async fn load_working_tree(
             }
         };
         match parse_diff_hunks(&text).into_iter().next() {
-            Some(diff) if !diff.hunks.is_empty() => inputs[idx].diffs.push((stage, diff)),
+            Some(diff) if !diff.hunks.is_empty() => {
+                inputs[idx].diffs.push((stage, regroup_full_context(diff)))
+            }
             _ => inputs[idx]
                 .raw
                 .extend(text.lines().take(20_000).map(str::to_string)),
@@ -1187,6 +1247,7 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
     match row {
         FlatRow::File(file) => render_file_header(ctx, *file, ix, cx),
         FlatRow::HunkHeader(id) => render_hunk_header(ctx, *id, ix),
+        FlatRow::Expand { id, up } => render_expand(ctx, *id, *up, ix),
         FlatRow::Line { id, line } => {
             let Some(hunk) = ctx.doc.hunk(*id) else {
                 return div().into_any_element();
@@ -1464,6 +1525,46 @@ fn split_cell(
     .child(num_cell(number, ctx.c))
     .child(marker_bar(line.kind, is_hollow(ctx, hunk), ctx.c))
     .child(code_text(ctx, line))
+}
+
+/// Control row that reveals more unchanged lines next to a hunk's excerpt.
+fn render_expand(ctx: &Rc<RowCtx>, id: HunkId, up: bool, ix: usize) -> gpui::AnyElement {
+    let Some(hunk) = ctx.doc.hunk(id) else {
+        return div().into_any_element();
+    };
+    let c = ctx.c;
+    let hidden = if up { hunk.more_above } else { hunk.more_below };
+    let view = ctx.view.clone();
+    div()
+        .id(("pd-expand", ix))
+        .flex()
+        .items_center()
+        .gap(px(6.0))
+        .h(px(EXPAND_H))
+        .w_full()
+        .pl(px(NUM_W))
+        .text_size(px(11.0))
+        .text_color(c.muted)
+        .bg(c.muted.opacity(0.05))
+        .cursor_pointer()
+        .hover(|s| s.bg(c.accent.opacity(0.5)))
+        .child(
+            if up {
+                IconName::ExpandUp
+            } else {
+                IconName::ExpandDown
+            }
+            .svg(c.muted)
+            .size(px(12.0)),
+        )
+        .child(SharedString::from(format!(
+            "{hidden} more line{}",
+            if hidden == 1 { "" } else { "s" }
+        )))
+        .on_click(move |_: &ClickEvent, _w, cx| {
+            view.update(cx, |this, cx| this.expand(id, up, cx));
+        })
+        .into_any_element()
 }
 
 fn render_hunk_header(ctx: &Rc<RowCtx>, id: HunkId, ix: usize) -> gpui::AnyElement {

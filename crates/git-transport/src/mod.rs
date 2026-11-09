@@ -585,11 +585,50 @@ pub async fn git_get_diff(
     sftp_state: &SshState,
     events: EventBus,
 ) -> Result<String, String> {
+    git_get_diff_with_context(
+        path,
+        file,
+        staged,
+        ignore_whitespace,
+        is_untracked,
+        None,
+        session_id,
+        sftp_state,
+        events,
+    )
+    .await
+}
+
+/// [`git_get_diff`] with an explicit context size. `Some(n)` asks Git for `n`
+/// lines of context around every change (a huge `n` yields the whole file as
+/// one hunk) and raises the output cap accordingly.
+#[allow(clippy::too_many_arguments)]
+pub async fn git_get_diff_with_context(
+    path: String,
+    file: String,
+    staged: bool,
+    ignore_whitespace: Option<bool>,
+    is_untracked: Option<bool>,
+    context: Option<u32>,
+    session_id: Option<String>,
+    sftp_state: &SshState,
+    events: EventBus,
+) -> Result<String, String> {
     const MAX_DIFF_BYTES: usize = 200 * 1024;
+    const MAX_FULL_DIFF_BYTES: usize = 2 * 1024 * 1024;
+    let max_bytes = if context.is_some() {
+        MAX_FULL_DIFF_BYTES
+    } else {
+        MAX_DIFF_BYTES
+    };
     let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
+    let context_arg = context.map(|n| format!("-U{n}"));
 
     let stdout = if is_untracked.unwrap_or(false) {
         let mut args: Vec<&str> = vec!["diff", "--no-index"];
+        if let Some(arg) = &context_arg {
+            args.push(arg);
+        }
         if ignore_whitespace.unwrap_or(false) {
             args.push("-w");
         }
@@ -603,6 +642,9 @@ pub async fn git_get_diff(
         } else {
             vec!["diff"]
         };
+        if let Some(arg) = &context_arg {
+            args.push(arg);
+        }
         if ignore_whitespace.unwrap_or(false) {
             args.push("-w");
         }
@@ -611,7 +653,7 @@ pub async fn git_get_diff(
         executor.run_raw(&args).await?
     };
 
-    Ok(truncate_diff(&stdout, MAX_DIFF_BYTES))
+    Ok(truncate_diff(&stdout, max_bytes))
 }
 
 /// Return Git's attribution for one one-based source line.
@@ -672,7 +714,7 @@ fn parse_blame_line(output: &str) -> Result<GitBlameLine, String> {
 fn truncate_diff(stdout: &[u8], max: usize) -> String {
     if stdout.len() > max {
         let truncated = String::from_utf8_lossy(safe_truncate_utf8(stdout, max)).into_owned();
-        format!("{truncated}\n\n[diff truncated — output exceeded 200 KB]")
+        format!("{truncated}\n\n[diff truncated — output exceeded the size limit]")
     } else {
         String::from_utf8_lossy(stdout).into_owned()
     }

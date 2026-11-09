@@ -162,6 +162,10 @@
     "editorDiffHunkStyle": "stagedHollow",
     // Show the Stage / Unstage / Restore controls on diff hunks.
     "editorDiffShowStageRestoreButtons": true,
+    // Unchanged lines shown around each change in a DiffView.
+    "editorDiffExcerptContextLines": 2,
+    // Lines revealed per click on a DiffView expand control.
+    "editorDiffExpandExcerptLines": 5,
     "editorGitBlameStatus": false,
     "editorCompletion": true,
     "editorHover": true,

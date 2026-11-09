@@ -1082,6 +1082,24 @@ pub fn all_fields() -> Vec<AnyField> {
             "Diff stage and restore buttons",
             "Show Stage, Unstage and Restore controls on diff hunks."
         ),
+        field_with_details!(
+            editor.editor_diff_excerpt_context_lines,
+            "editorDiffExcerptContextLines",
+            Int { min: 0, max: 50, step: 1 },
+            "Diff context lines",
+            "Unchanged lines shown around each change in a diff.",
+            "lines",
+            "Applies to open and new diff views."
+        ),
+        field_with_details!(
+            editor.editor_diff_expand_excerpt_lines,
+            "editorDiffExpandExcerptLines",
+            Int { min: 1, max: 100, step: 1 },
+            "Diff expand step",
+            "Lines revealed each time a diff expand control is clicked.",
+            "lines",
+            "Applies to open and new diff views."
+        ),
         field!(
             editor.editor_git_blame_status,
             "editorGitBlameStatus",

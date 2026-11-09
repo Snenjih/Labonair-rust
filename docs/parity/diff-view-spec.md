@@ -144,11 +144,11 @@ Phases (each ends with the §12 gates):
 
 Implementation deviations and gaps (tracked, not hidden):
 - Restore is **two-step** (first click arms "Confirm Restore") because the view has no undo; the reference restores immediately and relies on editor undo.
-- Hunk separator rows show only the enclosing-symbol text of the `@@` header (the reference shows excerpt separators with expand controls); there is no per-gap expand-context control and the context is whatever the patch carries (Git default 3 lines), not `excerpt_context_lines`.
+- Excerpts are driven by a whole-file diff (`GitService::diff_full`, `git diff -U1000000`, regrouped into Git-style hunks for staging): `editorDiffExcerptContextLines` (default 2) and `editorDiffExpandExcerptLines` (default 5) work, with expand-up / expand-down rows. Files whose full diff exceeds 2 MB fall back to the plain 3-line patch without expansion. Hunk separators carry no enclosing-symbol text for regrouped hunks (the symbol Git prints is lost). Staged and unstaged hunks of one file stay separate excerpt sets (the known merge deviation), so expansion never crosses between them.
 - Hunk controls omit the next/previous icon buttons (the toolbar has them); only Stage/Unstage/Restore appear.
 - Rows are syntax highlighted per hunk side (tree-sitter on the hunk's old/new snippet, so constructs opening outside the hunk may be classified loosely); no horizontal scrolling, no editable excerpts, no cursor/selection model beyond the active hunk. The pinned (sticky) file header is not pushed up by the next file's header.
 - No dedicated `editor_diff_hunk_*` / `version_control_word_*` theme tokens yet; tints derive from the status success/error colors.
-- `git.fileDiff.showFullFile`, `scm.collapseUntrackedDiff`, `excerpt*Lines`: not implemented. The Labonair keys for `git.hunkStyle` / `git.showStageRestoreButtons` are `editorDiffHunkStyle` (`stagedHollow` | `unstagedHollow`) and `editorDiffShowStageRestoreButtons`.
+- `git.fileDiff.showFullFile`, `scm.collapseUntrackedDiff`: not implemented. The Labonair keys for `git.hunkStyle` / `git.showStageRestoreButtons` are `editorDiffHunkStyle` (`stagedHollow` | `unstagedHollow`) and `editorDiffShowStageRestoreButtons`.
 - Not built: Review comments / Send Review to Agent, Commit View header chrome, Text/Multi Diff, Branch picker toolbar, `ToggleDiffBase`, key bindings/actions (`OpenFileDiff`, `RestoreAndNext`, `Amend`, `ReviewDiff` still missing), persisted fold state, conflict UI.
 - The merged staged/unstaged hunk model (see "Known deviation" above) is verified against a scripted Git; native pixel-level acceptance is still open.
 

@@ -164,6 +164,19 @@ pub trait GitService: Send + Sync {
         is_untracked: Option<bool>,
         session_id: Option<String>,
     ) -> GitFuture<String>;
+    /// Like [`Self::diff`] but with the whole file as context (one hunk), so a
+    /// diff view can show and expand unchanged lines. Implementations without
+    /// the capability fall back to the regular patch.
+    fn diff_full(
+        &self,
+        path: String,
+        file: String,
+        staged: bool,
+        is_untracked: Option<bool>,
+        session_id: Option<String>,
+    ) -> GitFuture<String> {
+        self.diff(path, file, staged, Some(false), is_untracked, session_id)
+    }
     fn blame_line(
         &self,
         path: String,

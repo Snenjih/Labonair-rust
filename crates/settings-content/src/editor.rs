@@ -383,6 +383,10 @@ pub struct EditorContent {
     pub editor_diff_hunk_style: Option<String>,
     /// Show Stage / Unstage / Restore controls on DiffView hunks.
     pub editor_diff_show_stage_restore_buttons: Option<bool>,
+    /// Unchanged lines shown around each change in a DiffView.
+    pub editor_diff_excerpt_context_lines: Option<u32>,
+    /// Lines revealed per click on a DiffView expand control.
+    pub editor_diff_expand_excerpt_lines: Option<u32>,
     pub editor_git_blame_status: Option<bool>,
     pub editor_completion: Option<bool>,
     pub editor_hover: Option<bool>,
@@ -512,6 +516,8 @@ impl EditorContent {
             editor_minimum_split_diff_width: Some(100),
             editor_diff_hunk_style: Some("stagedHollow".to_string()),
             editor_diff_show_stage_restore_buttons: Some(true),
+            editor_diff_excerpt_context_lines: Some(2),
+            editor_diff_expand_excerpt_lines: Some(5),
             editor_git_blame_status: Some(false),
             editor_completion: Some(true),
             editor_hover: Some(true),
@@ -577,6 +583,8 @@ mod tests {
         assert_eq!(value["editorMinimumSplitDiffWidth"], 100);
         assert_eq!(value["editorDiffHunkStyle"], "stagedHollow");
         assert_eq!(value["editorDiffShowStageRestoreButtons"], true);
+        assert_eq!(value["editorDiffExcerptContextLines"], 2);
+        assert_eq!(value["editorDiffExpandExcerptLines"], 5);
     }
 
     #[test]

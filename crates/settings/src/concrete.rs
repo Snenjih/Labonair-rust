@@ -819,6 +819,16 @@ impl EditorSettings {
             .unwrap_or(true)
     }
 
+    /// Unchanged lines a DiffView shows around each change (default 2).
+    pub fn diff_excerpt_context_lines(&self) -> u32 {
+        self.0.editor_diff_excerpt_context_lines.unwrap_or(2)
+    }
+
+    /// Lines one DiffView expand click reveals (default 5).
+    pub fn diff_expand_excerpt_lines(&self) -> u32 {
+        self.0.editor_diff_expand_excerpt_lines.unwrap_or(5).max(1)
+    }
+
     pub fn git_blame_status(&self) -> bool {
         self.0.editor_git_blame_status.unwrap_or(false)
     }

@@ -29,6 +29,14 @@ pub struct FileDiff {
     pub hunks: Vec<DiffHunk>,
     pub is_new_file: bool,
     pub is_deleted_file: bool,
+    /// Every body entry of the file when it was requested with whole-file
+    /// context and regrouped by [`regroup_full_context`]. One entry per line;
+    /// a `\ No newline` marker is joined onto its line with `\n`.
+    pub full_lines: Option<Vec<String>>,
+    /// For each (regrouped) hunk, its range in `full_lines`.
+    pub hunk_spans: Vec<std::ops::Range<usize>>,
+    /// Old / new line number of `full_lines[0]`.
+    pub full_start: (u32, u32),
 }
 
 fn parse_file_header_path(line: &str) -> Option<String> {
@@ -122,9 +130,95 @@ pub fn parse_diff_hunks(diff: &str) -> Vec<FileDiff> {
             hunks,
             is_new_file,
             is_deleted_file,
+            full_lines: None,
+            hunk_spans: Vec::new(),
+            full_start: (1, 1),
         });
     }
     files
+}
+
+/// Context lines Git itself puts around a hunk; regrouped hunks match it so a
+/// standalone patch for `git apply` stays what Git would have produced.
+pub const HUNK_CONTEXT: usize = 3;
+
+/// Turns a diff requested with whole-file context (one giant hunk) into
+/// ordinary Git-style hunks (3 lines of context, changes closer than twice
+/// that merged) while keeping every line of the file in
+/// [`FileDiff::full_lines`] for context expansion. Diffs that are not a
+/// single modified-file hunk come back unchanged.
+pub fn regroup_full_context(mut diff: FileDiff) -> FileDiff {
+    if diff.hunks.len() != 1 || is_whole_file_single_hunk(&diff) {
+        return diff;
+    }
+    let (old0, new0) = (diff.hunks[0].old_start, diff.hunks[0].new_start);
+    let mut entries: Vec<String> = Vec::new();
+    for line in &diff.hunks[0].lines {
+        match entries.last_mut() {
+            Some(last) if line.starts_with('\\') => {
+                last.push('\n');
+                last.push_str(line);
+            }
+            _ => entries.push(line.clone()),
+        }
+    }
+    let is_change = |e: &String| e.starts_with('+') || e.starts_with('-');
+    let mut groups: Vec<(usize, usize)> = Vec::new();
+    for (i, _) in entries.iter().enumerate().filter(|(_, e)| is_change(e)) {
+        match groups.last_mut() {
+            Some((_, last)) if i - *last - 1 <= 2 * HUNK_CONTEXT => *last = i,
+            _ => groups.push((i, i)),
+        }
+    }
+    if groups.is_empty() {
+        return diff;
+    }
+    let before = |upto: usize, skip: char| -> u32 {
+        entries[..upto]
+            .iter()
+            .filter(|e| !e.starts_with(skip))
+            .count() as u32
+    };
+    let mut hunks = Vec::new();
+    let mut spans = Vec::new();
+    for (first, last) in groups {
+        let lo = first.saturating_sub(HUNK_CONTEXT);
+        let hi = (last + 1 + HUNK_CONTEXT).min(entries.len());
+        let old_lines = entries[lo..hi]
+            .iter()
+            .filter(|e| !e.starts_with('+'))
+            .count() as u32;
+        let new_lines = entries[lo..hi]
+            .iter()
+            .filter(|e| !e.starts_with('-'))
+            .count() as u32;
+        // Git numbers an empty side by the line *before* the hunk.
+        let mut old_start = old0 + before(lo, '+');
+        let mut new_start = new0 + before(lo, '-');
+        if old_lines == 0 {
+            old_start = old_start.saturating_sub(1);
+        }
+        if new_lines == 0 {
+            new_start = new_start.saturating_sub(1);
+        }
+        hunks.push(DiffHunk {
+            header: format!("@@ -{old_start},{old_lines} +{new_start},{new_lines} @@"),
+            old_start,
+            old_lines,
+            new_start,
+            new_lines,
+            lines: entries[lo..hi]
+                .iter()
+                .flat_map(|e| e.split('\n').map(str::to_string))
+                .collect(),
+        });
+        spans.push(lo..hi);
+    }
+    diff.hunks = hunks;
+    diff.hunk_spans = spans;
+    diff.full_lines = Some(entries);
+    diff.full_start = (old0, new0);
+    diff
 }
 
 /// Builds a standalone one-hunk unified-diff patch for `git apply --cached`.
@@ -221,6 +315,105 @@ mod tests {
             "",
         ]
         .join("\n")
+    }
+
+    /// Real `git diff -U1000000` of a 40-line file (edits on lines 3, 12, 13,
+    /// and an insertion after 30); `git diff` itself produced the headers
+    /// asserted below.
+    #[test]
+    fn regrouping_matches_the_hunks_git_produces() {
+        let text = [
+            "diff --git a/f.txt b/f.txt",
+            "index 1c99002..53b354f 100644",
+            "--- a/f.txt",
+            "+++ b/f.txt",
+            "@@ -1,40 +1,40 @@",
+            " 1",
+            " 2",
+            "-3",
+            "+three",
+            " 4",
+            " 5",
+            " 6",
+            " 7",
+            " 8",
+            " 9",
+            " 10",
+            " 11",
+            "-12",
+            "-13",
+            "+twelve",
+            " 14",
+            " 15",
+            " 16",
+            " 17",
+            " 18",
+            " 19",
+            " 20",
+            " 21",
+            " 22",
+            " 23",
+            " 24",
+            " 25",
+            " 26",
+            " 27",
+            " 28",
+            " 29",
+            " 30",
+            "+inserted",
+            " 31",
+            " 32",
+            " 33",
+            " 34",
+            " 35",
+            " 36",
+            " 37",
+            " 38",
+            " 39",
+            " 40",
+        ]
+        .join("\n")
+            + "\n";
+        let diff = regroup_full_context(parse_diff_hunks(&text).remove(0));
+        let headers: Vec<_> = diff.hunks.iter().map(|h| h.header.as_str()).collect();
+        assert_eq!(
+            headers,
+            ["@@ -1,6 +1,6 @@", "@@ -9,8 +9,7 @@", "@@ -28,6 +27,7 @@"]
+        );
+    }
+
+    #[test]
+    fn full_context_diff_regroups_into_git_style_hunks() {
+        let mut body = vec!["@@ -1,20 +1,20 @@".to_string()];
+        for n in 1..=20 {
+            match n {
+                2 => {
+                    body.push("-l2".into());
+                    body.push("+L2".into());
+                }
+                15 => {
+                    body.push("-l15".into());
+                    body.push("+L15".into());
+                }
+                _ => body.push(format!(" l{n}")),
+            }
+        }
+        let mut text = vec![
+            "diff --git a/f.txt b/f.txt".to_string(),
+            "--- a/f.txt".into(),
+            "+++ b/f.txt".into(),
+        ];
+        text.extend(body);
+        let parsed = parse_diff_hunks(&(text.join("\n") + "\n")).remove(0);
+        let diff = regroup_full_context(parsed);
+        assert_eq!(diff.hunks.len(), 2);
+        assert_eq!(diff.hunks[0].header, "@@ -1,5 +1,5 @@");
+        assert_eq!(diff.hunks[1].header, "@@ -12,7 +12,7 @@");
+        assert_eq!(diff.full_lines.as_ref().map(Vec::len), Some(22));
+        assert_eq!(diff.hunk_spans, vec![0..6, 12..20]);
+        // Each regrouped hunk is a valid standalone patch body.
+        let patch = build_hunk_patch(&diff, &diff.hunks[1]);
+        assert!(patch.contains("@@ -12,7 +12,7 @@\n l12"));
     }
 
     #[test]

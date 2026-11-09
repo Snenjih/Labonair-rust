@@ -45,6 +45,8 @@ index 111..222 100644
 #[derive(Default)]
 struct FakeGit {
     diffs: Mutex<HashMap<(String, bool), String>>,
+    /// Whole-file patches answered by `diff_full`; absent paths fall back.
+    fulls: Mutex<HashMap<(String, bool), String>>,
     calls: Arc<Mutex<Vec<String>>>,
 }
 
@@ -67,6 +69,21 @@ impl GitService for FakeGit {
     ) -> GitFuture<String> {
         let text = self.diffs.lock().unwrap().get(&(file, staged)).cloned();
         Box::pin(async move { text.ok_or_else(|| "no diff".to_string()) })
+    }
+
+    fn diff_full(
+        &self,
+        path: String,
+        file: String,
+        staged: bool,
+        is_untracked: Option<bool>,
+        session_id: Option<String>,
+    ) -> GitFuture<String> {
+        if let Some(text) = self.fulls.lock().unwrap().get(&(file.clone(), staged)) {
+            let text = text.clone();
+            return Box::pin(async move { Ok(text) });
+        }
+        self.diff(path, file, staged, Some(false), is_untracked, session_id)
     }
 
     fn stage_hunk(
@@ -367,11 +384,19 @@ struct Harness {
 }
 
 fn harness(cx: &mut TestAppContext) -> (Harness, &mut VisualTestContext) {
+    harness_with(cx, |_| {})
+}
+
+fn harness_with(
+    cx: &mut TestAppContext,
+    configure: impl FnOnce(&FakeGit),
+) -> (Harness, &mut VisualTestContext) {
     cx.update(|cx| {
         labonair_notifications::init(cx);
     });
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let git = FakeGit::default();
+    configure(&git);
     git.diffs
         .lock()
         .unwrap()
@@ -699,5 +724,62 @@ fn command_actions_navigate_stage_and_toggle_split(cx: &mut TestAppContext) {
         .update(cx, |v, cx| v.perform(DiffAction::StageAll, cx));
     wait_until(cx, |_| {
         h.calls.lock().unwrap().iter().any(|c| c == "stage_all")
+    });
+}
+
+#[gpui::test]
+fn expand_controls_reveal_context_from_the_whole_file(cx: &mut TestAppContext) {
+    // 30-line file, lines 10 and 24 replaced.
+    let mut full = String::from(
+        "diff --git a/src/lib.rs b/src/lib.rs\nindex 111..222 100644\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1,30 +1,30 @@\n",
+    );
+    for n in 1..=30 {
+        if n == 10 || n == 24 {
+            full.push_str(&format!("-old{n}\n+new{n}\n"));
+        } else {
+            full.push_str(&format!(" l{n}\n"));
+        }
+    }
+    let (h, cx) = harness_with(cx, |git| {
+        git.fulls
+            .lock()
+            .unwrap()
+            .insert(("src/lib.rs".into(), false), full);
+    });
+    let mut req = request();
+    req.source = DiffSource::Unstaged;
+    req.files.retain(|f| !f.staged);
+    h.view.update(cx, |v, cx| v.apply_request(req, cx));
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
+
+    let expands = |cx: &mut VisualTestContext| {
+        h.view.read_with(cx, |v, _| {
+            v.rows
+                .iter()
+                .filter(|r| matches!(r, FlatRow::Expand { .. }))
+                .count()
+        })
+    };
+    // Two excerpts; each has a hidden region above and below (the middle gap
+    // counts for both neighbours).
+    assert_eq!(expands(cx), 4);
+    let lines_before = h
+        .view
+        .read_with(cx, |v, _| v.doc.files[0].hunks[0].lines.len());
+    let id = HunkId { file: 0, hunk: 0 };
+    h.view.update(cx, |v, cx| v.expand(id, true, cx));
+    let lines_after = h
+        .view
+        .read_with(cx, |v, _| v.doc.files[0].hunks[0].lines.len());
+    assert_eq!(lines_after, lines_before + 5);
+    draw(cx, &h.view, 1200.0);
+    // Staging still works from the regrouped, Git-style hunk.
+    h.view.update(cx, |v, cx| v.apply_hunk(id, cx));
+    wait_until(cx, |_| {
+        h.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| c.starts_with("stage_hunk src/lib.rs true"))
     });
 }

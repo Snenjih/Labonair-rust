@@ -7,6 +7,9 @@ use labonair_ssh_transport::SshState;
 
 use super::CommitInfo;
 
+/// Context size that makes Git emit a whole file as a single hunk.
+const FULL_CONTEXT_LINES: u32 = 1_000_000;
+
 /// Binds the existing Git executor and SSH session registry to the narrow
 /// contract consumed by the commit graph view.
 pub struct GitGraphTransportService {
@@ -254,6 +257,32 @@ impl GitService for GitTransportService {
                 staged,
                 ignore_whitespace,
                 is_untracked,
+                session_id,
+                &ssh_state,
+                events.clone(),
+            )
+            .await
+        })
+    }
+
+    fn diff_full(
+        &self,
+        path: String,
+        file: String,
+        staged: bool,
+        is_untracked: Option<bool>,
+        session_id: Option<String>,
+    ) -> GitFuture<String> {
+        let ssh_state = self.ssh_state.clone();
+        let events = self.events.clone();
+        Box::pin(async move {
+            super::git_get_diff_with_context(
+                path,
+                file,
+                staged,
+                Some(false),
+                is_untracked,
+                Some(FULL_CONTEXT_LINES),
                 session_id,
                 &ssh_state,
                 events.clone(),

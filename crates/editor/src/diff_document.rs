@@ -6,7 +6,7 @@
 //! navigation come out. No GPUI, no IO — the view only paints what this model
 //! derives.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use crate::buffer::EditorBuffer;
@@ -74,11 +74,24 @@ pub struct HunkView {
     pub lines: Vec<DiffLine>,
     pub added: u32,
     pub removed: u32,
+    /// Hidden lines directly above / below the shown excerpt that context
+    /// expansion can still reveal (0 for hunks without a whole-file table).
+    pub more_above: usize,
+    pub more_below: usize,
     /// Index of the originating patch in [`FileSection::sources`] and of the
     /// hunk inside it — enough to rebuild a standalone patch.
     source: usize,
     source_hunk: usize,
+    /// The changed lines of this hunk as a range of the source's line table.
+    core: Option<Range<usize>>,
 }
+
+/// Identity of a hunk that survives a reload: file path, source patch, hunk
+/// number within it. Context expansion is remembered under this key.
+pub type ExpandKey = (String, usize, usize);
+
+/// How far a hunk's excerpt is expanded beyond the base context, in lines.
+pub type Expansion = (usize, usize);
 
 /// Everything the document knows about one changed file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,6 +105,8 @@ pub struct FileSection {
     pub added: u32,
     pub removed: u32,
     sources: Vec<(HunkStage, FileDiff)>,
+    /// Whole-file line table per source (when the patch carried the file).
+    tables: Vec<Option<Vec<DiffLine>>>,
 }
 
 /// Addresses one hunk in a [`DiffDocument`].
@@ -147,6 +162,12 @@ pub enum FlatRow {
     Raw {
         file: usize,
         line: usize,
+    },
+    /// Control row that reveals more unchanged lines above (`up`) or below
+    /// a hunk's excerpt.
+    Expand {
+        id: HunkId,
+        up: bool,
     },
 }
 
@@ -230,6 +251,9 @@ impl DiffDocument {
             for (hunk, view) in section.hunks.iter().enumerate() {
                 let id = HunkId { file, hunk };
                 rows.push(FlatRow::HunkHeader(id));
+                if view.more_above > 0 {
+                    rows.push(FlatRow::Expand { id, up: true });
+                }
                 match style {
                     DiffStyle::Unified => {
                         rows.extend((0..view.lines.len()).map(|line| FlatRow::Line { id, line }))
@@ -240,10 +264,73 @@ impl DiffDocument {
                             .map(|(left, right)| FlatRow::Split { id, left, right }),
                     ),
                 }
+                if view.more_below > 0 {
+                    rows.push(FlatRow::Expand { id, up: false });
+                }
             }
             rows.extend((0..section.raw.len()).map(|line| FlatRow::Raw { file, line }));
         }
         rows
+    }
+
+    /// The key under which a hunk's context expansion is remembered.
+    pub fn expand_key(&self, id: HunkId) -> Option<ExpandKey> {
+        let section = self.files.get(id.file)?;
+        let view = section.hunks.get(id.hunk)?;
+        Some((section.path.clone(), view.source, view.source_hunk))
+    }
+
+    /// Re-slices every hunk that has a whole-file table to show `context`
+    /// unchanged lines around its changes plus its remembered `expansions`,
+    /// and recomputes how many lines each side can still reveal. Neighbouring
+    /// excerpts of one patch never overlap: they meet instead.
+    pub fn apply_display(&mut self, context: usize, expansions: &HashMap<ExpandKey, Expansion>) {
+        for section in &mut self.files {
+            for source in 0..section.tables.len() {
+                let Some(table) = section.tables[source].as_ref() else {
+                    continue;
+                };
+                // Hunk indices of this source in line order.
+                let mut order: Vec<usize> = (0..section.hunks.len())
+                    .filter(|&h| {
+                        section.hunks[h].source == source && section.hunks[h].core.is_some()
+                    })
+                    .collect();
+                order.sort_by_key(|&h| section.hunks[h].source_hunk);
+                let mut shown: Vec<Range<usize>> = Vec::new();
+                let mut prev_end = 0;
+                for (n, &h) in order.iter().enumerate() {
+                    let view = &section.hunks[h];
+                    let core = view.core.clone().unwrap_or(0..0);
+                    let (up, down) = expansions
+                        .get(&(section.path.clone(), source, view.source_hunk))
+                        .copied()
+                        .unwrap_or((0, 0));
+                    // Never swallow the next hunk's changes.
+                    let next_core_start = order
+                        .get(n + 1)
+                        .and_then(|&next| section.hunks[next].core.as_ref())
+                        .map_or(table.len(), |c| c.start);
+                    let lo = core
+                        .start
+                        .saturating_sub(context + up)
+                        .max(prev_end)
+                        .min(core.start);
+                    let hi = (core.end + context + down).min(next_core_start);
+                    prev_end = hi;
+                    shown.push(lo..hi);
+                }
+                for (n, &h) in order.iter().enumerate() {
+                    let range = shown[n].clone();
+                    let floor = if n == 0 { 0 } else { shown[n - 1].end };
+                    let ceiling = shown.get(n + 1).map_or(table.len(), |next| next.start);
+                    let view = &mut section.hunks[h];
+                    view.more_above = range.start - floor;
+                    view.more_below = ceiling - range.end;
+                    view.lines = table[range].to_vec();
+                }
+            }
+        }
     }
 
     /// The staging operation for one hunk, or `None` for read-only hunks.
@@ -277,14 +364,39 @@ fn build_section(input: FileInput) -> FileSection {
         raw,
     } = input;
 
+    let language = Language::from_path(&path);
     let mut hunks: Vec<(u32, HunkView)> = Vec::new();
+    let mut tables: Vec<Option<Vec<DiffLine>>> = Vec::new();
     let mut is_new = untracked;
     let mut is_deleted = false;
     for (source, (stage, diff)) in diffs.iter().enumerate() {
         is_new |= diff.is_new_file;
         is_deleted |= diff.is_deleted_file;
+        let table = diff.full_lines.as_ref().map(|entries| {
+            let (mut table, _, _) = lines_from_raw(
+                entries.iter().flat_map(|e| e.split('\n')),
+                diff.full_start.0,
+                diff.full_start.1,
+            );
+            pair_word_diffs(&mut table);
+            if language.has_grammar() {
+                highlight_lines(language, &mut table);
+            }
+            table
+        });
         for (source_hunk, hunk) in diff.hunks.iter().enumerate() {
-            let view = hunk_view(*stage, hunk, source, source_hunk);
+            let mut view = hunk_view(*stage, hunk, source, source_hunk);
+            if let (Some(table), Some(span)) = (&table, diff.hunk_spans.get(source_hunk)) {
+                let first = span.clone().find(|&i| table[i].kind != LineKind::Context);
+                let last = span
+                    .clone()
+                    .rev()
+                    .find(|&i| table[i].kind != LineKind::Context);
+                if let (Some(first), Some(last)) = (first, last) {
+                    view.core = Some(first..last + 1);
+                    view.lines = table[span.clone()].to_vec();
+                }
+            }
             // Staged hunks live in index coordinates on their new side,
             // unstaged hunks on their old side — a shared ordering axis.
             let position = match stage {
@@ -293,12 +405,12 @@ fn build_section(input: FileInput) -> FileSection {
             };
             hunks.push((position, view));
         }
+        tables.push(table);
     }
     hunks.sort_by_key(|(position, view)| (*position, view.stage != HunkStage::Staged));
     let mut hunks: Vec<HunkView> = hunks.into_iter().map(|(_, h)| h).collect();
-    let language = Language::from_path(&path);
     if language.has_grammar() {
-        for hunk in &mut hunks {
+        for hunk in hunks.iter_mut().filter(|h| h.core.is_none()) {
             highlight_lines(language, &mut hunk.lines);
         }
     }
@@ -329,54 +441,16 @@ fn build_section(input: FileInput) -> FileSection {
         added,
         removed,
         sources: diffs,
+        tables,
     }
 }
 
 fn hunk_view(stage: HunkStage, hunk: &DiffHunk, source: usize, source_hunk: usize) -> HunkView {
-    let mut lines: Vec<DiffLine> = Vec::new();
-    let (mut old_no, mut new_no) = (hunk.old_start, hunk.new_start);
-    let (mut added, mut removed) = (0, 0);
-    for raw in &hunk.lines {
-        match raw.as_bytes().first() {
-            Some(b'+') => {
-                lines.push(DiffLine {
-                    kind: LineKind::Added,
-                    old_no: None,
-                    new_no: Some(new_no),
-                    text: raw[1..].to_string(),
-                    word: None,
-                    spans: Vec::new(),
-                });
-                new_no += 1;
-                added += 1;
-            }
-            Some(b'-') => {
-                lines.push(DiffLine {
-                    kind: LineKind::Deleted,
-                    old_no: Some(old_no),
-                    new_no: None,
-                    text: raw[1..].to_string(),
-                    word: None,
-                    spans: Vec::new(),
-                });
-                old_no += 1;
-                removed += 1;
-            }
-            Some(b'\\') => {}
-            _ => {
-                lines.push(DiffLine {
-                    kind: LineKind::Context,
-                    old_no: Some(old_no),
-                    new_no: Some(new_no),
-                    text: raw.strip_prefix(' ').unwrap_or(raw).to_string(),
-                    word: None,
-                    spans: Vec::new(),
-                });
-                old_no += 1;
-                new_no += 1;
-            }
-        }
-    }
+    let (mut lines, added, removed) = lines_from_raw(
+        hunk.lines.iter().map(String::as_str),
+        hunk.old_start,
+        hunk.new_start,
+    );
     pair_word_diffs(&mut lines);
     HunkView {
         stage,
@@ -384,9 +458,54 @@ fn hunk_view(stage: HunkStage, hunk: &DiffHunk, source: usize, source_hunk: usiz
         lines,
         added,
         removed,
+        more_above: 0,
+        more_below: 0,
         source,
         source_hunk,
+        core: None,
     }
+}
+
+/// Numbered [`DiffLine`]s of raw `+`/`-`/` ` body lines, plus the counts of
+/// added and removed lines.
+fn lines_from_raw<'a>(
+    raw_lines: impl Iterator<Item = &'a str>,
+    old_start: u32,
+    new_start: u32,
+) -> (Vec<DiffLine>, u32, u32) {
+    let mut lines: Vec<DiffLine> = Vec::new();
+    let (mut old_no, mut new_no) = (old_start, new_start);
+    let (mut added, mut removed) = (0, 0);
+    for raw in raw_lines {
+        let line = |kind, old_no, new_no, text: &str| DiffLine {
+            kind,
+            old_no,
+            new_no,
+            text: text.to_string(),
+            word: None,
+            spans: Vec::new(),
+        };
+        match raw.as_bytes().first() {
+            Some(b'+') => {
+                lines.push(line(LineKind::Added, None, Some(new_no), &raw[1..]));
+                new_no += 1;
+                added += 1;
+            }
+            Some(b'-') => {
+                lines.push(line(LineKind::Deleted, Some(old_no), None, &raw[1..]));
+                old_no += 1;
+                removed += 1;
+            }
+            Some(b'\\') => {}
+            _ => {
+                let text = raw.strip_prefix(' ').unwrap_or(raw);
+                lines.push(line(LineKind::Context, Some(old_no), Some(new_no), text));
+                old_no += 1;
+                new_no += 1;
+            }
+        }
+    }
+    (lines, added, removed)
 }
 
 /// Largest hunk side (in bytes) that is syntax highlighted.
@@ -597,6 +716,59 @@ mod tests {
             .lines
             .iter()
             .all(|l| l.spans.is_empty()));
+    }
+
+    /// A 30-line file with line 10 and line 24 replaced, as `git diff -U<huge>`.
+    fn full_file(path: &str) -> FileInput {
+        let mut body = vec!["@@ -1,30 +1,30 @@".to_string()];
+        for n in 1..=30 {
+            if n == 10 || n == 24 {
+                body.push(format!("-old{n}"));
+                body.push(format!("+new{n}"));
+            } else {
+                body.push(format!(" l{n}"));
+            }
+        }
+        let refs: Vec<&str> = body.iter().map(String::as_str).collect();
+        let diff = modified(path, &refs).remove(0);
+        input(
+            path,
+            vec![(
+                HunkStage::Unstaged,
+                crate::unified::regroup_full_context(diff),
+            )],
+        )
+    }
+
+    #[test]
+    fn context_lines_and_expansion_follow_the_whole_file_table() {
+        let mut doc = DiffDocument::build(vec![full_file("a.rs")]);
+        doc.apply_display(2, &HashMap::new());
+        let hunks = &doc.files[0].hunks;
+        assert_eq!(hunks.len(), 2);
+        // 2 context + (-,+) + 2 context.
+        assert_eq!(hunks[0].lines.len(), 6);
+        assert_eq!((hunks[0].more_above, hunks[0].more_below), (7, 9));
+        assert_eq!((hunks[1].more_above, hunks[1].more_below), (9, 4));
+
+        let key = doc.expand_key(HunkId { file: 0, hunk: 0 }).unwrap();
+        let expansions = HashMap::from([(key, (5, 5))]);
+        doc.apply_display(2, &expansions);
+        let hunks = &doc.files[0].hunks;
+        assert_eq!(hunks[0].lines.len(), 6 + 10);
+        assert_eq!((hunks[0].more_above, hunks[0].more_below), (2, 4));
+        // The neighbour's reachable gap shrank with it.
+        assert_eq!(hunks[1].more_above, 4);
+
+        // Expanding past the gap makes the excerpts meet, never overlap.
+        let key = doc.expand_key(HunkId { file: 0, hunk: 0 }).unwrap();
+        doc.apply_display(2, &HashMap::from([(key, (0, 50))]));
+        let hunks = &doc.files[0].hunks;
+        assert_eq!(hunks[0].more_below, 0);
+        assert_eq!(hunks[1].more_above, 0);
+        let last_old = hunks[0].lines.last().and_then(|l| l.old_no);
+        let first_old = hunks[1].lines.first().and_then(|l| l.old_no);
+        assert_eq!(last_old.map(|n| n + 1), first_old);
     }
 
     fn one(path: &str, stage: HunkStage, body: &[&str]) -> FileInput {
