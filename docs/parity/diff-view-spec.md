@@ -149,7 +149,8 @@ Implementation deviations and gaps (tracked, not hidden):
 - Rows are syntax highlighted per hunk side (tree-sitter on the hunk's old/new snippet, so constructs opening outside the hunk may be classified loosely); no horizontal scrolling, no editable excerpts, no cursor/selection model beyond the active hunk. The pinned (sticky) file header is not pushed up by the next file's header.
 - No `editor_diff_hunk_*` / `version_control_word_*` keys in the theme JSON yet: `ThemeStore::diff_hunk_colors()` derives the same roles (fill, hollow fill, hollow border, word, marker) from the status success/error colors, with stronger fills in light themes. Themes cannot override them individually.
 - `git.fileDiff.showFullFile`, `scm.collapseUntrackedDiff`: not implemented. The Labonair keys for `git.hunkStyle` / `git.showStageRestoreButtons` are `editorDiffHunkStyle` (`stagedHollow` | `unstagedHollow`) and `editorDiffShowStageRestoreButtons`.
-- Not built: Review comments / Send Review to Agent, Commit View header chrome, Text/Multi Diff, Branch picker toolbar, `ToggleDiffBase`, key bindings/actions (`OpenFileDiff`, `RestoreAndNext`, `Amend`, `ReviewDiff` still missing), persisted fold state, conflict UI.
+- Built since: Commit View header (author, date, message, SHA copy; no shallow-clone notice, buffer-search or provider buttons) and Text Diff (`DiffSource::Text`, `editor::DiffClipboardWithSelection`; no file-vs-file Multi Diff).
+- Not built: Review comments / Send Review to Agent, Branch picker toolbar, `ToggleDiffBase`, key bindings/actions (`OpenFileDiff`, `RestoreAndNext`, `Amend`, `ReviewDiff` still missing), persisted fold state, conflict UI.
 - The merged staged/unstaged hunk model (see "Known deviation" above) is verified against a scripted Git; native pixel-level acceptance is still open.
 
 ## 12. Acceptance (per phase)

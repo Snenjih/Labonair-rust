@@ -33,6 +33,13 @@ pub enum DiffSource {
     /// Only the unstaged changes (worktree↔index, incl. untracked files):
     /// hunks can be staged and restored. `files` is filtered to unstaged entries.
     Unstaged,
+    /// A comparison of two texts with no Git behind it (clipboard against a
+    /// selection). Read-only; `title` names the single diff section.
+    Text {
+        title: String,
+        old: String,
+        new: String,
+    },
     /// One file's working-tree changes (staged and unstaged), with a
     /// "Show Full File" / "Show Changes Only" toggle. `path` is repo-relative.
     File { path: String },

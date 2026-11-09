@@ -452,6 +452,18 @@ impl ProjectDiffView {
                 | DiffSource::File { .. } => {
                     load_working_tree(git, tokio, root, session, files).await
                 }
+                DiffSource::Text { title, old, new } => {
+                    Ok(labonair_editor::unified::text_file_diff(&title, &old, &new)
+                        .map(|diff| {
+                            vec![FileInput {
+                                path: title.clone(),
+                                untracked: false,
+                                diffs: vec![(HunkStage::ReadOnly, diff)],
+                                raw: Vec::new(),
+                            }]
+                        })
+                        .unwrap_or_default())
+                }
                 DiffSource::Commit { hash, .. } => {
                     let text = git.commit_diff(root, hash, session).await?;
                     Ok(read_only_inputs(&text))
@@ -817,6 +829,7 @@ impl ProjectDiffView {
             DiffSource::Staged => "Staged Changes".to_string(),
             DiffSource::Unstaged => "Unstaged Changes".to_string(),
             DiffSource::File { path } => format!("Changes: {path}"),
+            DiffSource::Text { title, .. } => title.clone(),
         }
     }
 
@@ -860,6 +873,7 @@ fn same_source(left: &DiffSource, right: &DiffSource) -> bool {
         | (DiffSource::Staged, DiffSource::Staged)
         | (DiffSource::Unstaged, DiffSource::Unstaged) => true,
         (DiffSource::File { path: l }, DiffSource::File { path: r }) => l == r,
+        (DiffSource::Text { title: l, .. }, DiffSource::Text { title: r, .. }) => l == r,
         (DiffSource::Commit { hash: l, .. }, DiffSource::Commit { hash: r, .. })
         | (DiffSource::Stash { hash: l, .. }, DiffSource::Stash { hash: r, .. }) => l == r,
         (

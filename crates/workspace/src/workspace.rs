@@ -4693,6 +4693,37 @@ impl Workspace {
         .detach();
     }
 
+    /// Compare the clipboard text (old side) with the editor selection (new
+    /// side) in the DiffView.
+    pub fn diff_clipboard_with_selection(&mut self, cx: &mut Context<Self>) {
+        let Some(selection) = self
+            .active_selection(cx)
+            .filter(|(kind, _)| *kind == "editor")
+            .map(|(_, text)| text)
+        else {
+            return;
+        };
+        let clipboard = cx
+            .read_from_clipboard()
+            .and_then(|item| item.text())
+            .unwrap_or_default();
+        self.open_project_diff(
+            labonair_panel::ProjectDiffRequest {
+                repo_root: String::new(),
+                session_id: None,
+                source: labonair_panel::DiffSource::Text {
+                    title: "Clipboard \u{2194} Selection".to_string(),
+                    old: clipboard,
+                    new: selection,
+                },
+                files: Vec::new(),
+                selected: None,
+                mode: labonair_panel::ProjectDiffMode::Unified,
+            },
+            cx,
+        );
+    }
+
     /// Open the single-file diff of the active editor's file.
     pub fn open_active_file_diff(&mut self, cx: &mut Context<Self>) {
         let Some(path) = self

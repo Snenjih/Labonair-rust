@@ -921,3 +921,23 @@ fn commit_source_shows_header_and_read_only_files(cx: &mut TestAppContext) {
         assert_eq!(v.doc.files[0].hunks[0].stage, HunkStage::ReadOnly);
     });
 }
+
+#[gpui::test]
+fn text_source_diffs_two_strings_read_only(cx: &mut TestAppContext) {
+    let (h, cx) = harness(cx);
+    let mut req = request();
+    req.source = DiffSource::Text {
+        title: "Clipboard \u{2194} Selection".into(),
+        old: "a\nb\nc\n".into(),
+        new: "a\nB\nc\n".into(),
+    };
+    req.files.clear();
+    h.view.update(cx, |v, cx| v.apply_request(req, cx));
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
+    draw(cx, &h.view, 1200.0);
+    h.view.read_with(cx, |v, _| {
+        assert!(!v.supports_staging() || v.doc.files[0].hunks[0].stage == HunkStage::ReadOnly);
+        assert_eq!(v.doc.totals(), (1, 1));
+        assert_eq!(v.header_title(), "Clipboard \u{2194} Selection");
+    });
+}

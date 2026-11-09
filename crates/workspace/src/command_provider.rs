@@ -383,6 +383,13 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
     }
 
     let workspace_handle = workspace.clone();
+    register!(CommandId::DiffClipboardWithSelection, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.diff_clipboard_with_selection(cx)
+        });
+    });
+
+    let workspace_handle = workspace.clone();
     register!(CommandId::GitOpenFileDiff, move |_window, cx| {
         workspace_handle.update(cx, |workspace, cx| workspace.open_active_file_diff(cx));
     });
@@ -597,6 +604,12 @@ impl CommandProvider for WorkspaceCommandProvider {
                 "Source Control",
             )
             .with_icon(CommandIcon::GitBranch),
+            CommandDescriptor::new(
+                CommandId::DiffClipboardWithSelection,
+                "Editor: Compare Clipboard with Selection",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(
                 CommandId::GitOpenFileDiff,
                 "Git: Open File Diff",

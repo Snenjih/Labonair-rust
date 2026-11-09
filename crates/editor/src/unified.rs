@@ -138,6 +138,41 @@ pub fn parse_diff_hunks(diff: &str) -> Vec<FileDiff> {
     files
 }
 
+/// Diff of two in-memory texts as a whole-file [`FileDiff`] (already
+/// regrouped), for comparisons that have no Git revision behind them.
+/// `None` when the texts are equal.
+pub fn text_file_diff(title: &str, old: &str, new: &str) -> Option<FileDiff> {
+    let diff = crate::diff::Diff::compute(old, new);
+    if diff.hunks.is_empty() {
+        return None;
+    }
+    let count = |keep: &dyn Fn(&crate::diff::DiffLine) -> bool| {
+        diff.lines.iter().filter(|l| keep(l)).count()
+    };
+    let (old_len, new_len) = (
+        count(&|l| l.tag != crate::diff::ChangeTag::Insert),
+        count(&|l| l.tag != crate::diff::ChangeTag::Delete),
+    );
+    let mut patch = format!(
+        "diff --git a/{title} b/{title}\n--- a/{title}\n+++ b/{title}\n@@ -{},{old_len} +{},{new_len} @@\n",
+        usize::from(old_len > 0),
+        usize::from(new_len > 0),
+    );
+    for line in &diff.lines {
+        patch.push(match line.tag {
+            crate::diff::ChangeTag::Equal => ' ',
+            crate::diff::ChangeTag::Delete => '-',
+            crate::diff::ChangeTag::Insert => '+',
+        });
+        patch.push_str(&line.text);
+        patch.push('\n');
+    }
+    parse_diff_hunks(&patch)
+        .into_iter()
+        .next()
+        .map(regroup_full_context)
+}
+
 /// Context lines Git itself puts around a hunk; regrouped hunks match it so a
 /// standalone patch for `git apply` stays what Git would have produced.
 pub const HUNK_CONTEXT: usize = 3;
@@ -380,6 +415,16 @@ mod tests {
             headers,
             ["@@ -1,6 +1,6 @@", "@@ -9,8 +9,7 @@", "@@ -28,6 +27,7 @@"]
         );
+    }
+
+    #[test]
+    fn text_diffs_become_regrouped_whole_file_diffs() {
+        let old = (1..=20).map(|n| format!("l{n}\n")).collect::<String>();
+        let new = old.replace("l10\n", "ten\n");
+        let diff = text_file_diff("clip", &old, &new).expect("changed");
+        assert_eq!(diff.hunks.len(), 1);
+        assert_eq!(diff.full_lines.as_ref().map(Vec::len), Some(21));
+        assert!(text_file_diff("clip", &old, &old).is_none());
     }
 
     #[test]
