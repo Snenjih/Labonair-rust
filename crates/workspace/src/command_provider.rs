@@ -390,6 +390,11 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
     });
 
     let workspace_handle = workspace.clone();
+    register!(CommandId::GitDiffBranch, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.open_diff_since_default(cx));
+    });
+
+    let workspace_handle = workspace.clone();
     register!(CommandId::GitOpenFileDiff, move |_window, cx| {
         workspace_handle.update(cx, |workspace, cx| workspace.open_active_file_diff(cx));
     });
@@ -610,6 +615,12 @@ impl CommandProvider for WorkspaceCommandProvider {
                 "Editor",
             )
             .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(
+                CommandId::GitDiffBranch,
+                "Git: Changes Since Default Branch",
+                "Source Control",
+            )
+            .with_icon(CommandIcon::GitBranch),
             CommandDescriptor::new(
                 CommandId::GitOpenFileDiff,
                 "Git: Open File Diff",

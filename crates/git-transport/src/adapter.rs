@@ -291,6 +291,19 @@ impl GitService for GitTransportService {
         })
     }
 
+    fn diff_since(
+        &self,
+        path: String,
+        base_ref: String,
+        session_id: Option<String>,
+    ) -> GitFuture<String> {
+        let ssh_state = self.ssh_state.clone();
+        let events = self.events.clone();
+        Box::pin(async move {
+            super::git_get_diff_since(path, base_ref, session_id, &ssh_state, events.clone()).await
+        })
+    }
+
     fn commit_header(
         &self,
         path: String,

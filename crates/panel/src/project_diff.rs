@@ -33,6 +33,9 @@ pub enum DiffSource {
     /// Only the unstaged changes (worktree↔index, incl. untracked files):
     /// hunks can be staged and restored. `files` is filtered to unstaged entries.
     Unstaged,
+    /// The working tree against the merge base with `base` ("Changes since
+    /// `base`"), rendered read-only; the base can be switched in the view.
+    Since { base: String },
     /// A comparison of two texts with no Git behind it (clipboard against a
     /// selection). Read-only; `title` names the single diff section.
     Text {

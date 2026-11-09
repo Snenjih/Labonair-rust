@@ -44,8 +44,8 @@ use labonair_settings::{
     enqueue_user_settings_write, EditorSettings, Settings as _, SettingsStore,
 };
 use labonair_ui_kit::{
-    button, button_disabled, checkbox, file_icon_path, icon_button_builder, svg_path, ButtonSize,
-    ButtonVariant, IconName, Palette, Tooltip,
+    button, button_disabled, checkbox, context_menu, file_icon_path, icon_button_builder, svg_path,
+    ButtonSize, ButtonVariant, IconName, MenuItem, Palette, Tooltip,
 };
 use tokio::runtime::Handle as TokioHandle;
 
@@ -195,6 +195,9 @@ pub struct ProjectDiffView {
 
     /// Author / date / message block of a Commit source.
     commit_header: Option<labonair_git::CommitHeader>,
+    /// Branches offered by the "Base" picker of a Since diff.
+    branch_names: Vec<String>,
+    base_menu: Option<gpui::Point<gpui::Pixels>>,
     loading: bool,
     busy: bool,
     /// Generation guard so a slow response for a previous load cannot
@@ -246,6 +249,8 @@ impl ProjectDiffView {
             pending_scroll: None,
             sticky: None,
             commit_header: None,
+            branch_names: Vec::new(),
+            base_menu: None,
             loading: false,
             busy: false,
             gen: 0,
@@ -388,6 +393,21 @@ impl ProjectDiffView {
         Rc::make_mut(&mut self.doc).apply_display(context, &self.expansions);
     }
 
+    /// Re-point a "Changes since" diff at another base ref.
+    fn set_base(&mut self, base: String, cx: &mut Context<Self>) {
+        self.base_menu = None;
+        if matches!(&self.source, DiffSource::Since { base: current } if *current == base) {
+            cx.notify();
+            return;
+        }
+        self.source = DiffSource::Since { base };
+        self.known_files.clear();
+        self.expansions.clear();
+        self.folded.clear();
+        self.cursor = None;
+        self.reload(cx);
+    }
+
     fn toggle_full_file(&mut self, cx: &mut Context<Self>) {
         self.show_full_file = !self.show_full_file;
         self.reapply_display();
@@ -421,6 +441,25 @@ impl ProjectDiffView {
         let files = self.files.clone();
         let tokio = self.tokio.clone();
         self.commit_header = None;
+        if matches!(self.source, DiffSource::Since { .. }) && self.branch_names.is_empty() {
+            let (git, root, session) = (
+                self.git.clone(),
+                self.repo_root.clone().unwrap_or_default(),
+                self.session_id.clone(),
+            );
+            let state = self
+                .tokio
+                .spawn(async move { git.workspace_state(root, session).await });
+            cx.spawn(async move |this, cx| {
+                if let Ok(Ok(state)) = state.await {
+                    let _ = this.update(cx, |this, cx| {
+                        this.branch_names = branch_choices(&state.branches);
+                        cx.notify();
+                    });
+                }
+            })
+            .detach();
+        }
         if let DiffSource::Commit { hash, .. } = &self.source {
             let (git, root, session, hash) = (
                 self.git.clone(),
@@ -451,6 +490,10 @@ impl ProjectDiffView {
                 | DiffSource::Unstaged
                 | DiffSource::File { .. } => {
                     load_working_tree(git, tokio, root, session, files).await
+                }
+                DiffSource::Since { base } => {
+                    let text = git.diff_since(root, base, session).await?;
+                    Ok(read_only_inputs(&text))
                 }
                 DiffSource::Text { title, old, new } => {
                     Ok(labonair_editor::unified::text_file_diff(&title, &old, &new)
@@ -830,6 +873,7 @@ impl ProjectDiffView {
             DiffSource::Unstaged => "Unstaged Changes".to_string(),
             DiffSource::File { path } => format!("Changes: {path}"),
             DiffSource::Text { title, .. } => title.clone(),
+            DiffSource::Since { base } => format!("Changes since {base}"),
         }
     }
 
@@ -846,6 +890,19 @@ impl ProjectDiffView {
         let root = self.repo_root.as_deref()?;
         Some(format!("{}/{}", root.trim_end_matches('/'), relative))
     }
+}
+
+/// Branch names for the base picker: local branches first, then remotes,
+/// each group alphabetical, `HEAD`-style aliases excluded.
+fn branch_choices(branches: &[labonair_git::Branch]) -> Vec<String> {
+    let mut names: Vec<(bool, String)> = branches
+        .iter()
+        .filter(|b| !b.name.ends_with("/HEAD"))
+        .map(|b| (b.is_remote, b.name.clone()))
+        .collect();
+    names.sort();
+    names.dedup();
+    names.into_iter().map(|(_, name)| name).collect()
 }
 
 fn stage_failure(unstage: bool) -> &'static str {
@@ -874,6 +931,7 @@ fn same_source(left: &DiffSource, right: &DiffSource) -> bool {
         | (DiffSource::Unstaged, DiffSource::Unstaged) => true,
         (DiffSource::File { path: l }, DiffSource::File { path: r }) => l == r,
         (DiffSource::Text { title: l, .. }, DiffSource::Text { title: r, .. }) => l == r,
+        (DiffSource::Since { base: l }, DiffSource::Since { base: r }) => l == r,
         (DiffSource::Commit { hash: l, .. }, DiffSource::Commit { hash: r, .. })
         | (DiffSource::Stash { hash: l, .. }, DiffSource::Stash { hash: r, .. }) => l == r,
         (
@@ -1111,6 +1169,7 @@ impl Render for ProjectDiffView {
             .bg(c.bg)
             .text_color(c.fg)
             .child(self.render_toolbar(c, palette, cx))
+            .children(self.render_base_menu(palette, cx))
             .children(self.render_commit_header(c, palette))
             .child(
                 div()
@@ -1198,6 +1257,40 @@ impl ProjectDiffView {
                     )
                 }),
         )
+    }
+
+    /// The "Base" branch picker popover of a Since diff.
+    fn render_base_menu(
+        &self,
+        palette: Palette,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        let anchor = self.base_menu?;
+        let view = cx.entity();
+        let items: Vec<MenuItem> =
+            self.branch_names
+                .iter()
+                .enumerate()
+                .map(|(i, name)| {
+                    let (view, name) = (view.clone(), name.clone());
+                    MenuItem::new(format!("pd-base-{i}"), SharedString::from(name.clone()))
+                        .on_click(move |_: &ClickEvent, _w: &mut Window, cx: &mut App| {
+                            view.update(cx, |this, cx| this.set_base(name.clone(), cx));
+                        })
+                })
+                .collect();
+        let close = view.clone();
+        Some(context_menu(
+            anchor,
+            palette,
+            move |_w, cx| {
+                close.update(cx, |this, cx| {
+                    this.base_menu = None;
+                    cx.notify();
+                })
+            },
+            items,
+        ))
     }
 
     fn render_empty(
@@ -1310,6 +1403,30 @@ impl ProjectDiffView {
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .child(SharedString::from(self.header_title())),
+            )
+            .when_some(
+                match &self.source {
+                    DiffSource::Since { base } => Some(base.clone()),
+                    _ => None,
+                },
+                |d, base| {
+                    d.child(
+                        button(
+                            "pd-base-picker",
+                            palette,
+                            ButtonVariant::Outlined,
+                            ButtonSize::Xs,
+                        )
+                        .child(SharedString::from(format!("Base: {base}")))
+                        .tooltip(|window, cx| Tooltip::new("Change base branch").build(window, cx))
+                        .on_click(cx.listener(
+                            |this, ev: &ClickEvent, _w, cx| {
+                                this.base_menu = Some(ev.position());
+                                cx.notify();
+                            },
+                        )),
+                    )
+                },
             )
             .when(self.is_solo(), |d| {
                 d.child(text_button(
@@ -2071,6 +2188,28 @@ mod tests {
             Some("a.rs")
         );
         assert_eq!(resolve_selection(&[], Some("a.rs")), None);
+    }
+
+    #[test]
+    fn base_picker_lists_local_branches_before_remotes() {
+        let branch = |name: &str, remote| labonair_git::Branch {
+            name: name.into(),
+            is_current: false,
+            is_remote: remote,
+            upstream: None,
+            ahead: 0,
+            behind: 0,
+            author: None,
+            committed_relative: None,
+            subject: None,
+        };
+        let names = branch_choices(&[
+            branch("origin/main", true),
+            branch("origin/HEAD", true),
+            branch("main", false),
+            branch("dev", false),
+        ]);
+        assert_eq!(names, ["dev", "main", "origin/main"]);
     }
 
     #[test]

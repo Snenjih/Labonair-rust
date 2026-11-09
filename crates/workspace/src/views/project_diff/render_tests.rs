@@ -184,6 +184,19 @@ impl GitService for FakeGit {
         }
     }
 
+    fn diff_since(
+        &self,
+        _path: String,
+        base_ref: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<String> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("diff_since {base_ref}"));
+        Box::pin(async { Ok(STAGED.to_string()) })
+    }
+
     fn commit_header(
         &self,
         _path: String,
@@ -940,4 +953,34 @@ fn text_source_diffs_two_strings_read_only(cx: &mut TestAppContext) {
         assert_eq!(v.doc.totals(), (1, 1));
         assert_eq!(v.header_title(), "Clipboard \u{2194} Selection");
     });
+}
+
+#[gpui::test]
+fn since_source_loads_against_a_base_and_can_switch_it(cx: &mut TestAppContext) {
+    let (h, cx) = harness(cx);
+    let mut req = request();
+    req.source = DiffSource::Since {
+        base: "main".into(),
+    };
+    req.files.clear();
+    h.view.update(cx, |v, cx| v.apply_request(req, cx));
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
+    draw(cx, &h.view, 1200.0);
+    h.view.read_with(cx, |v, _| {
+        assert_eq!(v.header_title(), "Changes since main");
+        assert!(!v.supports_staging());
+        assert_eq!(v.doc.files[0].hunks[0].stage, HunkStage::ReadOnly);
+    });
+    h.view.update(cx, |v, cx| v.set_base("develop".into(), cx));
+    wait_until(cx, |_| {
+        h.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| c == "diff_since develop")
+    });
+    assert_eq!(
+        h.view.read_with(cx, |v, _| v.header_title()),
+        "Changes since develop"
+    );
 }

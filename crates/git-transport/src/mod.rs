@@ -1380,6 +1380,24 @@ pub async fn git_get_commit_diff(
     Ok(truncate_diff(&stdout, MAX_DIFF_BYTES))
 }
 
+/// Working tree against `merge-base(base_ref, HEAD)`.
+pub async fn git_get_diff_since(
+    path: String,
+    base_ref: String,
+    session_id: Option<String>,
+    sftp_state: &SshState,
+    events: EventBus,
+) -> Result<String, String> {
+    const MAX_DIFF_BYTES: usize = 200 * 1024;
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
+    let merge_base = executor.run(&["merge-base", &base_ref, "HEAD"]).await?;
+    let merge_base = merge_base.trim();
+    let stdout = executor
+        .run_raw(&["diff", "--patch", merge_base, "--"])
+        .await?;
+    Ok(truncate_diff(&stdout, MAX_DIFF_BYTES))
+}
+
 /// Author, author time and full message of one commit.
 pub async fn git_get_commit_header(
     path: String,

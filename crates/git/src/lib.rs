@@ -189,6 +189,16 @@ pub trait GitService: Send + Sync {
     ) -> GitFuture<String> {
         self.diff(path, file, staged, Some(false), is_untracked, session_id)
     }
+    /// Patch of the working tree against the merge base of `base_ref` and
+    /// `HEAD` ("Changes since <ref>").
+    fn diff_since(
+        &self,
+        _path: String,
+        _base_ref: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<String> {
+        Box::pin(async { Err("branch comparison is not available".to_string()) })
+    }
     /// Author, time and full message of `hash`.
     fn commit_header(
         &self,

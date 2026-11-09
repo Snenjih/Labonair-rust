@@ -332,6 +332,25 @@ pub(crate) enum EditorCommandDispatchResult {
     Unsupported(CommandId),
 }
 
+/// The branch "Changes since…" compares against by default.
+fn default_base_branch(branches: &[labonair_git::Branch]) -> Option<String> {
+    let local = |name: &str| {
+        branches
+            .iter()
+            .any(|b| !b.is_remote && !b.is_current && b.name == name)
+    };
+    ["main", "master"]
+        .into_iter()
+        .find(|name| local(name))
+        .map(str::to_string)
+        .or_else(|| {
+            branches
+                .iter()
+                .find(|b| !b.is_remote && !b.is_current)
+                .map(|b| b.name.clone())
+        })
+}
+
 /// Build a working-tree style [`ProjectDiffRequest`](labonair_panel::ProjectDiffRequest)
 /// for `source`. A `target` (path under or relative to the repo) is guaranteed
 /// to be in the file list and becomes the initial selection.
@@ -4680,6 +4699,48 @@ impl Workspace {
         let session = context.session_id.clone();
         let task = self.tokio.spawn(async move {
             working_tree_diff_request(git, root, session, source, None).await
+        });
+        cx.spawn(async move |this, cx| {
+            let result = task.await.unwrap_or_else(|error| Err(error.to_string()));
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(request) => this.open_project_diff(request, cx),
+                Err(error) => {
+                    labonair_notifications::notify_err::<()>("Open Diff", Err(error), cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Open "Changes since <default branch>" (`main`, else `master`, else the
+    /// first other local branch); the base can be switched in the view.
+    pub fn open_diff_since_default(&mut self, cx: &mut Context<Self>) {
+        let context = self.editor_git_bridge.context();
+        let Some(root) = context.root.clone() else {
+            labonair_notifications::notify_err::<()>(
+                "Open Diff",
+                Err("Git actions require an explicit repository workspace.".to_string()),
+                cx,
+            );
+            return;
+        };
+        let git = self.git.clone();
+        let session = context.session_id.clone();
+        let task = self.tokio.spawn(async move {
+            let repo_root = git.repo_root(root, session.clone()).await?;
+            let state = git
+                .workspace_state(repo_root.clone(), session.clone())
+                .await?;
+            let base = default_base_branch(&state.branches)
+                .ok_or_else(|| "No other branch to compare with.".to_string())?;
+            Ok::<_, String>(labonair_panel::ProjectDiffRequest {
+                repo_root,
+                session_id: session,
+                source: labonair_panel::DiffSource::Since { base },
+                files: Vec::new(),
+                selected: None,
+                mode: labonair_panel::ProjectDiffMode::Unified,
+            })
         });
         cx.spawn(async move |this, cx| {
             let result = task.await.unwrap_or_else(|error| Err(error.to_string()));
