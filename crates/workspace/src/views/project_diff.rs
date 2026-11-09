@@ -72,6 +72,14 @@ const DEFAULT_EXPAND_LINES: usize = 5;
 /// Fallback for `editorMinimumSplitDiffWidth` when settings are unavailable.
 const DEFAULT_MIN_SPLIT_COLUMNS: f32 = 100.0;
 
+/// The hunk the last restore discarded, kept so it can be re-applied.
+#[derive(Debug, Clone)]
+struct LastRestore {
+    path: String,
+    patch: String,
+    staged: bool,
+}
+
 /// Keyboard / command-palette operations on the DiffView (spec §8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffAction {
@@ -83,6 +91,8 @@ pub enum DiffAction {
     StageAll,
     UnstageAll,
     ToggleSplit,
+    UndoRestore,
+    RestoreAndNext,
 }
 
 /// The file whose header has scrolled above the viewport and must stay pinned
@@ -192,6 +202,7 @@ pub struct ProjectDiffView {
     known_files: HashSet<String>,
     cursor: Option<HunkId>,
     confirm_restore: Option<HunkId>,
+    last_restore: Option<LastRestore>,
     pending_scroll: Option<String>,
     /// File whose header is currently pinned over the list.
     sticky: Option<usize>,
@@ -250,6 +261,7 @@ impl ProjectDiffView {
             known_files: HashSet::new(),
             cursor: None,
             confirm_restore: None,
+            last_restore: None,
             pending_scroll: None,
             sticky: None,
             commit_header: None,
@@ -358,6 +370,7 @@ impl ProjectDiffView {
         match action {
             DiffAction::GoToHunk => self.go_to_hunk(true, cx),
             DiffAction::GoToPreviousHunk => self.go_to_hunk(false, cx),
+            DiffAction::UndoRestore => self.undo_restore(cx),
             DiffAction::ToggleSplit => {
                 let next = match self.style {
                     DiffStyle::Split => DiffStyle::Unified,
@@ -366,6 +379,16 @@ impl ProjectDiffView {
                 self.set_style(next, cx);
             }
             _ if !staging => {}
+            DiffAction::RestoreAndNext => {
+                if let Some(id) = self.cursor {
+                    let next = self.doc.step_hunk(Some(id), true);
+                    self.restore_hunk(id, cx);
+                    if let Some(next) = next {
+                        self.cursor = Some(next);
+                        self.reveal_hunk(next);
+                    }
+                }
+            }
             DiffAction::ToggleStaged => {
                 if let Some(id) = self.cursor {
                     self.apply_hunk(id, cx);
@@ -376,6 +399,11 @@ impl ProjectDiffView {
             DiffAction::StageAll => self.stage_all(true, cx),
             DiffAction::UnstageAll => self.stage_all(false, cx),
         }
+    }
+
+    /// Whether this is a "Changes since <ref>" diff.
+    pub fn is_since(&self) -> bool {
+        matches!(self.source, DiffSource::Since { .. })
     }
 
     fn is_solo(&self) -> bool {
@@ -798,28 +826,52 @@ impl ProjectDiffView {
         }
     }
 
-    /// Restore (discard) one hunk. Two-step — the first click arms it — because
-    /// the diff has no undo.
+    /// Restore (discard) one hunk, immediately like the reference; the last
+    /// restored hunk can be brought back with [`Self::undo_restore`]. A
+    /// whole-file restore (new / deleted file) cannot be undone, so the first
+    /// click only arms it.
     fn restore_hunk(&mut self, id: HunkId, cx: &mut Context<Self>) {
-        if self.confirm_restore != Some(id) {
-            self.cursor = Some(id);
-            self.confirm_restore = Some(id);
-            cx.notify();
-            return;
-        }
-        self.confirm_restore = None;
-        let Some(HunkOperation::Patch { path, patch, stage }) = self.doc.hunk_operation(id) else {
-            // A whole-file hunk restores through the file-level discard.
-            if let Some(HunkOperation::WholeFile { path, .. }) = self.doc.hunk_operation(id) {
+        match self.doc.hunk_operation(id) {
+            Some(HunkOperation::Patch { path, patch, stage }) => {
+                self.confirm_restore = None;
+                let staged = stage == HunkStage::Staged;
+                self.last_restore = Some(LastRestore {
+                    path: path.clone(),
+                    patch: patch.clone(),
+                    staged,
+                });
+                self.run_git("Restore hunk failed", cx, move |git, root, session| {
+                    git.discard_hunk(root, path, patch, staged, session)
+                });
+            }
+            Some(HunkOperation::WholeFile { path, .. }) => {
+                if self.confirm_restore != Some(id) {
+                    self.cursor = Some(id);
+                    self.confirm_restore = Some(id);
+                    cx.notify();
+                    return;
+                }
+                self.confirm_restore = None;
                 self.run_git("Restore failed", cx, move |git, root, session| {
                     git.discard_file(root, path, session)
                 });
             }
+            None => {}
+        }
+    }
+
+    /// Bring back the hunk the last restore discarded.
+    fn undo_restore(&mut self, cx: &mut Context<Self>) {
+        let Some(LastRestore {
+            path,
+            patch,
+            staged,
+        }) = self.last_restore.take()
+        else {
             return;
         };
-        let staged = stage == HunkStage::Staged;
-        self.run_git("Restore hunk failed", cx, move |git, root, session| {
-            git.discard_hunk(root, path, patch, staged, session)
+        self.run_git("Undo restore failed", cx, move |git, root, session| {
+            git.restore_hunk_undo(root, path.clone(), patch, staged, session)
         });
     }
 
@@ -1439,6 +1491,15 @@ impl ProjectDiffView {
                     )
                 },
             )
+            .when(self.last_restore.is_some(), |d| {
+                d.child(text_button(
+                    "pd-undo-restore",
+                    "Undo Restore",
+                    "Bring back the hunk you just restored",
+                    !self.busy,
+                    Box::new(|this, cx| this.undo_restore(cx)),
+                ))
+            })
             .when(self.is_solo(), |d| {
                 d.child(text_button(
                     "pd-full-file",

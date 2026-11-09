@@ -268,6 +268,18 @@ pub trait GitService: Send + Sync {
         staged: bool,
         session_id: Option<String>,
     ) -> GitFuture<()>;
+    /// Re-applies a hunk patch that [`Self::discard_hunk`] reverted (undo of a
+    /// restore): into the working tree, and the index too when `staged`.
+    fn restore_hunk_undo(
+        &self,
+        _path: String,
+        _file: String,
+        _patch: String,
+        _staged: bool,
+        _session_id: Option<String>,
+    ) -> GitFuture<()> {
+        Box::pin(async { Err("undoing a restore is not available".to_string()) })
+    }
     fn discard_file(&self, path: String, file: String, session_id: Option<String>)
         -> GitFuture<()>;
     fn stage_all(&self, path: String, session_id: Option<String>) -> GitFuture<()>;

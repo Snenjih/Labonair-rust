@@ -822,6 +822,27 @@ pub async fn git_discard_hunk(
     apply_discard_hunk_patch(&executor, &file, hunk_patch_text, staged).await
 }
 
+/// Undo of [`git_discard_hunk`]: forward `git apply [--index]`.
+pub async fn git_restore_hunk_undo(
+    path: String,
+    file: String,
+    hunk_patch_text: String,
+    staged: bool,
+    session_id: Option<String>,
+    sftp_state: &SshState,
+    events: EventBus,
+) -> Result<(), String> {
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
+    let mut args: Vec<&str> = vec!["apply"];
+    if staged {
+        args.push("--index");
+    }
+    executor
+        .run_with_stdin(&args, hunk_patch_text.into_bytes())
+        .await
+        .map_err(|error| classify_apply_error(&error, &file))
+}
+
 /// Shared `git apply --cached[--reverse]` dispatch for hunk stage/unstage.
 async fn apply_hunk_patch(
     executor: &GitExecutor,

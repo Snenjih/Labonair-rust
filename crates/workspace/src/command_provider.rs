@@ -390,6 +390,16 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
     });
 
     let workspace_handle = workspace.clone();
+    register!(CommandId::GitDiff, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.open_default_diff(cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::GitToggleDiffBase, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.toggle_diff_base(cx));
+    });
+
+    let workspace_handle = workspace.clone();
     register!(CommandId::GitDiffBranch, move |_window, cx| {
         workspace_handle.update(cx, |workspace, cx| workspace.open_diff_since_default(cx));
     });
@@ -411,6 +421,8 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
         (CommandId::DiffStageAll, DiffAction::StageAll),
         (CommandId::DiffUnstageAll, DiffAction::UnstageAll),
         (CommandId::DiffToggleSplit, DiffAction::ToggleSplit),
+        (CommandId::DiffUndoRestore, DiffAction::UndoRestore),
+        (CommandId::DiffRestoreAndNext, DiffAction::RestoreAndNext),
     ] {
         let workspace_handle = workspace.clone();
         register!(command, move |_window, cx| {
@@ -615,6 +627,14 @@ impl CommandProvider for WorkspaceCommandProvider {
                 "Editor",
             )
             .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(CommandId::GitDiff, "Git: Diff", "Source Control")
+                .with_icon(CommandIcon::GitBranch),
+            CommandDescriptor::new(
+                CommandId::GitToggleDiffBase,
+                "Git: Toggle Diff Base",
+                "Source Control",
+            )
+            .with_icon(CommandIcon::GitBranch),
             CommandDescriptor::new(
                 CommandId::GitDiffBranch,
                 "Git: Changes Since Default Branch",
@@ -664,6 +684,20 @@ impl CommandProvider for WorkspaceCommandProvider {
             CommandDescriptor::new(CommandId::DiffUnstageAll, "Diff: Unstage All", "Diff")
                 .with_contexts(&[CommandContext::Diff])
                 .with_default_binding("cmd-ctrl-shift-y", Some(CommandContext::Diff)),
+            CommandDescriptor::new(
+                CommandId::DiffRestoreAndNext,
+                "Diff: Restore Hunk and Go to Next",
+                "Diff",
+            )
+            .with_contexts(&[CommandContext::Diff])
+            .with_default_binding("cmd-alt-z", Some(CommandContext::Diff)),
+            CommandDescriptor::new(
+                CommandId::DiffUndoRestore,
+                "Diff: Undo Restore Hunk",
+                "Diff",
+            )
+            .with_contexts(&[CommandContext::Diff])
+            .with_default_binding("cmd-z", Some(CommandContext::Diff)),
             CommandDescriptor::new(
                 CommandId::DiffToggleSplit,
                 "Diff: Toggle Split View",

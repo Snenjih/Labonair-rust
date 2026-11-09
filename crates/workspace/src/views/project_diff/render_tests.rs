@@ -135,6 +135,17 @@ impl GitService for FakeGit {
         self.record(format!("discard_hunk {file} staged={staged}"))
     }
 
+    fn restore_hunk_undo(
+        &self,
+        _p: String,
+        file: String,
+        _patch: String,
+        staged: bool,
+        _s: Option<String>,
+    ) -> GitFuture<()> {
+        self.record(format!("restore_hunk_undo {file} staged={staged}"))
+    }
+
     fn is_repo(&self, _path: String, _session_id: Option<String>) -> GitFuture<bool> {
         unsupported()
     }
@@ -576,21 +587,29 @@ fn stage_and_next_stages_the_cursor_hunk_and_advances(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn restore_needs_a_second_click(cx: &mut TestAppContext) {
+fn restore_is_immediate_and_can_be_undone(cx: &mut TestAppContext) {
     let (h, cx) = harness(cx);
     h.view.update(cx, |v, cx| v.apply_request(request(), cx));
     wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
 
     let id = HunkId { file: 1, hunk: 0 };
     h.view.update(cx, |v, cx| v.restore_hunk(id, cx));
-    cx.run_until_parked();
-    assert!(h.calls.lock().unwrap().is_empty());
-    h.view.update(cx, |v, cx| v.restore_hunk(id, cx));
     wait_until(cx, |_| !h.calls.lock().unwrap().is_empty());
     assert_eq!(
         h.calls.lock().unwrap().as_slice(),
         ["discard_hunk src/lib.rs staged=false"]
     );
+
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.busy));
+    h.view
+        .update(cx, |v, cx| v.perform(super::DiffAction::UndoRestore, cx));
+    wait_until(cx, |_| h.calls.lock().unwrap().len() == 2);
+    assert_eq!(
+        h.calls.lock().unwrap()[1],
+        "restore_hunk_undo src/lib.rs staged=false"
+    );
+    // Nothing left to undo.
+    assert!(h.view.read_with(cx, |v, _| v.last_restore.is_none()));
 }
 
 #[gpui::test]
@@ -1020,4 +1039,24 @@ fn untracked_files_fold_on_first_sight_when_configured(cx: &mut TestAppContext) 
         assert!(v.folded.contains("new.txt"));
         assert!(!v.folded.contains("src/lib.rs"));
     });
+}
+
+#[gpui::test]
+fn restore_and_next_discards_the_cursor_hunk_and_advances(cx: &mut TestAppContext) {
+    let (h, cx) = harness(cx);
+    h.view.update(cx, |v, cx| v.apply_request(request(), cx));
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
+    let start = HunkId { file: 1, hunk: 0 };
+    h.view.update(cx, |v, _| v.cursor = Some(start));
+    h.view
+        .update(cx, |v, cx| v.perform(super::DiffAction::RestoreAndNext, cx));
+    wait_until(cx, |_| !h.calls.lock().unwrap().is_empty());
+    assert_eq!(
+        h.calls.lock().unwrap()[0],
+        "discard_hunk src/lib.rs staged=false"
+    );
+    assert_eq!(
+        h.view.read_with(cx, |v, _| v.cursor),
+        Some(HunkId { file: 1, hunk: 1 })
+    );
 }

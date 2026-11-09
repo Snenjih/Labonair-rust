@@ -163,6 +163,8 @@
     // Show the Stage / Unstage / Restore controls on diff hunks.
     "editorDiffShowStageRestoreButtons": true,
     // Unchanged lines shown around each change in a DiffView.
+    // What "git: Diff" compares the working tree with: "head" or "defaultBranch".
+    "editorDiffBase": "head",
     // Fold untracked files when a DiffView first lists them.
     "editorDiffCollapseUntracked": false,
     // Single-file diffs start with the whole file shown.

@@ -532,6 +532,7 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_minimum_split_diff_width: defaults.editor_minimum_split_diff_width,
         editor_diff_hunk_style: defaults.editor_diff_hunk_style,
         editor_diff_show_stage_restore_buttons: defaults.editor_diff_show_stage_restore_buttons,
+        editor_diff_base: defaults.editor_diff_base,
         editor_diff_collapse_untracked: defaults.editor_diff_collapse_untracked,
         editor_diff_solo_show_full_file: defaults.editor_diff_solo_show_full_file,
         editor_diff_excerpt_context_lines: defaults.editor_diff_excerpt_context_lines,

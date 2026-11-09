@@ -819,6 +819,11 @@ impl EditorSettings {
             .unwrap_or(true)
     }
 
+    /// `true` when `git: Diff` compares with the default branch instead of HEAD.
+    pub fn diff_base_is_default_branch(&self) -> bool {
+        self.0.editor_diff_base.as_deref() == Some("defaultBranch")
+    }
+
     /// Whether a DiffView folds untracked files when first listing them.
     pub fn diff_collapse_untracked(&self) -> bool {
         self.0.editor_diff_collapse_untracked.unwrap_or(false)

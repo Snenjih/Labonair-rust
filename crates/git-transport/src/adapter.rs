@@ -422,6 +422,30 @@ impl GitService for GitTransportService {
         })
     }
 
+    fn restore_hunk_undo(
+        &self,
+        path: String,
+        file: String,
+        patch: String,
+        staged: bool,
+        session_id: Option<String>,
+    ) -> GitFuture<()> {
+        let ssh_state = self.ssh_state.clone();
+        let events = self.events.clone();
+        Box::pin(async move {
+            super::git_restore_hunk_undo(
+                path,
+                file,
+                patch,
+                staged,
+                session_id,
+                &ssh_state,
+                events.clone(),
+            )
+            .await
+        })
+    }
+
     fn discard_hunk(
         &self,
         path: String,

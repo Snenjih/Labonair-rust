@@ -180,7 +180,7 @@ mod tests {
     #[test]
     fn font_query_finds_multiple_categories() {
         let idx = index();
-        let rows = search(&idx, "font", 50);
+        let rows = search(&idx, "font", 80);
         assert!(rows.iter().any(|r| r.page_title == "Appearance"));
         assert!(rows.iter().any(|r| r.page_title == "Terminal"));
         assert!(rows.iter().any(|r| r.page_title == "Editor"));

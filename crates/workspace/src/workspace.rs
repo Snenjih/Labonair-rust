@@ -4716,6 +4716,33 @@ impl Workspace {
         .detach();
     }
 
+    /// `git: Diff`: the working tree against HEAD or, with `editorDiffBase =
+    /// "defaultBranch"`, against the default branch.
+    pub fn open_default_diff(&mut self, cx: &mut Context<Self>) {
+        use labonair_settings::Settings as _;
+        let default_branch = labonair_settings::EditorSettings::try_get(cx)
+            .is_some_and(|settings| settings.diff_base_is_default_branch());
+        if default_branch {
+            self.open_diff_since_default(cx);
+        } else {
+            self.open_diff_source(labonair_panel::DiffSource::WorkingTree, cx);
+        }
+    }
+
+    /// `git: Toggle Diff Base`: flip the open diff between HEAD and the
+    /// default branch.
+    pub fn toggle_diff_base(&mut self, cx: &mut Context<Self>) {
+        let since = self
+            .project_diff
+            .as_ref()
+            .is_some_and(|view| view.read(cx).is_since());
+        if since {
+            self.open_diff_source(labonair_panel::DiffSource::WorkingTree, cx);
+        } else {
+            self.open_diff_since_default(cx);
+        }
+    }
+
     /// Open "Changes since <default branch>" (`main`, else `master`, else the
     /// first other local branch); the base can be switched in the view.
     pub fn open_diff_since_default(&mut self, cx: &mut Context<Self>) {

@@ -1083,6 +1083,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Show Stage, Unstage and Restore controls on diff hunks."
         ),
         field!(
+            editor.editor_diff_base,
+            "editorDiffBase",
+            Select(&[("head", "HEAD"), ("defaultBranch", "Default branch")]),
+            "Diff base",
+            "What the Diff command compares the working tree with."
+        ),
+        field!(
             editor.editor_diff_collapse_untracked,
             "editorDiffCollapseUntracked",
             Switch,
