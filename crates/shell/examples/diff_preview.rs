@@ -2,7 +2,7 @@
 //! real repository, for visual checks (`docs/parity/diff-view-spec.md` §12).
 //!
 //! ```text
-//! cargo run -p labonair-shell --example diff_preview -- <repo> [staged|unstaged|file:<path>|since:<ref>]
+//! cargo run -p labonair-shell --example diff_preview -- <repo> [staged|unstaged|file:<path>|since:<ref>|commit:<hash>] [light] [narrow]
 //! ```
 
 use std::sync::Arc;
@@ -20,6 +20,9 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let repo = args.next().expect("usage: diff_preview <repo> [mode]");
     let mode = args.next().unwrap_or_default();
+    let flags: Vec<String> = args.collect();
+    let has = move |flag: &str| flags.iter().any(|f| f == flag);
+    let (light, narrow) = (has("light"), has("narrow"));
 
     let runtime = tokio::runtime::Runtime::new().expect("tokio");
     let handle = runtime.handle().clone();
@@ -35,7 +38,11 @@ fn main() {
             labonair_shell::init_fonts(cx);
             labonair_shell::init_settings(cx);
             gpui_component::init(cx);
-            let bounds = Bounds::centered(None, size(px(1280.0), px(820.0)), cx);
+            let bounds = Bounds::centered(
+                None,
+                size(px(if narrow { 640.0 } else { 1280.0 }), px(820.0)),
+                cx,
+            );
             cx.open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -43,8 +50,14 @@ fn main() {
                 },
                 move |window, cx| {
                     let theme = labonair_shell::init_theme(window.appearance(), cx);
+                    if light {
+                        theme.update(cx, |store, cx| {
+                            store.set_system_appearance(gpui::WindowAppearance::Light, cx)
+                        });
+                    }
                     labonair_shell::init_notifications(cx);
-                    let view = cx.new(|cx| ProjectDiffView::new(theme, git.clone(), handle.clone(), cx));
+                    let view =
+                        cx.new(|cx| ProjectDiffView::new(theme, git.clone(), handle.clone(), cx));
                     let (git, repo, mode, view_handle) =
                         (git.clone(), repo.clone(), mode.clone(), view.clone());
                     let task = handle.spawn({
@@ -64,12 +77,38 @@ fn main() {
                                 });
                             }
                         };
-                        push(state.status.staged.iter().map(|f| f.path.clone()).collect(), true, false);
-                        push(state.status.unstaged.iter().map(|f| f.path.clone()).collect(), false, false);
-                        push(state.status.untracked.iter().map(|f| f.path.clone()).collect(), false, true);
+                        push(
+                            state.status.staged.iter().map(|f| f.path.clone()).collect(),
+                            true,
+                            false,
+                        );
+                        push(
+                            state
+                                .status
+                                .unstaged
+                                .iter()
+                                .map(|f| f.path.clone())
+                                .collect(),
+                            false,
+                            false,
+                        );
+                        push(
+                            state
+                                .status
+                                .untracked
+                                .iter()
+                                .map(|f| f.path.clone())
+                                .collect(),
+                            false,
+                            true,
+                        );
                         let source = match mode.split_once(':') {
                             Some(("file", path)) => DiffSource::File { path: path.into() },
                             Some(("since", base)) => DiffSource::Since { base: base.into() },
+                            Some(("commit", hash)) => DiffSource::Commit {
+                                hash: hash.into(),
+                                subject: String::new(),
+                            },
                             _ if mode == "staged" => {
                                 files.retain(|f| f.staged);
                                 DiffSource::Staged
