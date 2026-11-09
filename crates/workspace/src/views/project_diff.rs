@@ -22,13 +22,14 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    canvas, combine_highlights, div, list, px, App, ClickEvent, Context, Entity, FocusHandle,
-    Focusable, HighlightStyle, Hsla, InteractiveElement, IntoElement, ListAlignment, ListOffset,
-    ListSizingBehavior, ListState, ParentElement, Render, SharedString, StatefulInteractiveElement,
-    Styled, StyledText, Window,
+    canvas, combine_highlights, div, list, percentage, px, Animation, AnimationExt as _, App,
+    ClickEvent, Context, Entity, FocusHandle, Focusable, HighlightStyle, Hsla, InteractiveElement,
+    IntoElement, ListAlignment, ListOffset, ListSizingBehavior, ListState, ParentElement, Render,
+    SharedString, StatefulInteractiveElement, Styled, StyledText, Transformation, Window,
 };
 use labonair_editor::diff_document::{
     DiffDocument, DiffLine, DiffStyle, ExpandKey, Expansion, FileInput, FileKind, FlatRow, HunkId,
@@ -52,6 +53,7 @@ use crate::theme::ThemeStore;
 
 type OpenFileHook = Rc<dyn Fn(String, &mut Window, &mut App)>;
 type CommitHook = Rc<dyn Fn(&mut Window, &mut App)>;
+type CloseHook = Rc<dyn Fn(&mut Window, &mut App)>;
 type ToolbarAction = Box<dyn Fn(&mut ProjectDiffView, &mut Context<ProjectDiffView>)>;
 
 /// Height of one code row.
@@ -188,6 +190,7 @@ pub struct ProjectDiffView {
 
     on_open_file: Option<OpenFileHook>,
     on_commit: Option<CommitHook>,
+    on_close: Option<CloseHook>,
 }
 
 impl ProjectDiffView {
@@ -234,6 +237,7 @@ impl ProjectDiffView {
             gen: 0,
             on_open_file: None,
             on_commit: None,
+            on_close: None,
         };
         view.sync_settings(cx);
         view
@@ -279,6 +283,11 @@ impl ProjectDiffView {
     /// Hook for the header's file name / Open File button (absolute path).
     pub fn set_on_open_file(&mut self, f: impl Fn(String, &mut Window, &mut App) + 'static) {
         self.on_open_file = Some(Rc::new(f));
+    }
+
+    /// Hook for the empty state's Close button.
+    pub fn set_on_close(&mut self, f: impl Fn(&mut Window, &mut App) + 'static) {
+        self.on_close = Some(Rc::new(f));
     }
 
     /// Hook for the toolbar's Commit button.
@@ -941,7 +950,7 @@ impl Render for ProjectDiffView {
 
         let mut sticky: Option<gpui::AnyElement> = None;
         let body: gpui::AnyElement = if self.rows.is_empty() {
-            self.render_empty(c, palette).into_any_element()
+            self.render_empty(c, palette, cx).into_any_element()
         } else {
             let ctx = Rc::new(RowCtx {
                 c,
@@ -1048,7 +1057,12 @@ impl Render for ProjectDiffView {
 }
 
 impl ProjectDiffView {
-    fn render_empty(&self, c: Colors, palette: Palette) -> impl IntoElement {
+    fn render_empty(
+        &self,
+        c: Colors,
+        palette: Palette,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         div()
             .size_full()
             .flex()
@@ -1059,11 +1073,37 @@ impl ProjectDiffView {
             .text_size(px(13.0))
             .text_color(c.muted)
             .when(self.loading, |d| {
-                d.child(IconName::LoadCircle.svg(palette.fg).size(px(20.0)))
-                    .child(SharedString::from("Loading changes\u{2026}"))
+                d.child(
+                    IconName::LoadCircle
+                        .svg(c.accent)
+                        .size(px(20.0))
+                        .with_animation(
+                            "pd-loading-spinner",
+                            Animation::new(Duration::from_secs(2)).repeat(),
+                            |svg, delta| {
+                                svg.with_transformation(Transformation::rotate(percentage(delta)))
+                            },
+                        ),
+                )
+                .child(SharedString::from("Loading changes\u{2026}"))
             })
             .when(!self.loading, |d| {
-                d.child(SharedString::from(self.empty_label()))
+                d.child(SharedString::from(self.empty_label())).child(
+                    button(
+                        "pd-empty-close",
+                        palette,
+                        ButtonVariant::Outlined,
+                        ButtonSize::Xs,
+                    )
+                    .child(SharedString::from("Close"))
+                    .on_click(cx.listener(
+                        |this, _: &ClickEvent, window, cx| {
+                            if let Some(f) = this.on_close.clone() {
+                                f(window, cx);
+                            }
+                        },
+                    )),
+                )
             })
     }
 

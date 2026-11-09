@@ -4627,6 +4627,12 @@ impl Workspace {
                         open.update(cx, |ws, cx| ws.open_file(path, false, window, cx))
                             .ok();
                     });
+                    let close = workspace.clone();
+                    view.set_on_close(move |window, cx| {
+                        close
+                            .update(cx, |ws, cx| ws.close_active(window, cx))
+                            .ok();
+                    });
                     view.set_on_commit(move |_window, cx| {
                         workspace
                             .update(cx, |ws, cx| ws.open_panel("source-control", cx))
