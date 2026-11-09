@@ -47,6 +47,8 @@
     "translucentSurfaces": false,
     // How transparent Glassy surfaces are, 0-100 (only with Glassy).
     "glassTransparency": 30,
+    // How strongly the desktop behind Glassy surfaces is blurred, 0-100 (only with Glassy, macOS).
+    "glassBlur": 40,
     // "titlebar" or "sidebar".
     "tabsLocation": "titlebar",
     "tabFillSpace": false,

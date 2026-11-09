@@ -99,6 +99,9 @@ pub struct AppearanceContent {
     pub translucent_surfaces: Option<bool>,
     /// How transparent Glassy surfaces are, 0–100 (only with Glassy).
     pub glass_transparency: Option<u32>,
+    /// How strongly the desktop behind Glassy surfaces is blurred, 0–100
+    /// (only with Glassy, macOS).
+    pub glass_blur: Option<u32>,
     /// `"titlebar"` | `"sidebar"`.
     pub tabs_location: Option<String>,
     /// Tabs share the whole strip equally instead of sizing to their title.
@@ -133,6 +136,7 @@ impl AppearanceContent {
             corner_radius_scale: Some(1.0),
             translucent_surfaces: Some(false),
             glass_transparency: Some(30),
+            glass_blur: Some(40),
             tabs_location: Some("titlebar".to_string()),
             tab_fill_space: Some(false),
             dim_inactive_panes: Some(false),

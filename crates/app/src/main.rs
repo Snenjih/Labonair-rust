@@ -100,6 +100,7 @@ fn main() {
                 },
                 move |window, cx| {
                     let theme = labonair_shell::init_theme(window.appearance(), cx);
+                    labonair_shell::apply_window_blur(window, cx);
                     window
                         .observe_window_appearance({
                             let theme = theme.clone();

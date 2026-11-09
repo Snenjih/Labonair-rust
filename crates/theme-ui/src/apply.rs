@@ -3,7 +3,7 @@
 //! Moved out of `labonair-settings-ui` in R08-005 (mechanical move — no logic
 //! change).
 
-use gpui::{transparent_black, App, Entity, WindowBackgroundAppearance};
+use gpui::{transparent_black, App, Entity, Window, WindowBackgroundAppearance};
 
 use labonair_settings::content::appearance::{Animations, PaneLayout as PaneLayoutSetting};
 use labonair_settings::content::general::ThemePref;
@@ -107,22 +107,78 @@ pub fn theme_metrics_from_settings(cx: &App) -> Option<ThemeMetrics> {
 
 /// The native window material for the `appearance.translucentSurfaces`
 /// setting: the blurred desktop material when on, an opaque window otherwise.
-/// Use for every `WindowOptions::window_background`.
+/// Use for every `WindowOptions::window_background`. On macOS the window is
+/// merely transparent and [`apply_window_blur`] adds the blur, because gpui's
+/// `Blurred` has no adjustable radius.
 pub fn window_background(cx: &App) -> WindowBackgroundAppearance {
     match ThemeSettings::try_get(cx) {
-        Some(s) if s.translucent_surfaces() => WindowBackgroundAppearance::Blurred,
+        Some(s) if s.translucent_surfaces() => {
+            if cfg!(target_os = "macos") {
+                WindowBackgroundAppearance::Transparent
+            } else {
+                WindowBackgroundAppearance::Blurred
+            }
+        }
         _ => WindowBackgroundAppearance::Opaque,
     }
 }
 
-/// Re-apply [`window_background`] to every open window so toggling the
-/// setting takes effect live.
+/// Set the native blur radius behind a translucent window from
+/// `appearance.glassBlur` (0 when the window is opaque). Call from every
+/// window's build closure; [`apply_theme_metrics`] re-applies it live.
+#[cfg(target_os = "macos")]
+pub fn apply_window_blur(window: &Window, cx: &App) {
+    use objc2::rc::Retained;
+    use objc2_app_kit::NSView;
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGSMainConnectionID() -> u32;
+        fn CGSSetWindowBackgroundBlurRadius(cid: u32, window: u32, radius: i32) -> i32;
+    }
+
+    let radius = match ThemeSettings::try_get(cx) {
+        Some(s) if s.translucent_surfaces() => i32::from(s.glass_blur()),
+        _ => 0,
+    };
+    let Ok(handle) = HasWindowHandle::window_handle(window) else {
+        return;
+    };
+    let RawWindowHandle::AppKit(h) = handle.as_raw() else {
+        return;
+    };
+    // SAFETY: `ns_view` is the live content view of this window, and we are
+    // on the main thread (called from window/settings callbacks).
+    let Some(view) = (unsafe { Retained::retain(h.ns_view.as_ptr().cast::<NSView>()) }) else {
+        return;
+    };
+    let Some(ns_window) = view.window() else {
+        return;
+    };
+    // SAFETY: private-but-stable WindowServer call (also used by gpui itself
+    // on older macOS); the id is this window's number.
+    unsafe {
+        CGSSetWindowBackgroundBlurRadius(
+            CGSMainConnectionID(),
+            ns_window.windowNumber() as u32,
+            radius,
+        );
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn apply_window_blur(_window: &Window, _cx: &App) {}
+
+/// Re-apply [`window_background`] and the blur radius to every open window so
+/// changing the settings takes effect live.
 fn apply_window_material(cx: &mut App) {
     let background = window_background(cx);
     for handle in cx.windows() {
         handle
-            .update(cx, |_, window, _| {
-                window.set_background_appearance(background)
+            .update(cx, |_, window, cx| {
+                window.set_background_appearance(background);
+                apply_window_blur(window, cx);
             })
             .ok();
     }

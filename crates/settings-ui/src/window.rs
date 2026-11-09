@@ -149,6 +149,7 @@ fn open_settings_target(target: SettingsTarget, cx: &mut App) {
         },
         move |window, cx| {
             let theme = labonair_theme::theme_store(cx);
+            labonair_theme_ui::apply_window_blur(window, cx);
             let view = cx.new(|cx| {
                 let mut v = SettingsView::new(theme, deps.services.clone(), deps.tokio.clone(), cx);
                 v.windowed = true;

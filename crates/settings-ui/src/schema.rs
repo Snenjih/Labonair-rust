@@ -387,6 +387,15 @@ pub fn all_fields() -> Vec<AnyField> {
             "%",
             "0% is opaque, 100% is the most transparent."
         ),
+        field_with_details!(
+            appearance.glass_blur,
+            "glassBlur",
+            Slider { min: 0.0, max: 100.0, step: 1.0, int: true },
+            "Glass blur",
+            "How strongly the desktop behind Glassy surfaces is blurred. Only applies with the Glassy interface style.",
+            "%",
+            "0% is a sharp see-through window, 100% is the strongest blur."
+        ),
         field!(
             appearance.buffer_font_family,
             "bufferFontFamily",

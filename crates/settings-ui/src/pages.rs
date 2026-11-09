@@ -339,7 +339,7 @@ const APPEARANCE_GROUPS: &[Group] = &[
     ("Color Scheme", paths!("general": "theme")),
     (
         "Interface Style",
-        paths!("appearance": "translucentSurfaces", "glassTransparency"),
+        paths!("appearance": "translucentSurfaces", "glassTransparency", "glassBlur"),
     ),
     ("Tabs", paths!("appearance": "tabsLocation")),
     ("Tab Behavior", paths!("appearance": "tabFillSpace")),

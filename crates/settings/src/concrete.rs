@@ -222,6 +222,11 @@ impl ThemeSettings {
     pub fn glass_transparency(&self) -> u8 {
         self.0.glass_transparency.unwrap_or(30).min(100) as u8
     }
+
+    /// Glass blur strength 0–100 (default 40).
+    pub fn glass_blur(&self) -> u8 {
+        self.0.glass_blur.unwrap_or(40).min(100) as u8
+    }
 }
 
 /// `terminal` area.

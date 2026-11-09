@@ -16,8 +16,8 @@ pub mod command_provider;
 mod settings_views;
 
 pub use apply::{
-    activate_app_theme, apply_prefs_to_theme, apply_theme_metrics, preview_app_theme,
-    theme_metrics_from_settings, window_background,
+    activate_app_theme, apply_prefs_to_theme, apply_theme_metrics, apply_window_blur,
+    preview_app_theme, theme_metrics_from_settings, window_background,
 };
 pub use settings_views::{ColorThemeSettings, IconThemeSettings};
 
