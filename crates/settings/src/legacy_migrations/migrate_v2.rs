@@ -528,6 +528,8 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_inlay_scroll_debounce_ms: Some(50),
         editor_git_gutter: Some(true),
         editor_git_word_diff: Some(true),
+        editor_diff_view_style: defaults.editor_diff_view_style,
+        editor_minimum_split_diff_width: defaults.editor_minimum_split_diff_width,
         editor_git_blame_status: defaults.editor_git_blame_status,
         editor_completion: Some(true),
         editor_hover: Some(true),

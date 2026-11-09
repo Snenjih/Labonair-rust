@@ -1,45 +1,67 @@
-//! Workspace-level Diff item (Zed-parity redesign Phase 4,
-//! `docs/ui-comparison-zed-sidebar-status-bar.md` §9.5 / §12.6, extended in the
-//! Phase-1 diff-surface consolidation).
+//! Workspace-level DiffView (`docs/parity/diff-view-spec.md`).
 //!
-//! One workspace Diff surface renders every kind of change: the Source-Control
-//! panel emits a [`ProjectDiffRequest`] whose [`DiffSource`] decides where the
-//! base text comes from —
+//! One scrolling document lists every changed file: a file header (fold,
+//! stage checkbox, icon, name, directory, `+N −M`, Open File), then its hunks
+//! with line numbers, row tints, word diff and — on hover — the hunk controls
+//! (Stage / Unstage / Restore). A toolbar carries the diff stat, hunk
+//! navigation, stage actions, Commit and the Unified / Split switch.
 //!
-//! * [`DiffSource::WorkingTree`] — uncommitted work. The request's `files` list
-//!   drives a compact rail; each file's `git diff` is fetched on demand and its
-//!   hunks can be staged / unstaged individually (`git apply --cached`).
-//! * [`DiffSource::Commit`] — a single committed change, fetched once as a whole
-//!   patch (`git show`), split per file for the rail, rendered **read-only**.
-//! * [`DiffSource::Stash`] — a saved stash, fetched once as a whole patch,
-//!   including untracked files, then rendered **read-only**.
-//! * [`DiffSource::Branch`] — changes from a branch's merge base with the
-//!   current branch to that target branch, rendered **read-only**.
+//! The Source-Control panel emits a [`ProjectDiffRequest`] whose
+//! [`DiffSource`] decides where the base text comes from:
 //!
-//! The hunk body is virtualised ([`uniform_list`]) so large diffs stay cheap.
-//! Repeated `WorkingTree` requests re-point the selection instead of
-//! duplicating; a `Commit` request re-targets the same item at the new commit.
+//! * [`DiffSource::WorkingTree`] — per file the *staged* (index↔HEAD) and
+//!   *unstaged* (worktree↔index) patches are merged into one section, each hunk
+//!   tagged with its stage state; hunks can be staged, unstaged and restored.
+//! * [`DiffSource::Commit`] / [`DiffSource::Stash`] / [`DiffSource::Branch`] —
+//!   one whole patch, split per file, rendered read-only.
+//!
+//! Presentation data (ordering, numbering, word diff, split alignment, hunk
+//! navigation, patch building) lives in `labonair_editor::diff_document`; this
+//! file only loads, paints and routes actions.
 
 use std::collections::HashSet;
-use std::ops::Range;
+use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, uniform_list, App, ClickEvent, Context, Entity, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    canvas, div, list, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, Hsla,
+    InteractiveElement, IntoElement, ListAlignment, ListOffset, ListSizingBehavior, ListState,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
-use labonair_editor::unified::{
-    build_hunk_patch, is_whole_file_single_hunk, parse_diff_hunks, DiffHunk, FileDiff,
+use labonair_editor::diff_document::{
+    DiffDocument, DiffLine, DiffStyle, FileInput, FileKind, FlatRow, HunkId, HunkOperation,
+    HunkStage, HunkView, LineKind,
 };
+use labonair_editor::unified::{parse_diff_hunks, FileDiff};
 use labonair_git::GitService;
 use labonair_notifications::{notification_center, notify_err, Notification};
-use labonair_panel::{DiffSource, ProjectDiffFile, ProjectDiffMode, ProjectDiffRequest};
-use labonair_settings::{EditorSettings, Settings as _};
-use labonair_ui_kit::{button, ButtonSize, ButtonVariant, Palette};
+use labonair_panel::{DiffSource, ProjectDiffFile, ProjectDiffRequest};
+use labonair_settings::{
+    enqueue_user_settings_write, EditorSettings, Settings as _, SettingsStore,
+};
+use labonair_ui_kit::{
+    button, button_disabled, checkbox, file_icon_path, icon_button_builder, svg_path, ButtonSize,
+    ButtonVariant, IconName, Palette, Tooltip,
+};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
+
+type OpenFileHook = Rc<dyn Fn(String, &mut Window, &mut App)>;
+type CommitHook = Rc<dyn Fn(&mut Window, &mut App)>;
+type ToolbarAction = Box<dyn Fn(&mut ProjectDiffView, &mut Context<ProjectDiffView>)>;
+
+/// Height of one code row.
+const LINE_H: f32 = 20.0;
+/// Height of the hunk separator row (carries the hunk controls).
+const HUNK_H: f32 = 24.0;
+/// Height of a file header block.
+const FILE_H: f32 = 32.0;
+/// Width of one line-number column.
+const NUM_W: f32 = 44.0;
+/// Fallback for `editorMinimumSplitDiffWidth` when settings are unavailable.
+const DEFAULT_MIN_SPLIT_COLUMNS: f32 = 100.0;
 
 /// Resolve which file a [`ProjectDiffRequest`] should focus: the requested path
 /// if it is in the set, otherwise the first file (so a bare "View Diff" always
@@ -53,45 +75,36 @@ pub fn resolve_selection(files: &[ProjectDiffFile], requested: Option<&str>) -> 
 
 #[derive(Clone, Copy)]
 struct Colors {
-    bg: gpui::Hsla,
-    fg: gpui::Hsla,
-    muted: gpui::Hsla,
-    border: gpui::Hsla,
-    card: gpui::Hsla,
-    accent: gpui::Hsla,
-    success: gpui::Hsla,
-    error: gpui::Hsla,
-    info: gpui::Hsla,
+    bg: Hsla,
+    fg: Hsla,
+    muted: Hsla,
+    border: Hsla,
+    card: Hsla,
+    accent: Hsla,
+    success: Hsla,
+    error: Hsla,
+    info: Hsla,
 }
 
-/// One virtualised row of the diff body.
-#[derive(Clone)]
-enum DiffRow {
-    HunkHeader {
-        text: SharedString,
-        /// Index into the selected file's `hunks`, for hunk staging.
-        hunk_idx: usize,
-        collapsed: bool,
-        /// `false` for whole-file (new / deleted) diffs — no per-hunk control.
-        per_hunk: bool,
-    },
-    Unified {
-        text: SharedString,
-        changed_range: Option<Range<usize>>,
-    },
-    Split {
-        /// `(text, is_deletion)` — `is_deletion` tints the cell.
-        left: Option<(SharedString, bool)>,
-        /// `(text, is_addition)`.
-        right: Option<(SharedString, bool)>,
-    },
-    /// Untracked file / non-`@@` text — shown verbatim.
-    Raw(SharedString),
+/// Everything a row needs to paint, shared by reference across the frame.
+struct RowCtx {
+    c: Colors,
+    palette: Palette,
+    doc: Rc<DiffDocument>,
+    rows: Rc<Vec<FlatRow>>,
+    folded: HashSet<String>,
+    cursor: Option<HunkId>,
+    confirm_restore: Option<HunkId>,
+    busy: bool,
+    word_diff: bool,
+    can_stage: bool,
+    icon_theme: labonair_theme::IconThemeContent,
+    view: Entity<ProjectDiffView>,
 }
 
 pub struct ProjectDiffView {
     theme: Entity<ThemeStore>,
-    git: std::sync::Arc<dyn GitService>,
+    git: Arc<dyn GitService>,
     tokio: TokioHandle,
     focus: FocusHandle,
 
@@ -99,33 +112,48 @@ pub struct ProjectDiffView {
     session_id: Option<String>,
     source: DiffSource,
     files: Vec<ProjectDiffFile>,
-    selected: Option<String>,
-    mode: ProjectDiffMode,
+    /// The user's chosen layout; see [`Self::effective_style`].
+    style: DiffStyle,
+    /// `true` while the container is narrower than the split minimum.
+    too_narrow_for_split: bool,
+    last_width: Option<f32>,
+    last_em: f32,
+    /// `editorMinimumSplitDiffWidth`, in editor columns (0 = never suspend).
+    min_split_columns: f32,
 
-    /// `WorkingTree`: loaded `git diff` text for `selected`. Read-only sources:
-    /// unused.
-    diff_text: Option<String>,
-    /// Read-only source patch, parsed once per file.
-    commit_files: Vec<FileDiff>,
-    /// Flattened body of the selected file, rebuilt on select / mode / reload.
-    rows: Vec<DiffRow>,
-    /// Hunk indices hidden from the current diff body.
-    collapsed_hunks: HashSet<usize>,
-    /// Generation guard so a slow response for a previous selection / commit
-    /// cannot overwrite a newer one.
+    doc: Rc<DiffDocument>,
+    rows: Rc<Vec<FlatRow>>,
+    list: ListState,
+    folded: HashSet<String>,
+    /// Paths already seen, so only a file's *first* appearance auto-folds it.
+    known_files: HashSet<String>,
+    cursor: Option<HunkId>,
+    confirm_restore: Option<HunkId>,
+    pending_scroll: Option<String>,
+
+    loading: bool,
+    busy: bool,
+    /// Generation guard so a slow response for a previous load cannot
+    /// overwrite a newer one.
     gen: u64,
-    op_in_progress: bool,
+
+    on_open_file: Option<OpenFileHook>,
+    on_commit: Option<CommitHook>,
 }
 
 impl ProjectDiffView {
     pub fn new(
         theme: Entity<ThemeStore>,
-        git: std::sync::Arc<dyn GitService>,
+        git: Arc<dyn GitService>,
         tokio: TokioHandle,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        Self {
+        if cx.has_global::<SettingsStore>() {
+            cx.observe_global::<SettingsStore>(|this, cx| this.sync_settings(cx))
+                .detach();
+        }
+        let mut view = Self {
             theme,
             git,
             tokio,
@@ -134,19 +162,68 @@ impl ProjectDiffView {
             session_id: None,
             source: DiffSource::WorkingTree,
             files: Vec::new(),
-            selected: None,
-            mode: ProjectDiffMode::Unified,
-            diff_text: None,
-            commit_files: Vec::new(),
-            rows: Vec::new(),
-            collapsed_hunks: HashSet::new(),
+            style: DiffStyle::Unified,
+            too_narrow_for_split: false,
+            last_width: None,
+            last_em: 7.2,
+            min_split_columns: DEFAULT_MIN_SPLIT_COLUMNS,
+            doc: Rc::new(DiffDocument::default()),
+            rows: Rc::new(Vec::new()),
+            list: ListState::new(0, ListAlignment::Top, px(600.0)),
+            folded: HashSet::new(),
+            known_files: HashSet::new(),
+            cursor: None,
+            confirm_restore: None,
+            pending_scroll: None,
+            loading: false,
+            busy: false,
             gen: 0,
-            op_in_progress: false,
-        }
+            on_open_file: None,
+            on_commit: None,
+        };
+        view.sync_settings(cx);
+        view
     }
 
-    /// Point the item at a (possibly new) review. Idempotent for a repeated
-    /// working-tree or read-only source — calls just re-point the selection.
+    /// Follow `editorDiffViewStyle` and `editorMinimumSplitDiffWidth`.
+    fn sync_settings(&mut self, cx: &mut Context<Self>) {
+        let Some(settings) = EditorSettings::try_get(cx) else {
+            return;
+        };
+        let style = if settings.diff_view_split() {
+            DiffStyle::Split
+        } else {
+            DiffStyle::Unified
+        };
+        let min_columns = settings.minimum_split_diff_width() as f32;
+        if style == self.style && min_columns == self.min_split_columns {
+            return;
+        }
+        self.style = style;
+        self.min_split_columns = min_columns;
+        self.refresh_narrowness();
+        self.rebuild_rows();
+        cx.notify();
+    }
+
+    fn refresh_narrowness(&mut self) {
+        self.too_narrow_for_split = self.last_width.is_some_and(|w| {
+            self.min_split_columns > 0.0 && w < self.min_split_columns * self.last_em
+        });
+    }
+
+    /// Hook for the header's file name / Open File button (absolute path).
+    pub fn set_on_open_file(&mut self, f: impl Fn(String, &mut Window, &mut App) + 'static) {
+        self.on_open_file = Some(Rc::new(f));
+    }
+
+    /// Hook for the toolbar's Commit button.
+    pub fn set_on_commit(&mut self, f: impl Fn(&mut Window, &mut App) + 'static) {
+        self.on_commit = Some(Rc::new(f));
+    }
+
+    /// Point the item at a (possibly new) review. Repeated requests for the
+    /// same repository and source reload in place and re-point the scroll.
     pub fn apply_request(&mut self, req: ProjectDiffRequest, cx: &mut Context<Self>) {
         let repository_changed = !same_repository_context(
             self.repo_root.as_deref(),
@@ -154,119 +231,87 @@ impl ProjectDiffView {
             &req.repo_root,
             req.session_id.as_deref(),
         );
+        let same_source = !repository_changed && same_source(&self.source, &req.source);
         self.repo_root = Some(req.repo_root);
         self.session_id = req.session_id;
-        self.mode = req.mode;
-
-        match req.source.clone() {
-            DiffSource::WorkingTree => {
-                let source_changed = repository_changed || self.source != DiffSource::WorkingTree;
-                self.source = DiffSource::WorkingTree;
-                self.commit_files.clear();
-                self.files = req.files;
-                let want = resolve_selection(&self.files, req.selected.as_deref());
-                if want != self.selected || source_changed {
-                    self.selected = want;
-                    self.reload(cx);
-                }
-            }
-            DiffSource::Commit { .. } | DiffSource::Stash { .. } | DiffSource::Branch { .. } => {
-                let same_source =
-                    !repository_changed && same_read_only_source(&self.source, &req.source);
-                self.source = req.source.clone();
-                if !same_source {
-                    self.load_read_only_diff(req.source, cx);
-                } else if let Some(sel) = req.selected {
-                    if self.selected.as_deref() != Some(sel.as_str()) {
-                        self.collapsed_hunks.clear();
-                    }
-                    self.selected = Some(sel);
-                    self.rebuild_rows();
-                }
-            }
-        }
-        cx.notify();
-    }
-
-    fn select(&mut self, path: String, cx: &mut Context<Self>) {
-        if self.selected.as_deref() == Some(path.as_str()) {
-            return;
-        }
-        self.selected = Some(path);
-        self.collapsed_hunks.clear();
-        match self.source {
-            DiffSource::WorkingTree => self.reload(cx),
-            DiffSource::Commit { .. } | DiffSource::Stash { .. } | DiffSource::Branch { .. } => {
-                self.rebuild_rows()
-            }
-        }
-        cx.notify();
-    }
-
-    fn toggle_mode(&mut self, cx: &mut Context<Self>) {
-        self.mode = match self.mode {
-            ProjectDiffMode::Unified => ProjectDiffMode::Split,
-            ProjectDiffMode::Split => ProjectDiffMode::Unified,
+        self.pending_scroll = match &req.source {
+            DiffSource::WorkingTree => resolve_selection(&req.files, req.selected.as_deref()),
+            _ => req.selected.clone(),
         };
-        self.rebuild_rows();
-        cx.notify();
+        if !same_source {
+            self.known_files.clear();
+            self.folded.clear();
+            self.cursor = None;
+        }
+        self.source = req.source;
+        self.files = req.files;
+        self.reload(cx);
     }
 
-    fn current_file(&self) -> Option<&ProjectDiffFile> {
-        let sel = self.selected.as_deref()?;
-        self.files.iter().find(|f| f.path == sel)
+    fn effective_style(&self) -> DiffStyle {
+        if self.style == DiffStyle::Split && self.too_narrow_for_split {
+            DiffStyle::Unified
+        } else {
+            self.style
+        }
     }
 
-    /// `WorkingTree`: fetch the selected file's `git diff`.
+    fn supports_staging(&self) -> bool {
+        self.source.supports_staging()
+    }
+
+    /// Fetch every file's patches and rebuild the document.
     fn reload(&mut self, cx: &mut Context<Self>) {
-        self.collapsed_hunks.clear();
-        let (Some(root), Some(file)) = (self.repo_root.clone(), self.current_file().cloned())
-        else {
-            self.diff_text = None;
-            self.rows.clear();
+        let Some(root) = self.repo_root.clone() else {
             return;
         };
-        self.diff_text = None;
-        self.rows.clear();
         self.gen += 1;
         let generation = self.gen;
+        self.loading = true;
         let session = self.session_id.clone();
         let git = self.git.clone();
-        let jh = self.tokio.spawn(async move {
-            git.diff(
-                root,
-                file.path,
-                file.staged,
-                Some(false),
-                Some(file.untracked),
-                session,
-            )
-            .await
+        let source = self.source.clone();
+        let files = self.files.clone();
+        let tokio = self.tokio.clone();
+        let task = self.tokio.spawn(async move {
+            match source {
+                DiffSource::WorkingTree => {
+                    load_working_tree(git, tokio, root, session, files).await
+                }
+                DiffSource::Commit { hash, .. } => {
+                    let text = git.commit_diff(root, hash, session).await?;
+                    Ok(read_only_inputs(&text))
+                }
+                DiffSource::Stash { hash, .. } => {
+                    let text = git.stash_diff(root, hash, session).await?;
+                    Ok(read_only_inputs(&text))
+                }
+                DiffSource::Branch { base, head, .. } => {
+                    let text = git.branch_diff(root, base, head, session).await?;
+                    Ok(read_only_inputs(&text))
+                }
+            }
         });
         cx.spawn(async move |this, cx| {
-            let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
+            let res = task.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
                 if this.gen != generation {
                     return;
                 }
+                this.loading = false;
                 match res {
-                    Ok(text) => {
-                        this.diff_text = Some(text);
-                        this.rebuild_rows();
-                    }
+                    Ok(inputs) => this.set_document(DiffDocument::build(inputs)),
                     Err(e) => {
-                        this.diff_text = None;
-                        this.rows.clear();
-                        let path = this.selected.clone().unwrap_or_default();
+                        this.set_document(DiffDocument::default());
                         notification_center(cx).update(cx, |center, cx| {
                             center.push(
                                 Notification::error(
                                     "Diff load failed",
-                                    "Could not load the selected file diff.",
+                                    "Could not load the changes for review.",
                                 )
                                 .source("project-diff")
-                                .details(e.clone())
-                                .dedupe_key(format!("project-diff:load:{path}")),
+                                .details(e)
+                                .dedupe_key("project-diff:load".to_string()),
                                 cx,
                             );
                         });
@@ -276,189 +321,264 @@ impl ProjectDiffView {
             });
         })
         .detach();
+        cx.notify();
     }
 
-    /// Fetch a read-only patch once, then split it per file for the rail.
-    fn load_read_only_diff(&mut self, source: DiffSource, cx: &mut Context<Self>) {
-        let Some(root) = self.repo_root.clone() else {
-            return;
-        };
-        self.diff_text = None;
-        self.commit_files.clear();
-        self.collapsed_hunks.clear();
-        self.files.clear();
-        self.selected = None;
-        self.rows.clear();
-        self.gen += 1;
-        let generation = self.gen;
-        let session = self.session_id.clone();
-        let git = self.git.clone();
-        let jh = self.tokio.spawn(async move {
-            match source {
-                DiffSource::Commit { hash, .. } => git.commit_diff(root, hash, session).await,
-                DiffSource::Stash { hash, .. } => git.stash_diff(root, hash, session).await,
-                DiffSource::Branch { base, head, .. } => {
-                    git.branch_diff(root, base, head, session).await
-                }
-                DiffSource::WorkingTree => Err("Working-tree diffs load per file.".to_string()),
-            }
-        });
-        cx.spawn(async move |this, cx| {
-            let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
-            let _ = this.update(cx, |this, cx| {
-                if this.gen != generation {
-                    return;
-                }
-                match res {
-                    Ok(text) => {
-                        let parsed = parse_diff_hunks(&text);
-                        this.files = parsed
-                            .iter()
-                            .map(|f| ProjectDiffFile {
-                                path: f.path.clone(),
-                                staged: false,
-                                untracked: false,
-                            })
-                            .collect();
-                        this.commit_files = parsed;
-                        this.selected = this.files.first().map(|f| f.path.clone());
-                        this.rebuild_rows();
-                    }
-                    Err(e) => {
-                        this.commit_files.clear();
-                        this.files.clear();
-                        this.rows.clear();
-                        notification_center(cx).update(cx, |center, cx| {
-                            center.push(
-                                Notification::error(
-                                    "Read-only diff load failed",
-                                    "Could not load the selected Git change.",
-                                )
-                                .source("project-diff")
-                                .details(e.clone())
-                                .dedupe_key("project-diff:commit".to_string()),
-                                cx,
-                            );
-                        });
-                    }
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    /// Rebuild [`Self::rows`] for the current selection + layout from whichever
-    /// source is active. Pure re-derivation — no IO, no theme access.
-    fn rebuild_rows(&mut self) {
-        let is_split = matches!(self.mode, ProjectDiffMode::Split);
-        let mut rows: Vec<DiffRow> = Vec::new();
-
-        match &self.source {
-            DiffSource::WorkingTree => {
-                let Some(text) = &self.diff_text else {
-                    self.rows = rows;
-                    return;
-                };
-                let untracked = self.current_file().map(|f| f.untracked).unwrap_or(false);
-                if untracked || !text.contains("@@ ") {
-                    for line in text.lines().take(20_000) {
-                        rows.push(DiffRow::Raw(SharedString::from(line.to_string())));
-                    }
-                    self.rows = rows;
-                    return;
-                }
-                let parsed = parse_diff_hunks(text);
-                if let Some(file) = parsed.first() {
-                    let per_hunk = !is_whole_file_single_hunk(file);
-                    push_file_rows(&mut rows, file, is_split, per_hunk, &self.collapsed_hunks);
-                }
-            }
-            DiffSource::Commit { .. } | DiffSource::Stash { .. } | DiffSource::Branch { .. } => {
-                let selected_file = self
-                    .selected
-                    .as_deref()
-                    .and_then(|s| self.commit_files.iter().find(|f| f.path == s));
-                if let Some(file) = selected_file {
-                    // Committed changes are read-only — never a per-hunk control.
-                    push_file_rows(&mut rows, file, is_split, false, &self.collapsed_hunks);
-                }
+    fn set_document(&mut self, doc: DiffDocument) {
+        for section in &doc.files {
+            // Spec §2: only a file's first appearance auto-folds it.
+            if self.known_files.insert(section.path.clone()) && section.kind == FileKind::Deleted {
+                self.folded.insert(section.path.clone());
             }
         }
-        self.rows = rows;
+        self.doc = Rc::new(doc);
+        let ids = self.doc.hunk_ids();
+        self.cursor = self
+            .cursor
+            .filter(|id| ids.contains(id))
+            .or_else(|| ids.first().copied());
+        self.confirm_restore = None;
+        self.rebuild_rows();
+        if let Some(path) = self.pending_scroll.take() {
+            self.scroll_to_file(&path);
+        }
     }
 
-    fn toggle_hunk(&mut self, hunk_idx: usize, cx: &mut Context<Self>) {
-        if !self.collapsed_hunks.remove(&hunk_idx) {
-            self.collapsed_hunks.insert(hunk_idx);
+    /// Re-flatten the document for the current fold set and style, keeping the
+    /// scroll position.
+    fn rebuild_rows(&mut self) {
+        let top = self.list.logical_scroll_top();
+        self.rows = Rc::new(self.doc.flatten(self.effective_style(), &self.folded));
+        self.list.reset(self.rows.len());
+        self.list.scroll_to(top);
+    }
+
+    fn scroll_to_file(&mut self, path: &str) {
+        let Some(file) = self.doc.file_index(path) else {
+            return;
+        };
+        if let Some(ix) = self.rows.iter().position(|r| *r == FlatRow::File(file)) {
+            self.list.scroll_to(ListOffset {
+                item_ix: ix,
+                offset_in_item: px(0.0),
+            });
+        }
+    }
+
+    fn reveal_hunk(&mut self, id: HunkId) {
+        if let Some(path) = self.doc.files.get(id.file).map(|f| f.path.clone()) {
+            self.folded.remove(&path);
+        }
+        self.rebuild_rows();
+        if let Some(ix) = self.rows.iter().position(|r| *r == FlatRow::HunkHeader(id)) {
+            self.list.scroll_to_reveal_item(ix);
+        }
+    }
+
+    fn set_cursor(&mut self, id: HunkId, cx: &mut Context<Self>) {
+        if self.cursor != Some(id) || self.confirm_restore.is_some() {
+            self.cursor = Some(id);
+            self.confirm_restore = None;
+            cx.notify();
+        }
+    }
+
+    fn toggle_fold(&mut self, path: &str, all: bool, cx: &mut Context<Self>) {
+        if all {
+            // Fold everything unless everything is already folded.
+            if self.folded.len() < self.doc.files.len() {
+                self.folded = self.doc.files.iter().map(|f| f.path.clone()).collect();
+            } else {
+                self.folded.clear();
+            }
+        } else if !self.folded.remove(path) {
+            self.folded.insert(path.to_string());
         }
         self.rebuild_rows();
         cx.notify();
     }
 
-    /// Stage (or, if `reverse`, unstage) one hunk of the loaded diff.
-    /// Working-tree source only.
-    fn apply_hunk(&mut self, hunk_idx: usize, reverse: bool, cx: &mut Context<Self>) {
-        if self.op_in_progress || !self.source.supports_staging() {
+    fn set_style(&mut self, style: DiffStyle, cx: &mut Context<Self>) {
+        if self.style == style {
             return;
         }
-        let (Some(root), Some(file), Some(diff)) = (
-            self.repo_root.clone(),
-            self.current_file().cloned(),
-            self.diff_text.clone(),
-        ) else {
-            return;
-        };
-        let session = self.session_id.clone();
-        let git = self.git.clone();
-        let files = parse_diff_hunks(&diff);
-        let Some(parsed) = files.into_iter().next() else {
-            notify_err::<()>(
-                "Hunk staging unavailable",
-                Err("Diff could not be parsed for hunk staging.".to_string()),
-                cx,
-            );
-            return;
-        };
-        let path = file.path.clone();
-        let whole = is_whole_file_single_hunk(&parsed);
-        let patch = if whole {
-            None
-        } else {
-            let Some(hunk): Option<&DiffHunk> = parsed.hunks.get(hunk_idx) else {
-                return;
-            };
-            Some(build_hunk_patch(&parsed, hunk))
-        };
-        self.op_in_progress = true;
+        self.style = style;
+        self.rebuild_rows();
+        self.queue_style_setting(style, cx);
         cx.notify();
-        let jh = self.tokio.spawn(async move {
-            match (whole, reverse, patch) {
-                (true, false, _) => git.stage_file(root, path, session).await,
-                (true, true, _) => git.unstage_file(root, path, session).await,
-                (false, false, Some(p)) => git.stage_hunk(root, path, p, session).await,
-                (false, true, Some(p)) => git.unstage_hunk(root, path, p, session).await,
-                _ => Ok(()),
+    }
+
+    /// Persist the chosen layout so every DiffView (and the next session)
+    /// follows it.
+    fn queue_style_setting(&mut self, style: DiffStyle, cx: &mut Context<Self>) {
+        if !cx.has_global::<SettingsStore>() {
+            return;
+        }
+        let value = match style {
+            DiffStyle::Split => "split",
+            DiffStyle::Unified => "unified",
+        };
+        let Ok(Some(request)) = cx
+            .global_mut::<SettingsStore>()
+            .update_user_settings_deferred(move |c| {
+                c.editor.editor_diff_view_style = Some(value.to_string());
+            })
+        else {
+            return;
+        };
+        let _ = enqueue_user_settings_write(request);
+    }
+
+    /// Spec §6: below the minimum width a Split style renders unified; the
+    /// style itself is untouched, so widening restores the split.
+    fn width_changed(&mut self, width: f32, em: f32, cx: &mut Context<Self>) {
+        self.last_width = Some(width);
+        self.last_em = em;
+        let was_narrow = self.too_narrow_for_split;
+        self.refresh_narrowness();
+        if was_narrow != self.too_narrow_for_split {
+            if self.style == DiffStyle::Split {
+                self.rebuild_rows();
             }
-        });
+            cx.notify();
+        }
+    }
+
+    fn go_to_hunk(&mut self, forward: bool, cx: &mut Context<Self>) {
+        if let Some(id) = self.doc.step_hunk(self.cursor, forward) {
+            self.cursor = Some(id);
+            self.confirm_restore = None;
+            self.reveal_hunk(id);
+            cx.notify();
+        }
+    }
+
+    /// Run one git mutation, then reload so stage tags and counts refresh.
+    fn run_git(
+        &mut self,
+        failure: &'static str,
+        cx: &mut Context<Self>,
+        op: impl FnOnce(Arc<dyn GitService>, String, Option<String>) -> labonair_git::GitFuture<()>
+            + Send
+            + 'static,
+    ) {
+        if self.busy {
+            return;
+        }
+        let Some(root) = self.repo_root.clone() else {
+            return;
+        };
+        self.busy = true;
+        cx.notify();
+        let fut = op(self.git.clone(), root, self.session_id.clone());
+        let jh = self.tokio.spawn(fut);
         cx.spawn(async move |this, cx| {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
-                this.op_in_progress = false;
-                notify_err(
-                    if reverse {
-                        "Unstage hunk failed"
-                    } else {
-                        "Stage hunk failed"
-                    },
-                    res,
-                    cx,
-                );
+                this.busy = false;
+                notify_err(failure, res, cx);
                 this.reload(cx);
-                cx.notify();
             });
         })
         .detach();
+    }
+
+    fn apply_hunk(&mut self, id: HunkId, cx: &mut Context<Self>) {
+        let Some(op) = self.doc.hunk_operation(id) else {
+            return;
+        };
+        match op {
+            HunkOperation::WholeFile { path, stage } => {
+                let unstage = stage == HunkStage::Staged;
+                self.run_git(stage_failure(unstage), cx, move |git, root, session| {
+                    if unstage {
+                        git.unstage_file(root, path, session)
+                    } else {
+                        git.stage_file(root, path, session)
+                    }
+                });
+            }
+            HunkOperation::Patch { path, patch, stage } => {
+                let unstage = stage == HunkStage::Staged;
+                self.run_git(stage_failure(unstage), cx, move |git, root, session| {
+                    if unstage {
+                        git.unstage_hunk(root, path, patch, session)
+                    } else {
+                        git.stage_hunk(root, path, patch, session)
+                    }
+                });
+            }
+        }
+    }
+
+    /// Stage / unstage the cursor hunk and move on to the next one
+    /// (`StageAndNext` / `UnstageAndNext`).
+    fn apply_cursor_and_next(&mut self, want: HunkStage, cx: &mut Context<Self>) {
+        let Some(id) = self.cursor else {
+            return;
+        };
+        if self.doc.hunk(id).map(|h| h.stage) != Some(want) {
+            return;
+        }
+        let next = self.doc.step_hunk(Some(id), true);
+        self.apply_hunk(id, cx);
+        if let Some(next) = next {
+            self.cursor = Some(next);
+            self.reveal_hunk(next);
+        }
+    }
+
+    /// Restore (discard) one hunk. Two-step — the first click arms it — because
+    /// the diff has no undo.
+    fn restore_hunk(&mut self, id: HunkId, cx: &mut Context<Self>) {
+        if self.confirm_restore != Some(id) {
+            self.cursor = Some(id);
+            self.confirm_restore = Some(id);
+            cx.notify();
+            return;
+        }
+        self.confirm_restore = None;
+        let Some(HunkOperation::Patch { path, patch, stage }) = self.doc.hunk_operation(id) else {
+            // A whole-file hunk restores through the file-level discard.
+            if let Some(HunkOperation::WholeFile { path, .. }) = self.doc.hunk_operation(id) {
+                self.run_git("Restore failed", cx, move |git, root, session| {
+                    git.discard_file(root, path, session)
+                });
+            }
+            return;
+        };
+        let staged = stage == HunkStage::Staged;
+        self.run_git("Restore hunk failed", cx, move |git, root, session| {
+            git.discard_hunk(root, path, patch, staged, session)
+        });
+    }
+
+    fn stage_file(&mut self, path: String, stage: bool, cx: &mut Context<Self>) {
+        self.run_git(stage_failure(!stage), cx, move |git, root, session| {
+            if stage {
+                git.stage_file(root, path, session)
+            } else {
+                git.unstage_file(root, path, session)
+            }
+        });
+    }
+
+    fn stage_all(&mut self, stage: bool, cx: &mut Context<Self>) {
+        self.run_git(
+            if stage {
+                "Stage all failed"
+            } else {
+                "Unstage all failed"
+            },
+            cx,
+            move |git, root, session| {
+                if stage {
+                    git.stage_all(root, session)
+                } else {
+                    git.unstage_all(root, session)
+                }
+            },
+        );
     }
 
     fn colors(&self, cx: &App) -> Colors {
@@ -487,11 +607,28 @@ impl ProjectDiffView {
                 }
             }
             DiffSource::Branch { subject, .. } => subject.clone(),
-            DiffSource::WorkingTree => self
-                .selected
-                .clone()
-                .unwrap_or_else(|| "Project Diff".to_string()),
+            DiffSource::WorkingTree => "Uncommitted Changes".to_string(),
         }
+    }
+
+    fn empty_label(&self) -> &'static str {
+        match self.source {
+            DiffSource::WorkingTree => "No uncommitted changes",
+            _ => "No changes",
+        }
+    }
+
+    fn absolute_path(&self, relative: &str) -> Option<String> {
+        let root = self.repo_root.as_deref()?;
+        Some(format!("{}/{}", root.trim_end_matches('/'), relative))
+    }
+}
+
+fn stage_failure(unstage: bool) -> &'static str {
+    if unstage {
+        "Unstage failed"
+    } else {
+        "Stage failed"
     }
 }
 
@@ -504,104 +641,103 @@ fn same_repository_context(
     left_root == Some(right_root) && left_session == right_session
 }
 
-fn same_read_only_source(left: &DiffSource, right: &DiffSource) -> bool {
+/// Whether two requests review the same thing (a re-request then keeps fold
+/// state and cursor instead of resetting them).
+fn same_source(left: &DiffSource, right: &DiffSource) -> bool {
     match (left, right) {
-        (DiffSource::Commit { hash: left, .. }, DiffSource::Commit { hash: right, .. })
-        | (DiffSource::Stash { hash: left, .. }, DiffSource::Stash { hash: right, .. }) => {
-            left == right
-        }
+        (DiffSource::WorkingTree, DiffSource::WorkingTree) => true,
+        (DiffSource::Commit { hash: l, .. }, DiffSource::Commit { hash: r, .. })
+        | (DiffSource::Stash { hash: l, .. }, DiffSource::Stash { hash: r, .. }) => l == r,
         (
             DiffSource::Branch {
-                base: left_base,
-                head: left_head,
-                ..
+                base: lb, head: lh, ..
             },
             DiffSource::Branch {
-                base: right_base,
-                head: right_head,
-                ..
+                base: rb, head: rh, ..
             },
-        ) => left_base == right_base && left_head == right_head,
+        ) => lb == rb && lh == rh,
         _ => false,
     }
 }
 
-fn push_file_rows(
-    rows: &mut Vec<DiffRow>,
-    file: &FileDiff,
-    is_split: bool,
-    per_hunk: bool,
-    collapsed_hunks: &HashSet<usize>,
-) {
-    for (i, hunk) in file.hunks.iter().enumerate() {
-        let collapsed = collapsed_hunks.contains(&i);
-        rows.push(DiffRow::HunkHeader {
-            text: SharedString::from(hunk.header.clone()),
-            hunk_idx: i,
-            collapsed,
-            per_hunk,
-        });
-        if collapsed {
-            continue;
-        }
-        if is_split {
-            split_hunk_rows_into(rows, &hunk.lines);
-        } else {
-            unified_hunk_rows_into(rows, &hunk.lines);
-        }
-    }
+/// Splits a whole read-only patch into per-file inputs.
+fn read_only_inputs(text: &str) -> Vec<FileInput> {
+    parse_diff_hunks(text)
+        .into_iter()
+        .map(|diff: FileDiff| FileInput {
+            path: diff.path.clone(),
+            untracked: false,
+            diffs: vec![(HunkStage::ReadOnly, diff)],
+            raw: Vec::new(),
+        })
+        .collect()
 }
 
-fn unified_hunk_rows_into(out: &mut Vec<DiffRow>, lines: &[String]) {
-    let mut deletions = Vec::new();
-    let mut additions = Vec::new();
-    let flush =
-        |out: &mut Vec<DiffRow>, deletions: &mut Vec<String>, additions: &mut Vec<String>| {
-            let count = deletions.len().max(additions.len());
-            for index in 0..count {
-                let paired_ranges = match (deletions.get(index), additions.get(index)) {
-                    (Some(before), Some(after)) => word_diff_ranges(before, after),
-                    _ => None,
-                };
-                if let Some(before) = deletions.get(index) {
-                    out.push(DiffRow::Unified {
-                        text: SharedString::from(format!("-{before}")),
-                        changed_range: paired_ranges
-                            .as_ref()
-                            .map(|(range, _)| range.start + 1..range.end + 1),
-                    });
-                }
-                if let Some(after) = additions.get(index) {
-                    out.push(DiffRow::Unified {
-                        text: SharedString::from(format!("+{after}")),
-                        changed_range: paired_ranges
-                            .as_ref()
-                            .map(|(_, range)| range.start + 1..range.end + 1),
-                    });
-                }
+/// Fetches the staged / unstaged / untracked patch of every requested file
+/// concurrently and groups them per path.
+async fn load_working_tree(
+    git: Arc<dyn GitService>,
+    tokio: TokioHandle,
+    root: String,
+    session: Option<String>,
+    files: Vec<ProjectDiffFile>,
+) -> Result<Vec<FileInput>, String> {
+    let mut jobs = Vec::new();
+    for file in files {
+        let (git, root, session) = (git.clone(), root.clone(), session.clone());
+        jobs.push((
+            file.clone(),
+            tokio.spawn(async move {
+                git.diff(
+                    root,
+                    file.path,
+                    file.staged,
+                    Some(false),
+                    Some(file.untracked),
+                    session,
+                )
+                .await
+            }),
+        ));
+    }
+    let mut inputs: Vec<FileInput> = Vec::new();
+    let mut first_error = None;
+    for (file, job) in jobs {
+        let text = match job.await.unwrap_or_else(|e| Err(e.to_string())) {
+            Ok(text) => text,
+            Err(e) => {
+                first_error.get_or_insert(e);
+                continue;
             }
-            deletions.clear();
-            additions.clear();
         };
-
-    for line in lines {
-        match line.as_bytes().first() {
-            Some(b'-') => deletions.push(line.get(1..).unwrap_or_default().to_string()),
-            Some(b'+') => additions.push(line.get(1..).unwrap_or_default().to_string()),
-            _ => {
-                flush(out, &mut deletions, &mut additions);
-                out.push(DiffRow::Unified {
-                    text: SharedString::from(if line.is_empty() {
-                        " ".to_string()
-                    } else {
-                        line.clone()
-                    }),
-                    changed_range: None,
+        let stage = if file.staged {
+            HunkStage::Staged
+        } else {
+            HunkStage::Unstaged
+        };
+        let idx = match inputs.iter().position(|i| i.path == file.path) {
+            Some(idx) => idx,
+            None => {
+                inputs.push(FileInput {
+                    path: file.path.clone(),
+                    untracked: file.untracked,
+                    diffs: Vec::new(),
+                    raw: Vec::new(),
                 });
+                inputs.len() - 1
             }
+        };
+        match parse_diff_hunks(&text).into_iter().next() {
+            Some(diff) if !diff.hunks.is_empty() => inputs[idx].diffs.push((stage, diff)),
+            _ => inputs[idx]
+                .raw
+                .extend(text.lines().take(20_000).map(str::to_string)),
         }
     }
-    flush(out, &mut deletions, &mut additions);
+    match (inputs.is_empty(), first_error) {
+        (true, Some(e)) => Err(e),
+        _ => Ok(inputs),
+    }
 }
 
 impl Focusable for ProjectDiffView {
@@ -616,141 +752,71 @@ impl Render for ProjectDiffView {
             target: "labonair::perf",
             "render",
             view = "project_diff",
-            files = self.files.len()
+            files = self.doc.files.len()
         )
         .entered();
         let c = self.colors(cx);
         let theme = self.theme.read(cx);
         let font = theme.buffer_font();
         let palette = Palette::from_theme(theme);
-        let is_split = matches!(self.mode, ProjectDiffMode::Split);
+        let icon_theme = theme.icon_theme().clone();
+        let view = cx.entity();
         let word_diff = EditorSettings::try_get(cx)
             .map(|settings| settings.git_word_diff())
             .unwrap_or(true);
-        let read_only = !self.source.supports_staging();
-        let reverse = self.current_file().map(|f| f.staged).unwrap_or(false);
-        let selected = self.selected.clone();
-        let view = cx.entity();
-
-        // Compact file rail.
-        let mut rail = div()
-            .id("project-diff-rail")
-            .flex()
-            .flex_col()
-            .w(px(220.0))
-            .flex_none()
-            .overflow_y_scroll()
-            .border_r_1()
-            .border_color(c.border)
-            .bg(c.card)
-            .text_size(px(12.0));
-        for f in &self.files {
-            let is_sel = selected.as_deref() == Some(f.path.as_str());
-            let p = f.path.clone();
-            let v = view.clone();
-            rail = rail.child(
-                div()
-                    .id(SharedString::from(format!("pd-file-{}", f.path)))
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .h(px(24.0))
-                    .px(px(8.0))
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .when(is_sel, |d| d.bg(c.accent))
-                    .when(!is_sel, |d| d.hover(|s| s.bg(c.accent.opacity(0.4))))
-                    .child(
-                        div()
-                            .w(px(10.0))
-                            .flex_none()
-                            .text_size(px(10.0))
-                            .text_color(if f.staged { c.success } else { c.muted })
-                            .child(SharedString::from(if f.staged { "\u{25CF}" } else { "" })),
-                    )
-                    .child(div().flex_1().overflow_hidden().child(SharedString::from(
-                        f.path.rsplit('/').next().unwrap_or(&f.path).to_string(),
-                    )))
-                    .on_click(move |_: &ClickEvent, _w, cx| {
-                        v.update(cx, |this, cx| this.select(p.clone(), cx));
-                    }),
-            );
-        }
-
-        let header = div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .h(px(28.0))
-            .px(px(10.0))
-            .border_b_1()
-            .border_color(c.border)
-            .bg(c.card)
-            .text_size(px(12.0))
-            .text_color(c.fg)
-            .child(
-                div()
-                    .flex_1()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .child(SharedString::from(self.header_title())),
-            )
-            .when(read_only, |d| {
-                d.child(
-                    div()
-                        .px(px(6.0))
-                        .text_size(px(10.0))
-                        .text_color(c.muted)
-                        .child(SharedString::from("read-only")),
-                )
-            })
-            .child(
-                button(
-                    "project-diff-mode",
-                    palette,
-                    ButtonVariant::Transparent,
-                    ButtonSize::Xs,
-                )
-                .child(SharedString::from(if is_split {
-                    "Unified"
-                } else {
-                    "Split"
-                }))
-                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.toggle_mode(cx))),
-            );
 
         let body: gpui::AnyElement = if self.rows.is_empty() {
-            let msg = if self.selected.is_some() {
-                "Loading diff\u{2026}"
-            } else {
-                "No changes to review"
-            };
-            div()
-                .id("project-diff-body")
-                .flex_1()
-                .p(px(10.0))
-                .text_color(c.muted)
-                .font(font)
-                .text_size(px(12.0))
-                .child(SharedString::from(msg))
-                .into_any_element()
+            self.render_empty(c, palette).into_any_element()
         } else {
-            let rows = self.rows.clone();
-            let list_view = view.clone();
-            uniform_list("project-diff-body", rows.len(), move |range, _win, _cx| {
-                range
-                    .map(|i| {
-                        diff_row_element(
-                            &rows[i], c, palette, word_diff, read_only, reverse, &list_view,
-                        )
-                    })
-                    .collect::<Vec<_>>()
+            let ctx = Rc::new(RowCtx {
+                c,
+                palette,
+                doc: self.doc.clone(),
+                rows: self.rows.clone(),
+                folded: self.folded.clone(),
+                cursor: self.cursor,
+                confirm_restore: self.confirm_restore,
+                busy: self.busy,
+                word_diff,
+                can_stage: self.supports_staging(),
+                icon_theme,
+                view: view.clone(),
+            });
+            list(self.list.clone(), move |ix, _window, cx| {
+                render_row(&ctx, ix, cx)
             })
-            .flex_1()
-            .font(font)
+            .with_sizing_behavior(ListSizingBehavior::Auto)
+            .size_full()
+            .font(font.clone())
             .text_size(px(12.0))
             .into_any_element()
         };
+
+        // Width probe: the split suspends below `min_split_columns` columns.
+        let probe_view = view.clone();
+        let last_width = self.last_width;
+        let probe = canvas(
+            move |bounds, window, cx| {
+                let width: f32 = bounds.size.width.into();
+                if last_width == Some(width) {
+                    return;
+                }
+                let font_size = px(12.0);
+                let text_system = window.text_system().clone();
+                let font_id = text_system.resolve_font(&font);
+                let em: f32 = text_system
+                    .em_advance(font_id, font_size)
+                    .unwrap_or(font_size)
+                    .into();
+                let view = probe_view.clone();
+                window.defer(cx, move |_window, cx| {
+                    view.update(cx, |this, cx| this.width_changed(width, em, cx));
+                });
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .size_full();
 
         div()
             .track_focus(&self.focus)
@@ -759,244 +825,622 @@ impl Render for ProjectDiffView {
             .size_full()
             .bg(c.bg)
             .text_color(c.fg)
-            .child(header)
-            .child(div().flex().flex_1().min_h_0().child(rail).child(body))
+            .child(self.render_toolbar(c, palette, cx))
+            .child(div().relative().flex_1().min_h_0().child(body).child(probe))
     }
 }
 
-fn diff_row_element(
-    row: &DiffRow,
-    c: Colors,
-    palette: Palette,
-    word_diff: bool,
-    read_only: bool,
-    reverse: bool,
-    view: &Entity<ProjectDiffView>,
-) -> gpui::AnyElement {
-    match row {
-        DiffRow::HunkHeader {
-            text,
-            hunk_idx,
-            collapsed,
-            per_hunk,
-        } => {
-            let show_action = *per_hunk && !read_only;
-            let idx = *hunk_idx;
-            let fold_view = view.clone();
-            let fold_button = button(
-                ("pd-fold-hunk", idx),
-                palette,
-                ButtonVariant::Transparent,
-                ButtonSize::Xs,
+impl ProjectDiffView {
+    fn render_empty(&self, c: Colors, palette: Palette) -> impl IntoElement {
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap(px(8.0))
+            .text_size(px(13.0))
+            .text_color(c.muted)
+            .when(self.loading, |d| {
+                d.child(IconName::LoadCircle.svg(palette.fg).size(px(20.0)))
+                    .child(SharedString::from("Loading changes\u{2026}"))
+            })
+            .when(!self.loading, |d| {
+                d.child(SharedString::from(self.empty_label()))
+            })
+    }
+
+    fn render_toolbar(&self, c: Colors, palette: Palette, cx: &mut Context<Self>) -> gpui::Div {
+        let (added, removed) = self.doc.totals();
+        let has_hunks = !self.doc.hunk_ids().is_empty();
+        let can_stage = self.supports_staging();
+        let cursor_stage = self
+            .cursor
+            .and_then(|id| self.doc.hunk(id))
+            .map(|h| h.stage);
+        let has_unstaged = self.doc.has_stage(HunkStage::Unstaged);
+        let has_staged = self.doc.has_stage(HunkStage::Staged);
+        // Spec §7: "Unstage All" replaces "Stage All" once everything is staged.
+        let show_unstage_all = has_staged && !has_unstaged;
+        let style = self.style;
+        let suspended = style == DiffStyle::Split && self.too_narrow_for_split;
+
+        let sep = || div().w(px(1.0)).h(px(16.0)).bg(c.border).mx(px(2.0));
+        let text_button = |id: &'static str,
+                           label: &'static str,
+                           tip: &'static str,
+                           enabled: bool,
+                           on_click: ToolbarAction| {
+            if enabled {
+                button(id, palette, ButtonVariant::Outlined, ButtonSize::Xs)
+                    .child(SharedString::from(label))
+                    .tooltip(move |window, cx| Tooltip::new(tip).build(window, cx))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| on_click(this, cx)))
+                    .into_any_element()
+            } else {
+                button_disabled(id, palette, ButtonVariant::Outlined, ButtonSize::Xs)
+                    .child(SharedString::from(label))
+                    .into_any_element()
+            }
+        };
+
+        div()
+            .flex()
+            .flex_none()
+            .flex_wrap()
+            .items_center()
+            .gap(px(6.0))
+            .px(px(10.0))
+            .py(px(4.0))
+            .min_h(px(36.0))
+            .border_b_1()
+            .border_color(c.border)
+            .bg(c.card)
+            .text_size(px(12.0))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .child(SharedString::from(self.header_title())),
             )
-            .child(if *collapsed { "Expand" } else { "Collapse" })
-            .on_click(move |_, _, cx| {
-                fold_view.update(cx, |this, cx| this.toggle_hunk(idx, cx));
-            });
-            let v = view.clone();
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .px(px(8.0))
-                .bg(c.info.opacity(0.10))
-                .text_color(c.info)
-                .child(
+            .when(!can_stage, |d| {
+                d.child(
                     div()
-                        .flex()
-                        .items_center()
-                        .gap(px(6.0))
-                        .child(text.clone())
-                        .child(fold_button),
+                        .px(px(6.0))
+                        .text_size(px(10.0))
+                        .text_color(c.muted)
+                        .child(SharedString::from("read-only")),
                 )
-                .when(show_action, |d| {
-                    d.child(
+            })
+            .when(!self.doc.is_empty(), |d| {
+                d.child(diff_stat(added, removed, c)).child(sep())
+            })
+            .child(
+                icon_button_builder("pd-prev-hunk", palette, IconName::ArrowUp)
+                    .variant(ButtonVariant::Subtle)
+                    .size(ButtonSize::Xs)
+                    .disabled(!has_hunks)
+                    .tooltip("Go to Previous Hunk")
+                    .render()
+                    .on_click(
+                        cx.listener(|this, _: &ClickEvent, _w, cx| this.go_to_hunk(false, cx)),
+                    ),
+            )
+            .child(
+                icon_button_builder("pd-next-hunk", palette, IconName::ArrowDown)
+                    .variant(ButtonVariant::Subtle)
+                    .size(ButtonSize::Xs)
+                    .disabled(!has_hunks)
+                    .tooltip("Go to Next Hunk")
+                    .render()
+                    .on_click(
+                        cx.listener(|this, _: &ClickEvent, _w, cx| this.go_to_hunk(true, cx)),
+                    ),
+            )
+            .when(can_stage, |d| {
+                d.child(sep())
+                    .child(text_button(
+                        "pd-stage",
+                        "Stage",
+                        "Stage and Go to Next Hunk",
+                        cursor_stage == Some(HunkStage::Unstaged) && !self.busy,
+                        Box::new(|this, cx| this.apply_cursor_and_next(HunkStage::Unstaged, cx)),
+                    ))
+                    .child(text_button(
+                        "pd-unstage",
+                        "Unstage",
+                        "Unstage and Go to Next Hunk",
+                        cursor_stage == Some(HunkStage::Staged) && !self.busy,
+                        Box::new(|this, cx| this.apply_cursor_and_next(HunkStage::Staged, cx)),
+                    ))
+                    .child(sep())
+                    .child(if show_unstage_all {
+                        text_button(
+                            "pd-unstage-all",
+                            "Unstage All",
+                            "Unstage All Changes",
+                            !self.busy,
+                            Box::new(|this, cx| this.stage_all(false, cx)),
+                        )
+                    } else {
+                        text_button(
+                            "pd-stage-all",
+                            "Stage All",
+                            "Stage All Changes",
+                            has_unstaged && !self.busy,
+                            Box::new(|this, cx| this.stage_all(true, cx)),
+                        )
+                    })
+                    .child(sep())
+                    .child(
                         button(
-                            SharedString::from(format!("pd-hunk-{idx}")),
+                            "pd-commit",
                             palette,
-                            ButtonVariant::Transparent,
+                            ButtonVariant::Outlined,
                             ButtonSize::Xs,
                         )
-                        .child(SharedString::from(if reverse {
-                            "Unstage hunk"
-                        } else {
-                            "Stage hunk"
-                        }))
-                        .on_click(move |_: &ClickEvent, _w, cx| {
-                            v.update(cx, |this, cx| this.apply_hunk(idx, reverse, cx));
-                        }),
+                        .child(SharedString::from("Commit"))
+                        .tooltip(|window, cx| Tooltip::new("Commit").build(window, cx))
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, window, cx| {
+                                if let Some(f) = this.on_commit.clone() {
+                                    f(window, cx);
+                                }
+                            },
+                        )),
                     )
+            })
+            .child(sep())
+            .child(
+                icon_button_builder("pd-style-unified", palette, IconName::DiffUnified)
+                    .variant(ButtonVariant::Subtle)
+                    .size(ButtonSize::Xs)
+                    .selected(style == DiffStyle::Unified)
+                    .tooltip("Unified")
+                    .render()
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        this.set_style(DiffStyle::Unified, cx)
+                    })),
+            )
+            .child(
+                icon_button_builder(
+                    "pd-style-split",
+                    palette,
+                    if suspended {
+                        IconName::DiffSplitAuto
+                    } else {
+                        IconName::DiffSplit
+                    },
+                )
+                .variant(ButtonVariant::Subtle)
+                .size(ButtonSize::Xs)
+                .selected(style == DiffStyle::Split)
+                .tooltip(if suspended {
+                    format!("Split when wider than {} columns", self.min_split_columns)
+                } else {
+                    "Split".to_string()
+                })
+                .render()
+                .on_click(
+                    cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        this.set_style(DiffStyle::Split, cx)
+                    }),
+                ),
+            )
+    }
+}
+
+fn diff_stat(added: u32, removed: u32, c: Colors) -> gpui::Div {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(6.0))
+        .child(
+            div()
+                .text_color(c.success)
+                .child(SharedString::from(format!("+{added}"))),
+        )
+        .child(
+            div()
+                .text_color(c.error)
+                .child(SharedString::from(format!("\u{2212}{removed}"))),
+        )
+}
+
+fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
+    let Some(row) = ctx.rows.get(ix) else {
+        return div().into_any_element();
+    };
+    match row {
+        FlatRow::File(file) => render_file_header(ctx, *file, ix, cx),
+        FlatRow::HunkHeader(id) => render_hunk_header(ctx, *id, ix),
+        FlatRow::Line { id, line } => {
+            let Some(hunk) = ctx.doc.hunk(*id) else {
+                return div().into_any_element();
+            };
+            let Some(l) = hunk.lines.get(*line) else {
+                return div().into_any_element();
+            };
+            let tint = line_tint(ctx, hunk, l);
+            let view = ctx.view.clone();
+            let id = *id;
+            div()
+                .id(("pd-line", ix))
+                .flex()
+                .h(px(LINE_H))
+                .w_full()
+                .when_some(tint, |d, (bg, _)| d.bg(bg))
+                .child(num_cell(l.old_no, ctx.c))
+                .child(num_cell(l.new_no, ctx.c))
+                .child(marker_bar(l.kind, hunk.stage, ctx.c))
+                .child(code_text(ctx, l))
+                .on_click(move |_: &ClickEvent, _w, cx| {
+                    view.update(cx, |this, cx| this.set_cursor(id, cx));
                 })
                 .into_any_element()
         }
-        DiffRow::Unified {
-            text,
-            changed_range,
-        } => {
-            let color = match text.chars().next() {
-                Some('+') => c.success,
-                Some('-') => c.error,
-                _ => c.fg,
+        FlatRow::Split { id, left, right } => {
+            let Some(hunk) = ctx.doc.hunk(*id) else {
+                return div().into_any_element();
             };
+            let view = ctx.view.clone();
+            let id = *id;
             div()
-                .px(px(8.0))
-                .whitespace_nowrap()
-                .text_color(color)
-                .child(render_diff_text(
-                    text.as_ref(),
-                    if word_diff {
-                        changed_range.clone()
-                    } else {
-                        None
-                    },
-                    color,
-                ))
-                .into_any_element()
-        }
-        DiffRow::Raw(text) => {
-            let color = match text.chars().next() {
-                Some('+') => c.success,
-                Some('-') => c.error,
-                _ => c.fg,
-            };
-            div()
-                .px(px(8.0))
-                .whitespace_nowrap()
-                .text_color(color)
-                .child(text.clone())
-                .into_any_element()
-        }
-        DiffRow::Split { left, right } => {
-            let (left_changed, right_changed) = match (left, right) {
-                (Some((left, true)), Some((right, true))) if word_diff => {
-                    word_diff_ranges(left.as_ref(), right.as_ref())
-                        .map_or((None, None), |(left, right)| (Some(left), Some(right)))
-                }
-                _ => (None, None),
-            };
-            let cell = |slot: &Option<(SharedString, bool)>,
-                        tint: gpui::Hsla,
-                        changed_range: Option<Range<usize>>| {
-                let (text, active) = match slot {
-                    Some((text, active)) => (text.as_ref(), *active),
-                    None => (" ", false),
-                };
-                let mut d = div()
-                    .flex_1()
-                    .min_w_0()
-                    .px(px(8.0))
-                    .whitespace_nowrap()
-                    .overflow_hidden()
-                    .text_color(if active { tint } else { c.fg });
-                if active {
-                    d = d.bg(tint.opacity(0.10));
-                }
-                d.child(render_diff_text(text, changed_range, tint))
-            };
-            div()
+                .id(("pd-split", ix))
                 .flex()
-                .gap(px(1.0))
-                .child(cell(left, c.error, left_changed))
-                .child(cell(right, c.success, right_changed))
+                .h(px(LINE_H))
+                .w_full()
+                .child(split_cell(
+                    ctx,
+                    hunk,
+                    left.and_then(|i| hunk.lines.get(i)),
+                    true,
+                ))
+                .child(div().w(px(1.0)).h_full().bg(ctx.c.border))
+                .child(split_cell(
+                    ctx,
+                    hunk,
+                    right.and_then(|i| hunk.lines.get(i)),
+                    false,
+                ))
+                .on_click(move |_: &ClickEvent, _w, cx| {
+                    view.update(cx, |this, cx| this.set_cursor(id, cx));
+                })
+                .into_any_element()
+        }
+        FlatRow::Raw { file, line } => {
+            let text = ctx
+                .doc
+                .files
+                .get(*file)
+                .and_then(|f| f.raw.get(*line))
+                .cloned()
+                .unwrap_or_default();
+            let color = match text.chars().next() {
+                Some('+') => ctx.c.success,
+                Some('-') => ctx.c.error,
+                _ => ctx.c.fg,
+            };
+            div()
+                .h(px(LINE_H))
+                .px(px(8.0))
+                .whitespace_nowrap()
+                .text_color(color)
+                .child(SharedString::from(text))
                 .into_any_element()
         }
     }
 }
 
-/// Byte ranges of the changed middle after preserving the longest common
-/// prefix and suffix. The paired diff cells are already line-aligned; keeping
-/// the unchanged edges makes short token changes visible without a heavier
-/// intraline diff algorithm.
-fn word_diff_ranges(before: &str, after: &str) -> Option<(Range<usize>, Range<usize>)> {
-    let prefix_chars = before
-        .chars()
-        .zip(after.chars())
-        .take_while(|(left, right)| left == right)
-        .count();
-    let prefix_bytes = before
-        .char_indices()
-        .nth(prefix_chars)
-        .map_or(before.len(), |(index, _)| index);
-    let before_tail = &before[prefix_bytes..];
-    let after_tail = &after[prefix_bytes..];
-    let suffix_chars = before_tail
-        .chars()
-        .rev()
-        .zip(after_tail.chars().rev())
-        .take_while(|(left, right)| left == right)
-        .count();
-    if prefix_bytes == before.len() && prefix_bytes == after.len() {
-        return None;
-    }
-    let suffix_bytes = |text: &str| {
-        text.chars()
-            .rev()
-            .take(suffix_chars)
-            .map(char::len_utf8)
-            .sum::<usize>()
+/// `(row background, gutter-bar alpha)` for a changed line, or `None` for
+/// context. Staged hunks are hollow (spec §4, `staged_hollow`).
+fn line_tint(ctx: &RowCtx, hunk: &HunkView, line: &DiffLine) -> Option<(Hsla, f32)> {
+    let base = match line.kind {
+        LineKind::Added => ctx.c.success,
+        LineKind::Deleted => ctx.c.error,
+        LineKind::Context => return None,
     };
-    Some((
-        prefix_bytes..before.len() - suffix_bytes(before),
-        prefix_bytes..after.len() - suffix_bytes(after),
-    ))
+    let hollow = hunk.stage == HunkStage::Staged;
+    Some(if hollow {
+        (base.opacity(0.05), 0.55)
+    } else {
+        (base.opacity(0.14), 1.0)
+    })
 }
 
-fn render_diff_text(
-    text: &str,
-    changed_range: Option<Range<usize>>,
-    tint: gpui::Hsla,
-) -> gpui::AnyElement {
-    let Some(range) =
-        changed_range.filter(|range| range.start <= range.end && range.end <= text.len())
-    else {
-        return div()
-            .child(SharedString::from(text.to_string()))
-            .into_any_element();
+fn num_cell(n: Option<u32>, c: Colors) -> gpui::Div {
+    div()
+        .w(px(NUM_W))
+        .flex_none()
+        .pr(px(8.0))
+        .flex()
+        .justify_end()
+        .text_color(c.muted)
+        .child(SharedString::from(
+            n.map(|n| n.to_string()).unwrap_or_default(),
+        ))
+}
+
+fn marker_bar(kind: LineKind, stage: HunkStage, c: Colors) -> gpui::Div {
+    let color = match kind {
+        LineKind::Added => Some(c.success),
+        LineKind::Deleted => Some(c.error),
+        LineKind::Context => None,
+    };
+    let alpha = if stage == HunkStage::Staged {
+        0.55
+    } else {
+        1.0
     };
     div()
+        .w(px(3.0))
+        .h_full()
+        .flex_none()
+        .mr(px(8.0))
+        .when_some(color, |d, color| d.bg(color.opacity(alpha)))
+}
+
+/// Line text with the matched word range emphasized.
+fn code_text(ctx: &RowCtx, line: &DiffLine) -> gpui::Div {
+    let text = line.text.replace('\t', "    ");
+    let tint = match line.kind {
+        LineKind::Added => ctx.c.success,
+        LineKind::Deleted => ctx.c.error,
+        LineKind::Context => ctx.c.fg,
+    };
+    let base = div()
+        .flex_1()
+        .min_w_0()
+        .overflow_hidden()
+        .whitespace_nowrap();
+    // Tabs were widened, so the byte range only applies to tab-free text.
+    let range = line
+        .word
+        .clone()
+        .filter(|r| ctx.word_diff && !line.text.contains('\t') && r.end <= text.len());
+    match range {
+        Some(range) => base
+            .flex()
+            .child(SharedString::from(text[..range.start].to_string()))
+            .child(
+                div()
+                    .bg(tint.opacity(0.35))
+                    .child(SharedString::from(text[range.clone()].to_string())),
+            )
+            .child(SharedString::from(text[range.end..].to_string())),
+        None => base.child(SharedString::from(text)),
+    }
+}
+
+fn split_cell(ctx: &RowCtx, hunk: &HunkView, line: Option<&DiffLine>, left: bool) -> gpui::Div {
+    let cell = div().flex().flex_1().min_w_0().h_full().overflow_hidden();
+    let Some(line) = line else {
+        // Filler row: keeps both sides aligned.
+        return cell.bg(ctx.c.muted.opacity(0.06));
+    };
+    let number = if left { line.old_no } else { line.new_no };
+    cell.when_some(line_tint(ctx, hunk, line), |d, (bg, _)| d.bg(bg))
+        .child(num_cell(number, ctx.c))
+        .child(marker_bar(line.kind, hunk.stage, ctx.c))
+        .child(code_text(ctx, line))
+}
+
+fn render_hunk_header(ctx: &Rc<RowCtx>, id: HunkId, ix: usize) -> gpui::AnyElement {
+    let Some(hunk) = ctx.doc.hunk(id) else {
+        return div().into_any_element();
+    };
+    let c = ctx.c;
+    let is_cursor = ctx.cursor == Some(id);
+    let group = SharedString::from(format!("pd-hunk-{ix}"));
+    let alpha = if ctx.busy { 0.66 } else { 1.0 };
+    let armed = ctx.confirm_restore == Some(id);
+    let (view_a, view_b, view_c) = (ctx.view.clone(), ctx.view.clone(), ctx.view.clone());
+    let can_act = ctx.can_stage && hunk.stage != HunkStage::ReadOnly;
+
+    let controls = div()
         .flex()
-        .whitespace_nowrap()
-        .child(SharedString::from(text[..range.start].to_string()))
+        .items_center()
+        .gap(px(4.0))
+        .opacity(alpha)
+        .when(!is_cursor, |d| d.invisible())
+        .group_hover(group.clone(), |d| d.visible())
+        .when(can_act, |d| {
+            let staged = hunk.stage == HunkStage::Staged;
+            d.child(
+                button(
+                    ("pd-hunk-stage", ix),
+                    ctx.palette,
+                    ButtonVariant::Outlined,
+                    ButtonSize::Xs,
+                )
+                .child(SharedString::from(if staged { "Unstage" } else { "Stage" }))
+                .tooltip(move |window, cx| {
+                    Tooltip::new(if staged { "Unstage Hunk" } else { "Stage Hunk" })
+                        .build(window, cx)
+                })
+                .on_click(move |_: &ClickEvent, _w, cx| {
+                    view_a.update(cx, |this, cx| this.apply_hunk(id, cx));
+                }),
+            )
+            .child(
+                button(
+                    ("pd-hunk-restore", ix),
+                    ctx.palette,
+                    if armed {
+                        ButtonVariant::TintedError
+                    } else {
+                        ButtonVariant::Outlined
+                    },
+                    ButtonSize::Xs,
+                )
+                .child(SharedString::from(if armed {
+                    "Confirm Restore"
+                } else {
+                    "Restore"
+                }))
+                .tooltip(|window, cx| Tooltip::new("Restore Hunk").build(window, cx))
+                .on_click(move |_: &ClickEvent, _w, cx| {
+                    view_b.update(cx, |this, cx| this.restore_hunk(id, cx));
+                }),
+            )
+        });
+
+    div()
+        .id(("pd-hunk", ix))
+        .group(group)
+        .flex()
+        .items_center()
+        .justify_between()
+        .h(px(HUNK_H))
+        .w_full()
+        .px(px(8.0))
+        .text_size(px(11.0))
+        .text_color(c.muted)
+        .bg(if is_cursor {
+            c.accent
+        } else {
+            c.info.opacity(0.07)
+        })
         .child(
             div()
-                .bg(tint.opacity(0.28))
-                .child(SharedString::from(text[range.clone()].to_string())),
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .child(SharedString::from(hunk.header.clone()))
+                .when(hunk.stage == HunkStage::Staged, |d| {
+                    d.child(
+                        div()
+                            .text_color(c.success)
+                            .child(SharedString::from("staged")),
+                    )
+                }),
         )
-        .child(SharedString::from(text[range.end..].to_string()))
+        .child(controls)
+        .on_click(move |_: &ClickEvent, _w, cx| {
+            view_c.update(cx, |this, cx| this.set_cursor(id, cx));
+        })
         .into_any_element()
 }
 
-/// Flatten one hunk's body lines into side-by-side [`DiffRow::Split`] rows
-/// (old left, new right).
-fn split_hunk_rows_into(out: &mut Vec<DiffRow>, lines: &[String]) {
-    let mut dels: Vec<String> = Vec::new();
-    let mut adds: Vec<String> = Vec::new();
-    let flush = |out: &mut Vec<DiffRow>, dels: &mut Vec<String>, adds: &mut Vec<String>| {
-        let n = dels.len().max(adds.len());
-        for i in 0..n {
-            out.push(DiffRow::Split {
-                left: dels.get(i).map(|s| (SharedString::from(s.clone()), true)),
-                right: adds.get(i).map(|s| (SharedString::from(s.clone()), true)),
-            });
-        }
-        dels.clear();
-        adds.clear();
+fn render_file_header(
+    ctx: &Rc<RowCtx>,
+    file_ix: usize,
+    ix: usize,
+    _cx: &mut App,
+) -> gpui::AnyElement {
+    let Some(file) = ctx.doc.files.get(file_ix) else {
+        return div().into_any_element();
     };
-    for line in lines {
-        match line.chars().next() {
-            Some('-') => dels.push(line.get(1..).unwrap_or("").to_string()),
-            Some('+') => adds.push(line.get(1..).unwrap_or("").to_string()),
-            _ => {
-                flush(out, &mut dels, &mut adds);
-                let text = line.strip_prefix(' ').unwrap_or(line).to_string();
-                out.push(DiffRow::Split {
-                    left: Some((SharedString::from(text.clone()), false)),
-                    right: Some((SharedString::from(text), false)),
-                });
-            }
-        }
-    }
-    flush(out, &mut dels, &mut adds);
+    let c = ctx.c;
+    let folded = ctx.folded.contains(&file.path);
+    let (dir, name) = match file.path.rsplit_once('/') {
+        Some((dir, name)) => (Some(format!("{dir}/")), name.to_string()),
+        None => (None, file.path.clone()),
+    };
+    let name_color = match file.kind {
+        FileKind::Added | FileKind::Untracked => c.success,
+        FileKind::Deleted => c.error,
+        FileKind::Modified => c.fg,
+    };
+    let all_staged =
+        !file.hunks.is_empty() && file.hunks.iter().all(|h| h.stage == HunkStage::Staged);
+    let icon = file_icon_path(&ctx.icon_theme, &name);
+    let path = file.path.clone();
+    let (fold_view, check_view, open_view) = (ctx.view.clone(), ctx.view.clone(), ctx.view.clone());
+    let (fold_path, check_path, open_path) = (path.clone(), path.clone(), path.clone());
+    let chevron = if folded {
+        IconName::ChevronRight
+    } else {
+        IconName::ChevronDown
+    };
+
+    div()
+        .w_full()
+        .pt(px(if file_ix == 0 { 0.0 } else { 8.0 }))
+        .child(
+            div()
+                .id(("pd-file", ix))
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .h(px(FILE_H))
+                .px(px(6.0))
+                .rounded(px(6.0))
+                .border_1()
+                .border_color(c.border)
+                .bg(c.card)
+                .hover(|s| s.bg(c.accent.opacity(0.5)))
+                .child(
+                    icon_button_builder(("pd-fold", ix), ctx.palette, chevron)
+                        .variant(ButtonVariant::Transparent)
+                        .size(ButtonSize::Xs)
+                        .tooltip(if folded {
+                            "Unfold Excerpt"
+                        } else {
+                            "Fold Excerpt (\u{2325} click toggles all)"
+                        })
+                        .render()
+                        .on_click(move |event: &ClickEvent, _w, cx| {
+                            let all = event.modifiers().alt;
+                            fold_view.update(cx, |this, cx| this.toggle_fold(&fold_path, all, cx));
+                        }),
+                )
+                .when(ctx.can_stage && !file.hunks.is_empty(), |d| {
+                    d.child(
+                        checkbox(("pd-stage-file", ix), ctx.palette, all_staged)
+                            .disabled(ctx.busy)
+                            .on_click(move |checked: &bool, _w, cx| {
+                                let stage = *checked;
+                                check_view.update(cx, |this, cx| {
+                                    this.stage_file(check_path.clone(), stage, cx)
+                                });
+                            }),
+                    )
+                })
+                .child(svg_path(icon, c.muted))
+                .child(
+                    div()
+                        .id(("pd-file-name", ix))
+                        .cursor_pointer()
+                        .whitespace_nowrap()
+                        .text_color(name_color)
+                        .when(file.kind == FileKind::Deleted, |d| d.line_through())
+                        .child(SharedString::from(name))
+                        .on_click(move |_: &ClickEvent, window, cx| {
+                            let path = open_path.clone();
+                            let handler = open_view.update(cx, |this, _| {
+                                this.absolute_path(&path).zip(this.on_open_file.clone())
+                            });
+                            if let Some((abs, f)) = handler {
+                                f(abs, window, cx);
+                            }
+                        }),
+                )
+                .when_some(dir, |d, dir| {
+                    d.child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_color(c.muted)
+                            .child(SharedString::from(dir)),
+                    )
+                })
+                .when(file.added > 0 || file.removed > 0, |d| {
+                    d.child(
+                        div()
+                            .flex_none()
+                            .child(diff_stat(file.added, file.removed, c)),
+                    )
+                }),
+        )
+        .into_any_element()
 }
 
 #[cfg(test)]
@@ -1014,24 +1458,20 @@ mod tests {
     #[test]
     fn resolve_selection_prefers_requested_then_first() {
         let files = vec![f("a.rs"), f("b.rs"), f("c.rs")];
-        // bare request → first file
         assert_eq!(resolve_selection(&files, None).as_deref(), Some("a.rs"));
-        // explicit, in-set → that file (a follow-up "focus this file" request)
         assert_eq!(
             resolve_selection(&files, Some("b.rs")).as_deref(),
             Some("b.rs")
         );
-        // explicit, not in set → falls back to first, never nothing
         assert_eq!(
             resolve_selection(&files, Some("zzz")).as_deref(),
             Some("a.rs")
         );
-        // empty change set → nothing
         assert_eq!(resolve_selection(&[], Some("a.rs")), None);
     }
 
     #[test]
-    fn read_only_source_identity_includes_kind_and_hash() {
+    fn source_identity_includes_kind_and_hash() {
         let commit = DiffSource::Commit {
             hash: "abc".into(),
             subject: "subject changed in place".into(),
@@ -1046,7 +1486,7 @@ mod tests {
         };
         let stash = DiffSource::Stash {
             hash: "abc".into(),
-            subject: "Stash · subject".into(),
+            subject: "Stash".into(),
         };
         let branch = DiffSource::Branch {
             base: "main".into(),
@@ -1059,12 +1499,16 @@ mod tests {
             subject: "updated subject".into(),
         };
 
-        assert!(same_read_only_source(&commit, &same_commit));
-        assert!(!same_read_only_source(&commit, &other_commit));
-        assert!(!same_read_only_source(&commit, &stash));
-        assert!(same_read_only_source(&stash, &stash));
-        assert!(same_read_only_source(&branch, &same_branch));
-        assert!(!same_read_only_source(&branch, &commit));
+        assert!(same_source(&commit, &same_commit));
+        assert!(!same_source(&commit, &other_commit));
+        assert!(!same_source(&commit, &stash));
+        assert!(same_source(&stash, &stash));
+        assert!(same_source(&branch, &same_branch));
+        assert!(!same_source(&branch, &commit));
+        assert!(same_source(
+            &DiffSource::WorkingTree,
+            &DiffSource::WorkingTree
+        ));
     }
 
     #[test]
@@ -1090,76 +1534,29 @@ mod tests {
     }
 
     #[test]
-    fn word_diff_ranges_keep_unchanged_prefix_and_suffix() {
-        let before = "let count = 1;";
-        let after = "let count = 42;";
-        let (before_range, after_range) =
-            word_diff_ranges(before, after).expect("changed token range");
-        assert_eq!(&before[before_range], "1");
-        assert_eq!(&after[after_range], "42");
-        assert_eq!(word_diff_ranges("same", "same"), None);
-    }
-
-    #[test]
-    fn word_diff_ranges_respect_utf8_boundaries() {
-        let before = "α = old;";
-        let after = "α = new;";
-        let (before_range, after_range) =
-            word_diff_ranges(before, after).expect("changed token range");
-        assert_eq!(&before[before_range], "old");
-        assert_eq!(&after[after_range], "new");
-    }
-
-    #[test]
-    fn unified_replacements_keep_word_diff_ranges_for_both_lines() {
-        let mut rows = Vec::new();
-        unified_hunk_rows_into(
-            &mut rows,
-            &["-let count = 1;".into(), "+let count = 42;".into()],
-        );
-        let [DiffRow::Unified {
-            text: before,
-            changed_range: Some(before_range),
-        }, DiffRow::Unified {
-            text: after,
-            changed_range: Some(after_range),
-        }] = rows.as_slice()
-        else {
-            panic!("replacement rows should carry word-diff ranges");
-        };
-        assert_eq!(&before[before_range.clone()], "1");
-        assert_eq!(&after[after_range.clone()], "42");
-    }
-
-    #[test]
-    fn collapsed_hunks_keep_the_header_and_hide_body_rows() {
-        let file = FileDiff {
-            path: "src/lib.rs".into(),
-            header_lines: Vec::new(),
-            hunks: vec![DiffHunk {
-                header: "@@ -1 +1 @@".into(),
-                old_start: 1,
-                old_lines: 1,
-                new_start: 1,
-                new_lines: 1,
-                lines: vec!["-old".into(), "+new".into()],
-            }],
-            is_new_file: false,
-            is_deleted_file: false,
-        };
-        let mut expanded = Vec::new();
-        push_file_rows(&mut expanded, &file, false, true, &HashSet::new());
-        assert_eq!(expanded.len(), 3);
-
-        let mut collapsed = Vec::new();
-        push_file_rows(&mut collapsed, &file, false, true, &HashSet::from([0]));
-        assert_eq!(collapsed.len(), 1);
-        assert!(matches!(
-            collapsed.first(),
-            Some(DiffRow::HunkHeader {
-                collapsed: true,
-                ..
-            })
-        ));
+    fn read_only_patch_splits_into_one_input_per_file() {
+        let patch = [
+            "diff --git a/a.rs b/a.rs",
+            "--- a/a.rs",
+            "+++ b/a.rs",
+            "@@ -1 +1 @@",
+            "-x",
+            "+y",
+            "diff --git a/b.rs b/b.rs",
+            "--- a/b.rs",
+            "+++ b/b.rs",
+            "@@ -1 +1 @@",
+            "-p",
+            "+q",
+            "",
+        ]
+        .join("\n");
+        let inputs = read_only_inputs(&patch);
+        assert_eq!(inputs.len(), 2);
+        assert_eq!(inputs[0].path, "a.rs");
+        assert_eq!(inputs[0].diffs[0].0, HunkStage::ReadOnly);
     }
 }
+
+#[cfg(test)]
+mod render_tests;

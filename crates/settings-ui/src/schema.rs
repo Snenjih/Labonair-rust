@@ -1053,6 +1053,22 @@ pub fn all_fields() -> Vec<AnyField> {
             "Show intra-line Git change decorations without changing gutter markers."
         ),
         field!(
+            editor.editor_diff_view_style,
+            "editorDiffViewStyle",
+            Select(&[("split", "Split"), ("unified", "Unified")]),
+            "Diff view style",
+            "Show diffs side by side or as one unified column."
+        ),
+        field_with_details!(
+            editor.editor_minimum_split_diff_width,
+            "editorMinimumSplitDiffWidth",
+            Int { min: 0, max: 400, step: 10 },
+            "Minimum split diff width",
+            "Below this width a split diff renders unified until the view is wide enough again (0 = always split).",
+            "columns",
+            "Applies to open and new diff views."
+        ),
+        field!(
             editor.editor_git_blame_status,
             "editorGitBlameStatus",
             Switch,

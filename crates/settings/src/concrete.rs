@@ -794,6 +794,18 @@ impl EditorSettings {
         self.0.editor_git_word_diff.unwrap_or(true)
     }
 
+    /// `true` when DiffViews should lay out side by side (default), `false`
+    /// for the unified single column.
+    pub fn diff_view_split(&self) -> bool {
+        self.0.editor_diff_view_style.as_deref() != Some("unified")
+    }
+
+    /// Editor columns under which a split DiffView falls back to unified
+    /// (default 100, 0 disables the fallback).
+    pub fn minimum_split_diff_width(&self) -> u32 {
+        self.0.editor_minimum_split_diff_width.unwrap_or(100)
+    }
+
     pub fn git_blame_status(&self) -> bool {
         self.0.editor_git_blame_status.unwrap_or(false)
     }

@@ -1,0 +1,609 @@
+//! Headless tests for the DiffView: a scripted in-memory `GitService` drives
+//! load → render → stage → reload end to end.
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use gpui::{point, px, size, AppContext as _, TestAppContext, VisualTestContext};
+use labonair_editor::diff_document::{DiffStyle, FlatRow, HunkId, HunkStage};
+use labonair_git::*;
+use labonair_panel::{DiffSource, ProjectDiffFile, ProjectDiffMode, ProjectDiffRequest};
+
+use super::ProjectDiffView;
+use crate::theme::ThemeStore;
+
+fn unsupported<T: Send + 'static>() -> GitFuture<T> {
+    Box::pin(async { Err("unsupported in test".to_string()) })
+}
+
+const UNSTAGED: &str = "diff --git a/src/lib.rs b/src/lib.rs
+index 111..222 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,3 +1,3 @@
+ fn a() {}
+-fn b() {}
++fn b2() {}
+ fn c() {}
+@@ -20,2 +20,2 @@
+-let x = 1;
++let x = 2;
+ end
+";
+
+const STAGED: &str = "diff --git a/README.md b/README.md
+index 111..222 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1 @@
+-old
++new
+";
+
+/// Scripted git: `diff` answers from a map, mutations are recorded.
+#[derive(Default)]
+struct FakeGit {
+    diffs: Mutex<HashMap<(String, bool), String>>,
+    calls: Arc<Mutex<Vec<String>>>,
+}
+
+impl FakeGit {
+    fn record(&self, call: String) -> GitFuture<()> {
+        self.calls.lock().unwrap().push(call);
+        Box::pin(async { Ok(()) })
+    }
+}
+
+impl GitService for FakeGit {
+    fn diff(
+        &self,
+        _path: String,
+        file: String,
+        staged: bool,
+        _ignore_whitespace: Option<bool>,
+        _is_untracked: Option<bool>,
+        _session_id: Option<String>,
+    ) -> GitFuture<String> {
+        let text = self.diffs.lock().unwrap().get(&(file, staged)).cloned();
+        Box::pin(async move { text.ok_or_else(|| "no diff".to_string()) })
+    }
+
+    fn stage_hunk(
+        &self,
+        _p: String,
+        file: String,
+        patch: String,
+        _s: Option<String>,
+    ) -> GitFuture<()> {
+        self.record(format!("stage_hunk {file} {}", patch.contains("@@")))
+    }
+
+    fn unstage_hunk(
+        &self,
+        _p: String,
+        file: String,
+        patch: String,
+        _s: Option<String>,
+    ) -> GitFuture<()> {
+        self.record(format!("unstage_hunk {file} {}", patch.contains("@@")))
+    }
+
+    fn stage_file(&self, _p: String, file: String, _s: Option<String>) -> GitFuture<()> {
+        self.record(format!("stage_file {file}"))
+    }
+
+    fn unstage_file(&self, _p: String, file: String, _s: Option<String>) -> GitFuture<()> {
+        self.record(format!("unstage_file {file}"))
+    }
+
+    fn stage_all(&self, _p: String, _s: Option<String>) -> GitFuture<()> {
+        self.record("stage_all".to_string())
+    }
+
+    fn unstage_all(&self, _p: String, _s: Option<String>) -> GitFuture<()> {
+        self.record("unstage_all".to_string())
+    }
+
+    fn discard_hunk(
+        &self,
+        _p: String,
+        file: String,
+        _patch: String,
+        staged: bool,
+        _s: Option<String>,
+    ) -> GitFuture<()> {
+        self.record(format!("discard_hunk {file} staged={staged}"))
+    }
+
+    fn is_repo(&self, _path: String, _session_id: Option<String>) -> GitFuture<bool> {
+        unsupported()
+    }
+
+    fn repo_root(&self, _path: String, _session_id: Option<String>) -> GitFuture<String> {
+        unsupported()
+    }
+
+    fn workspace_state(
+        &self,
+        _path: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<WorkspaceGitState> {
+        unsupported()
+    }
+
+    fn log(
+        &self,
+        _path: String,
+        _limit: Option<u32>,
+        _all_branches: bool,
+        _session_id: Option<String>,
+        _skip: Option<usize>,
+    ) -> GitFuture<Vec<CommitInfo>> {
+        unsupported()
+    }
+
+    fn blame_line(
+        &self,
+        _path: String,
+        _file: String,
+        _line: u32,
+        _session_id: Option<String>,
+    ) -> GitFuture<GitBlameLine> {
+        unsupported()
+    }
+
+    fn commit_diff(
+        &self,
+        _path: String,
+        _hash: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<String> {
+        unsupported()
+    }
+
+    fn stash_diff(
+        &self,
+        _path: String,
+        _hash: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<String> {
+        unsupported()
+    }
+
+    fn branch_diff(
+        &self,
+        _path: String,
+        _base: String,
+        _head: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<String> {
+        unsupported()
+    }
+
+    fn discard_file(
+        &self,
+        _path: String,
+        _file: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<()> {
+        unsupported()
+    }
+
+    fn discard_all(&self, _path: String, _session_id: Option<String>) -> GitFuture<()> {
+        unsupported()
+    }
+
+    fn clean_untracked(&self, _path: String, _session_id: Option<String>) -> GitFuture<()> {
+        unsupported()
+    }
+
+    fn commit(
+        &self,
+        _path: String,
+        _message: String,
+        _amend: bool,
+        _session_id: Option<String>,
+    ) -> GitFuture<CommitResult> {
+        unsupported()
+    }
+
+    fn push(
+        &self,
+        _path: String,
+        _remote: Option<String>,
+        _branch: Option<String>,
+        _session_id: Option<String>,
+    ) -> GitFuture<String> {
+        unsupported()
+    }
+
+    fn pull(&self, _path: String, _session_id: Option<String>) -> GitFuture<String> {
+        unsupported()
+    }
+
+    fn fetch(&self, _path: String, _session_id: Option<String>) -> GitFuture<String> {
+        unsupported()
+    }
+
+    fn abort(&self, _path: String, _session_id: Option<String>) -> GitFuture<()> {
+        unsupported()
+    }
+
+    fn continue_operation(&self, _path: String, _session_id: Option<String>) -> GitFuture<()> {
+        unsupported()
+    }
+
+    fn checkout_branch(
+        &self,
+        _path: String,
+        _branch: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<()> {
+        unsupported()
+    }
+
+    fn create_branch(
+        &self,
+        _path: String,
+        _name: String,
+        _from_ref: Option<String>,
+        _checkout: bool,
+        _session_id: Option<String>,
+    ) -> GitFuture<()> {
+        unsupported()
+    }
+
+    fn delete_branch(
+        &self,
+        _path: String,
+        _name: String,
+        _force: bool,
+        _session_id: Option<String>,
+    ) -> GitFuture<()> {
+        unsupported()
+    }
+
+    fn rename_branch(
+        &self,
+        _path: String,
+        _old_name: String,
+        _new_name: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<()> {
+        unsupported()
+    }
+
+    fn create_tag(
+        &self,
+        _path: String,
+        _name: String,
+        _message: Option<String>,
+        _from_ref: Option<String>,
+        _session_id: Option<String>,
+    ) -> GitFuture<()> {
+        unsupported()
+    }
+
+    fn delete_tag(
+        &self,
+        _path: String,
+        _name: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<()> {
+        unsupported()
+    }
+
+    fn push_tag(
+        &self,
+        _path: String,
+        _name: String,
+        _remote: Option<String>,
+        _session_id: Option<String>,
+    ) -> GitFuture<String> {
+        unsupported()
+    }
+
+    fn stash_push(
+        &self,
+        _path: String,
+        _message: Option<String>,
+        _include_untracked: Option<bool>,
+        _session_id: Option<String>,
+    ) -> GitFuture<()> {
+        unsupported()
+    }
+
+    fn stash_pop(
+        &self,
+        _path: String,
+        _hash: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<()> {
+        unsupported()
+    }
+
+    fn stash_apply(
+        &self,
+        _path: String,
+        _hash: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<()> {
+        unsupported()
+    }
+
+    fn stash_drop(
+        &self,
+        _path: String,
+        _hash: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<()> {
+        unsupported()
+    }
+
+    fn add_to_gitignore(
+        &self,
+        _path: String,
+        _file: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<()> {
+        unsupported()
+    }
+
+    fn add_to_exclude(
+        &self,
+        _path: String,
+        _file: String,
+        _session_id: Option<String>,
+    ) -> GitFuture<()> {
+        unsupported()
+    }
+}
+
+struct Harness {
+    view: gpui::Entity<ProjectDiffView>,
+    calls: Arc<Mutex<Vec<String>>>,
+    _runtime: tokio::runtime::Runtime,
+}
+
+fn harness(cx: &mut TestAppContext) -> (Harness, &mut VisualTestContext) {
+    cx.update(|cx| {
+        labonair_notifications::init(cx);
+    });
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let git = FakeGit::default();
+    git.diffs
+        .lock()
+        .unwrap()
+        .insert(("src/lib.rs".into(), false), UNSTAGED.into());
+    git.diffs
+        .lock()
+        .unwrap()
+        .insert(("README.md".into(), true), STAGED.into());
+    let calls = git.calls.clone();
+    let handle = runtime.handle().clone();
+    let (view, vcx) = cx.add_window_view(|_, cx| {
+        let theme = cx.new(|_| ThemeStore::new(gpui::WindowAppearance::Light));
+        ProjectDiffView::new(theme, Arc::new(git), handle, cx)
+    });
+    (
+        Harness {
+            view,
+            calls,
+            _runtime: runtime,
+        },
+        vcx,
+    )
+}
+
+fn request() -> ProjectDiffRequest {
+    let file = |path: &str, staged| ProjectDiffFile {
+        path: path.into(),
+        staged,
+        untracked: false,
+    };
+    ProjectDiffRequest {
+        repo_root: "/repo".into(),
+        session_id: None,
+        source: DiffSource::WorkingTree,
+        files: vec![file("src/lib.rs", false), file("README.md", true)],
+        selected: Some("src/lib.rs".into()),
+        mode: ProjectDiffMode::Unified,
+    }
+}
+
+/// Pump the foreground executor while background git work finishes.
+fn wait_until(cx: &mut VisualTestContext, done: impl Fn(&mut VisualTestContext) -> bool) {
+    for _ in 0..200 {
+        cx.run_until_parked();
+        if done(cx) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("condition not reached");
+}
+
+fn draw(cx: &mut VisualTestContext, view: &gpui::Entity<ProjectDiffView>, width: f32) {
+    let view = view.clone();
+    cx.draw(
+        point(px(0.0), px(0.0)),
+        size(px(width), px(600.0)),
+        move |_, _| view.clone(),
+    );
+    // The width probe defers its update; an app update flushes it.
+    cx.update(|_, _| {});
+}
+
+#[gpui::test]
+fn loads_merges_and_renders_both_styles(cx: &mut TestAppContext) {
+    let (h, cx) = harness(cx);
+    h.view.update(cx, |v, cx| v.apply_request(request(), cx));
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
+
+    h.view.read_with(cx, |v, _| {
+        // Tracked files sort by path: README.md (staged) before src/lib.rs.
+        let paths: Vec<_> = v.doc.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(paths, ["README.md", "src/lib.rs"]);
+        assert_eq!(v.doc.totals(), (3, 3));
+        assert_eq!(v.doc.files[0].hunks[0].stage, HunkStage::Staged);
+        assert_eq!(v.doc.files[1].hunks.len(), 2);
+        // Requested selection scrolls to its file; cursor lands on a hunk.
+        assert!(v.cursor.is_some());
+        assert!(matches!(v.rows[0], FlatRow::File(0)));
+    });
+
+    draw(cx, &h.view, 1200.0);
+    h.view.update(cx, |v, cx| v.set_style(DiffStyle::Split, cx));
+    draw(cx, &h.view, 1200.0);
+    h.view.read_with(cx, |v, _| {
+        assert!(v.rows.iter().any(|r| matches!(r, FlatRow::Split { .. })));
+    });
+}
+
+#[gpui::test]
+fn split_suspends_below_the_minimum_width(cx: &mut TestAppContext) {
+    let (h, cx) = harness(cx);
+    h.view.update(cx, |v, cx| v.apply_request(request(), cx));
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
+    h.view.update(cx, |v, cx| v.set_style(DiffStyle::Split, cx));
+
+    // The width probe measures the real container on paint.
+    cx.simulate_resize(size(px(400.0), px(700.0)));
+    cx.update(|_, _| {});
+    h.view.read_with(cx, |v, _| {
+        assert!(v.too_narrow_for_split);
+        assert!(!v.rows.iter().any(|r| matches!(r, FlatRow::Split { .. })));
+        assert_eq!(v.style, DiffStyle::Split);
+    });
+
+    cx.simulate_resize(size(px(2400.0), px(700.0)));
+    cx.update(|_, _| {});
+    h.view.read_with(cx, |v, _| {
+        assert!(!v.too_narrow_for_split);
+        assert!(v.rows.iter().any(|r| matches!(r, FlatRow::Split { .. })));
+    });
+}
+
+#[gpui::test]
+fn stage_and_next_stages_the_cursor_hunk_and_advances(cx: &mut TestAppContext) {
+    let (h, cx) = harness(cx);
+    h.view.update(cx, |v, cx| v.apply_request(request(), cx));
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
+
+    let first_unstaged = HunkId { file: 1, hunk: 0 };
+    h.view.update(cx, |v, cx| {
+        v.set_cursor(first_unstaged, cx);
+        v.apply_cursor_and_next(HunkStage::Unstaged, cx);
+    });
+    wait_until(cx, |_| !h.calls.lock().unwrap().is_empty());
+    assert_eq!(
+        h.calls.lock().unwrap().as_slice(),
+        ["stage_hunk src/lib.rs true"]
+    );
+    h.view.read_with(cx, |v, _| {
+        assert_eq!(v.cursor, Some(HunkId { file: 1, hunk: 1 }));
+    });
+
+    // Unstaged hunks stage; staged hunks need Unstage.
+    h.view.update(cx, |v, cx| {
+        v.set_cursor(HunkId { file: 0, hunk: 0 }, cx);
+        v.apply_cursor_and_next(HunkStage::Unstaged, cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(h.calls.lock().unwrap().len(), 1);
+}
+
+#[gpui::test]
+fn restore_needs_a_second_click(cx: &mut TestAppContext) {
+    let (h, cx) = harness(cx);
+    h.view.update(cx, |v, cx| v.apply_request(request(), cx));
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
+
+    let id = HunkId { file: 1, hunk: 0 };
+    h.view.update(cx, |v, cx| v.restore_hunk(id, cx));
+    cx.run_until_parked();
+    assert!(h.calls.lock().unwrap().is_empty());
+    h.view.update(cx, |v, cx| v.restore_hunk(id, cx));
+    wait_until(cx, |_| !h.calls.lock().unwrap().is_empty());
+    assert_eq!(
+        h.calls.lock().unwrap().as_slice(),
+        ["discard_hunk src/lib.rs staged=false"]
+    );
+}
+
+#[gpui::test]
+fn fold_hides_a_file_body_and_alt_folds_all(cx: &mut TestAppContext) {
+    let (h, cx) = harness(cx);
+    h.view.update(cx, |v, cx| v.apply_request(request(), cx));
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
+    let full = h.view.read_with(cx, |v, _| v.rows.len());
+
+    h.view
+        .update(cx, |v, cx| v.toggle_fold("src/lib.rs", false, cx));
+    let after_one = h.view.read_with(cx, |v, _| v.rows.len());
+    assert!(after_one < full);
+    h.view.update(cx, |v, cx| v.toggle_fold("", true, cx));
+    h.view.read_with(cx, |v, _| assert_eq!(v.rows.len(), 2));
+    draw(cx, &h.view, 900.0);
+    h.view.update(cx, |v, cx| v.toggle_fold("", true, cx));
+    assert_eq!(h.view.read_with(cx, |v, _| v.rows.len()), full);
+}
+
+#[gpui::test]
+fn read_only_sources_offer_no_staging(cx: &mut TestAppContext) {
+    let (h, cx) = harness(cx);
+    let mut req = request();
+    req.source = DiffSource::Commit {
+        hash: "abc1234".into(),
+        subject: "subject".into(),
+    };
+    req.files.clear();
+    // The fake has no `commit_diff`, so loading fails and the view stays empty
+    // without panicking and without staging controls.
+    h.view.update(cx, |v, cx| v.apply_request(req, cx));
+    cx.run_until_parked();
+    draw(cx, &h.view, 900.0);
+    h.view.read_with(cx, |v, _| {
+        assert!(!v.supports_staging());
+        assert!(v.doc.is_empty());
+    });
+}
+
+#[gpui::test]
+fn settings_drive_style_and_minimum_width(cx: &mut TestAppContext) {
+    use labonair_settings::{EditorSettings, SettingsContent, SettingsLayer, SettingsStore};
+
+    cx.update(|cx| {
+        let mut content = SettingsContent::default();
+        content.editor.editor_diff_view_style = Some("unified".into());
+        content.editor.editor_minimum_split_diff_width = Some(300);
+        let mut store = SettingsStore::new(std::env::temp_dir().join(format!(
+            "labonair-diff-settings-{}.json",
+            std::process::id()
+        )));
+        store.register_setting::<EditorSettings>();
+        store.set_layer(SettingsLayer::User, content);
+        cx.set_global(store);
+    });
+    let (h, cx) = harness(cx);
+    h.view.read_with(cx, |v, _| {
+        assert_eq!(v.style, DiffStyle::Unified);
+        assert_eq!(v.min_split_columns, 300.0);
+    });
+
+    cx.update(|_, cx| {
+        let mut content = SettingsContent::default();
+        content.editor.editor_diff_view_style = Some("split".into());
+        content.editor.editor_minimum_split_diff_width = Some(0);
+        cx.global_mut::<SettingsStore>()
+            .set_layer(SettingsLayer::User, content);
+    });
+    cx.run_until_parked();
+    h.view.read_with(cx, |v, _| {
+        assert_eq!(v.style, DiffStyle::Split);
+        // 0 disables the narrow fallback entirely.
+        assert_eq!(v.min_split_columns, 0.0);
+        assert!(!v.too_narrow_for_split);
+    });
+}

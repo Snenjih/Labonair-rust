@@ -12,6 +12,7 @@ pub mod buffer;
 pub mod command_provider;
 pub mod diagnostics;
 pub mod diff;
+pub mod diff_document;
 pub mod display;
 pub mod document;
 pub mod editing;

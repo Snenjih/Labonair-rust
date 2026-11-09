@@ -4593,6 +4593,19 @@ impl Workspace {
                 let v = cx.new(|cx| {
                     crate::views::project_diff::ProjectDiffView::new(theme, git, tokio, cx)
                 });
+                let workspace = cx.weak_entity();
+                v.update(cx, |view, _| {
+                    let open = workspace.clone();
+                    view.set_on_open_file(move |path, window, cx| {
+                        open.update(cx, |ws, cx| ws.open_file(path, false, window, cx))
+                            .ok();
+                    });
+                    view.set_on_commit(move |_window, cx| {
+                        workspace
+                            .update(cx, |ws, cx| ws.open_panel("source-control", cx))
+                            .ok();
+                    });
+                });
                 cx.observe(&v, |_, _, cx| cx.notify()).detach();
                 self.project_diff = Some(v.clone());
                 v

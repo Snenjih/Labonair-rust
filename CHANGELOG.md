@@ -20,6 +20,17 @@ versions follow [SemVer](https://semver.org/).
   glyph is kept — the hosts panel reuses it for the "pin to top" marker.
 
 ### Added
+- **DiffView rewrite (Zed-style).** The workspace diff is now one scrolling
+  multi-file document instead of a one-file rail: per-file headers (fold,
+  stage checkbox, file icon, name, directory, `+N −M`, open file), line-number
+  gutters, row tints with word diff, staged (hollow) vs unstaged (filled) hunks,
+  hover hunk controls (Stage / Unstage / two-step Restore), a toolbar with the
+  diff stat, previous/next hunk, Stage / Unstage and go to next, Stage All /
+  Unstage All, Commit, and a Unified / Split switch. Split pads aligned rows,
+  falls back to unified below `editorMinimumSplitDiffWidth` columns, and the
+  choice persists as `editorDiffViewStyle` (new settings, shown in Settings ›
+  Editor). The presentation model is `labonair_editor::diff_document`;
+  the behavior spec is `docs/parity/diff-view-spec.md`.
 - **SFTP browser rework.**
   - Each pane now shows a `LOCAL` / `REMOTE · <host>` label with a live item
     count, a two-row toolbar (up · address · search · refresh · hidden ·

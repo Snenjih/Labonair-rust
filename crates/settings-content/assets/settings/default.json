@@ -154,6 +154,10 @@
     "editorInlayScrollDebounceMs": 50,
     "editorGitGutter": true,
     "editorGitWordDiff": true,
+    // DiffView layout: "split" (side by side) or "unified".
+    "editorDiffViewStyle": "split",
+    // Editor columns below which a split diff renders unified (0 = never).
+    "editorMinimumSplitDiffWidth": 100,
     "editorGitBlameStatus": false,
     "editorCompletion": true,
     "editorHover": true,

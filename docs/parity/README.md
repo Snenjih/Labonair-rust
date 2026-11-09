@@ -32,6 +32,10 @@ source-side research. It records current evidence without claiming parity.
 - [`action-classification-vim-helix-insert.md`](action-classification-vim-helix-insert.md) — Helix Normal `i` collapses nonempty ranges to their start and enters Insert, distinct from Helix Select `i` and the shared InsertBefore alias; runtime acceptance remains open.
 - [`action-classification-vim-helix-insert-end-of-line.md`](action-classification-vim-helix-insert-end-of-line.md) — Helix Normal `shift-a` enters Insert at the logical row end with an exclusive-selection-end correction; runtime acceptance remains open.
 - [`action-classification-vim-helix-jump-to-word.md`](action-classification-vim-helix-jump-to-word.md) — Helix `g w` visible-word labels, two-key operator lifecycle, and mode-specific move/selection outcomes; runtime acceptance remains open.
+- [`diff-view-spec.md`](diff-view-spec.md) — full DiffView behavior/UI specification
+  (surfaces, document model, file headers, hunk rendering and controls,
+  unified/split rules, toolbars, actions, settings) with Labonair's target
+  mapping and implementation phases.
 - [`action-requirements.md`](action-requirements.md) — stable requirement IDs
   for all 595 action identifiers across the default macOS, Linux, and Windows
   keymaps, with 2,731 binding/context records and four null entries. It records

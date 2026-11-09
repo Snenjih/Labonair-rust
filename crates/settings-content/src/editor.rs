@@ -375,6 +375,10 @@ pub struct EditorContent {
     pub editor_inlay_scroll_debounce_ms: Option<u32>,
     pub editor_git_gutter: Option<bool>,
     pub editor_git_word_diff: Option<bool>,
+    /// `"split"` | `"unified"` layout of every DiffView.
+    pub editor_diff_view_style: Option<String>,
+    /// Editor columns below which a split DiffView renders unified (0 = never).
+    pub editor_minimum_split_diff_width: Option<u32>,
     pub editor_git_blame_status: Option<bool>,
     pub editor_completion: Option<bool>,
     pub editor_hover: Option<bool>,
@@ -500,6 +504,8 @@ impl EditorContent {
             editor_inlay_scroll_debounce_ms: Some(50),
             editor_git_gutter: Some(true),
             editor_git_word_diff: Some(true),
+            editor_diff_view_style: Some("split".to_string()),
+            editor_minimum_split_diff_width: Some(100),
             editor_git_blame_status: Some(false),
             editor_completion: Some(true),
             editor_hover: Some(true),
@@ -553,6 +559,16 @@ mod tests {
     #[test]
     fn git_word_diff_defaults_to_enabled() {
         assert_eq!(EditorContent::defaults().editor_git_word_diff, Some(true));
+    }
+
+    #[test]
+    fn diff_view_settings_default_to_split_at_100_columns() {
+        let defaults = EditorContent::defaults();
+        assert_eq!(defaults.editor_diff_view_style.as_deref(), Some("split"));
+        assert_eq!(defaults.editor_minimum_split_diff_width, Some(100));
+        let value = serde_json::to_value(defaults).expect("editor defaults");
+        assert_eq!(value["editorDiffViewStyle"], "split");
+        assert_eq!(value["editorMinimumSplitDiffWidth"], 100);
     }
 
     #[test]
