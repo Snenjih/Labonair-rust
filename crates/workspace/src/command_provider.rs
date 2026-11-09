@@ -383,6 +383,16 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
     }
 
     let workspace_handle = workspace.clone();
+    register!(CommandId::DiffSelectForCompare, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.select_for_diff_compare(cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::DiffCompareWithSelected, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.compare_with_selected_file(cx));
+    });
+
+    let workspace_handle = workspace.clone();
     register!(CommandId::DiffClipboardWithSelection, move |_window, cx| {
         workspace_handle.update(cx, |workspace, cx| {
             workspace.diff_clipboard_with_selection(cx)
@@ -621,6 +631,18 @@ impl CommandProvider for WorkspaceCommandProvider {
                 "Source Control",
             )
             .with_icon(CommandIcon::GitBranch),
+            CommandDescriptor::new(
+                CommandId::DiffSelectForCompare,
+                "Editor: Select File for Compare",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(
+                CommandId::DiffCompareWithSelected,
+                "Editor: Compare File with Selected",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(
                 CommandId::DiffClipboardWithSelection,
                 "Editor: Compare Clipboard with Selection",
@@ -984,6 +1006,23 @@ mod tests {
                     && candidate.context == Some(CommandContext::Preview)
             }));
             assert!(!descriptor.is_available_in(Some(CommandContext::Editor)));
+        }
+    }
+
+    #[test]
+    fn file_compare_commands_are_editor_scoped() {
+        let commands = WorkspaceCommandProvider.commands();
+        for id in [
+            CommandId::DiffSelectForCompare,
+            CommandId::DiffCompareWithSelected,
+            CommandId::DiffClipboardWithSelection,
+            CommandId::GitOpenFileDiff,
+        ] {
+            let descriptor = commands
+                .iter()
+                .find(|descriptor| descriptor.id == id)
+                .expect("compare command descriptor");
+            assert_eq!(descriptor.contexts, vec![CommandContext::Editor]);
         }
     }
 

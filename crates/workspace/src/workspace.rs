@@ -781,6 +781,8 @@ pub struct Workspace {
     /// Source Control and the Git Graph emit a `ProjectDiffRequest`; this view
     /// is re-pointed (working tree ↔ commit) rather than duplicated.
     pub(crate) project_diff: Option<Entity<crate::views::project_diff::ProjectDiffView>>,
+    /// File marked by "Select for Compare" (absolute path).
+    diff_compare_mark: Option<String>,
     /// Panel-type registry (T17-001) — populated once by
     /// `labonair_shell::register_builtin_panels`. The shell's dock rendering
     /// and status-bar toggles read it instead of a hard-coded `enum`. T17-002
@@ -1101,6 +1103,7 @@ impl Workspace {
             keymap: None,
             hosts,
             project_diff: None,
+            diff_compare_mark: None,
             panel_registry: labonair_panel::PanelRegistry::new(),
             status_item_registry: labonair_panel::StatusItemRegistry::new(),
             context: context::WorkspaceContext::standalone(),
@@ -4779,6 +4782,77 @@ impl Workspace {
                 Ok(request) => this.open_project_diff(request, cx),
                 Err(error) => {
                     labonair_notifications::notify_err::<()>("Open Diff", Err(error), cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn active_editor_path(&self, cx: &App) -> Option<String> {
+        self.tabs
+            .read(cx)
+            .active()
+            .filter(|tab| tab.kind == TabKind::Editor)
+            .and_then(|tab| tab.data.path.clone())
+    }
+
+    /// `Select for Compare`: remember the active editor's file as the left
+    /// side of a file-vs-file diff.
+    pub fn select_for_diff_compare(&mut self, cx: &mut Context<Self>) {
+        self.diff_compare_mark = self.active_editor_path(cx);
+    }
+
+    /// `Compare with Selected`: diff the marked file (old side) against the
+    /// active editor's file (new side) in the DiffView. Local files only.
+    pub fn compare_with_selected_file(&mut self, cx: &mut Context<Self>) {
+        let (Some(old_path), Some(new_path)) =
+            (self.diff_compare_mark.clone(), self.active_editor_path(cx))
+        else {
+            labonair_notifications::notify_err::<()>(
+                "Compare Files",
+                Err("Select a file for compare first, then run this in another file.".to_string()),
+                cx,
+            );
+            return;
+        };
+        let task = self.tokio.spawn({
+            let (old_path, new_path) = (old_path.clone(), new_path.clone());
+            async move {
+                let read = |path: String| async move {
+                    tokio::fs::read_to_string(&path)
+                        .await
+                        .map_err(|error| format!("{path}: {error}"))
+                };
+                Ok::<_, String>((read(old_path).await?, read(new_path).await?))
+            }
+        });
+        cx.spawn(async move |this, cx| {
+            let result = task.await.unwrap_or_else(|error| Err(error.to_string()));
+            let _ = this.update(cx, |this, cx| match result {
+                Ok((old, new)) => {
+                    let name = |path: &str| {
+                        std::path::Path::new(path)
+                            .file_name()
+                            .map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned())
+                    };
+                    this.open_project_diff(
+                        labonair_panel::ProjectDiffRequest {
+                            repo_root: String::new(),
+                            session_id: None,
+                            source: labonair_panel::DiffSource::Text {
+                                title: format!("{} \u{2194} {}", name(&old_path), name(&new_path)),
+                                old,
+                                new,
+                            },
+                            files: Vec::new(),
+                            selected: None,
+                            mode: labonair_panel::ProjectDiffMode::Unified,
+                        },
+                        cx,
+                    );
+                }
+                Err(error) => {
+                    labonair_notifications::notify_err::<()>("Compare Files", Err(error), cx);
                 }
             });
         })

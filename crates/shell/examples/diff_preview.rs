@@ -2,7 +2,7 @@
 //! real repository, for visual checks (`docs/parity/diff-view-spec.md` §12).
 //!
 //! ```text
-//! cargo run -p labonair-shell --example diff_preview -- <repo> [staged|unstaged|file:<path>|since:<ref>|commit:<hash>] [light] [narrow]
+//! cargo run -p labonair-shell --example diff_preview -- <repo> [staged|unstaged|file:<path>|since:<ref>|commit:<hash>|text] [light] [narrow]
 //! ```
 
 use std::sync::Arc;
@@ -116,6 +116,11 @@ fn main() {
                             Some(("commit", hash)) => DiffSource::Commit {
                                 hash: hash.into(),
                                 subject: String::new(),
+                            },
+                            _ if mode == "text" => DiffSource::Text {
+                                title: "a.rs \u{2194} b.rs".into(),
+                                old: "fn main() {\n    let x = 1;\n    println!(\"{x}\");\n}\n".into(),
+                                new: "fn main() {\n    let x = 2;\n    let y = x * 2;\n    println!(\"{x} {y}\");\n}\n".into(),
                             },
                             _ if mode == "staged" => {
                                 files.retain(|f| f.staged);
