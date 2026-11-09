@@ -652,11 +652,13 @@ pub(crate) fn all_change_files(
     for (section, _title, files) in sections {
         let staged = matches!(section, Section::Staged);
         let untracked = matches!(section, Section::Untracked);
+        let conflicted = matches!(section, Section::Conflicts);
         for f in *files {
             out.push(ProjectDiffFile {
                 path: f.path.clone(),
                 staged,
                 untracked,
+                conflicted,
             });
         }
     }

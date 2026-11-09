@@ -165,6 +165,8 @@
     // Unchanged lines shown around each change in a DiffView.
     // Single-file diffs start with the whole file shown.
     "editorDiffSoloShowFullFile": true,
+    // Fold untracked files when a DiffView first lists them.
+    "editorDiffCollapseUntracked": false,
     "editorDiffExcerptContextLines": 2,
     // Lines revealed per click on a DiffView expand control.
     "editorDiffExpandExcerptLines": 5,

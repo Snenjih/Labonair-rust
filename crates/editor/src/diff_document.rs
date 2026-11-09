@@ -28,6 +28,8 @@ pub enum HunkStage {
 /// How a file changed, for header coloring and ordering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileKind {
+    /// Unmerged paths — listed before everything else (spec §2).
+    Conflicted,
     Modified,
     Added,
     Deleted,
@@ -38,6 +40,7 @@ impl FileKind {
     /// Ordering group: tracked changes first, new files last (spec §2).
     fn sort_group(self) -> u8 {
         match self {
+            FileKind::Conflicted => 1,
             FileKind::Modified | FileKind::Deleted => 2,
             FileKind::Added | FileKind::Untracked => 3,
         }
@@ -134,6 +137,8 @@ pub enum HunkOperation {
 pub struct FileInput {
     pub path: String,
     pub untracked: bool,
+    /// Merge conflicts: listed first and flagged.
+    pub conflicted: bool,
     pub diffs: Vec<(HunkStage, FileDiff)>,
     /// Fallback text when no patch has hunks.
     pub raw: Vec<String>,
@@ -360,6 +365,7 @@ fn build_section(input: FileInput) -> FileSection {
     let FileInput {
         path,
         untracked,
+        conflicted,
         diffs,
         raw,
     } = input;
@@ -415,7 +421,9 @@ fn build_section(input: FileInput) -> FileSection {
         }
     }
 
-    let kind = if untracked {
+    let kind = if conflicted {
+        FileKind::Conflicted
+    } else if untracked {
         FileKind::Untracked
     } else if is_deleted {
         FileKind::Deleted
@@ -675,6 +683,7 @@ mod tests {
         FileInput {
             path: path.into(),
             untracked: false,
+            conflicted: false,
             diffs,
             raw: Vec::new(),
         }
@@ -824,6 +833,18 @@ mod tests {
     }
 
     #[test]
+    fn conflicted_files_sort_first_and_are_flagged() {
+        let mut conflicted = one("z.rs", HunkStage::Unstaged, &["@@ -1 +1 @@", "-a", "+b"]);
+        conflicted.conflicted = true;
+        let doc = DiffDocument::build(vec![
+            one("a.rs", HunkStage::Unstaged, &["@@ -1 +1 @@", "-a", "+b"]),
+            conflicted,
+        ]);
+        assert_eq!(doc.files[0].path, "z.rs");
+        assert_eq!(doc.files[0].kind, FileKind::Conflicted);
+    }
+
+    #[test]
     fn files_sort_tracked_before_new_then_by_path() {
         let mut new_file = one("a_new.rs", HunkStage::Unstaged, &["@@ -0,0 +1 @@", "+x"]);
         new_file.untracked = true;
@@ -898,6 +919,7 @@ mod tests {
             FileInput {
                 path: "n.rs".into(),
                 untracked: false,
+                conflicted: false,
                 diffs: vec![(
                     HunkStage::Unstaged,
                     patch(&[

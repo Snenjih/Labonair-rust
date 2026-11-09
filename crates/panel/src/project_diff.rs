@@ -96,6 +96,8 @@ pub struct ProjectDiffFile {
     pub staged: bool,
     /// `true` → the file is untracked (`git diff --no-index /dev/null <file>`).
     pub untracked: bool,
+    /// `true` → the file has merge conflicts (listed first, flagged).
+    pub conflicted: bool,
 }
 
 /// A request to open / focus the single workspace Project Diff item.

@@ -1083,6 +1083,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Show Stage, Unstage and Restore controls on diff hunks."
         ),
         field!(
+            editor.editor_diff_collapse_untracked,
+            "editorDiffCollapseUntracked",
+            Switch,
+            "Collapse untracked files in diffs",
+            "Fold untracked files the first time a diff lists them."
+        ),
+        field!(
             editor.editor_diff_solo_show_full_file,
             "editorDiffSoloShowFullFile",
             Switch,

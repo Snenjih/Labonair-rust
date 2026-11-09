@@ -461,6 +461,7 @@ fn request() -> ProjectDiffRequest {
         path: path.into(),
         staged,
         untracked: false,
+        conflicted: false,
     };
     ProjectDiffRequest {
         repo_root: "/repo".into(),
@@ -983,4 +984,40 @@ fn since_source_loads_against_a_base_and_can_switch_it(cx: &mut TestAppContext) 
         h.view.read_with(cx, |v, _| v.header_title()),
         "Changes since develop"
     );
+}
+
+#[gpui::test]
+fn untracked_files_fold_on_first_sight_when_configured(cx: &mut TestAppContext) {
+    use labonair_settings::{EditorSettings, SettingsContent, SettingsLayer, SettingsStore};
+
+    cx.update(|cx| {
+        let mut content = SettingsContent::default();
+        content.editor.editor_diff_collapse_untracked = Some(true);
+        let mut store = SettingsStore::new(std::env::temp_dir().join(format!(
+            "labonair-diff-collapse-{}.json",
+            std::process::id()
+        )));
+        store.register_setting::<EditorSettings>();
+        store.set_layer(SettingsLayer::User, content);
+        cx.set_global(store);
+    });
+    let (h, cx) = harness_with(cx, |git| {
+        git.diffs.lock().unwrap().insert(
+            ("new.txt".into(), false),
+            "diff --git a/new.txt b/new.txt\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1 @@\n+hello\n".into(),
+        );
+    });
+    let mut req = request();
+    req.files.push(ProjectDiffFile {
+        path: "new.txt".into(),
+        staged: false,
+        untracked: true,
+        conflicted: false,
+    });
+    h.view.update(cx, |v, cx| v.apply_request(req, cx));
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| v.doc.files.len() == 3));
+    h.view.read_with(cx, |v, _| {
+        assert!(v.folded.contains("new.txt"));
+        assert!(!v.folded.contains("src/lib.rs"));
+    });
 }

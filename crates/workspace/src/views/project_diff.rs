@@ -119,6 +119,7 @@ struct Colors {
     accent: Hsla,
     success: Hsla,
     error: Hsla,
+    warning: Hsla,
 }
 
 /// Everything a row needs to paint, shared by reference across the frame.
@@ -176,6 +177,8 @@ pub struct ProjectDiffView {
     /// `editorDiffExcerptContextLines` / `editorDiffExpandExcerptLines`.
     context_lines: usize,
     expand_lines: usize,
+    /// `editorDiffCollapseUntracked`: auto-fold untracked files.
+    collapse_untracked: bool,
     /// Context revealed beyond the base excerpt, per hunk.
     expansions: HashMap<ExpandKey, Expansion>,
     /// Single-file diffs: show the whole file instead of only the changes.
@@ -237,6 +240,7 @@ impl ProjectDiffView {
             min_split_columns: DEFAULT_MIN_SPLIT_COLUMNS,
             context_lines: DEFAULT_CONTEXT_LINES,
             expand_lines: DEFAULT_EXPAND_LINES,
+            collapse_untracked: false,
             expansions: HashMap::new(),
             show_full_file: true,
             doc: Rc::new(DiffDocument::default()),
@@ -276,6 +280,7 @@ impl ProjectDiffView {
         let context_lines = settings.diff_excerpt_context_lines() as usize;
         let expand_lines = settings.diff_expand_excerpt_lines() as usize;
         self.expand_lines = expand_lines;
+        self.collapse_untracked = settings.diff_collapse_untracked();
         if style == self.style
             && min_columns == self.min_split_columns
             && context_lines == self.context_lines
@@ -501,6 +506,7 @@ impl ProjectDiffView {
                             vec![FileInput {
                                 path: title.clone(),
                                 untracked: false,
+                                conflicted: false,
                                 diffs: vec![(HunkStage::ReadOnly, diff)],
                                 raw: Vec::new(),
                             }]
@@ -558,7 +564,9 @@ impl ProjectDiffView {
         doc.apply_display(self.display_context(), &self.expansions);
         for section in &doc.files {
             // Spec §2: only a file's first appearance auto-folds it.
-            if self.known_files.insert(section.path.clone()) && section.kind == FileKind::Deleted {
+            let auto_fold = section.kind == FileKind::Deleted
+                || (self.collapse_untracked && section.kind == FileKind::Untracked);
+            if self.known_files.insert(section.path.clone()) && auto_fold {
                 self.folded.insert(section.path.clone());
             }
         }
@@ -854,6 +862,7 @@ impl ProjectDiffView {
             accent: t.accent(),
             success: t.status_success(),
             error: t.status_error(),
+            warning: t.status_warning(),
         }
     }
 
@@ -953,6 +962,7 @@ fn read_only_inputs(text: &str) -> Vec<FileInput> {
         .map(|diff: FileDiff| FileInput {
             path: diff.path.clone(),
             untracked: false,
+            conflicted: false,
             diffs: vec![(HunkStage::ReadOnly, diff)],
             raw: Vec::new(),
         })
@@ -1023,6 +1033,7 @@ async fn load_working_tree(
                 inputs.push(FileInput {
                     path: file.path.clone(),
                     untracked: file.untracked,
+                    conflicted: file.conflicted,
                     diffs: Vec::new(),
                     raw: Vec::new(),
                 });
@@ -2032,6 +2043,7 @@ fn render_file_header(
         FileKind::Added | FileKind::Untracked => c.success,
         FileKind::Deleted => c.error,
         FileKind::Modified => c.fg,
+        FileKind::Conflicted => c.warning,
     };
     let all_staged =
         !file.hunks.is_empty() && file.hunks.iter().all(|h| h.stage == HunkStage::Staged);
@@ -2090,6 +2102,9 @@ fn render_file_header(
                                 });
                             }),
                     )
+                })
+                .when(file.kind == FileKind::Conflicted, |d| {
+                    d.child(div().size(px(6.0)).rounded_full().bg(c.warning))
                 })
                 .child(svg_path(icon, c.muted))
                 .child(
@@ -2172,6 +2187,7 @@ mod tests {
             path: path.into(),
             staged: false,
             untracked: false,
+            conflicted: false,
         }
     }
 

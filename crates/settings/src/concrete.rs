@@ -819,6 +819,11 @@ impl EditorSettings {
             .unwrap_or(true)
     }
 
+    /// Whether a DiffView folds untracked files when first listing them.
+    pub fn diff_collapse_untracked(&self) -> bool {
+        self.0.editor_diff_collapse_untracked.unwrap_or(false)
+    }
+
     /// Whether a single-file DiffView starts with the whole file (default).
     pub fn diff_solo_show_full_file(&self) -> bool {
         self.0.editor_diff_solo_show_full_file.unwrap_or(true)

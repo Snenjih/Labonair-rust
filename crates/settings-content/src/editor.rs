@@ -383,6 +383,8 @@ pub struct EditorContent {
     pub editor_diff_hunk_style: Option<String>,
     /// Show Stage / Unstage / Restore controls on DiffView hunks.
     pub editor_diff_show_stage_restore_buttons: Option<bool>,
+    /// Fold untracked files when a DiffView first lists them.
+    pub editor_diff_collapse_untracked: Option<bool>,
     /// Single-file DiffViews start by showing the whole file.
     pub editor_diff_solo_show_full_file: Option<bool>,
     /// Unchanged lines shown around each change in a DiffView.
@@ -518,6 +520,7 @@ impl EditorContent {
             editor_minimum_split_diff_width: Some(100),
             editor_diff_hunk_style: Some("stagedHollow".to_string()),
             editor_diff_show_stage_restore_buttons: Some(true),
+            editor_diff_collapse_untracked: Some(false),
             editor_diff_solo_show_full_file: Some(true),
             editor_diff_excerpt_context_lines: Some(2),
             editor_diff_expand_excerpt_lines: Some(5),

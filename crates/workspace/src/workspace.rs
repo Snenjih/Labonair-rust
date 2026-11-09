@@ -378,6 +378,7 @@ async fn working_tree_diff_request(
                 path: selected.clone(),
                 staged: false,
                 untracked: false,
+                conflicted: false,
             });
         }
         selected
@@ -405,6 +406,7 @@ fn editor_git_files(
                 path: file.path.clone(),
                 staged: true,
                 untracked: false,
+                conflicted: file.conflicted,
             }),
     );
     files.extend(
@@ -416,6 +418,7 @@ fn editor_git_files(
                 path: file.path.clone(),
                 staged: false,
                 untracked: false,
+                conflicted: file.conflicted,
             }),
     );
     files.extend(
@@ -427,6 +430,7 @@ fn editor_git_files(
                 path: file.path.clone(),
                 staged: false,
                 untracked: true,
+                conflicted: false,
             }),
     );
     files
