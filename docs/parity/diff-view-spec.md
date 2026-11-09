@@ -157,4 +157,7 @@ Implementation deviations and gaps (tracked, not hidden):
 
 ## 12. Acceptance (per phase)
 
+Visual check tool: `cargo run -p labonair-shell --example diff_preview -- <repo> [staged|unstaged|file:<path>|since:<ref>]` opens the DiffView alone in a window on a real repository. Checked natively on 2026-11-09 (dark theme, split style, modified + staged + deleted + untracked files): file headers, fold chevrons, split alignment with line numbers, filled and outlined (staged) hunks, word diff, syntax colors, expand rows, hunk controls on the cursor hunk, struck-through collapsed deleted file. Not yet checked natively: light theme, unified style, narrow-width split suspension, commit / since / text sources, conflict files, error state.
+
+
 `cargo fmt --check`, `cargo check --workspace --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `python3 scripts/check_documentation.py`; native `cargo run -p labonair` visual check of: many files, one file, empty, loading, error, deleted, untracked, binary, staged-only, mixed, narrow width (split suspension), light/dark themes.

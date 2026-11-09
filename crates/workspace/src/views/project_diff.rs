@@ -1869,6 +1869,17 @@ fn marker_bar(kind: LineKind, hollow: bool, ctx: &RowCtx) -> gpui::Div {
         .when_some(color, |d, color| d.bg(color.opacity(alpha)))
 }
 
+/// A syntax color that would be hard to read on the diff background (some
+/// app-theme roles are neutral fills) falls back to the foreground.
+fn readable(color: Hsla, c: Colors) -> Hsla {
+    const MIN_CONTRAST: f64 = 3.0;
+    if labonair_theme::contrast::contrast_ratio(color, c.bg) < MIN_CONTRAST {
+        c.fg
+    } else {
+        color
+    }
+}
+
 /// Line text with syntax colors and the matched word range emphasized.
 fn code_text(ctx: &RowCtx, line: &DiffLine) -> gpui::Div {
     let text = line.text.replace('\t', "    ");
@@ -1892,7 +1903,7 @@ fn code_text(ctx: &RowCtx, line: &DiffLine) -> gpui::Div {
             (
                 shift(range.start)..shift(range.end),
                 HighlightStyle {
-                    color: Some(ctx.syntax.color(*kind)),
+                    color: Some(readable(ctx.syntax.color(*kind), ctx.c)),
                     ..Default::default()
                 },
             )
