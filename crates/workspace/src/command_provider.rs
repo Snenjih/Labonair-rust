@@ -432,6 +432,7 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
         (CommandId::DiffUnstageAll, DiffAction::UnstageAll),
         (CommandId::DiffToggleSplit, DiffAction::ToggleSplit),
         (CommandId::DiffUndoRestore, DiffAction::UndoRestore),
+        (CommandId::DiffCopySelection, DiffAction::CopySelection),
         (CommandId::DiffRestoreAndNext, DiffAction::RestoreAndNext),
     ] {
         let workspace_handle = workspace.clone();
@@ -713,6 +714,13 @@ impl CommandProvider for WorkspaceCommandProvider {
             )
             .with_contexts(&[CommandContext::Diff])
             .with_default_binding("cmd-alt-z", Some(CommandContext::Diff)),
+            CommandDescriptor::new(
+                CommandId::DiffCopySelection,
+                "Diff: Copy Selected Lines",
+                "Diff",
+            )
+            .with_contexts(&[CommandContext::Diff])
+            .with_default_binding("cmd-c", Some(CommandContext::Diff)),
             CommandDescriptor::new(
                 CommandId::DiffUndoRestore,
                 "Diff: Undo Restore Hunk",

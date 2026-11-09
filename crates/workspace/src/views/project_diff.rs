@@ -94,6 +94,7 @@ pub enum DiffAction {
     ToggleSplit,
     UndoRestore,
     RestoreAndNext,
+    CopySelection,
 }
 
 /// The file whose header has scrolled above the viewport and must stay pinned
@@ -145,6 +146,8 @@ struct RowCtx {
     cursor: Option<HunkId>,
     confirm_restore: Option<HunkId>,
     busy: bool,
+    /// Selected row range (inclusive), and its fill.
+    selection: Option<(usize, usize)>,
     word_diff: bool,
     can_stage: bool,
     /// `editorDiffHunkStyle`: staged hunks hollow (default) or unstaged ones.
@@ -204,6 +207,8 @@ pub struct ProjectDiffView {
     cursor: Option<HunkId>,
     confirm_restore: Option<HunkId>,
     last_restore: Option<LastRestore>,
+    /// Row selection (anchor, head) as indices into `rows`.
+    selection: Option<(usize, usize)>,
     pending_scroll: Option<String>,
     /// File whose header is currently pinned over the list.
     sticky: Option<usize>,
@@ -263,6 +268,7 @@ impl ProjectDiffView {
             cursor: None,
             confirm_restore: None,
             last_restore: None,
+            selection: None,
             pending_scroll: None,
             sticky: None,
             commit_header: None,
@@ -372,6 +378,7 @@ impl ProjectDiffView {
             DiffAction::GoToHunk => self.go_to_hunk(true, cx),
             DiffAction::GoToPreviousHunk => self.go_to_hunk(false, cx),
             DiffAction::UndoRestore => self.undo_restore(cx),
+            DiffAction::CopySelection => self.copy_selection(cx),
             DiffAction::ToggleSplit => {
                 let next = match self.style {
                     DiffStyle::Split => DiffStyle::Unified,
@@ -616,6 +623,7 @@ impl ProjectDiffView {
     /// Re-flatten the document for the current fold set and style, keeping the
     /// scroll position.
     fn rebuild_rows(&mut self) {
+        self.selection = None;
         let top = self.list.logical_scroll_top();
         self.rows = Rc::new(self.doc.flatten(self.effective_style(), &self.folded));
         self.list.reset(self.rows.len());
@@ -641,6 +649,49 @@ impl ProjectDiffView {
         self.rebuild_rows();
         if let Some(ix) = self.rows.iter().position(|r| *r == FlatRow::HunkHeader(id)) {
             self.list.scroll_to_reveal_item(ix);
+        }
+    }
+
+    /// A click on code row `ix`: moves the cursor hunk and starts a row
+    /// selection, or extends it with shift.
+    fn click_row(&mut self, ix: usize, id: HunkId, extend: bool, cx: &mut Context<Self>) {
+        self.selection = match (extend, self.selection) {
+            (true, Some((anchor, _))) => Some((anchor, ix)),
+            _ => Some((ix, ix)),
+        };
+        self.set_cursor(id, cx);
+        cx.notify();
+    }
+
+    /// Text of the selected rows (the new side in a split row, the old side
+    /// for deleted-only rows), one line per row.
+    fn selected_text(&self) -> Option<String> {
+        let (a, b) = self.selection?;
+        let (lo, hi) = (a.min(b), a.max(b));
+        let mut lines = Vec::new();
+        for row in self
+            .rows
+            .get(lo..=hi.min(self.rows.len().checked_sub(1)?))?
+        {
+            match row {
+                FlatRow::Line { id, line } => {
+                    lines.push(self.doc.hunk(*id)?.lines.get(*line)?.text.clone());
+                }
+                FlatRow::Split { id, left, right } => {
+                    let hunk = self.doc.hunk(*id)?;
+                    if let Some(l) = right.or(*left).and_then(|i| hunk.lines.get(i)) {
+                        lines.push(l.text.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        (!lines.is_empty()).then(|| lines.join("\n"))
+    }
+
+    fn copy_selection(&mut self, cx: &mut Context<Self>) {
+        if let Some(text) = self.selected_text() {
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
         }
     }
 
@@ -1194,6 +1245,7 @@ impl Render for ProjectDiffView {
                 cursor: self.cursor,
                 confirm_restore: self.confirm_restore,
                 busy: self.busy,
+                selection: self.selection.map(|(a, b)| (a.min(b), a.max(b))),
                 word_diff,
                 can_stage: self.supports_staging(),
                 staged_hollow,
@@ -1776,6 +1828,7 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
             let id = *id;
             div()
                 .id(("pd-line", ix))
+                .relative()
                 .flex()
                 .h(px(LINE_H))
                 .w_full()
@@ -1784,8 +1837,10 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
                 .child(num_cell(l.new_no, ctx.c))
                 .child(marker_bar(l.kind, is_hollow(ctx, hunk), ctx))
                 .child(code_text(ctx, l))
-                .on_click(move |_: &ClickEvent, _w, cx| {
-                    view.update(cx, |this, cx| this.set_cursor(id, cx));
+                .children(selection_overlay(ctx, ix))
+                .on_click(move |event: &ClickEvent, _w, cx| {
+                    let extend = event.modifiers().shift;
+                    view.update(cx, |this, cx| this.click_row(ix, id, extend, cx));
                 })
                 .into_any_element()
         }
@@ -1797,6 +1852,7 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
             let id = *id;
             div()
                 .id(("pd-split", ix))
+                .relative()
                 .flex()
                 .h(px(LINE_H))
                 .w_full()
@@ -1815,8 +1871,10 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
                     false,
                     run_edges(ctx, ix),
                 ))
-                .on_click(move |_: &ClickEvent, _w, cx| {
-                    view.update(cx, |this, cx| this.set_cursor(id, cx));
+                .children(selection_overlay(ctx, ix))
+                .on_click(move |event: &ClickEvent, _w, cx| {
+                    let extend = event.modifiers().shift;
+                    view.update(cx, |this, cx| this.click_row(ix, id, extend, cx));
                 })
                 .into_any_element()
         }
@@ -1853,6 +1911,19 @@ fn hunk_context(header: &str) -> String {
         .and_then(|rest| rest.split_once("@@"))
         .map(|(_, context)| context.trim().to_string())
         .unwrap_or_default()
+}
+
+/// Translucent fill over a selected code row.
+fn selection_overlay(ctx: &RowCtx, ix: usize) -> Option<gpui::Div> {
+    let (lo, hi) = ctx.selection?;
+    (lo..=hi).contains(&ix).then(|| {
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+            .bg(ctx.palette.primary.opacity(0.16))
+    })
 }
 
 /// How a changed row paints: filled, or an outline with a faint fill.

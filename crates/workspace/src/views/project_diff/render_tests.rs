@@ -1111,3 +1111,41 @@ fn conflict_blocks_list_and_resolve_by_rewriting_the_file(cx: &mut TestAppContex
     });
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[gpui::test]
+fn row_selection_extends_with_shift_and_copies_the_lines(cx: &mut TestAppContext) {
+    let (h, cx) = harness(cx);
+    h.view.update(cx, |v, cx| v.apply_request(request(), cx));
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
+    h.view
+        .update(cx, |v, cx| v.set_style(DiffStyle::Unified, cx));
+    // Rows of the first (README) hunk in unified order.
+    let (first, last, id) = h.view.read_with(cx, |v, _| {
+        let lines: Vec<usize> = v
+            .rows
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| matches!(r, FlatRow::Line { id, .. } if id.file == 0))
+            .map(|(i, _)| i)
+            .collect();
+        let FlatRow::Line { id, .. } = v.rows[lines[0]] else {
+            unreachable!()
+        };
+        (lines[0], *lines.last().unwrap(), id)
+    });
+    h.view.update(cx, |v, cx| v.click_row(first, id, false, cx));
+    assert_eq!(
+        h.view.read_with(cx, |v, _| v.selected_text()),
+        Some("old".to_string())
+    );
+    h.view.update(cx, |v, cx| v.click_row(last, id, true, cx));
+    assert_eq!(
+        h.view.read_with(cx, |v, _| v.selected_text()),
+        Some("old\nnew".to_string())
+    );
+    draw(cx, &h.view, 1200.0);
+    // A structural change drops the selection.
+    h.view
+        .update(cx, |v, cx| v.toggle_fold("README.md", false, cx));
+    assert_eq!(h.view.read_with(cx, |v, _| v.selection), None);
+}
