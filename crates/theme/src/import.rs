@@ -262,6 +262,14 @@ pub const COLOR_TOKENS: &[&str] = &[
     "info",
     "hint",
     "success",
+    "diff_added_background",
+    "diff_added_hollow_background",
+    "diff_added_hollow_border",
+    "diff_added_word",
+    "diff_deleted_background",
+    "diff_deleted_hollow_background",
+    "diff_deleted_hollow_border",
+    "diff_deleted_word",
     "cursor",
     "selection",
     "terminal.background",
@@ -356,6 +364,14 @@ pub(crate) fn set_token(theme: &mut Theme, key: &str, c: gpui::Hsla) -> bool {
         "info" => theme.status.info = c,
         "hint" => theme.status.hint = c,
         "success" => theme.status.success = c,
+        "diff_added_background" => theme.diff.added_background = Some(c),
+        "diff_added_hollow_background" => theme.diff.added_hollow_background = Some(c),
+        "diff_added_hollow_border" => theme.diff.added_hollow_border = Some(c),
+        "diff_added_word" => theme.diff.added_word = Some(c),
+        "diff_deleted_background" => theme.diff.deleted_background = Some(c),
+        "diff_deleted_hollow_background" => theme.diff.deleted_hollow_background = Some(c),
+        "diff_deleted_hollow_border" => theme.diff.deleted_hollow_border = Some(c),
+        "diff_deleted_word" => theme.diff.deleted_word = Some(c),
         "cursor" => {
             theme.interaction.cursor = c;
             theme.terminal.cursor = c;
@@ -450,6 +466,50 @@ pub(crate) fn get_token(theme: &Theme, key: &str) -> gpui::Hsla {
         "info" => theme.status.info,
         "hint" => theme.status.hint,
         "success" => theme.status.success,
+        "diff_added_background" => {
+            theme
+                .diff
+                .resolve(&theme.status, theme.is_dark)
+                .0
+                .background
+        }
+        "diff_added_hollow_background" => {
+            theme
+                .diff
+                .resolve(&theme.status, theme.is_dark)
+                .0
+                .hollow_background
+        }
+        "diff_added_hollow_border" => {
+            theme
+                .diff
+                .resolve(&theme.status, theme.is_dark)
+                .0
+                .hollow_border
+        }
+        "diff_added_word" => theme.diff.resolve(&theme.status, theme.is_dark).0.word,
+        "diff_deleted_background" => {
+            theme
+                .diff
+                .resolve(&theme.status, theme.is_dark)
+                .1
+                .background
+        }
+        "diff_deleted_hollow_background" => {
+            theme
+                .diff
+                .resolve(&theme.status, theme.is_dark)
+                .1
+                .hollow_background
+        }
+        "diff_deleted_hollow_border" => {
+            theme
+                .diff
+                .resolve(&theme.status, theme.is_dark)
+                .1
+                .hollow_border
+        }
+        "diff_deleted_word" => theme.diff.resolve(&theme.status, theme.is_dark).1.word,
         "cursor" => theme.interaction.cursor,
         "selection" => theme.interaction.selection,
         "terminal.background" => theme.terminal.background,
@@ -488,6 +548,21 @@ pub(crate) fn get_token(theme: &Theme, key: &str) -> gpui::Hsla {
 mod tests {
     use super::*;
     use labonair_theme_tokens::to_rgb8;
+
+    #[test]
+    fn diff_tokens_override_the_derived_hunk_colors() {
+        let mut theme = Theme::dark();
+        let derived = get_token(&theme, "diff_added_background");
+        // Unset: follows the status color.
+        let other_success = labonair_theme_tokens::parse_color("#ff0000").unwrap();
+        assert!(set_token(&mut theme, "success", other_success));
+        assert_ne!(get_token(&theme, "diff_added_background"), derived);
+        // Set: the override wins, whatever the status color is.
+        let pinned = labonair_theme_tokens::parse_color("#00ff0080").unwrap();
+        assert!(set_token(&mut theme, "diff_added_background", pinned));
+        assert_eq!(get_token(&theme, "diff_added_background"), pinned);
+        assert!(COLOR_TOKENS.contains(&"diff_deleted_hollow_border"));
+    }
 
     const SAMPLE: &str = r##"{
         "name": "Sample",

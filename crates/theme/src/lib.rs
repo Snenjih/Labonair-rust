@@ -19,12 +19,12 @@ mod ui_theme_impl;
 pub use labonair_theme_tokens::{
     composite_over, contrast_ratio, oklch, oklch_a, parse_color, relative_luminance, to_hex,
     to_rgb8, transparent, ActiveTheme, ActiveThemeExt, Animation, AnimationLevel, AnsiColors,
-    BorderVariants, ChevronIcons, CoreColors, CubicBezier, DirectoryIcons, GlobalActiveTheme,
-    IconDefinition, IconThemeContent, InteractionColors, MonoFontWeight, PaneLayout, RadiusScale,
-    ShadowLayer, Shadows, SidebarColors, StatusColors, SurfaceColors, TerminalPalette, Theme,
-    ThemeMetrics, Typography, UiDensity, UiTheme, VibrancyLayer, BUILTIN_ICON_THEME_ID,
-    BUILTIN_ICON_THEME_NAME, MONO_FONT_FALLBACKS, MONO_FONT_FAMILY, TAB_IN_FROM_SCALE,
-    UI_FONT_FALLBACKS, UI_FONT_FAMILY,
+    BorderVariants, ChevronIcons, CoreColors, CubicBezier, DiffColors, DiffSideColors,
+    DirectoryIcons, GlobalActiveTheme, IconDefinition, IconThemeContent, InteractionColors,
+    MonoFontWeight, PaneLayout, RadiusScale, ShadowLayer, Shadows, SidebarColors, StatusColors,
+    SurfaceColors, TerminalPalette, Theme, ThemeMetrics, Typography, UiDensity, UiTheme,
+    VibrancyLayer, BUILTIN_ICON_THEME_ID, BUILTIN_ICON_THEME_NAME, MONO_FONT_FALLBACKS,
+    MONO_FONT_FAMILY, TAB_IN_FROM_SCALE, UI_FONT_FALLBACKS, UI_FONT_FAMILY,
 };
 
 /// The `contrast` module path is kept for callers that used

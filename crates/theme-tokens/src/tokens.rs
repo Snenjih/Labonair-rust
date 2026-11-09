@@ -21,6 +21,7 @@ pub struct Theme {
     pub surface: SurfaceColors,
     pub border: BorderVariants,
     pub status: StatusColors,
+    pub diff: DiffColors,
     pub interaction: InteractionColors,
     pub terminal: TerminalPalette,
     pub radius: RadiusScale,
@@ -251,6 +252,70 @@ pub struct StatusColors {
     pub info: Hsla,
     pub hint: Hsla,
     pub success: Hsla,
+}
+
+/// Optional per-theme overrides of the diff hunk colors (Zed's
+/// `editor_diff_hunk_*` / `version_control_word_*` roles). `None` derives the
+/// role from the status colors at use time, so a theme that only changes
+/// `success` / `error` still gets matching diff tones.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DiffColors {
+    pub added_background: Option<Hsla>,
+    pub added_hollow_background: Option<Hsla>,
+    pub added_hollow_border: Option<Hsla>,
+    pub added_word: Option<Hsla>,
+    pub deleted_background: Option<Hsla>,
+    pub deleted_hollow_background: Option<Hsla>,
+    pub deleted_hollow_border: Option<Hsla>,
+    pub deleted_word: Option<Hsla>,
+}
+
+/// The four colors of one side (added / deleted) of a diff hunk once the
+/// theme's overrides and the derived defaults are merged.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DiffSideColors {
+    pub background: Hsla,
+    pub hollow_background: Hsla,
+    pub hollow_border: Hsla,
+    pub word: Hsla,
+}
+
+impl DiffColors {
+    /// `(added, deleted)` colors: an override wins, otherwise the role is the
+    /// status color at a fixed alpha (stronger fills on light themes).
+    pub fn resolve(&self, status: &StatusColors, dark: bool) -> (DiffSideColors, DiffSideColors) {
+        let (fill, hollow_fill, outline, word) = if dark {
+            (0.14, 0.05, 0.45, 0.35)
+        } else {
+            (0.18, 0.07, 0.55, 0.30)
+        };
+        let side = |base: Hsla, over: [Option<Hsla>; 4]| DiffSideColors {
+            background: over[0].unwrap_or_else(|| base.opacity(fill)),
+            hollow_background: over[1].unwrap_or_else(|| base.opacity(hollow_fill)),
+            hollow_border: over[2].unwrap_or_else(|| base.opacity(outline)),
+            word: over[3].unwrap_or_else(|| base.opacity(word)),
+        };
+        (
+            side(
+                status.success,
+                [
+                    self.added_background,
+                    self.added_hollow_background,
+                    self.added_hollow_border,
+                    self.added_word,
+                ],
+            ),
+            side(
+                status.error,
+                [
+                    self.deleted_background,
+                    self.deleted_hollow_background,
+                    self.deleted_hollow_border,
+                    self.deleted_word,
+                ],
+            ),
+        )
+    }
 }
 
 /// UI interaction colors.
@@ -621,6 +686,7 @@ impl Theme {
                 hint: hex("#6f6b5c"),
                 success: hex("#5a7d3c"),
             },
+            diff: DiffColors::default(),
             interaction: InteractionColors {
                 cursor: hex("#2a2822"),
                 selection: hex("#007cf740"),
@@ -749,6 +815,7 @@ impl Theme {
                 hint: hex("#6a6a6a"),
                 success: hex("#31cf76"),
             },
+            diff: DiffColors::default(),
             interaction: InteractionColors {
                 cursor: hex("#ffffff"),
                 selection: hex("#007cf740"),

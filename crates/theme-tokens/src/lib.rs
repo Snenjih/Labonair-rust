@@ -32,9 +32,9 @@ pub use metrics::{
     PANE_GAP_COMFORTABLE,
 };
 pub use tokens::{
-    Animation, AnsiColors, BorderVariants, CoreColors, CubicBezier, InteractionColors,
-    MonoFontWeight, RadiusScale, ShadowLayer, Shadows, SidebarColors, StatusColors, SurfaceColors,
-    SurfaceMaterial, TerminalPalette, Theme, Typography, VibrancyLayer, GLASS_TRANSPARENCY_DEFAULT,
-    TAB_IN_FROM_SCALE,
+    Animation, AnsiColors, BorderVariants, CoreColors, CubicBezier, DiffColors, DiffSideColors,
+    InteractionColors, MonoFontWeight, RadiusScale, ShadowLayer, Shadows, SidebarColors,
+    StatusColors, SurfaceColors, SurfaceMaterial, TerminalPalette, Theme, Typography,
+    VibrancyLayer, GLASS_TRANSPARENCY_DEFAULT, TAB_IN_FROM_SCALE,
 };
 pub use ui_theme::{ActiveThemeExt, UiTheme};

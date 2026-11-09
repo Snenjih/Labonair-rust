@@ -829,25 +829,20 @@ impl ThemeStore {
     }
 
     /// Diff hunk colors (the Zed `editor_diff_hunk_*` / `version_control_word_*`
-    /// roles), derived from the status colors so every theme gets matching
-    /// tones. Light themes use stronger fills so hunks stay visible on white.
+    /// roles): the theme's `diff_*` tokens, else derived from its status colors.
     pub fn diff_hunk_colors(&self) -> DiffHunkColors {
-        let dark = matches!(self.appearance(), Appearance::Dark);
-        let (fill, hollow_fill, outline, word) = if dark {
-            (0.14, 0.05, 0.45, 0.35)
-        } else {
-            (0.18, 0.07, 0.55, 0.30)
-        };
-        let side = |base: Hsla| DiffHunkSide {
-            background: base.opacity(fill),
-            hollow_background: base.opacity(hollow_fill),
-            hollow_border: base.opacity(outline),
-            word: base.opacity(word),
-            marker: base,
+        let theme = self.theme();
+        let (added, deleted) = theme.diff.resolve(&theme.status, theme.is_dark);
+        let side = |colors: labonair_theme_tokens::DiffSideColors, marker: Hsla| DiffHunkSide {
+            background: colors.background,
+            hollow_background: colors.hollow_background,
+            hollow_border: colors.hollow_border,
+            word: colors.word,
+            marker,
         };
         DiffHunkColors {
-            added: side(self.status_success()),
-            deleted: side(self.status_error()),
+            added: side(added, theme.status.success),
+            deleted: side(deleted, theme.status.error),
         }
     }
 
