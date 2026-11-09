@@ -530,6 +530,8 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_git_word_diff: Some(true),
         editor_diff_view_style: defaults.editor_diff_view_style,
         editor_minimum_split_diff_width: defaults.editor_minimum_split_diff_width,
+        editor_diff_hunk_style: defaults.editor_diff_hunk_style,
+        editor_diff_show_stage_restore_buttons: defaults.editor_diff_show_stage_restore_buttons,
         editor_git_blame_status: defaults.editor_git_blame_status,
         editor_completion: Some(true),
         editor_hover: Some(true),

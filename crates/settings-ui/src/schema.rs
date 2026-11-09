@@ -1069,6 +1069,20 @@ pub fn all_fields() -> Vec<AnyField> {
             "Applies to open and new diff views."
         ),
         field!(
+            editor.editor_diff_hunk_style,
+            "editorDiffHunkStyle",
+            Select(&[("stagedHollow", "Staged hollow"), ("unstagedHollow", "Unstaged hollow")]),
+            "Diff hunk style",
+            "Which hunks a diff draws as an outline instead of a filled block."
+        ),
+        field!(
+            editor.editor_diff_show_stage_restore_buttons,
+            "editorDiffShowStageRestoreButtons",
+            Switch,
+            "Diff stage and restore buttons",
+            "Show Stage, Unstage and Restore controls on diff hunks."
+        ),
+        field!(
             editor.editor_git_blame_status,
             "editorGitBlameStatus",
             Switch,

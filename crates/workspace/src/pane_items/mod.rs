@@ -290,6 +290,12 @@ impl Workspace {
                     return;
                 }
             }
+            PaneKind::Diff => {
+                if let Some(view) = &self.project_diff {
+                    window.focus(&gpui::Focusable::focus_handle(view.read(cx), cx));
+                    return;
+                }
+            }
             PaneKind::Keymap => {
                 if let Some(view) = &self.keymap {
                     window.focus(&gpui::Focusable::focus_handle(view.read(cx), cx));

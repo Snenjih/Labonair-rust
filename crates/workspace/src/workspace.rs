@@ -332,6 +332,47 @@ pub(crate) enum EditorCommandDispatchResult {
     Unsupported(CommandId),
 }
 
+/// Build a working-tree style [`ProjectDiffRequest`](labonair_panel::ProjectDiffRequest)
+/// for `source`. A `target` (path under or relative to the repo) is guaranteed
+/// to be in the file list and becomes the initial selection.
+async fn working_tree_diff_request(
+    git: Arc<dyn GitService>,
+    root: String,
+    session: Option<String>,
+    source: labonair_panel::DiffSource,
+    target: Option<String>,
+) -> Result<labonair_panel::ProjectDiffRequest, String> {
+    let repo_root = git.repo_root(root, session.clone()).await?;
+    let state = git
+        .workspace_state(repo_root.clone(), session.clone())
+        .await?;
+    let mut files = editor_git_files(&state);
+    match source {
+        labonair_panel::DiffSource::Staged => files.retain(|file| file.staged),
+        labonair_panel::DiffSource::Unstaged => files.retain(|file| !file.staged),
+        _ => {}
+    }
+    let selected = target.map(|target| {
+        let selected = crate::editor_git_bridge::relative_path(&repo_root, &target);
+        if !files.iter().any(|file| file.path == selected) {
+            files.push(labonair_panel::ProjectDiffFile {
+                path: selected.clone(),
+                staged: false,
+                untracked: false,
+            });
+        }
+        selected
+    });
+    Ok(labonair_panel::ProjectDiffRequest {
+        repo_root,
+        session_id: session,
+        source,
+        files,
+        selected,
+        mode: labonair_panel::ProjectDiffMode::Unified,
+    })
+}
+
 fn editor_git_files(
     state: &labonair_git::WorkspaceGitState,
 ) -> Vec<labonair_panel::ProjectDiffFile> {
@@ -3309,28 +3350,14 @@ impl Workspace {
             let session = context.session_id.clone();
             let relative_target = target.path.clone();
             let task = self.tokio.spawn(async move {
-                let repo_root = git.repo_root(root, session.clone()).await?;
-                let state = git
-                    .workspace_state(repo_root.clone(), session.clone())
-                    .await?;
-                let mut files = editor_git_files(&state);
-                let selected =
-                    crate::editor_git_bridge::relative_path(&repo_root, &relative_target);
-                if !files.iter().any(|file| file.path == selected) {
-                    files.push(labonair_panel::ProjectDiffFile {
-                        path: selected.clone(),
-                        staged: false,
-                        untracked: false,
-                    });
-                }
-                Ok::<_, String>(labonair_panel::ProjectDiffRequest {
-                    repo_root,
-                    session_id: session,
-                    source: labonair_panel::DiffSource::WorkingTree,
-                    files,
-                    selected: Some(selected),
-                    mode: labonair_panel::ProjectDiffMode::Unified,
-                })
+                working_tree_diff_request(
+                    git,
+                    root,
+                    session,
+                    labonair_panel::DiffSource::WorkingTree,
+                    Some(relative_target),
+                )
+                .await
             });
             cx.spawn(async move |this, cx| {
                 let result = task.await.unwrap_or_else(|error| Err(error.to_string()));
@@ -4620,6 +4647,46 @@ impl Workspace {
                 s.open(TabKind::Diff, TabData::default(), cx);
             }
         });
+    }
+
+    /// Open the DiffView for `source` over the repository of the active
+    /// workspace (`git: View Uncommitted / Unstaged / Staged Changes`).
+    pub fn open_diff_source(&mut self, source: labonair_panel::DiffSource, cx: &mut Context<Self>) {
+        let context = self.editor_git_bridge.context();
+        let Some(root) = context.root.clone() else {
+            labonair_notifications::notify_err::<()>(
+                "Open Diff",
+                Err("Git actions require an explicit repository workspace.".to_string()),
+                cx,
+            );
+            return;
+        };
+        let git = self.git.clone();
+        let session = context.session_id.clone();
+        let task = self.tokio.spawn(async move {
+            working_tree_diff_request(git, root, session, source, None).await
+        });
+        cx.spawn(async move |this, cx| {
+            let result = task.await.unwrap_or_else(|error| Err(error.to_string()));
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(request) => this.open_project_diff(request, cx),
+                Err(error) => {
+                    labonair_notifications::notify_err::<()>("Open Diff", Err(error), cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Forward a keyboard / palette operation to the DiffView.
+    pub fn perform_project_diff_action(
+        &mut self,
+        action: crate::views::project_diff::DiffAction,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(view) = self.project_diff.clone() {
+            view.update(cx, |view, cx| view.perform(action, cx));
+        }
     }
 
     /// Close every tab except the active one (palette "Close Other Tabs").
@@ -6697,6 +6764,7 @@ fn palette_tab_kind(kind: TabKind) -> labonair_command_palette::PaletteTabKind {
         TabKind::Workspace => K::Workspace,
         TabKind::Editor => K::Editor,
         TabKind::Preview => K::Preview,
+        TabKind::Diff => K::Diff,
         TabKind::Sftp => K::Sftp,
         _ => K::Other,
     }

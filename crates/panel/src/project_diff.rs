@@ -27,6 +27,12 @@ pub enum DiffSource {
     /// file's diff is `worktree↔index` or `index↔HEAD` per its flags.
     #[default]
     WorkingTree,
+    /// Only the staged changes (index↔HEAD): read-only text, hunks can be
+    /// unstaged. `files` is filtered to the staged entries.
+    Staged,
+    /// Only the unstaged changes (worktree↔index, incl. untracked files):
+    /// hunks can be staged and restored. `files` is filtered to unstaged entries.
+    Unstaged,
     /// A single committed change, rendered read-only. `files` is ignored — the
     /// item derives the changed-file rail from the commit's own patch.
     Commit {
@@ -57,7 +63,10 @@ pub enum DiffSource {
 impl DiffSource {
     /// Hunk staging is only meaningful against the working tree.
     pub fn supports_staging(&self) -> bool {
-        matches!(self, DiffSource::WorkingTree)
+        matches!(
+            self,
+            DiffSource::WorkingTree | DiffSource::Staged | DiffSource::Unstaged
+        )
     }
 }
 

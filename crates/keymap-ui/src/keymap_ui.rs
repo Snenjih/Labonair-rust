@@ -828,6 +828,7 @@ fn context_from_label(label: &str) -> Option<CommandContext> {
             Some(CommandContext::EditorSnippetPrevious)
         }
         "Preview" => Some(CommandContext::Preview),
+        "Diff" => Some(CommandContext::Diff),
         "Terminal" => Some(CommandContext::Terminal),
         "Sftp" | "SFTP" => Some(CommandContext::Sftp),
         "Home" => Some(CommandContext::Home),
@@ -1663,6 +1664,7 @@ mod tests {
             CommandContext::EditorSnippetNext,
             CommandContext::EditorSnippetPrevious,
             CommandContext::Preview,
+            CommandContext::Diff,
             CommandContext::Terminal,
             CommandContext::Sftp,
             CommandContext::Home,

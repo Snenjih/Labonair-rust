@@ -806,6 +806,19 @@ impl EditorSettings {
         self.0.editor_minimum_split_diff_width.unwrap_or(100)
     }
 
+    /// `true` when staged hunks render hollow and unstaged ones filled
+    /// (default); `false` inverts it.
+    pub fn diff_staged_hollow(&self) -> bool {
+        self.0.editor_diff_hunk_style.as_deref() != Some("unstagedHollow")
+    }
+
+    /// Whether DiffView hunks show their Stage / Unstage / Restore controls.
+    pub fn diff_show_stage_restore_buttons(&self) -> bool {
+        self.0
+            .editor_diff_show_stage_restore_buttons
+            .unwrap_or(true)
+    }
+
     pub fn git_blame_status(&self) -> bool {
         self.0.editor_git_blame_status.unwrap_or(false)
     }

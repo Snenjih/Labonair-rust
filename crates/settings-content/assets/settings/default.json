@@ -158,6 +158,10 @@
     "editorDiffViewStyle": "split",
     // Editor columns below which a split diff renders unified (0 = never).
     "editorMinimumSplitDiffWidth": 100,
+    // Which hunks render hollow in a DiffView: "stagedHollow" or "unstagedHollow".
+    "editorDiffHunkStyle": "stagedHollow",
+    // Show the Stage / Unstage / Restore controls on diff hunks.
+    "editorDiffShowStageRestoreButtons": true,
     "editorGitBlameStatus": false,
     "editorCompletion": true,
     "editorHover": true,

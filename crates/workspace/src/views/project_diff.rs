@@ -63,6 +63,33 @@ const NUM_W: f32 = 44.0;
 /// Fallback for `editorMinimumSplitDiffWidth` when settings are unavailable.
 const DEFAULT_MIN_SPLIT_COLUMNS: f32 = 100.0;
 
+/// Keyboard / command-palette operations on the DiffView (spec §8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiffAction {
+    GoToHunk,
+    GoToPreviousHunk,
+    ToggleStaged,
+    StageAndNext,
+    UnstageAndNext,
+    StageAll,
+    UnstageAll,
+    ToggleSplit,
+}
+
+/// The file whose header has scrolled above the viewport and must stay pinned
+/// (spec §3 "Sticky"): the owner of the top visible row, unless that row is
+/// the file's own header.
+fn sticky_file(rows: &[FlatRow], top_row: usize) -> Option<usize> {
+    let top_row = top_row.min(rows.len().checked_sub(1)?);
+    if matches!(rows[top_row], FlatRow::File(_)) {
+        return None;
+    }
+    rows[..top_row].iter().rev().find_map(|row| match row {
+        FlatRow::File(file) => Some(*file),
+        _ => None,
+    })
+}
+
 /// Resolve which file a [`ProjectDiffRequest`] should focus: the requested path
 /// if it is in the set, otherwise the first file (so a bare "View Diff" always
 /// lands somewhere). Pure — unit-tested below.
@@ -83,7 +110,6 @@ struct Colors {
     accent: Hsla,
     success: Hsla,
     error: Hsla,
-    info: Hsla,
 }
 
 /// Everything a row needs to paint, shared by reference across the frame.
@@ -98,6 +124,12 @@ struct RowCtx {
     busy: bool,
     word_diff: bool,
     can_stage: bool,
+    /// `editorDiffHunkStyle`: staged hunks hollow (default) or unstaged ones.
+    staged_hollow: bool,
+    /// `editorDiffShowStageRestoreButtons`.
+    show_stage_restore: bool,
+    /// The Staged diff offers Unstage only, no Restore (spec §5).
+    can_restore: bool,
     icon_theme: labonair_theme::IconThemeContent,
     view: Entity<ProjectDiffView>,
 }
@@ -130,6 +162,8 @@ pub struct ProjectDiffView {
     cursor: Option<HunkId>,
     confirm_restore: Option<HunkId>,
     pending_scroll: Option<String>,
+    /// File whose header is currently pinned over the list.
+    sticky: Option<usize>,
 
     loading: bool,
     busy: bool,
@@ -175,6 +209,7 @@ impl ProjectDiffView {
             cursor: None,
             confirm_restore: None,
             pending_scroll: None,
+            sticky: None,
             loading: false,
             busy: false,
             gen: 0,
@@ -235,7 +270,9 @@ impl ProjectDiffView {
         self.repo_root = Some(req.repo_root);
         self.session_id = req.session_id;
         self.pending_scroll = match &req.source {
-            DiffSource::WorkingTree => resolve_selection(&req.files, req.selected.as_deref()),
+            DiffSource::WorkingTree | DiffSource::Staged | DiffSource::Unstaged => {
+                resolve_selection(&req.files, req.selected.as_deref())
+            }
             _ => req.selected.clone(),
         };
         if !same_source {
@@ -246,6 +283,33 @@ impl ProjectDiffView {
         self.source = req.source;
         self.files = req.files;
         self.reload(cx);
+    }
+
+    /// Run a command-bound operation; actions that do not apply to the current
+    /// source or cursor are ignored.
+    pub fn perform(&mut self, action: DiffAction, cx: &mut Context<Self>) {
+        let staging = self.supports_staging();
+        match action {
+            DiffAction::GoToHunk => self.go_to_hunk(true, cx),
+            DiffAction::GoToPreviousHunk => self.go_to_hunk(false, cx),
+            DiffAction::ToggleSplit => {
+                let next = match self.style {
+                    DiffStyle::Split => DiffStyle::Unified,
+                    DiffStyle::Unified => DiffStyle::Split,
+                };
+                self.set_style(next, cx);
+            }
+            _ if !staging => {}
+            DiffAction::ToggleStaged => {
+                if let Some(id) = self.cursor {
+                    self.apply_hunk(id, cx);
+                }
+            }
+            DiffAction::StageAndNext => self.apply_cursor_and_next(HunkStage::Unstaged, cx),
+            DiffAction::UnstageAndNext => self.apply_cursor_and_next(HunkStage::Staged, cx),
+            DiffAction::StageAll => self.stage_all(true, cx),
+            DiffAction::UnstageAll => self.stage_all(false, cx),
+        }
     }
 
     fn effective_style(&self) -> DiffStyle {
@@ -275,7 +339,7 @@ impl ProjectDiffView {
         let tokio = self.tokio.clone();
         let task = self.tokio.spawn(async move {
             match source {
-                DiffSource::WorkingTree => {
+                DiffSource::WorkingTree | DiffSource::Staged | DiffSource::Unstaged => {
                     load_working_tree(git, tokio, root, session, files).await
                 }
                 DiffSource::Commit { hash, .. } => {
@@ -592,7 +656,6 @@ impl ProjectDiffView {
             accent: t.accent(),
             success: t.status_success(),
             error: t.status_error(),
-            info: t.status_info(),
         }
     }
 
@@ -608,12 +671,16 @@ impl ProjectDiffView {
             }
             DiffSource::Branch { subject, .. } => subject.clone(),
             DiffSource::WorkingTree => "Uncommitted Changes".to_string(),
+            DiffSource::Staged => "Staged Changes".to_string(),
+            DiffSource::Unstaged => "Unstaged Changes".to_string(),
         }
     }
 
     fn empty_label(&self) -> &'static str {
         match self.source {
             DiffSource::WorkingTree => "No uncommitted changes",
+            DiffSource::Staged => "No staged changes",
+            DiffSource::Unstaged => "No unstaged changes",
             _ => "No changes",
         }
     }
@@ -645,7 +712,9 @@ fn same_repository_context(
 /// state and cursor instead of resetting them).
 fn same_source(left: &DiffSource, right: &DiffSource) -> bool {
     match (left, right) {
-        (DiffSource::WorkingTree, DiffSource::WorkingTree) => true,
+        (DiffSource::WorkingTree, DiffSource::WorkingTree)
+        | (DiffSource::Staged, DiffSource::Staged)
+        | (DiffSource::Unstaged, DiffSource::Unstaged) => true,
         (DiffSource::Commit { hash: l, .. }, DiffSource::Commit { hash: r, .. })
         | (DiffSource::Stash { hash: l, .. }, DiffSource::Stash { hash: r, .. }) => l == r,
         (
@@ -761,10 +830,12 @@ impl Render for ProjectDiffView {
         let palette = Palette::from_theme(theme);
         let icon_theme = theme.icon_theme().clone();
         let view = cx.entity();
-        let word_diff = EditorSettings::try_get(cx)
-            .map(|settings| settings.git_word_diff())
-            .unwrap_or(true);
+        let settings = EditorSettings::try_get(cx);
+        let word_diff = settings.is_none_or(|s| s.git_word_diff());
+        let staged_hollow = settings.is_none_or(|s| s.diff_staged_hollow());
+        let show_stage_restore = settings.is_none_or(|s| s.diff_show_stage_restore_buttons());
 
+        let mut sticky: Option<gpui::AnyElement> = None;
         let body: gpui::AnyElement = if self.rows.is_empty() {
             self.render_empty(c, palette).into_any_element()
         } else {
@@ -779,9 +850,37 @@ impl Render for ProjectDiffView {
                 busy: self.busy,
                 word_diff,
                 can_stage: self.supports_staging(),
+                staged_hollow,
+                show_stage_restore,
+                can_restore: !matches!(self.source, DiffSource::Staged),
                 icon_theme,
                 view: view.clone(),
             });
+            // Re-render when scrolling moves a different file under the top edge.
+            let scroll_view = view.clone();
+            self.list.set_scroll_handler(move |event, _window, cx| {
+                scroll_view.update(cx, |this, cx| {
+                    let owner = sticky_file(&this.rows, event.visible_range.start);
+                    if owner != this.sticky {
+                        this.sticky = owner;
+                        cx.notify();
+                    }
+                });
+            });
+            sticky = sticky_file(&self.rows, self.list.logical_scroll_top().item_ix).map(|file| {
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .bg(c.bg)
+                    .shadow_md()
+                    .font(font.clone())
+                    .text_size(px(12.0))
+                    .child(render_file_header(&ctx, file, self.rows.len() + file, cx))
+                    .into_any_element()
+            });
+            let ctx = ctx.clone();
             list(self.list.clone(), move |ix, _window, cx| {
                 render_row(&ctx, ix, cx)
             })
@@ -819,14 +918,27 @@ impl Render for ProjectDiffView {
         .size_full();
 
         div()
+            .key_context("Diff")
             .track_focus(&self.focus)
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(|this, _, window, _cx| window.focus(&this.focus)),
+            )
             .flex()
             .flex_col()
             .size_full()
             .bg(c.bg)
             .text_color(c.fg)
             .child(self.render_toolbar(c, palette, cx))
-            .child(div().relative().flex_1().min_h_0().child(body).child(probe))
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .child(body)
+                    .children(sticky)
+                    .child(probe),
+            )
     }
 }
 
@@ -861,7 +973,13 @@ impl ProjectDiffView {
         let has_unstaged = self.doc.has_stage(HunkStage::Unstaged);
         let has_staged = self.doc.has_stage(HunkStage::Staged);
         // Spec §7: "Unstage All" replaces "Stage All" once everything is staged.
-        let show_unstage_all = has_staged && !has_unstaged;
+        let show_unstage_all = match self.source {
+            DiffSource::Staged => true,
+            DiffSource::Unstaged => false,
+            _ => has_staged && !has_unstaged,
+        };
+        let offers_stage = !matches!(self.source, DiffSource::Staged);
+        let offers_unstage = !matches!(self.source, DiffSource::Unstaged);
         let style = self.style;
         let suspended = style == DiffStyle::Split && self.too_narrow_for_split;
 
@@ -941,27 +1059,33 @@ impl ProjectDiffView {
             )
             .when(can_stage, |d| {
                 d.child(sep())
-                    .child(text_button(
-                        "pd-stage",
-                        "Stage",
-                        "Stage and Go to Next Hunk",
-                        cursor_stage == Some(HunkStage::Unstaged) && !self.busy,
-                        Box::new(|this, cx| this.apply_cursor_and_next(HunkStage::Unstaged, cx)),
-                    ))
-                    .child(text_button(
-                        "pd-unstage",
-                        "Unstage",
-                        "Unstage and Go to Next Hunk",
-                        cursor_stage == Some(HunkStage::Staged) && !self.busy,
-                        Box::new(|this, cx| this.apply_cursor_and_next(HunkStage::Staged, cx)),
-                    ))
+                    .when(offers_stage, |d| {
+                        d.child(text_button(
+                            "pd-stage",
+                            "Stage",
+                            "Stage and Go to Next Hunk",
+                            cursor_stage == Some(HunkStage::Unstaged) && !self.busy,
+                            Box::new(|this, cx| {
+                                this.apply_cursor_and_next(HunkStage::Unstaged, cx)
+                            }),
+                        ))
+                    })
+                    .when(offers_unstage, |d| {
+                        d.child(text_button(
+                            "pd-unstage",
+                            "Unstage",
+                            "Unstage and Go to Next Hunk",
+                            cursor_stage == Some(HunkStage::Staged) && !self.busy,
+                            Box::new(|this, cx| this.apply_cursor_and_next(HunkStage::Staged, cx)),
+                        ))
+                    })
                     .child(sep())
                     .child(if show_unstage_all {
                         text_button(
                             "pd-unstage-all",
                             "Unstage All",
                             "Unstage All Changes",
-                            !self.busy,
+                            has_staged && !self.busy,
                             Box::new(|this, cx| this.stage_all(false, cx)),
                         )
                     } else {
@@ -1064,6 +1188,7 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
                 return div().into_any_element();
             };
             let tint = line_tint(ctx, hunk, l);
+            let edges = run_edges(ctx, ix);
             let view = ctx.view.clone();
             let id = *id;
             div()
@@ -1071,10 +1196,10 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
                 .flex()
                 .h(px(LINE_H))
                 .w_full()
-                .when_some(tint, |d, (bg, _)| d.bg(bg))
+                .when_some(tint, |d, tint| paint_tint(d, tint, edges))
                 .child(num_cell(l.old_no, ctx.c))
                 .child(num_cell(l.new_no, ctx.c))
-                .child(marker_bar(l.kind, hunk.stage, ctx.c))
+                .child(marker_bar(l.kind, is_hollow(ctx, hunk), ctx.c))
                 .child(code_text(ctx, l))
                 .on_click(move |_: &ClickEvent, _w, cx| {
                     view.update(cx, |this, cx| this.set_cursor(id, cx));
@@ -1097,6 +1222,7 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
                     hunk,
                     left.and_then(|i| hunk.lines.get(i)),
                     true,
+                    run_edges(ctx, ix),
                 ))
                 .child(div().w(px(1.0)).h_full().bg(ctx.c.border))
                 .child(split_cell(
@@ -1104,6 +1230,7 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
                     hunk,
                     right.and_then(|i| hunk.lines.get(i)),
                     false,
+                    run_edges(ctx, ix),
                 ))
                 .on_click(move |_: &ClickEvent, _w, cx| {
                     view.update(cx, |this, cx| this.set_cursor(id, cx));
@@ -1134,19 +1261,92 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
     }
 }
 
-/// `(row background, gutter-bar alpha)` for a changed line, or `None` for
-/// context. Staged hunks are hollow (spec §4, `staged_hollow`).
-fn line_tint(ctx: &RowCtx, hunk: &HunkView, line: &DiffLine) -> Option<(Hsla, f32)> {
+/// The excerpt-separator label of a hunk: the enclosing-symbol text git puts
+/// after the `@@ -a,b +c,d @@` range (empty when there is none), so the row
+/// reads like a Zed excerpt break instead of a raw patch header.
+fn hunk_context(header: &str) -> String {
+    header
+        .strip_prefix("@@")
+        .and_then(|rest| rest.split_once("@@"))
+        .map(|(_, context)| context.trim().to_string())
+        .unwrap_or_default()
+}
+
+/// How a changed row paints: filled, or an outline with a faint fill.
+#[derive(Clone, Copy)]
+struct Tint {
+    bg: Hsla,
+    /// `Some` for a hollow row (spec §4): the 1px outline color.
+    outline: Option<Hsla>,
+}
+
+/// Whether a hunk renders hollow under `editorDiffHunkStyle`. Read-only
+/// sources (commit, stash, branch) are always filled.
+fn is_hollow(ctx: &RowCtx, hunk: &HunkView) -> bool {
+    match hunk.stage {
+        HunkStage::ReadOnly => false,
+        HunkStage::Staged => ctx.staged_hollow,
+        HunkStage::Unstaged => !ctx.staged_hollow,
+    }
+}
+
+/// Row tint of a changed line, or `None` for context (spec §4).
+fn line_tint(ctx: &RowCtx, hunk: &HunkView, line: &DiffLine) -> Option<Tint> {
     let base = match line.kind {
         LineKind::Added => ctx.c.success,
         LineKind::Deleted => ctx.c.error,
         LineKind::Context => return None,
     };
-    let hollow = hunk.stage == HunkStage::Staged;
-    Some(if hollow {
-        (base.opacity(0.05), 0.55)
+    Some(if is_hollow(ctx, hunk) {
+        Tint {
+            bg: base.opacity(0.05),
+            outline: Some(base.opacity(0.45)),
+        }
     } else {
-        (base.opacity(0.14), 1.0)
+        Tint {
+            bg: base.opacity(0.14),
+            outline: None,
+        }
+    })
+}
+
+/// Whether row `ix` is a changed code row.
+fn is_changed_row(ctx: &RowCtx, ix: usize) -> bool {
+    let kind = |id: &HunkId, line: usize| {
+        ctx.doc
+            .hunk(*id)
+            .and_then(|h| h.lines.get(line))
+            .is_some_and(|l| l.kind != LineKind::Context)
+    };
+    match ctx.rows.get(ix) {
+        Some(FlatRow::Line { id, line }) => kind(id, *line),
+        Some(FlatRow::Split { id, left, right }) => {
+            left.is_some_and(|l| kind(id, l)) || right.is_some_and(|r| kind(id, r))
+        }
+        _ => false,
+    }
+}
+
+/// `(first, last)` row of a contiguous changed run, so a hollow hunk gets one
+/// outline around the whole run instead of one per row.
+fn run_edges(ctx: &RowCtx, ix: usize) -> (bool, bool) {
+    (
+        ix == 0 || !is_changed_row(ctx, ix - 1),
+        !is_changed_row(ctx, ix + 1),
+    )
+}
+
+fn paint_tint(
+    d: gpui::Stateful<gpui::Div>,
+    tint: Tint,
+    edges: (bool, bool),
+) -> gpui::Stateful<gpui::Div> {
+    d.bg(tint.bg).when_some(tint.outline, |d, color| {
+        d.border_l_1()
+            .border_r_1()
+            .border_color(color)
+            .when(edges.0, |d| d.border_t_1())
+            .when(edges.1, |d| d.border_b_1())
     })
 }
 
@@ -1163,17 +1363,13 @@ fn num_cell(n: Option<u32>, c: Colors) -> gpui::Div {
         ))
 }
 
-fn marker_bar(kind: LineKind, stage: HunkStage, c: Colors) -> gpui::Div {
+fn marker_bar(kind: LineKind, hollow: bool, c: Colors) -> gpui::Div {
     let color = match kind {
         LineKind::Added => Some(c.success),
         LineKind::Deleted => Some(c.error),
         LineKind::Context => None,
     };
-    let alpha = if stage == HunkStage::Staged {
-        0.55
-    } else {
-        1.0
-    };
+    let alpha = if hollow { 0.55 } else { 1.0 };
     div()
         .w(px(3.0))
         .h_full()
@@ -1214,17 +1410,31 @@ fn code_text(ctx: &RowCtx, line: &DiffLine) -> gpui::Div {
     }
 }
 
-fn split_cell(ctx: &RowCtx, hunk: &HunkView, line: Option<&DiffLine>, left: bool) -> gpui::Div {
+fn split_cell(
+    ctx: &RowCtx,
+    hunk: &HunkView,
+    line: Option<&DiffLine>,
+    left: bool,
+    edges: (bool, bool),
+) -> gpui::Div {
     let cell = div().flex().flex_1().min_w_0().h_full().overflow_hidden();
     let Some(line) = line else {
         // Filler row: keeps both sides aligned.
         return cell.bg(ctx.c.muted.opacity(0.06));
     };
     let number = if left { line.old_no } else { line.new_no };
-    cell.when_some(line_tint(ctx, hunk, line), |d, (bg, _)| d.bg(bg))
-        .child(num_cell(number, ctx.c))
-        .child(marker_bar(line.kind, hunk.stage, ctx.c))
-        .child(code_text(ctx, line))
+    cell.when_some(line_tint(ctx, hunk, line), |d, tint| {
+        d.bg(tint.bg).when_some(tint.outline, |d, color| {
+            d.border_l_1()
+                .border_r_1()
+                .border_color(color)
+                .when(edges.0, |d| d.border_t_1())
+                .when(edges.1, |d| d.border_b_1())
+        })
+    })
+    .child(num_cell(number, ctx.c))
+    .child(marker_bar(line.kind, is_hollow(ctx, hunk), ctx.c))
+    .child(code_text(ctx, line))
 }
 
 fn render_hunk_header(ctx: &Rc<RowCtx>, id: HunkId, ix: usize) -> gpui::AnyElement {
@@ -1237,7 +1447,7 @@ fn render_hunk_header(ctx: &Rc<RowCtx>, id: HunkId, ix: usize) -> gpui::AnyEleme
     let alpha = if ctx.busy { 0.66 } else { 1.0 };
     let armed = ctx.confirm_restore == Some(id);
     let (view_a, view_b, view_c) = (ctx.view.clone(), ctx.view.clone(), ctx.view.clone());
-    let can_act = ctx.can_stage && hunk.stage != HunkStage::ReadOnly;
+    let can_act = ctx.can_stage && ctx.show_stage_restore && hunk.stage != HunkStage::ReadOnly;
 
     let controls = div()
         .flex()
@@ -1264,27 +1474,29 @@ fn render_hunk_header(ctx: &Rc<RowCtx>, id: HunkId, ix: usize) -> gpui::AnyEleme
                     view_a.update(cx, |this, cx| this.apply_hunk(id, cx));
                 }),
             )
-            .child(
-                button(
-                    ("pd-hunk-restore", ix),
-                    ctx.palette,
-                    if armed {
-                        ButtonVariant::TintedError
+            .when(ctx.can_restore, |d| {
+                d.child(
+                    button(
+                        ("pd-hunk-restore", ix),
+                        ctx.palette,
+                        if armed {
+                            ButtonVariant::TintedError
+                        } else {
+                            ButtonVariant::Outlined
+                        },
+                        ButtonSize::Xs,
+                    )
+                    .child(SharedString::from(if armed {
+                        "Confirm Restore"
                     } else {
-                        ButtonVariant::Outlined
-                    },
-                    ButtonSize::Xs,
+                        "Restore"
+                    }))
+                    .tooltip(|window, cx| Tooltip::new("Restore Hunk").build(window, cx))
+                    .on_click(move |_: &ClickEvent, _w, cx| {
+                        view_b.update(cx, |this, cx| this.restore_hunk(id, cx));
+                    }),
                 )
-                .child(SharedString::from(if armed {
-                    "Confirm Restore"
-                } else {
-                    "Restore"
-                }))
-                .tooltip(|window, cx| Tooltip::new("Restore Hunk").build(window, cx))
-                .on_click(move |_: &ClickEvent, _w, cx| {
-                    view_b.update(cx, |this, cx| this.restore_hunk(id, cx));
-                }),
-            )
+            })
         });
 
     div()
@@ -1301,7 +1513,7 @@ fn render_hunk_header(ctx: &Rc<RowCtx>, id: HunkId, ix: usize) -> gpui::AnyEleme
         .bg(if is_cursor {
             c.accent
         } else {
-            c.info.opacity(0.07)
+            c.muted.opacity(0.07)
         })
         .child(
             div()
@@ -1311,14 +1523,7 @@ fn render_hunk_header(ctx: &Rc<RowCtx>, id: HunkId, ix: usize) -> gpui::AnyEleme
                 .min_w_0()
                 .overflow_hidden()
                 .whitespace_nowrap()
-                .child(SharedString::from(hunk.header.clone()))
-                .when(hunk.stage == HunkStage::Staged, |d| {
-                    d.child(
-                        div()
-                            .text_color(c.success)
-                            .child(SharedString::from("staged")),
-                    )
-                }),
+                .child(SharedString::from(hunk_context(&hunk.header))),
         )
         .child(controls)
         .on_click(move |_: &ClickEvent, _w, cx| {
@@ -1468,6 +1673,35 @@ mod tests {
             Some("a.rs")
         );
         assert_eq!(resolve_selection(&[], Some("a.rs")), None);
+    }
+
+    #[test]
+    fn hunk_context_is_the_text_after_the_range() {
+        assert_eq!(hunk_context("@@ -1,3 +1,3 @@ fn main() {"), "fn main() {");
+        assert_eq!(hunk_context("@@ -1 +1 @@"), "");
+        assert_eq!(hunk_context("not a header"), "");
+    }
+
+    #[test]
+    fn sticky_header_pins_the_owner_of_the_top_row() {
+        let id = |file, hunk| HunkId { file, hunk };
+        let rows = vec![
+            FlatRow::File(0),
+            FlatRow::HunkHeader(id(0, 0)),
+            FlatRow::Line {
+                id: id(0, 0),
+                line: 0,
+            },
+            FlatRow::File(1),
+            FlatRow::HunkHeader(id(1, 0)),
+        ];
+        // A header at the top is its own header: nothing to pin.
+        assert_eq!(sticky_file(&rows, 0), None);
+        assert_eq!(sticky_file(&rows, 3), None);
+        assert_eq!(sticky_file(&rows, 2), Some(0));
+        assert_eq!(sticky_file(&rows, 4), Some(1));
+        assert_eq!(sticky_file(&rows, 99), Some(1));
+        assert_eq!(sticky_file(&[], 0), None);
     }
 
     #[test]

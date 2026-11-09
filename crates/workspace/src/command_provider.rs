@@ -15,6 +15,7 @@ use labonair_terminal::command_provider::TerminalCommandTarget;
 
 use crate::context::WorkspaceTransition;
 use crate::views::preview::PreviewImageAction;
+use crate::views::project_diff::DiffAction;
 use crate::Workspace;
 
 /// Stable command metadata contributed by the workspace capability.
@@ -359,6 +360,49 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
         });
     });
 
+    for (command, source) in [
+        (
+            CommandId::GitViewUncommittedChanges,
+            labonair_panel::DiffSource::WorkingTree,
+        ),
+        (
+            CommandId::GitViewUnstagedChanges,
+            labonair_panel::DiffSource::Unstaged,
+        ),
+        (
+            CommandId::GitViewStagedChanges,
+            labonair_panel::DiffSource::Staged,
+        ),
+    ] {
+        let workspace_handle = workspace.clone();
+        register!(command, move |_window, cx| {
+            workspace_handle.update(cx, |workspace, cx| {
+                workspace.open_diff_source(source.clone(), cx)
+            });
+        });
+    }
+
+    for (command, action) in [
+        (CommandId::DiffGoToHunk, DiffAction::GoToHunk),
+        (
+            CommandId::DiffGoToPreviousHunk,
+            DiffAction::GoToPreviousHunk,
+        ),
+        (CommandId::DiffToggleStaged, DiffAction::ToggleStaged),
+        (CommandId::DiffStageAndNext, DiffAction::StageAndNext),
+        (CommandId::DiffUnstageAndNext, DiffAction::UnstageAndNext),
+        (CommandId::DiffStageAll, DiffAction::StageAll),
+        (CommandId::DiffUnstageAll, DiffAction::UnstageAll),
+        (CommandId::DiffToggleSplit, DiffAction::ToggleSplit),
+    ] {
+        let workspace_handle = workspace.clone();
+        register!(command, move |_window, cx| {
+            workspace_handle.update(cx, |workspace, cx| {
+                workspace.perform_project_diff_action(action, cx)
+            });
+        });
+    }
+
     let workspace_handle = workspace.clone();
     register!(CommandId::OpenGitGraph, move |_window, cx| {
         workspace_handle.update(cx, |workspace, cx| workspace.open_git_graph_tab(cx));
@@ -530,6 +574,66 @@ impl CommandProvider for WorkspaceCommandProvider {
             CommandDescriptor::new(CommandId::NewPreviewTab, "New Preview Tab", "Layout")
                 .with_default_binding("cmd-shift-p", None)
                 .with_icon(CommandIcon::File),
+            CommandDescriptor::new(
+                CommandId::GitViewUncommittedChanges,
+                "Git: View Uncommitted Changes",
+                "Source Control",
+            )
+            .with_icon(CommandIcon::GitBranch),
+            CommandDescriptor::new(
+                CommandId::GitViewUnstagedChanges,
+                "Git: View Unstaged Changes",
+                "Source Control",
+            )
+            .with_icon(CommandIcon::GitBranch),
+            CommandDescriptor::new(
+                CommandId::GitViewStagedChanges,
+                "Git: View Staged Changes",
+                "Source Control",
+            )
+            .with_icon(CommandIcon::GitBranch),
+            CommandDescriptor::new(CommandId::DiffGoToHunk, "Diff: Go to Next Hunk", "Diff")
+                .with_contexts(&[CommandContext::Diff])
+                .with_default_binding("cmd-f8", Some(CommandContext::Diff)),
+            CommandDescriptor::new(
+                CommandId::DiffGoToPreviousHunk,
+                "Diff: Go to Previous Hunk",
+                "Diff",
+            )
+            .with_contexts(&[CommandContext::Diff])
+            .with_default_binding("cmd-shift-f8", Some(CommandContext::Diff)),
+            CommandDescriptor::new(
+                CommandId::DiffToggleStaged,
+                "Diff: Toggle Hunk Staged",
+                "Diff",
+            )
+            .with_contexts(&[CommandContext::Diff])
+            .with_default_binding("cmd-alt-y", Some(CommandContext::Diff)),
+            CommandDescriptor::new(
+                CommandId::DiffStageAndNext,
+                "Diff: Stage Hunk and Go to Next",
+                "Diff",
+            )
+            .with_contexts(&[CommandContext::Diff])
+            .with_default_binding("cmd-y", Some(CommandContext::Diff)),
+            CommandDescriptor::new(
+                CommandId::DiffUnstageAndNext,
+                "Diff: Unstage Hunk and Go to Next",
+                "Diff",
+            )
+            .with_contexts(&[CommandContext::Diff]),
+            CommandDescriptor::new(CommandId::DiffStageAll, "Diff: Stage All", "Diff")
+                .with_contexts(&[CommandContext::Diff])
+                .with_default_binding("cmd-ctrl-y", Some(CommandContext::Diff)),
+            CommandDescriptor::new(CommandId::DiffUnstageAll, "Diff: Unstage All", "Diff")
+                .with_contexts(&[CommandContext::Diff])
+                .with_default_binding("cmd-ctrl-shift-y", Some(CommandContext::Diff)),
+            CommandDescriptor::new(
+                CommandId::DiffToggleSplit,
+                "Diff: Toggle Split View",
+                "Diff",
+            )
+            .with_contexts(&[CommandContext::Diff]),
             CommandDescriptor::new(
                 CommandId::PreviewImageZoomIn,
                 "Image Viewer: Zoom In",
@@ -810,6 +914,34 @@ mod tests {
                     && candidate.context == Some(CommandContext::Preview)
             }));
             assert!(!descriptor.is_available_in(Some(CommandContext::Editor)));
+        }
+    }
+
+    #[test]
+    fn diff_commands_are_scoped_to_the_diff_context() {
+        let commands = WorkspaceCommandProvider.commands();
+        for (id, binding) in [
+            (CommandId::DiffGoToHunk, Some("cmd-f8")),
+            (CommandId::DiffGoToPreviousHunk, Some("cmd-shift-f8")),
+            (CommandId::DiffToggleStaged, Some("cmd-alt-y")),
+            (CommandId::DiffStageAndNext, Some("cmd-y")),
+            (CommandId::DiffStageAll, Some("cmd-ctrl-y")),
+            (CommandId::DiffUnstageAll, Some("cmd-ctrl-shift-y")),
+            (CommandId::DiffUnstageAndNext, None),
+            (CommandId::DiffToggleSplit, None),
+        ] {
+            let descriptor = commands
+                .iter()
+                .find(|descriptor| descriptor.id == id)
+                .expect("diff command descriptor");
+            assert_eq!(descriptor.contexts, vec![CommandContext::Diff]);
+            assert!(!descriptor.is_available_in(Some(CommandContext::Editor)));
+            if let Some(binding) = binding {
+                assert!(descriptor.default_bindings.iter().any(|candidate| {
+                    candidate.keystrokes == binding
+                        && candidate.context == Some(CommandContext::Diff)
+                }));
+            }
         }
     }
 

@@ -142,6 +142,7 @@ pub enum PaletteTabKind {
     Workspace,
     Editor,
     Preview,
+    Diff,
     Sftp,
     Home,
     /// Any other tab kind — maps to no context.
@@ -369,6 +370,7 @@ pub fn context_of(kind: PaletteTabKind, is_ssh: bool) -> Option<CommandContext> 
         PaletteTabKind::Workspace => CommandContext::Terminal,
         PaletteTabKind::Editor => CommandContext::Editor,
         PaletteTabKind::Preview => CommandContext::Preview,
+        PaletteTabKind::Diff => CommandContext::Diff,
         PaletteTabKind::Sftp => CommandContext::Sftp,
         PaletteTabKind::Home => CommandContext::Home,
         PaletteTabKind::Other => return None,

@@ -607,3 +607,97 @@ fn settings_drive_style_and_minimum_width(cx: &mut TestAppContext) {
         assert!(!v.too_narrow_for_split);
     });
 }
+
+#[gpui::test]
+fn staged_and_unstaged_sources_show_only_their_hunks(cx: &mut TestAppContext) {
+    for (source, expected_stage, title, empty) in [
+        (
+            DiffSource::Staged,
+            HunkStage::Staged,
+            "Staged Changes",
+            "No staged changes",
+        ),
+        (
+            DiffSource::Unstaged,
+            HunkStage::Unstaged,
+            "Unstaged Changes",
+            "No unstaged changes",
+        ),
+    ] {
+        let (h, cx) = harness(cx);
+        let mut req = request();
+        req.files
+            .retain(|f| f.staged == (source == DiffSource::Staged));
+        req.source = source;
+        h.view.update(cx, |v, cx| v.apply_request(req, cx));
+        wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
+        draw(cx, &h.view, 1200.0);
+        h.view.read_with(cx, |v, _| {
+            assert!(v.supports_staging());
+            assert_eq!(v.header_title(), title);
+            assert_eq!(v.empty_label(), empty);
+            assert!(v
+                .doc
+                .files
+                .iter()
+                .flat_map(|f| &f.hunks)
+                .all(|hunk| hunk.stage == expected_stage));
+        });
+    }
+}
+
+#[gpui::test]
+fn hunk_style_settings_default_to_staged_hollow_with_buttons(cx: &mut TestAppContext) {
+    use labonair_settings::{
+        EditorSettings, Settings as _, SettingsContent, SettingsLayer, SettingsStore,
+    };
+
+    cx.update(|cx| {
+        let mut content = SettingsContent::default();
+        content.editor.editor_diff_hunk_style = Some("unstagedHollow".into());
+        content.editor.editor_diff_show_stage_restore_buttons = Some(false);
+        let mut store = SettingsStore::new(std::env::temp_dir().join(format!(
+            "labonair-diff-hunk-style-{}.json",
+            std::process::id()
+        )));
+        store.register_setting::<EditorSettings>();
+        store.set_layer(SettingsLayer::User, content);
+        cx.set_global(store);
+        let s = EditorSettings::try_get(cx).expect("settings");
+        assert!(!s.diff_staged_hollow());
+        assert!(!s.diff_show_stage_restore_buttons());
+    });
+    let (h, cx) = harness(cx);
+    h.view.update(cx, |v, cx| v.apply_request(request(), cx));
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
+    // Renders with the inverted hollow style and without hunk controls.
+    draw(cx, &h.view, 1200.0);
+}
+
+#[gpui::test]
+fn command_actions_navigate_stage_and_toggle_split(cx: &mut TestAppContext) {
+    use super::DiffAction;
+
+    let (h, cx) = harness(cx);
+    h.view.update(cx, |v, cx| v.apply_request(request(), cx));
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
+
+    let first = h.view.read_with(cx, |v, _| v.cursor);
+    h.view
+        .update(cx, |v, cx| v.perform(DiffAction::GoToHunk, cx));
+    assert_ne!(h.view.read_with(cx, |v, _| v.cursor), first);
+    h.view
+        .update(cx, |v, cx| v.perform(DiffAction::GoToPreviousHunk, cx));
+    assert_eq!(h.view.read_with(cx, |v, _| v.cursor), first);
+
+    let before = h.view.read_with(cx, |v, _| v.style);
+    h.view
+        .update(cx, |v, cx| v.perform(DiffAction::ToggleSplit, cx));
+    assert_ne!(h.view.read_with(cx, |v, _| v.style), before);
+
+    h.view
+        .update(cx, |v, cx| v.perform(DiffAction::StageAll, cx));
+    wait_until(cx, |_| {
+        h.calls.lock().unwrap().iter().any(|c| c == "stage_all")
+    });
+}

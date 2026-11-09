@@ -379,6 +379,10 @@ pub struct EditorContent {
     pub editor_diff_view_style: Option<String>,
     /// Editor columns below which a split DiffView renders unified (0 = never).
     pub editor_minimum_split_diff_width: Option<u32>,
+    /// `"stagedHollow"` | `"unstagedHollow"`: which hunks a DiffView draws hollow.
+    pub editor_diff_hunk_style: Option<String>,
+    /// Show Stage / Unstage / Restore controls on DiffView hunks.
+    pub editor_diff_show_stage_restore_buttons: Option<bool>,
     pub editor_git_blame_status: Option<bool>,
     pub editor_completion: Option<bool>,
     pub editor_hover: Option<bool>,
@@ -506,6 +510,8 @@ impl EditorContent {
             editor_git_word_diff: Some(true),
             editor_diff_view_style: Some("split".to_string()),
             editor_minimum_split_diff_width: Some(100),
+            editor_diff_hunk_style: Some("stagedHollow".to_string()),
+            editor_diff_show_stage_restore_buttons: Some(true),
             editor_git_blame_status: Some(false),
             editor_completion: Some(true),
             editor_hover: Some(true),
@@ -569,6 +575,8 @@ mod tests {
         let value = serde_json::to_value(defaults).expect("editor defaults");
         assert_eq!(value["editorDiffViewStyle"], "split");
         assert_eq!(value["editorMinimumSplitDiffWidth"], 100);
+        assert_eq!(value["editorDiffHunkStyle"], "stagedHollow");
+        assert_eq!(value["editorDiffShowStageRestoreButtons"], true);
     }
 
     #[test]

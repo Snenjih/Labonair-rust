@@ -1318,17 +1318,33 @@ impl GitPanelView {
     /// `selected` if given. The shell forwards it to
     /// `Workspace::open_project_diff` (idempotent — never a duplicate tab).
     fn emit_project_diff(&mut self, selected: Option<String>, cx: &mut Context<Self>) {
+        self.emit_project_diff_source(DiffSource::WorkingTree, selected, cx);
+    }
+
+    /// Like [`Self::emit_project_diff`] for a specific surface: the Staged and
+    /// Unstaged diffs only carry the matching entries.
+    fn emit_project_diff_source(
+        &mut self,
+        source: DiffSource,
+        selected: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(repo_root) = self.repo_root.clone() else {
             return;
         };
-        let files = self.change_files();
+        let mut files = self.change_files();
+        match source {
+            DiffSource::Staged => files.retain(|f| f.staged),
+            DiffSource::Unstaged => files.retain(|f| !f.staged),
+            _ => {}
+        }
         if files.is_empty() {
             return;
         }
         cx.emit(ScmEvent::OpenProjectDiff(ProjectDiffRequest {
             repo_root,
             session_id: self.session_id.clone(),
-            source: DiffSource::WorkingTree,
+            source,
             files,
             selected,
             mode: ProjectDiffMode::Unified,
@@ -3897,6 +3913,13 @@ impl GitPanelView {
                 ]
             }
             PanelMenu::Overflow => vec![
+                MenuItem::new("of-view-staged", "View Staged Changes").on_click(act(Box::new(
+                    |this, cx| this.emit_project_diff_source(DiffSource::Staged, None, cx),
+                ))),
+                MenuItem::new("of-view-unstaged", "View Unstaged Changes").on_click(act(Box::new(
+                    |this, cx| this.emit_project_diff_source(DiffSource::Unstaged, None, cx),
+                ))),
+                MenuItem::separator(),
                 MenuItem::new("of-refresh", "Refresh")
                     .icon(IconName::Refresh)
                     .on_click(act(Box::new(|this, cx| this.refresh_soon(cx)))),

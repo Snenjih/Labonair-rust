@@ -140,17 +140,16 @@ Phases (each ends with the §12 gates):
 2. **P2 — done.** Multi-file view: file headers (§3), hunk rows, tints, word diff, hollow/filled (§4), hunk controls (§5), empty/loading states (§2).
 3. **P3 — done.** Toolbar (§7), hunk navigation, stage/unstage/restore/all, Commit (reveals Source Control) (§8).
 4. **P4 — done.** Split suspension by width, persisted style and minimum width (`editorDiffViewStyle`, `editorMinimumSplitDiffWidth`) (§6, §10). Horizontal scroll sync is moot: lines clip instead of scrolling (see gaps).
-5. **P5 — open.** Staged-only / Unstaged-only entry points, Solo file diff, palette/menu/keymap contributions (§8), `git.diffBase`.
+5. **P5 — partly done.** Done: Staged-only / Unstaged-only surfaces (`DiffSource::{Staged, Unstaged}`, per-surface toolbar and hunk controls, Source Control overflow menu + `git: View Staged/Unstaged/Uncommitted Changes` commands), key context `Diff` with owner-registered commands and default bindings (`editor::GoToHunk` `cmd-f8`, `editor::GoToPreviousHunk` `cmd-shift-f8`, `git::ToggleStaged` `cmd-alt-y`, `git::StageAndNext` `cmd-y`, `git::UnstageAndNext`, `git::StageAll` `cmd-ctrl-y`, `git::UnstageAll` `cmd-ctrl-shift-y`, `editor::ToggleSplitDiff`), `editorDiffHunkStyle` / `editorDiffShowStageRestoreButtons`, hollow staged hunks with a 1px outline, sticky file header, excerpt-style hunk separators. Open: Solo file diff, `git.diffBase`, `ToggleDiffBase`.
 
 Implementation deviations and gaps (tracked, not hidden):
 - Restore is **two-step** (first click arms "Confirm Restore") because the view has no undo; the reference restores immediately and relies on editor undo.
-- Hunk header rows show the `@@` range (the reference shows excerpt separators with expand controls); there is no per-gap expand-context control and the context is whatever the patch carries (Git default 3 lines), not `excerpt_context_lines`.
+- Hunk separator rows show only the enclosing-symbol text of the `@@` header (the reference shows excerpt separators with expand controls); there is no per-gap expand-context control and the context is whatever the patch carries (Git default 3 lines), not `excerpt_context_lines`.
 - Hunk controls omit the next/previous icon buttons (the toolbar has them); only Stage/Unstage/Restore appear.
-- Rows are plain text: no syntax highlighting, no horizontal scrolling, no editable excerpts, no cursor/selection model beyond the active hunk, no sticky file header.
+- Rows are plain text: no syntax highlighting, no horizontal scrolling, no editable excerpts, no cursor/selection model beyond the active hunk. The pinned (sticky) file header is not pushed up by the next file's header.
 - No dedicated `editor_diff_hunk_*` / `version_control_word_*` theme tokens yet; tints derive from the status success/error colors.
-- Hollow staged hunks use a lighter tint and a dimmer gutter bar instead of a bordered outline.
-- `git.hunkStyle`, `git.showStageRestoreButtons`, `git.fileDiff.showFullFile`, `scm.collapseUntrackedDiff`, `excerpt*Lines`: not implemented.
-- Not built: Review comments / Send Review to Agent, Commit View header chrome, Text/Multi Diff, Branch picker toolbar, `ToggleDiffBase`, key bindings/actions (`GoToHunk`, `StageAndNext`, … need owner-registered commands), persisted fold state, conflict UI.
+- `git.fileDiff.showFullFile`, `scm.collapseUntrackedDiff`, `excerpt*Lines`: not implemented. The Labonair keys for `git.hunkStyle` / `git.showStageRestoreButtons` are `editorDiffHunkStyle` (`stagedHollow` | `unstagedHollow`) and `editorDiffShowStageRestoreButtons`.
+- Not built: Review comments / Send Review to Agent, Commit View header chrome, Text/Multi Diff, Branch picker toolbar, `ToggleDiffBase`, key bindings/actions (`OpenFileDiff`, `RestoreAndNext`, `Amend`, `ReviewDiff` still missing), persisted fold state, conflict UI.
 - The merged staged/unstaged hunk model (see "Known deviation" above) is verified against a scripted Git; native pixel-level acceptance is still open.
 
 ## 12. Acceptance (per phase)
