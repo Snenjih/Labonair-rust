@@ -72,6 +72,17 @@ pub struct FontOverrides {
     pub terminal_weight: Option<MonoFontWeight>,
 }
 
+/// First family of a CSS-style stack (`"JetBrains Mono", Menlo, monospace`):
+/// GPUI resolves one family name, and the whole stack matches no font.
+fn primary_family(stack: &str) -> &str {
+    let stack = stack.trim();
+    let first = stack.chars().next();
+    match first {
+        Some(q @ ('"' | '\'')) => stack[1..].find(q).map_or(stack, |end| &stack[1..=end]),
+        _ => stack.split(',').next().unwrap_or(stack).trim(),
+    }
+}
+
 impl FontOverrides {
     fn apply(&self, theme: &mut Theme) {
         let ty = &mut theme.typography;
@@ -82,7 +93,7 @@ impl FontOverrides {
             ty.app_font_size = self.app_size;
         }
         if !self.editor_family.is_empty() {
-            ty.buffer_font_family = self.editor_family.clone();
+            ty.buffer_font_family = primary_family(&self.editor_family).to_string();
         }
         if self.editor_size > 0.0 {
             ty.buffer_font_size = self.editor_size;
@@ -122,6 +133,27 @@ pub struct DiffHunkSide {
 pub struct DiffHunkColors {
     pub added: DiffHunkSide,
     pub deleted: DiffHunkSide,
+}
+
+/// Layered surfaces of a diff view. Built from the foreground over the opaque
+/// background so a dark and a light theme get the same depth: code area <
+/// gutter < excerpt separator < file header.
+#[derive(Debug, Clone, Copy)]
+pub struct DiffSurface {
+    /// Code area. Always opaque, also with translucent surfaces on.
+    pub code: Hsla,
+    pub gutter: Hsla,
+    pub gutter_border: Hsla,
+    /// Band between two excerpts of a file.
+    pub separator: Hsla,
+    pub separator_border: Hsla,
+    pub header: Hsla,
+    pub header_hover: Hsla,
+    pub header_border: Hsla,
+    pub line_number: Hsla,
+    pub line_number_changed: Hsla,
+    /// Missing side of a split row (hatch lines).
+    pub filler: Hsla,
 }
 
 /// Central theme state. Created once at startup and stored as a GPUI entity;
@@ -846,6 +878,30 @@ impl ThemeStore {
         }
     }
 
+    /// Layer colors of the diff view (see [`DiffSurface`]).
+    pub fn diff_surface(&self) -> DiffSurface {
+        let core = &self.theme().core;
+        let code = Hsla {
+            a: 1.0,
+            ..core.background
+        };
+        let fg = core.foreground;
+        let over = |alpha: f32| code.blend(fg.opacity(alpha));
+        DiffSurface {
+            code,
+            gutter: over(0.03),
+            gutter_border: fg.opacity(0.10),
+            separator: over(0.055),
+            separator_border: fg.opacity(0.08),
+            header: over(0.075),
+            header_hover: over(0.115),
+            header_border: fg.opacity(0.16),
+            line_number: fg.opacity(0.32),
+            line_number_changed: fg.opacity(0.62),
+            filler: fg.opacity(0.07),
+        }
+    }
+
     /// `--toolbar-background` — the window header / titlebar surface.
     pub fn toolbar(&self) -> Hsla {
         VibrancyLayer::Toolbar.resolve(self.theme().surface.toolbar, self.surface_material())
@@ -1271,6 +1327,18 @@ mod tests {
             assert_eq!(s.terminal_font_size(), 14.0);
             assert_eq!(s.terminal_line_height(), 1.05);
         });
+    }
+
+    #[test]
+    fn primary_family_takes_the_first_family_of_a_css_stack() {
+        use super::primary_family;
+        assert_eq!(
+            primary_family("\"JetBrains Mono\", SFMono-Regular, Menlo, monospace"),
+            "JetBrains Mono"
+        );
+        assert_eq!(primary_family("Menlo, monospace"), "Menlo");
+        assert_eq!(primary_family("Iosevka"), "Iosevka");
+        assert_eq!(primary_family("'Fira Code', monospace"), "Fira Code");
     }
 
     const SAMPLE_THEME: &str = r##"{

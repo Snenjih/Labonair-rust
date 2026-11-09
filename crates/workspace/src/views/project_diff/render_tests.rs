@@ -782,6 +782,14 @@ fn command_actions_navigate_stage_and_toggle_split(cx: &mut TestAppContext) {
     });
 }
 
+fn expand_arrows(doc: &labonair_editor::diff_document::DiffDocument) -> usize {
+    doc.files
+        .iter()
+        .flat_map(|f| &f.hunks)
+        .map(|h| usize::from(h.more_above > 0) + usize::from(h.more_below > 0))
+        .sum()
+}
+
 #[gpui::test]
 fn expand_controls_reveal_context_from_the_whole_file(cx: &mut TestAppContext) {
     // 30-line file, lines 10 and 24 replaced.
@@ -807,14 +815,8 @@ fn expand_controls_reveal_context_from_the_whole_file(cx: &mut TestAppContext) {
     h.view.update(cx, |v, cx| v.apply_request(req, cx));
     wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
 
-    let expands = |cx: &mut VisualTestContext| {
-        h.view.read_with(cx, |v, _| {
-            v.rows
-                .iter()
-                .filter(|r| matches!(r, FlatRow::Expand { .. }))
-                .count()
-        })
-    };
+    // Expand arrows sit in the gutter: one per hidden region of a hunk.
+    let expands = |cx: &mut VisualTestContext| h.view.read_with(cx, |v, _| expand_arrows(&v.doc));
     // Two excerpts; each has a hidden region above and below (the middle gap
     // counts for both neighbours).
     assert_eq!(expands(cx), 4);
@@ -872,10 +874,7 @@ fn solo_file_diff_toggles_between_full_file_and_changes(cx: &mut TestAppContext)
                 .iter()
                 .map(|h| h.lines.len())
                 .sum::<usize>(),
-            v.rows
-                .iter()
-                .filter(|r| matches!(r, FlatRow::Expand { .. }))
-                .count(),
+            expand_arrows(&v.doc),
         )
     });
     // The whole 30-line file (+2 replaced lines) with nothing left to expand,
@@ -895,10 +894,7 @@ fn solo_file_diff_toggles_between_full_file_and_changes(cx: &mut TestAppContext)
                 .iter()
                 .map(|h| h.lines.len())
                 .sum::<usize>(),
-            v.rows
-                .iter()
-                .filter(|r| matches!(r, FlatRow::Expand { .. }))
-                .count(),
+            expand_arrows(&v.doc),
         )
     });
     assert!(shown < 32);

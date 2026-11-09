@@ -26,15 +26,16 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    canvas, combine_highlights, div, list, percentage, px, Animation, AnimationExt as _, App,
-    ClickEvent, Context, Entity, FocusHandle, Focusable, HighlightStyle, Hsla, InteractiveElement,
-    IntoElement, ListAlignment, ListOffset, ListSizingBehavior, ListState, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, StyledText, Transformation, Window,
+    canvas, combine_highlights, div, list, pattern_slash, percentage, px, Animation,
+    AnimationExt as _, App, ClickEvent, Context, Entity, FocusHandle, Focusable, HighlightStyle,
+    Hsla, InteractiveElement, IntoElement, ListAlignment, ListOffset, ListSizingBehavior,
+    ListState, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, StyledText,
+    Transformation, Window,
 };
 use labonair_editor::conflict::Resolution;
 use labonair_editor::diff_document::{
-    DiffDocument, DiffLine, DiffStyle, ExpandKey, Expansion, FileInput, FileKind, FlatRow, HunkId,
-    HunkOperation, HunkStage, HunkView, LineKind,
+    hunk_context, DiffDocument, DiffLine, DiffStyle, ExpandKey, Expansion, FileInput, FileKind,
+    FlatRow, HunkId, HunkOperation, HunkStage, HunkView, LineKind,
 };
 use labonair_editor::unified::{parse_diff_hunks, regroup_full_context, FileDiff};
 use labonair_editor_ui::EditorPalette;
@@ -57,16 +58,19 @@ type CommitHook = Rc<dyn Fn(&mut Window, &mut App)>;
 type CloseHook = Rc<dyn Fn(&mut Window, &mut App)>;
 type ToolbarAction = Box<dyn Fn(&mut ProjectDiffView, &mut Context<ProjectDiffView>)>;
 
-/// Height of one code row.
-const LINE_H: f32 = 20.0;
-/// Height of the hunk separator row (carries the hunk controls).
+/// Height of a conflict-block header row.
 const HUNK_H: f32 = 24.0;
+/// Height of the excerpt separator: with the enclosing symbol / as a plain gap.
+const SEP_H: f32 = 22.0;
+const GAP_H: f32 = 8.0;
+/// Width of the gutter slot that carries the expand arrows, and of the
+/// change marker at the gutter's outer edge.
+const ARROW_W: f32 = 20.0;
+const MARKER_W: f32 = 4.0;
 /// Height of a file header block.
 const FILE_H: f32 = 32.0;
 /// Width of one line-number column.
 const NUM_W: f32 = 44.0;
-/// Height of an expand-context control row.
-const EXPAND_H: f32 = 22.0;
 /// Fallbacks for `editorDiffExcerptContextLines` / `editorDiffExpandExcerptLines`.
 const DEFAULT_CONTEXT_LINES: usize = 2;
 const DEFAULT_EXPAND_LINES: usize = 5;
@@ -140,6 +144,12 @@ struct RowCtx {
     palette: Palette,
     syntax: EditorPalette,
     diff: labonair_theme::DiffHunkColors,
+    surface: labonair_theme::DiffSurface,
+    /// Code row height and font size, from the editor's font settings.
+    line_h: f32,
+    font_px: f32,
+    /// Lines one expand arrow reveals (tooltip text).
+    expand_lines: usize,
     doc: Rc<DiffDocument>,
     rows: Rc<Vec<FlatRow>>,
     folded: HashSet<String>,
@@ -647,7 +657,13 @@ impl ProjectDiffView {
             self.folded.remove(&path);
         }
         self.rebuild_rows();
-        if let Some(ix) = self.rows.iter().position(|r| *r == FlatRow::HunkHeader(id)) {
+        let first_row = |r: &FlatRow| match r {
+            FlatRow::HunkHeader(h) | FlatRow::Line { id: h, .. } | FlatRow::Split { id: h, .. } => {
+                *h == id
+            }
+            _ => false,
+        };
+        if let Some(ix) = self.rows.iter().position(first_row) {
             self.list.scroll_to_reveal_item(ix);
         }
     }
@@ -1223,12 +1239,15 @@ impl Render for ProjectDiffView {
         let palette = Palette::from_theme(theme);
         let syntax = EditorPalette::resolve(theme.editor_theme(), theme);
         let diff = theme.diff_hunk_colors();
+        let surface = theme.diff_surface();
+        let font_px = theme.buffer_font_size();
         let icon_theme = theme.icon_theme().clone();
         let view = cx.entity();
         let settings = EditorSettings::try_get(cx);
         let word_diff = settings.is_none_or(|s| s.git_word_diff());
         let staged_hollow = settings.is_none_or(|s| s.diff_staged_hollow());
         let show_stage_restore = settings.is_none_or(|s| s.diff_show_stage_restore_buttons());
+        let line_h = (font_px * settings.map_or(1.55, |s| s.line_height())).ceil();
 
         let mut sticky: Option<gpui::AnyElement> = None;
         let body: gpui::AnyElement = if self.rows.is_empty() {
@@ -1239,6 +1258,10 @@ impl Render for ProjectDiffView {
                 palette,
                 syntax,
                 diff,
+                surface,
+                line_h,
+                font_px,
+                expand_lines: self.expand_lines,
                 doc: self.doc.clone(),
                 rows: self.rows.clone(),
                 folded: self.folded.clone(),
@@ -1271,22 +1294,28 @@ impl Render for ProjectDiffView {
                     .top_0()
                     .left_0()
                     .right_0()
-                    .bg(c.bg)
+                    .bg(surface.code)
                     .shadow_md()
                     .font(font.clone())
-                    .text_size(px(12.0))
+                    .text_size(px(font_px))
                     .child(render_file_header(&ctx, file, self.rows.len() + file, cx))
                     .into_any_element()
             });
             let ctx = ctx.clone();
-            list(self.list.clone(), move |ix, _window, cx| {
-                render_row(&ctx, ix, cx)
-            })
-            .with_sizing_behavior(ListSizingBehavior::Auto)
-            .size_full()
-            .font(font.clone())
-            .text_size(px(12.0))
-            .into_any_element()
+            // The font goes on the wrapper: a `List` only applies its own text
+            // style to its container, never to the rows it renders.
+            div()
+                .size_full()
+                .font(font.clone())
+                .text_size(px(font_px))
+                .child(
+                    list(self.list.clone(), move |ix, _window, cx| {
+                        render_row(&ctx, ix, cx)
+                    })
+                    .with_sizing_behavior(ListSizingBehavior::Auto)
+                    .size_full(),
+                )
+                .into_any_element()
         };
 
         // Width probe: the split suspends below `min_split_columns` columns.
@@ -1298,7 +1327,7 @@ impl Render for ProjectDiffView {
                 if last_width == Some(width) {
                     return;
                 }
-                let font_size = px(12.0);
+                let font_size = px(font_px);
                 let text_system = window.text_system().clone();
                 let font_id = text_system.resolve_font(&font);
                 let em: f32 = text_system
@@ -1325,7 +1354,7 @@ impl Render for ProjectDiffView {
             .flex()
             .flex_col()
             .size_full()
-            .bg(c.bg)
+            .bg(surface.code)
             .text_color(c.fg)
             .child(self.render_toolbar(c, palette, cx))
             .children(self.render_base_menu(palette, cx))
@@ -1765,8 +1794,7 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
     };
     match row {
         FlatRow::File(file) => render_file_header(ctx, *file, ix, cx),
-        FlatRow::HunkHeader(id) => render_hunk_header(ctx, *id, ix),
-        FlatRow::Expand { id, up } => render_expand(ctx, *id, *up, ix),
+        FlatRow::HunkHeader(id) => render_separator(ctx, *id, ix),
         FlatRow::ConflictHeader { file, block } => render_conflict_header(ctx, *file, *block, ix),
         FlatRow::ConflictLine {
             file,
@@ -1791,7 +1819,7 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
             let tint = if *ours { ctx.c.success } else { ctx.c.warning };
             div()
                 .flex()
-                .h(px(LINE_H))
+                .h(px(ctx.line_h))
                 .w_full()
                 .bg(tint.opacity(0.12))
                 .child(
@@ -1822,27 +1850,39 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
             let Some(l) = hunk.lines.get(*line) else {
                 return div().into_any_element();
             };
+            let hollow = is_hollow(ctx, hunk);
             let tint = line_tint(ctx, hunk, l);
             let edges = run_edges(ctx, ix);
             let view = ctx.view.clone();
             let id = *id;
-            div()
-                .id(("pd-line", ix))
-                .relative()
-                .flex()
-                .h(px(LINE_H))
-                .w_full()
-                .when_some(tint, |d, tint| paint_tint(d, tint, edges))
-                .child(num_cell(l.old_no, ctx.c))
-                .child(num_cell(l.new_no, ctx.c))
-                .child(marker_bar(l.kind, is_hollow(ctx, hunk), ctx))
-                .child(code_text(ctx, l))
-                .children(selection_overlay(ctx, ix))
-                .on_click(move |event: &ClickEvent, _w, cx| {
-                    let extend = event.modifiers().shift;
-                    view.update(cx, |this, cx| this.click_row(ix, id, extend, cx));
-                })
-                .into_any_element()
+            let (row, controls) = with_hunk_controls(
+                div()
+                    .id(("pd-line", ix))
+                    .relative()
+                    .flex()
+                    .h(px(ctx.line_h))
+                    .w_full(),
+                ctx,
+                id,
+                ix,
+            );
+            row.child(gutter(
+                ctx,
+                ix,
+                id,
+                &[l.old_no, l.new_no],
+                l.kind,
+                hollow,
+                0,
+            ))
+            .child(code_cell(ctx, l, tint, edges))
+            .children(controls)
+            .children(selection_overlay(ctx, ix))
+            .on_click(move |event: &ClickEvent, _w, cx| {
+                let extend = event.modifiers().shift;
+                view.update(cx, |this, cx| this.click_row(ix, id, extend, cx));
+            })
+            .into_any_element()
         }
         FlatRow::Split { id, left, right } => {
             let Some(hunk) = ctx.doc.hunk(*id) else {
@@ -1850,33 +1890,44 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
             };
             let view = ctx.view.clone();
             let id = *id;
-            div()
-                .id(("pd-split", ix))
-                .relative()
-                .flex()
-                .h(px(LINE_H))
-                .w_full()
-                .child(split_cell(
-                    ctx,
-                    hunk,
-                    left.and_then(|i| hunk.lines.get(i)),
-                    true,
-                    run_edges(ctx, ix),
-                ))
-                .child(div().w(px(1.0)).h_full().bg(ctx.c.border))
-                .child(split_cell(
-                    ctx,
-                    hunk,
-                    right.and_then(|i| hunk.lines.get(i)),
-                    false,
-                    run_edges(ctx, ix),
-                ))
-                .children(selection_overlay(ctx, ix))
-                .on_click(move |event: &ClickEvent, _w, cx| {
-                    let extend = event.modifiers().shift;
-                    view.update(cx, |this, cx| this.click_row(ix, id, extend, cx));
-                })
-                .into_any_element()
+            let (row, controls) = with_hunk_controls(
+                div()
+                    .id(("pd-split", ix))
+                    .relative()
+                    .flex()
+                    .h(px(ctx.line_h))
+                    .w_full(),
+                ctx,
+                id,
+                ix,
+            );
+            let edges = run_edges(ctx, ix);
+            row.child(split_cell(
+                ctx,
+                ix,
+                id,
+                hunk,
+                left.and_then(|i| hunk.lines.get(i)),
+                true,
+                edges,
+            ))
+            .child(div().w(px(1.0)).h_full().bg(ctx.surface.gutter_border))
+            .child(split_cell(
+                ctx,
+                ix,
+                id,
+                hunk,
+                right.and_then(|i| hunk.lines.get(i)),
+                false,
+                edges,
+            ))
+            .children(controls)
+            .children(selection_overlay(ctx, ix))
+            .on_click(move |event: &ClickEvent, _w, cx| {
+                let extend = event.modifiers().shift;
+                view.update(cx, |this, cx| this.click_row(ix, id, extend, cx));
+            })
+            .into_any_element()
         }
         FlatRow::Raw { file, line } => {
             let text = ctx
@@ -1892,7 +1943,7 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
                 _ => ctx.c.fg,
             };
             div()
-                .h(px(LINE_H))
+                .h(px(ctx.line_h))
                 .px(px(8.0))
                 .whitespace_nowrap()
                 .text_color(color)
@@ -1900,17 +1951,6 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
                 .into_any_element()
         }
     }
-}
-
-/// The excerpt-separator label of a hunk: the enclosing-symbol text git puts
-/// after the `@@ -a,b +c,d @@` range (empty when there is none), so the row
-/// reads like a Zed excerpt break instead of a raw patch header.
-fn hunk_context(header: &str) -> String {
-    header
-        .strip_prefix("@@")
-        .and_then(|rest| rest.split_once("@@"))
-        .map(|(_, context)| context.trim().to_string())
-        .unwrap_or_default()
 }
 
 /// Translucent fill over a selected code row.
@@ -1990,46 +2030,252 @@ fn run_edges(ctx: &RowCtx, ix: usize) -> (bool, bool) {
     )
 }
 
-fn paint_tint(
-    d: gpui::Stateful<gpui::Div>,
-    tint: Tint,
-    edges: (bool, bool),
-) -> gpui::Stateful<gpui::Div> {
-    d.bg(tint.bg).when_some(tint.outline, |d, color| {
-        d.border_l_1()
-            .border_r_1()
-            .border_color(color)
-            .when(edges.0, |d| d.border_t_1())
-            .when(edges.1, |d| d.border_b_1())
-    })
+fn paint_tint<E: Styled>(mut d: E, tint: Tint, edges: (bool, bool)) -> E {
+    d = d.bg(tint.bg);
+    if let Some(color) = tint.outline {
+        d = d.border_l_1().border_r_1().border_color(color);
+        if edges.0 {
+            d = d.border_t_1();
+        }
+        if edges.1 {
+            d = d.border_b_1();
+        }
+    }
+    d
 }
 
-fn num_cell(n: Option<u32>, c: Colors) -> gpui::Div {
+fn num_cell(n: Option<u32>, color: Hsla) -> gpui::Div {
     div()
         .w(px(NUM_W))
         .flex_none()
         .pr(px(8.0))
         .flex()
         .justify_end()
-        .text_color(c.muted)
+        .text_color(color)
         .child(SharedString::from(
             n.map(|n| n.to_string()).unwrap_or_default(),
         ))
 }
 
-fn marker_bar(kind: LineKind, hollow: bool, ctx: &RowCtx) -> gpui::Div {
-    let color = match kind {
-        LineKind::Added => Some(ctx.diff.added.marker),
-        LineKind::Deleted => Some(ctx.diff.deleted.marker),
-        LineKind::Context => None,
-    };
-    let alpha = if hollow { 0.55 } else { 1.0 };
+/// The hunk a code row belongs to (`None` for separators and file headers).
+fn hunk_of(row: Option<&FlatRow>) -> Option<HunkId> {
+    match row? {
+        FlatRow::Line { id, .. } | FlatRow::Split { id, .. } => Some(*id),
+        _ => None,
+    }
+}
+
+/// Whether row `ix` opens the excerpt of hunk `id`.
+fn is_excerpt_start(ctx: &RowCtx, ix: usize, id: HunkId) -> bool {
+    ix == 0 || hunk_of(ctx.rows.get(ix - 1)) != Some(id)
+}
+
+/// One expand arrow in the gutter: reveals more unchanged lines above (`up`)
+/// or below the hunk's excerpt.
+fn expand_arrow(
+    ctx: &Rc<RowCtx>,
+    ix: usize,
+    id: HunkId,
+    up: bool,
+    hidden: usize,
+    slot: usize,
+    size: f32,
+) -> gpui::AnyElement {
+    let view = ctx.view.clone();
+    let hover = ctx.surface.header_hover;
+    let tip = SharedString::from(format!(
+        "Expand {} lines {} ({hidden} hidden)",
+        ctx.expand_lines,
+        if up { "above" } else { "below" }
+    ));
     div()
-        .w(px(3.0))
-        .h_full()
+        .id(("pd-expand", ix * 4 + slot * 2 + usize::from(up)))
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(px(size + 2.0))
+        .rounded(px(3.0))
+        .cursor_pointer()
+        .hover(move |s| s.bg(hover))
+        .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
+        .child(
+            if up {
+                IconName::ExpandUp
+            } else {
+                IconName::ExpandDown
+            }
+            .svg(ctx.surface.line_number_changed)
+            .size(px(size)),
+        )
+        .on_click(move |_: &ClickEvent, _w, cx| {
+            view.update(cx, |this, cx| this.expand(id, up, cx));
+        })
+        .into_any_element()
+}
+
+/// Gutter of one code row: the change marker at the outer edge, the expand
+/// arrows on the first / last row of an excerpt, then the line numbers. It
+/// sits on its own surface, so the row tint only paints the code.
+fn gutter(
+    ctx: &Rc<RowCtx>,
+    ix: usize,
+    id: HunkId,
+    numbers: &[Option<u32>],
+    kind: LineKind,
+    hollow: bool,
+    slot: usize,
+) -> gpui::Div {
+    let s = ctx.surface;
+    let (marker, number_color) = match kind {
+        LineKind::Added => (Some(ctx.diff.added.marker), s.line_number_changed),
+        LineKind::Deleted => (Some(ctx.diff.deleted.marker), s.line_number_changed),
+        LineKind::Context => (None, s.line_number),
+    };
+    let hunk = ctx.doc.hunk(id);
+    let last = hunk_of(ctx.rows.get(ix + 1)) != Some(id);
+    let up = hunk
+        .map(|h| h.more_above)
+        .filter(|n| *n > 0 && is_excerpt_start(ctx, ix, id));
+    let down = hunk.map(|h| h.more_below).filter(|n| *n > 0 && last);
+    let size = if up.is_some() && down.is_some() {
+        9.0
+    } else {
+        12.0
+    };
+    let bg = if ctx.cursor == Some(id) {
+        s.gutter.blend(ctx.palette.primary.opacity(0.10))
+    } else {
+        s.gutter
+    };
+    div()
+        .relative()
+        .flex()
         .flex_none()
-        .mr(px(8.0))
-        .when_some(color, |d, color| d.bg(color.opacity(alpha)))
+        .h_full()
+        .bg(bg)
+        .border_r_1()
+        .border_color(s.gutter_border)
+        .when_some(marker, |d, color| {
+            d.child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .bottom_0()
+                    .left_0()
+                    .w(px(MARKER_W))
+                    .bg(color.opacity(if hollow { 0.55 } else { 1.0 })),
+            )
+        })
+        .child(
+            div()
+                .w(px(ARROW_W))
+                .flex_none()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .children(up.map(|n| expand_arrow(ctx, ix, id, true, n, slot, size)))
+                .children(down.map(|n| expand_arrow(ctx, ix, id, false, n, slot, size))),
+        )
+        .children(numbers.iter().map(|n| num_cell(*n, number_color)))
+}
+
+/// Code part of a row: tinted (or hollow-outlined) when the line changed.
+fn code_cell(ctx: &RowCtx, line: &DiffLine, tint: Option<Tint>, edges: (bool, bool)) -> gpui::Div {
+    div()
+        .flex()
+        .flex_1()
+        .min_w_0()
+        .h_full()
+        .overflow_hidden()
+        .when_some(tint, |d, tint| paint_tint(d, tint, edges))
+        .child(code_text(ctx, line))
+}
+
+/// For the first row of a hunk's excerpt: makes it the hover group of the
+/// hunk controls and builds them. Other rows come back untouched.
+fn with_hunk_controls(
+    row: gpui::Stateful<gpui::Div>,
+    ctx: &Rc<RowCtx>,
+    id: HunkId,
+    ix: usize,
+) -> (gpui::Stateful<gpui::Div>, Option<gpui::Div>) {
+    let can_act = ctx.can_stage
+        && ctx.show_stage_restore
+        && ctx
+            .doc
+            .hunk(id)
+            .is_some_and(|h| h.stage != HunkStage::ReadOnly);
+    if !(can_act && is_excerpt_start(ctx, ix, id)) {
+        return (row, None);
+    }
+    let group = SharedString::from(format!("pd-hunk-{ix}"));
+    let controls = hunk_controls(ctx, id, ix, group.clone());
+    (row.group(group), Some(controls))
+}
+
+/// Stage / Unstage / Restore of a hunk, floating at the right edge of its
+/// first row: shown for the cursor hunk and while that row is hovered.
+fn hunk_controls(ctx: &Rc<RowCtx>, id: HunkId, ix: usize, group: SharedString) -> gpui::Div {
+    let staged = ctx
+        .doc
+        .hunk(id)
+        .is_some_and(|h| h.stage == HunkStage::Staged);
+    let is_cursor = ctx.cursor == Some(id);
+    let armed = ctx.confirm_restore == Some(id);
+    let (view_a, view_b) = (ctx.view.clone(), ctx.view.clone());
+    div()
+        .absolute()
+        .top_0()
+        .right(px(12.0))
+        .h(px(ctx.line_h))
+        .flex()
+        .items_center()
+        .gap(px(4.0))
+        .px(px(2.0))
+        .rounded(px(4.0))
+        .bg(ctx.surface.header)
+        .opacity(if ctx.busy { 0.66 } else { 1.0 })
+        .when(!is_cursor, |d| d.invisible())
+        .group_hover(group, |d| d.visible())
+        .child(
+            button(
+                ("pd-hunk-stage", ix),
+                ctx.palette,
+                ButtonVariant::Outlined,
+                ButtonSize::Xxs,
+            )
+            .child(SharedString::from(if staged { "Unstage" } else { "Stage" }))
+            .tooltip(move |window, cx| {
+                Tooltip::new(if staged { "Unstage Hunk" } else { "Stage Hunk" }).build(window, cx)
+            })
+            .on_click(move |_: &ClickEvent, _w, cx| {
+                view_a.update(cx, |this, cx| this.apply_hunk(id, cx));
+            }),
+        )
+        .when(ctx.can_restore, |d| {
+            d.child(
+                button(
+                    ("pd-hunk-restore", ix),
+                    ctx.palette,
+                    if armed {
+                        ButtonVariant::TintedError
+                    } else {
+                        ButtonVariant::Outlined
+                    },
+                    ButtonSize::Xxs,
+                )
+                .child(SharedString::from(if armed {
+                    "Confirm Restore"
+                } else {
+                    "Restore"
+                }))
+                .tooltip(|window, cx| Tooltip::new("Restore Hunk").build(window, cx))
+                .on_click(move |_: &ClickEvent, _w, cx| {
+                    view_b.update(cx, |this, cx| this.restore_hunk(id, cx));
+                }),
+            )
+        })
 }
 
 /// A syntax color that would be hard to read on the diff background (some
@@ -2089,6 +2335,7 @@ fn code_text(ctx: &RowCtx, line: &DiffLine) -> gpui::Div {
     div()
         .flex_1()
         .min_w_0()
+        .pl(px(10.0))
         .overflow_hidden()
         .whitespace_nowrap()
         .child(
@@ -2098,30 +2345,38 @@ fn code_text(ctx: &RowCtx, line: &DiffLine) -> gpui::Div {
 }
 
 fn split_cell(
-    ctx: &RowCtx,
+    ctx: &Rc<RowCtx>,
+    ix: usize,
+    id: HunkId,
     hunk: &HunkView,
     line: Option<&DiffLine>,
     left: bool,
     edges: (bool, bool),
 ) -> gpui::Div {
     let cell = div().flex().flex_1().min_w_0().h_full().overflow_hidden();
+    let slot = usize::from(!left);
     let Some(line) = line else {
-        // Filler row: keeps both sides aligned.
-        return cell.bg(ctx.c.muted.opacity(0.06));
+        // Missing side: hatched, so the gap reads as deliberate and both
+        // sides stay aligned.
+        return cell
+            .child(gutter(ctx, ix, id, &[None], LineKind::Context, false, slot))
+            .child(div().flex_1().h_full().bg(pattern_slash(
+                ctx.surface.filler,
+                1.0,
+                ctx.line_h / 2.0,
+            )));
     };
     let number = if left { line.old_no } else { line.new_no };
-    cell.when_some(line_tint(ctx, hunk, line), |d, tint| {
-        d.bg(tint.bg).when_some(tint.outline, |d, color| {
-            d.border_l_1()
-                .border_r_1()
-                .border_color(color)
-                .when(edges.0, |d| d.border_t_1())
-                .when(edges.1, |d| d.border_b_1())
-        })
-    })
-    .child(num_cell(number, ctx.c))
-    .child(marker_bar(line.kind, is_hollow(ctx, hunk), ctx))
-    .child(code_text(ctx, line))
+    cell.child(gutter(
+        ctx,
+        ix,
+        id,
+        &[number],
+        line.kind,
+        is_hollow(ctx, hunk),
+        slot,
+    ))
+    .child(code_cell(ctx, line, line_tint(ctx, hunk, line), edges))
 }
 
 /// Header of one conflict block: labels plus Ours / Theirs / Both buttons.
@@ -2179,137 +2434,33 @@ fn render_conflict_header(
         .into_any_element()
 }
 
-/// Control row that reveals more unchanged lines next to a hunk's excerpt.
-fn render_expand(ctx: &Rc<RowCtx>, id: HunkId, up: bool, ix: usize) -> gpui::AnyElement {
+/// Separator between two excerpts of a file: a thin recessed band, carrying
+/// the enclosing symbol when git named one.
+fn render_separator(ctx: &Rc<RowCtx>, id: HunkId, ix: usize) -> gpui::AnyElement {
     let Some(hunk) = ctx.doc.hunk(id) else {
         return div().into_any_element();
     };
-    let c = ctx.c;
-    let hidden = if up { hunk.more_above } else { hunk.more_below };
+    let s = ctx.surface;
+    let label = hunk_context(&hunk.header);
     let view = ctx.view.clone();
     div()
-        .id(("pd-expand", ix))
-        .flex()
-        .items_center()
-        .gap(px(6.0))
-        .h(px(EXPAND_H))
-        .w_full()
-        .pl(px(NUM_W))
-        .text_size(px(11.0))
-        .text_color(c.muted)
-        .bg(c.muted.opacity(0.05))
-        .cursor_pointer()
-        .hover(|s| s.bg(c.accent.opacity(0.5)))
-        .child(
-            if up {
-                IconName::ExpandUp
-            } else {
-                IconName::ExpandDown
-            }
-            .svg(c.muted)
-            .size(px(12.0)),
-        )
-        .child(SharedString::from(format!(
-            "{hidden} more line{}",
-            if hidden == 1 { "" } else { "s" }
-        )))
-        .on_click(move |_: &ClickEvent, _w, cx| {
-            view.update(cx, |this, cx| this.expand(id, up, cx));
-        })
-        .into_any_element()
-}
-
-fn render_hunk_header(ctx: &Rc<RowCtx>, id: HunkId, ix: usize) -> gpui::AnyElement {
-    let Some(hunk) = ctx.doc.hunk(id) else {
-        return div().into_any_element();
-    };
-    let c = ctx.c;
-    let is_cursor = ctx.cursor == Some(id);
-    let group = SharedString::from(format!("pd-hunk-{ix}"));
-    let alpha = if ctx.busy { 0.66 } else { 1.0 };
-    let armed = ctx.confirm_restore == Some(id);
-    let (view_a, view_b, view_c) = (ctx.view.clone(), ctx.view.clone(), ctx.view.clone());
-    let can_act = ctx.can_stage && ctx.show_stage_restore && hunk.stage != HunkStage::ReadOnly;
-
-    let controls = div()
-        .flex()
-        .items_center()
-        .gap(px(4.0))
-        .opacity(alpha)
-        .when(!is_cursor, |d| d.invisible())
-        .group_hover(group.clone(), |d| d.visible())
-        .when(can_act, |d| {
-            let staged = hunk.stage == HunkStage::Staged;
-            d.child(
-                button(
-                    ("pd-hunk-stage", ix),
-                    ctx.palette,
-                    ButtonVariant::Outlined,
-                    ButtonSize::Xs,
-                )
-                .child(SharedString::from(if staged { "Unstage" } else { "Stage" }))
-                .tooltip(move |window, cx| {
-                    Tooltip::new(if staged { "Unstage Hunk" } else { "Stage Hunk" })
-                        .build(window, cx)
-                })
-                .on_click(move |_: &ClickEvent, _w, cx| {
-                    view_a.update(cx, |this, cx| this.apply_hunk(id, cx));
-                }),
-            )
-            .when(ctx.can_restore, |d| {
-                d.child(
-                    button(
-                        ("pd-hunk-restore", ix),
-                        ctx.palette,
-                        if armed {
-                            ButtonVariant::TintedError
-                        } else {
-                            ButtonVariant::Outlined
-                        },
-                        ButtonSize::Xs,
-                    )
-                    .child(SharedString::from(if armed {
-                        "Confirm Restore"
-                    } else {
-                        "Restore"
-                    }))
-                    .tooltip(|window, cx| Tooltip::new("Restore Hunk").build(window, cx))
-                    .on_click(move |_: &ClickEvent, _w, cx| {
-                        view_b.update(cx, |this, cx| this.restore_hunk(id, cx));
-                    }),
-                )
-            })
-        });
-
-    div()
         .id(("pd-hunk", ix))
-        .group(group)
         .flex()
         .items_center()
-        .justify_between()
-        .h(px(HUNK_H))
         .w_full()
-        .px(px(8.0))
-        .text_size(px(11.0))
-        .text_color(c.muted)
-        .bg(if is_cursor {
-            c.accent
-        } else {
-            c.muted.opacity(0.07)
-        })
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(8.0))
-                .min_w_0()
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .child(SharedString::from(hunk_context(&hunk.header))),
-        )
-        .child(controls)
+        .h(px(if label.is_empty() { GAP_H } else { SEP_H }))
+        .pl(px(ARROW_W + 2.0 * NUM_W + 10.0))
+        .text_size(px((ctx.font_px - 2.0).max(10.0)))
+        .text_color(s.line_number_changed)
+        .bg(s.separator)
+        .border_t_1()
+        .border_b_1()
+        .border_color(s.separator_border)
+        .whitespace_nowrap()
+        .overflow_hidden()
+        .child(SharedString::from(label.to_string()))
         .on_click(move |_: &ClickEvent, _w, cx| {
-            view_c.update(cx, |this, cx| this.set_cursor(id, cx));
+            view.update(cx, |this, cx| this.set_cursor(id, cx));
         })
         .into_any_element()
 }
@@ -2351,7 +2502,8 @@ fn render_file_header(
 
     div()
         .w_full()
-        .pt(px(if file_ix == 0 { 0.0 } else { 8.0 }))
+        .pt(px(if file_ix == 0 { 0.0 } else { 10.0 }))
+        .pb(px(4.0))
         .child(
             div()
                 .id(("pd-file", ix))
@@ -2363,9 +2515,12 @@ fn render_file_header(
                 .px(px(6.0))
                 .rounded(px(6.0))
                 .border_1()
-                .border_color(c.border)
-                .bg(c.card)
-                .hover(|s| s.bg(c.accent.opacity(0.5)))
+                .border_color(ctx.surface.header_border)
+                .bg(ctx.surface.header)
+                .hover({
+                    let hover = ctx.surface.header_hover;
+                    move |s| s.bg(hover)
+                })
                 .child(
                     icon_button_builder(("pd-fold", ix), ctx.palette, chevron)
                         .variant(ButtonVariant::Transparent)

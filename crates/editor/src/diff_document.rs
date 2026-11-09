@@ -89,6 +89,15 @@ pub struct HunkView {
     core: Option<Range<usize>>,
 }
 
+/// The enclosing-symbol text git puts after the `@@ -a,b +c,d @@` range
+/// (empty when there is none).
+pub fn hunk_context(header: &str) -> &str {
+    header
+        .strip_prefix("@@")
+        .and_then(|rest| rest.split_once("@@"))
+        .map_or("", |(_, context)| context.trim())
+}
+
 /// Identity of a hunk that survives a reload: file path, source patch, hunk
 /// number within it. Context expansion is remembered under this key.
 pub type ExpandKey = (String, usize, usize);
@@ -158,6 +167,8 @@ pub enum DiffStyle {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FlatRow {
     File(usize),
+    /// Separator before a hunk's excerpt: shown when the excerpt does not
+    /// continue the previous one, or when git named the enclosing symbol.
     HunkHeader(HunkId),
     Line {
         id: HunkId,
@@ -174,19 +185,16 @@ pub enum FlatRow {
     },
     /// Header of conflict block `block` of a conflicted file: the ours /
     /// theirs / both resolution buttons.
-    ConflictHeader { file: usize, block: usize },
+    ConflictHeader {
+        file: usize,
+        block: usize,
+    },
     /// One line of a conflict block's ours (`ours`) or theirs side.
     ConflictLine {
         file: usize,
         block: usize,
         ours: bool,
         line: usize,
-    },
-    /// Control row that reveals more unchanged lines above (`up`) or below
-    /// a hunk's excerpt.
-    Expand {
-        id: HunkId,
-        up: bool,
     },
 }
 
@@ -269,9 +277,10 @@ impl DiffDocument {
             }
             for (hunk, view) in section.hunks.iter().enumerate() {
                 let id = HunkId { file, hunk };
-                rows.push(FlatRow::HunkHeader(id));
-                if view.more_above > 0 {
-                    rows.push(FlatRow::Expand { id, up: true });
+                let gap =
+                    hunk > 0 && (view.more_above > 0 || section.hunks[hunk - 1].more_below > 0);
+                if gap || !hunk_context(&view.header).is_empty() {
+                    rows.push(FlatRow::HunkHeader(id));
                 }
                 match style {
                     DiffStyle::Unified => {
@@ -282,9 +291,6 @@ impl DiffDocument {
                             .into_iter()
                             .map(|(left, right)| FlatRow::Split { id, left, right }),
                     ),
-                }
-                if view.more_below > 0 {
-                    rows.push(FlatRow::Expand { id, up: false });
                 }
             }
             for (block, conflict) in section.conflicts.iter().enumerate() {
@@ -918,10 +924,48 @@ mod tests {
             one("b.rs", HunkStage::Unstaged, &["@@ -1 +1 @@", "-a", "+b"]),
         ]);
         let all = doc.flatten(DiffStyle::Unified, &HashSet::new());
-        assert_eq!(all.len(), 2 * (1 + 1 + 2));
+        assert_eq!(all.len(), 2 * (1 + 2));
         let folded = doc.flatten(DiffStyle::Unified, &HashSet::from(["a.rs".to_string()]));
-        assert_eq!(folded.len(), 1 + 4);
+        assert_eq!(folded.len(), 1 + 3);
         assert_eq!(folded[0], FlatRow::File(0));
+    }
+
+    #[test]
+    fn separator_row_only_where_excerpts_break_or_a_symbol_is_named() {
+        let doc = DiffDocument::build(vec![
+            one(
+                "a.rs",
+                HunkStage::Unstaged,
+                &[
+                    "@@ -1 +1 @@",
+                    "-a",
+                    "+b",
+                    "@@ -9 +9 @@ fn f() {",
+                    "-c",
+                    "+d",
+                ],
+            ),
+            one(
+                "b.rs",
+                HunkStage::Unstaged,
+                &["@@ -1 +1 @@ fn g() {", "-a", "+b"],
+            ),
+        ]);
+        let headers: Vec<HunkId> = doc
+            .flatten(DiffStyle::Unified, &HashSet::new())
+            .into_iter()
+            .filter_map(|r| match r {
+                FlatRow::HunkHeader(id) => Some(id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            headers,
+            [HunkId { file: 0, hunk: 1 }, HunkId { file: 1, hunk: 0 }]
+        );
+        assert_eq!(hunk_context("@@ -1,3 +1,3 @@ fn main() {"), "fn main() {");
+        assert_eq!(hunk_context("@@ -1 +1 @@"), "");
+        assert_eq!(hunk_context("not a header"), "");
     }
 
     #[test]
