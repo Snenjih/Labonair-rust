@@ -165,6 +165,8 @@ pub struct ProjectDiffView {
     expand_lines: usize,
     /// Context revealed beyond the base excerpt, per hunk.
     expansions: HashMap<ExpandKey, Expansion>,
+    /// Single-file diffs: show the whole file instead of only the changes.
+    show_full_file: bool,
 
     doc: Rc<DiffDocument>,
     rows: Rc<Vec<FlatRow>>,
@@ -217,6 +219,7 @@ impl ProjectDiffView {
             context_lines: DEFAULT_CONTEXT_LINES,
             expand_lines: DEFAULT_EXPAND_LINES,
             expansions: HashMap::new(),
+            show_full_file: true,
             doc: Rc::new(DiffDocument::default()),
             rows: Rc::new(Vec::new()),
             list: ListState::new(0, ListAlignment::Top, px(600.0)),
@@ -260,7 +263,7 @@ impl ProjectDiffView {
         self.min_split_columns = min_columns;
         if context_lines != self.context_lines {
             self.context_lines = context_lines;
-            Rc::make_mut(&mut self.doc).apply_display(context_lines, &self.expansions);
+            self.reapply_display();
         }
         self.refresh_narrowness();
         self.rebuild_rows();
@@ -296,14 +299,17 @@ impl ProjectDiffView {
         self.repo_root = Some(req.repo_root);
         self.session_id = req.session_id;
         self.pending_scroll = match &req.source {
-            DiffSource::WorkingTree | DiffSource::Staged | DiffSource::Unstaged => {
-                resolve_selection(&req.files, req.selected.as_deref())
-            }
+            DiffSource::WorkingTree
+            | DiffSource::Staged
+            | DiffSource::Unstaged
+            | DiffSource::File { .. } => resolve_selection(&req.files, req.selected.as_deref()),
             _ => req.selected.clone(),
         };
         if !same_source {
             self.known_files.clear();
             self.expansions.clear();
+            self.show_full_file =
+                EditorSettings::try_get(cx).is_none_or(|s| s.diff_solo_show_full_file());
             self.folded.clear();
             self.cursor = None;
         }
@@ -339,6 +345,33 @@ impl ProjectDiffView {
         }
     }
 
+    fn is_solo(&self) -> bool {
+        matches!(self.source, DiffSource::File { .. })
+    }
+
+    /// Unchanged lines shown around each change: the whole file for a solo
+    /// diff in "Show Full File" mode.
+    fn display_context(&self) -> usize {
+        if self.is_solo() && self.show_full_file {
+            usize::MAX / 4
+        } else {
+            self.context_lines
+        }
+    }
+
+    /// Re-slice every excerpt for the current context, expansion and mode.
+    fn reapply_display(&mut self) {
+        let context = self.display_context();
+        Rc::make_mut(&mut self.doc).apply_display(context, &self.expansions);
+    }
+
+    fn toggle_full_file(&mut self, cx: &mut Context<Self>) {
+        self.show_full_file = !self.show_full_file;
+        self.reapply_display();
+        self.rebuild_rows();
+        cx.notify();
+    }
+
     fn effective_style(&self) -> DiffStyle {
         if self.style == DiffStyle::Split && self.too_narrow_for_split {
             DiffStyle::Unified
@@ -367,7 +400,10 @@ impl ProjectDiffView {
         // Parsing and syntax-highlighting the patches stays off the UI thread.
         let task = self.tokio.spawn(async move {
             let inputs = match source {
-                DiffSource::WorkingTree | DiffSource::Staged | DiffSource::Unstaged => {
+                DiffSource::WorkingTree
+                | DiffSource::Staged
+                | DiffSource::Unstaged
+                | DiffSource::File { .. } => {
                     load_working_tree(git, tokio, root, session, files).await
                 }
                 DiffSource::Commit { hash, .. } => {
@@ -418,7 +454,7 @@ impl ProjectDiffView {
     }
 
     fn set_document(&mut self, mut doc: DiffDocument) {
-        doc.apply_display(self.context_lines, &self.expansions);
+        doc.apply_display(self.display_context(), &self.expansions);
         for section in &doc.files {
             // Spec §2: only a file's first appearance auto-folds it.
             if self.known_files.insert(section.path.clone()) && section.kind == FileKind::Deleted {
@@ -489,7 +525,7 @@ impl ProjectDiffView {
         } else {
             entry.1 += step;
         }
-        Rc::make_mut(&mut self.doc).apply_display(self.context_lines, &self.expansions);
+        self.reapply_display();
         self.rebuild_rows();
         cx.notify();
     }
@@ -720,6 +756,7 @@ impl ProjectDiffView {
             DiffSource::WorkingTree => "Uncommitted Changes".to_string(),
             DiffSource::Staged => "Staged Changes".to_string(),
             DiffSource::Unstaged => "Unstaged Changes".to_string(),
+            DiffSource::File { path } => format!("Changes: {path}"),
         }
     }
 
@@ -762,6 +799,7 @@ fn same_source(left: &DiffSource, right: &DiffSource) -> bool {
         (DiffSource::WorkingTree, DiffSource::WorkingTree)
         | (DiffSource::Staged, DiffSource::Staged)
         | (DiffSource::Unstaged, DiffSource::Unstaged) => true,
+        (DiffSource::File { path: l }, DiffSource::File { path: r }) => l == r,
         (DiffSource::Commit { hash: l, .. }, DiffSource::Commit { hash: r, .. })
         | (DiffSource::Stash { hash: l, .. }, DiffSource::Stash { hash: r, .. }) => l == r,
         (
@@ -1090,6 +1128,19 @@ impl ProjectDiffView {
                     .whitespace_nowrap()
                     .child(SharedString::from(self.header_title())),
             )
+            .when(self.is_solo(), |d| {
+                d.child(text_button(
+                    "pd-full-file",
+                    if self.show_full_file {
+                        "Show Changes Only"
+                    } else {
+                        "Show Full File"
+                    },
+                    "Toggle between the whole file and only the changes",
+                    true,
+                    Box::new(|this, cx| this.toggle_full_file(cx)),
+                ))
+            })
             .when(!can_stage, |d| {
                 d.child(
                     div()
@@ -1688,6 +1739,8 @@ fn render_file_header(
     let path = file.path.clone();
     let (fold_view, check_view, open_view) = (ctx.view.clone(), ctx.view.clone(), ctx.view.clone());
     let (fold_path, check_path, open_path) = (path.clone(), path.clone(), path.clone());
+    let (open_button_view, open_button_path) = (ctx.view.clone(), path.clone());
+    let header_group = SharedString::from(format!("pd-file-group-{ix}"));
     let chevron = if folded {
         IconName::ChevronRight
     } else {
@@ -1700,6 +1753,7 @@ fn render_file_header(
         .child(
             div()
                 .id(("pd-file", ix))
+                .group(header_group.clone())
                 .flex()
                 .items_center()
                 .gap(px(6.0))
@@ -1767,13 +1821,44 @@ fn render_file_header(
                             .child(SharedString::from(dir)),
                     )
                 })
+                .when(!ctx.can_stage, |d| {
+                    d.child(IconName::Lock.svg(c.muted).size(px(12.0)))
+                })
                 .when(file.added > 0 || file.removed > 0, |d| {
                     d.child(
                         div()
                             .flex_none()
                             .child(diff_stat(file.added, file.removed, c)),
                     )
-                }),
+                })
+                .child(
+                    // Spec §3.7: shown while the header is hovered.
+                    div()
+                        .flex_none()
+                        .invisible()
+                        .group_hover(header_group, |d| d.visible())
+                        .child(
+                            button(
+                                ("pd-open-file", ix),
+                                ctx.palette,
+                                ButtonVariant::Outlined,
+                                ButtonSize::Xs,
+                            )
+                            .child(SharedString::from("Open File"))
+                            .tooltip(|window, cx| Tooltip::new("Open File").build(window, cx))
+                            .on_click(
+                                move |_: &ClickEvent, window, cx| {
+                                    let handler = open_button_view.update(cx, |this, _| {
+                                        this.absolute_path(&open_button_path)
+                                            .zip(this.on_open_file.clone())
+                                    });
+                                    if let Some((abs, f)) = handler {
+                                        f(abs, window, cx);
+                                    }
+                                },
+                            ),
+                        ),
+                ),
         )
         .into_any_element()
 }

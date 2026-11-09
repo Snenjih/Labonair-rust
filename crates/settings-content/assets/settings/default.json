@@ -163,6 +163,8 @@
     // Show the Stage / Unstage / Restore controls on diff hunks.
     "editorDiffShowStageRestoreButtons": true,
     // Unchanged lines shown around each change in a DiffView.
+    // Single-file diffs start with the whole file shown.
+    "editorDiffSoloShowFullFile": true,
     "editorDiffExcerptContextLines": 2,
     // Lines revealed per click on a DiffView expand control.
     "editorDiffExpandExcerptLines": 5,

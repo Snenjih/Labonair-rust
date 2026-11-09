@@ -4678,6 +4678,54 @@ impl Workspace {
         .detach();
     }
 
+    /// Open the single-file diff of the active editor's file.
+    pub fn open_active_file_diff(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self
+            .tabs
+            .read(cx)
+            .active()
+            .filter(|tab| tab.kind == TabKind::Editor)
+            .and_then(|tab| tab.data.path.clone())
+        else {
+            return;
+        };
+        let context = self.editor_git_bridge.context();
+        let Some(root) = context.root.clone() else {
+            labonair_notifications::notify_err::<()>(
+                "Open File Diff",
+                Err("Git actions require an explicit repository workspace.".to_string()),
+                cx,
+            );
+            return;
+        };
+        let git = self.git.clone();
+        let session = context.session_id.clone();
+        let task = self.tokio.spawn(async move {
+            let mut request = working_tree_diff_request(
+                git,
+                root,
+                session,
+                labonair_panel::DiffSource::WorkingTree,
+                Some(path),
+            )
+            .await?;
+            let selected = request.selected.clone().unwrap_or_default();
+            request.files.retain(|file| file.path == selected);
+            request.source = labonair_panel::DiffSource::File { path: selected };
+            Ok::<_, String>(request)
+        });
+        cx.spawn(async move |this, cx| {
+            let result = task.await.unwrap_or_else(|error| Err(error.to_string()));
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(request) => this.open_project_diff(request, cx),
+                Err(error) => {
+                    labonair_notifications::notify_err::<()>("Open File Diff", Err(error), cx);
+                }
+            });
+        })
+        .detach();
+    }
+
     /// Forward a keyboard / palette operation to the DiffView.
     pub fn perform_project_diff_action(
         &mut self,

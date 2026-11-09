@@ -382,6 +382,11 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
         });
     }
 
+    let workspace_handle = workspace.clone();
+    register!(CommandId::GitOpenFileDiff, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.open_active_file_diff(cx));
+    });
+
     for (command, action) in [
         (CommandId::DiffGoToHunk, DiffAction::GoToHunk),
         (
@@ -591,6 +596,13 @@ impl CommandProvider for WorkspaceCommandProvider {
                 "Git: View Staged Changes",
                 "Source Control",
             )
+            .with_icon(CommandIcon::GitBranch),
+            CommandDescriptor::new(
+                CommandId::GitOpenFileDiff,
+                "Git: Open File Diff",
+                "Source Control",
+            )
+            .with_contexts(&[CommandContext::Editor])
             .with_icon(CommandIcon::GitBranch),
             CommandDescriptor::new(CommandId::DiffGoToHunk, "Diff: Go to Next Hunk", "Diff")
                 .with_contexts(&[CommandContext::Diff])

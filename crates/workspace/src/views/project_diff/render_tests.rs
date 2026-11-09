@@ -783,3 +783,70 @@ fn expand_controls_reveal_context_from_the_whole_file(cx: &mut TestAppContext) {
             .any(|c| c.starts_with("stage_hunk src/lib.rs true"))
     });
 }
+
+#[gpui::test]
+fn solo_file_diff_toggles_between_full_file_and_changes(cx: &mut TestAppContext) {
+    let mut full = String::from(
+        "diff --git a/src/lib.rs b/src/lib.rs\nindex 111..222 100644\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1,30 +1,30 @@\n",
+    );
+    for n in 1..=30 {
+        if n == 10 || n == 24 {
+            full.push_str(&format!("-old{n}\n+new{n}\n"));
+        } else {
+            full.push_str(&format!(" l{n}\n"));
+        }
+    }
+    let (h, cx) = harness_with(cx, |git| {
+        git.fulls
+            .lock()
+            .unwrap()
+            .insert(("src/lib.rs".into(), false), full);
+    });
+    let mut req = request();
+    req.source = DiffSource::File {
+        path: "src/lib.rs".into(),
+    };
+    req.files.retain(|f| !f.staged);
+    h.view.update(cx, |v, cx| v.apply_request(req, cx));
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
+
+    let (shown, expand_rows) = h.view.read_with(cx, |v, _| {
+        (
+            v.doc.files[0]
+                .hunks
+                .iter()
+                .map(|h| h.lines.len())
+                .sum::<usize>(),
+            v.rows
+                .iter()
+                .filter(|r| matches!(r, FlatRow::Expand { .. }))
+                .count(),
+        )
+    });
+    // The whole 30-line file (+2 replaced lines) with nothing left to expand,
+    // split across the two Git-style hunks that meet in the middle.
+    assert_eq!(shown, 32);
+    assert_eq!(expand_rows, 0);
+    assert_eq!(
+        h.view.read_with(cx, |v, _| v.header_title()),
+        "Changes: src/lib.rs"
+    );
+
+    h.view.update(cx, |v, cx| v.toggle_full_file(cx));
+    let (shown, expand_rows) = h.view.read_with(cx, |v, _| {
+        (
+            v.doc.files[0]
+                .hunks
+                .iter()
+                .map(|h| h.lines.len())
+                .sum::<usize>(),
+            v.rows
+                .iter()
+                .filter(|r| matches!(r, FlatRow::Expand { .. }))
+                .count(),
+        )
+    });
+    assert!(shown < 32);
+    assert_eq!(expand_rows, 4);
+    draw(cx, &h.view, 1200.0);
+}

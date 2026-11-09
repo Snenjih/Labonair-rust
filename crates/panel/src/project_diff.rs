@@ -33,6 +33,9 @@ pub enum DiffSource {
     /// Only the unstaged changes (worktree↔index, incl. untracked files):
     /// hunks can be staged and restored. `files` is filtered to unstaged entries.
     Unstaged,
+    /// One file's working-tree changes (staged and unstaged), with a
+    /// "Show Full File" / "Show Changes Only" toggle. `path` is repo-relative.
+    File { path: String },
     /// A single committed change, rendered read-only. `files` is ignored — the
     /// item derives the changed-file rail from the commit's own patch.
     Commit {
@@ -65,7 +68,10 @@ impl DiffSource {
     pub fn supports_staging(&self) -> bool {
         matches!(
             self,
-            DiffSource::WorkingTree | DiffSource::Staged | DiffSource::Unstaged
+            DiffSource::WorkingTree
+                | DiffSource::Staged
+                | DiffSource::Unstaged
+                | DiffSource::File { .. }
         )
     }
 }

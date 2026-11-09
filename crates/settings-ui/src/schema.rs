@@ -1082,6 +1082,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Diff stage and restore buttons",
             "Show Stage, Unstage and Restore controls on diff hunks."
         ),
+        field!(
+            editor.editor_diff_solo_show_full_file,
+            "editorDiffSoloShowFullFile",
+            Switch,
+            "Single-file diff shows full file",
+            "Start a single-file diff with the whole file instead of only the changes."
+        ),
         field_with_details!(
             editor.editor_diff_excerpt_context_lines,
             "editorDiffExcerptContextLines",

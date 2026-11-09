@@ -819,6 +819,11 @@ impl EditorSettings {
             .unwrap_or(true)
     }
 
+    /// Whether a single-file DiffView starts with the whole file (default).
+    pub fn diff_solo_show_full_file(&self) -> bool {
+        self.0.editor_diff_solo_show_full_file.unwrap_or(true)
+    }
+
     /// Unchanged lines a DiffView shows around each change (default 2).
     pub fn diff_excerpt_context_lines(&self) -> u32 {
         self.0.editor_diff_excerpt_context_lines.unwrap_or(2)
