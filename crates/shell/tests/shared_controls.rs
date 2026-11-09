@@ -29,7 +29,7 @@ const ALLOWED: &[(&str, usize)] = &[
     ("workspace/src/pane_view.rs", 1),
     ("workspace/src/search_overlay.rs", 1),
     ("workspace/src/spaces_ui.rs", 1),
-    ("workspace/src/views/project_diff.rs", 1),
+    ("workspace/src/views/project_diff.rs", 2),
     ("workspace/src/views/sftp.rs", 2),
 ];
 

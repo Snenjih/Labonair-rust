@@ -636,7 +636,7 @@ enum PendingOpen {
 }
 
 /// Events emitted by the workspace for actions owned by another surface.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WorkspaceEvent {
     /// Ask the application shell to present the native project-folder picker,
     /// re-rooting the *current* space.
@@ -647,6 +647,9 @@ pub enum WorkspaceEvent {
     NewProjectSpace,
     /// Ask the application shell to open Settings on the Hosts page.
     OpenHosts,
+    /// The DiffView cursor moved into this repo-relative file; the Source
+    /// Control panel selects the matching entry.
+    DiffCursorFile(String),
 }
 
 /// The tabbed, split-pane workspace shell.
@@ -4640,6 +4643,12 @@ impl Workspace {
                     });
                 });
                 cx.observe(&v, |_, _, cx| cx.notify()).detach();
+                cx.subscribe(&v, |_, _, event, cx| match event {
+                    crate::views::project_diff::ProjectDiffEvent::CursorFile(path) => {
+                        cx.emit(WorkspaceEvent::DiffCursorFile(path.clone()));
+                    }
+                })
+                .detach();
                 self.project_diff = Some(v.clone());
                 v
             }

@@ -126,6 +126,7 @@ struct RowCtx {
     c: Colors,
     palette: Palette,
     syntax: EditorPalette,
+    diff: labonair_theme::DiffHunkColors,
     doc: Rc<DiffDocument>,
     rows: Rc<Vec<FlatRow>>,
     folded: HashSet<String>,
@@ -143,6 +144,16 @@ struct RowCtx {
     icon_theme: labonair_theme::IconThemeContent,
     view: Entity<ProjectDiffView>,
 }
+
+/// Notifications the DiffView sends to its host.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProjectDiffEvent {
+    /// The user moved the cursor into a hunk of this repo-relative file
+    /// (spec §9: the Git panel follows).
+    CursorFile(String),
+}
+
+impl gpui::EventEmitter<ProjectDiffEvent> for ProjectDiffView {}
 
 pub struct ProjectDiffView {
     theme: Entity<ThemeStore>,
@@ -518,7 +529,20 @@ impl ProjectDiffView {
         if self.cursor != Some(id) || self.confirm_restore.is_some() {
             self.cursor = Some(id);
             self.confirm_restore = None;
+            self.emit_cursor_file(cx);
             cx.notify();
+        }
+    }
+
+    /// Tell the host which file the cursor is in. Only user-driven moves call
+    /// this, so a diff reloading in the background never steals the selection.
+    fn emit_cursor_file(&self, cx: &mut Context<Self>) {
+        if let Some(path) = self
+            .cursor
+            .and_then(|id| self.doc.files.get(id.file))
+            .map(|file| file.path.clone())
+        {
+            cx.emit(ProjectDiffEvent::CursorFile(path));
         }
     }
 
@@ -605,6 +629,7 @@ impl ProjectDiffView {
             self.cursor = Some(id);
             self.confirm_restore = None;
             self.reveal_hunk(id);
+            self.emit_cursor_file(cx);
             cx.notify();
         }
     }
@@ -941,6 +966,7 @@ impl Render for ProjectDiffView {
         let font = theme.buffer_font();
         let palette = Palette::from_theme(theme);
         let syntax = EditorPalette::resolve(theme.editor_theme(), theme);
+        let diff = theme.diff_hunk_colors();
         let icon_theme = theme.icon_theme().clone();
         let view = cx.entity();
         let settings = EditorSettings::try_get(cx);
@@ -956,6 +982,7 @@ impl Render for ProjectDiffView {
                 c,
                 palette,
                 syntax,
+                diff,
                 doc: self.doc.clone(),
                 rows: self.rows.clone(),
                 folded: self.folded.clone(),
@@ -1358,7 +1385,7 @@ fn render_row(ctx: &Rc<RowCtx>, ix: usize, cx: &mut App) -> gpui::AnyElement {
                 .when_some(tint, |d, tint| paint_tint(d, tint, edges))
                 .child(num_cell(l.old_no, ctx.c))
                 .child(num_cell(l.new_no, ctx.c))
-                .child(marker_bar(l.kind, is_hollow(ctx, hunk), ctx.c))
+                .child(marker_bar(l.kind, is_hollow(ctx, hunk), ctx))
                 .child(code_text(ctx, l))
                 .on_click(move |_: &ClickEvent, _w, cx| {
                     view.update(cx, |this, cx| this.set_cursor(id, cx));
@@ -1451,19 +1478,19 @@ fn is_hollow(ctx: &RowCtx, hunk: &HunkView) -> bool {
 
 /// Row tint of a changed line, or `None` for context (spec §4).
 fn line_tint(ctx: &RowCtx, hunk: &HunkView, line: &DiffLine) -> Option<Tint> {
-    let base = match line.kind {
-        LineKind::Added => ctx.c.success,
-        LineKind::Deleted => ctx.c.error,
+    let side = match line.kind {
+        LineKind::Added => ctx.diff.added,
+        LineKind::Deleted => ctx.diff.deleted,
         LineKind::Context => return None,
     };
     Some(if is_hollow(ctx, hunk) {
         Tint {
-            bg: base.opacity(0.05),
-            outline: Some(base.opacity(0.45)),
+            bg: side.hollow_background,
+            outline: Some(side.hollow_border),
         }
     } else {
         Tint {
-            bg: base.opacity(0.14),
+            bg: side.background,
             outline: None,
         }
     })
@@ -1522,10 +1549,10 @@ fn num_cell(n: Option<u32>, c: Colors) -> gpui::Div {
         ))
 }
 
-fn marker_bar(kind: LineKind, hollow: bool, c: Colors) -> gpui::Div {
+fn marker_bar(kind: LineKind, hollow: bool, ctx: &RowCtx) -> gpui::Div {
     let color = match kind {
-        LineKind::Added => Some(c.success),
-        LineKind::Deleted => Some(c.error),
+        LineKind::Added => Some(ctx.diff.added.marker),
+        LineKind::Deleted => Some(ctx.diff.deleted.marker),
         LineKind::Context => None,
     };
     let alpha = if hollow { 0.55 } else { 1.0 };
@@ -1540,10 +1567,10 @@ fn marker_bar(kind: LineKind, hollow: bool, c: Colors) -> gpui::Div {
 /// Line text with syntax colors and the matched word range emphasized.
 fn code_text(ctx: &RowCtx, line: &DiffLine) -> gpui::Div {
     let text = line.text.replace('\t', "    ");
-    let tint = match line.kind {
-        LineKind::Added => ctx.c.success,
-        LineKind::Deleted => ctx.c.error,
-        LineKind::Context => ctx.c.fg,
+    let word_color = match line.kind {
+        LineKind::Added => Some(ctx.diff.added.word),
+        LineKind::Deleted => Some(ctx.diff.deleted.word),
+        LineKind::Context => None,
     };
     // Tabs were widened to four spaces: shift every byte offset to match.
     let shift = |pos: usize| {
@@ -1574,7 +1601,7 @@ fn code_text(ctx: &RowCtx, line: &DiffLine) -> gpui::Div {
             (
                 shift(range.start)..shift(range.end),
                 HighlightStyle {
-                    background_color: Some(tint.opacity(0.35)),
+                    background_color: word_color,
                     ..Default::default()
                 },
             )
@@ -1614,7 +1641,7 @@ fn split_cell(
         })
     })
     .child(num_cell(number, ctx.c))
-    .child(marker_bar(line.kind, is_hollow(ctx, hunk), ctx.c))
+    .child(marker_bar(line.kind, is_hollow(ctx, hunk), ctx))
     .child(code_text(ctx, line))
 }
 

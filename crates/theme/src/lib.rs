@@ -45,5 +45,6 @@ pub use registry::{
 };
 pub use store::{
     active_theme, init as init_theme, init_fonts, menu_metrics, modal_scrim, theme_store,
-    FontOverrides, GlobalTheme, ThemeMode, ThemeStore, SCROLLBAR_SIZE,
+    DiffHunkColors, DiffHunkSide, FontOverrides, GlobalTheme, ThemeMode, ThemeStore,
+    SCROLLBAR_SIZE,
 };

@@ -447,6 +447,7 @@ pub(crate) fn bootstrap(
             WorkspaceEvent::OpenHosts => {
                 labonair_settings_ui::open_settings_window(Some("hosts"), cx)
             }
+            WorkspaceEvent::DiffCursorFile(_) => {}
         },
     )
     .detach();
@@ -474,6 +475,16 @@ pub(crate) fn bootstrap(
 
     let git_panel =
         cx.new(|cx| GitPanelView::new(git_service.clone(), tokio.clone(), theme.clone(), cx));
+    // DiffView cursor → Source Control selection (spec §9).
+    cx.subscribe_in(&workspace, window, {
+        let git_panel = git_panel.clone();
+        move |_, _, event: &WorkspaceEvent, _window, cx| {
+            if let WorkspaceEvent::DiffCursorFile(path) = event {
+                git_panel.update(cx, |panel, cx| panel.reveal_path(path, cx));
+            }
+        }
+    })
+    .detach();
     // Source Control → workspace surfaces. The panel emits neutral requests; the
     // workspace owns each surface's lifecycle (idempotent open/focus): the single
     // Project Diff item (Zed-parity Phase 4, §12.6) and the on-demand Git Graph tab.

@@ -102,6 +102,28 @@ impl FontOverrides {
     }
 }
 
+/// Colors for one side (added or deleted) of a diff hunk.
+#[derive(Debug, Clone, Copy)]
+pub struct DiffHunkSide {
+    /// Filled row background.
+    pub background: Hsla,
+    /// Faint row background of a hollow (outlined) hunk.
+    pub hollow_background: Hsla,
+    /// 1px outline of a hollow hunk.
+    pub hollow_border: Hsla,
+    /// Word-level change highlight.
+    pub word: Hsla,
+    /// Gutter marker bar.
+    pub marker: Hsla,
+}
+
+/// Added / deleted hunk colors, see [`ThemeStore::diff_hunk_colors`].
+#[derive(Debug, Clone, Copy)]
+pub struct DiffHunkColors {
+    pub added: DiffHunkSide,
+    pub deleted: DiffHunkSide,
+}
+
 /// Central theme state. Created once at startup and stored as a GPUI entity;
 /// exposed app-wide via [`GlobalTheme`].
 pub struct ThemeStore {
@@ -804,6 +826,29 @@ impl ThemeStore {
     /// `--success` status color (severity: success).
     pub fn status_success(&self) -> Hsla {
         self.theme().status.success
+    }
+
+    /// Diff hunk colors (the Zed `editor_diff_hunk_*` / `version_control_word_*`
+    /// roles), derived from the status colors so every theme gets matching
+    /// tones. Light themes use stronger fills so hunks stay visible on white.
+    pub fn diff_hunk_colors(&self) -> DiffHunkColors {
+        let dark = matches!(self.appearance(), Appearance::Dark);
+        let (fill, hollow_fill, outline, word) = if dark {
+            (0.14, 0.05, 0.45, 0.35)
+        } else {
+            (0.18, 0.07, 0.55, 0.30)
+        };
+        let side = |base: Hsla| DiffHunkSide {
+            background: base.opacity(fill),
+            hollow_background: base.opacity(hollow_fill),
+            hollow_border: base.opacity(outline),
+            word: base.opacity(word),
+            marker: base,
+        };
+        DiffHunkColors {
+            added: side(self.status_success()),
+            deleted: side(self.status_error()),
+        }
     }
 
     /// `--toolbar-background` — the window header / titlebar surface.

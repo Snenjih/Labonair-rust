@@ -850,3 +850,26 @@ fn solo_file_diff_toggles_between_full_file_and_changes(cx: &mut TestAppContext)
     assert_eq!(expand_rows, 4);
     draw(cx, &h.view, 1200.0);
 }
+
+#[gpui::test]
+fn cursor_moves_tell_the_host_which_file_is_active(cx: &mut TestAppContext) {
+    use super::{DiffAction, ProjectDiffEvent};
+
+    let (h, cx) = harness(cx);
+    h.view.update(cx, |v, cx| v.apply_request(request(), cx));
+    wait_until(cx, |cx| h.view.read_with(cx, |v, _| !v.doc.is_empty()));
+
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let sink = seen.clone();
+    let _sub = cx.update(|_, app| {
+        app.subscribe(&h.view, move |_, event: &ProjectDiffEvent, _| {
+            let ProjectDiffEvent::CursorFile(path) = event;
+            sink.lock().unwrap().push(path.clone());
+        })
+    });
+    // Loading never announces a file; user-driven moves do.
+    assert!(seen.lock().unwrap().is_empty());
+    h.view
+        .update(cx, |v, cx| v.perform(DiffAction::GoToHunk, cx));
+    assert_eq!(seen.lock().unwrap().len(), 1);
+}

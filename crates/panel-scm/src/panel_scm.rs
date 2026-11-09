@@ -1351,6 +1351,23 @@ impl GitPanelView {
         }));
     }
 
+    /// Highlight `path`'s entry without opening a diff (the DiffView cursor
+    /// moved there). The first matching change wins.
+    pub fn reveal_path(&mut self, path: &str, cx: &mut Context<Self>) {
+        let Some(file) = self.change_files().into_iter().find(|f| f.path == path) else {
+            return;
+        };
+        let selected = Selected {
+            path: file.path,
+            staged: file.staged,
+            untracked: file.untracked,
+        };
+        if self.selected.as_ref() != Some(&selected) {
+            self.selected = Some(selected);
+            cx.notify();
+        }
+    }
+
     fn select_file(&mut self, sel: Selected, cx: &mut Context<Self>) {
         if self.selected.as_ref() == Some(&sel) {
             self.selected = None;

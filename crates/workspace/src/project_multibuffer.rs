@@ -191,11 +191,16 @@ mod tests {
     static NEXT_ROOT: AtomicUsize = AtomicUsize::new(0);
 
     fn temp_root() -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "labonair-project-multibuffer-{}-{}",
-            std::process::id(),
-            NEXT_ROOT.fetch_add(1, Ordering::Relaxed)
-        ))
+        // Canonical, so macOS' `/var` → `/private/var` symlink cannot make the
+        // loader reject hit paths as outside the root.
+        std::env::temp_dir()
+            .canonicalize()
+            .expect("canonical temp dir")
+            .join(format!(
+                "labonair-project-multibuffer-{}-{}",
+                std::process::id(),
+                NEXT_ROOT.fetch_add(1, Ordering::Relaxed)
+            ))
     }
 
     fn hit(path: &Path, relative: &str, text: &str) -> ProjectSearchHit {
