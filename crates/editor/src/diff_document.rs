@@ -9,6 +9,9 @@
 use std::collections::HashSet;
 use std::ops::Range;
 
+use crate::buffer::EditorBuffer;
+use crate::language::Language;
+use crate::syntax::{HighlightKind, SyntaxHighlighter};
 use crate::unified::{build_hunk_patch, is_whole_file_single_hunk, DiffHunk, FileDiff};
 
 /// Where a hunk sits relative to the index (spec §2 "Hunk stage state").
@@ -58,6 +61,9 @@ pub struct DiffLine {
     /// Byte range of the changed middle when a deleted/added pair was matched
     /// (word diff). `None` for context and unpaired lines.
     pub word: Option<Range<usize>>,
+    /// Syntax token classes as byte ranges into `text` (empty when the file's
+    /// language has no grammar).
+    pub spans: Vec<(Range<usize>, HighlightKind)>,
 }
 
 /// One hunk with its stage tag and precomputed counts.
@@ -289,7 +295,13 @@ fn build_section(input: FileInput) -> FileSection {
         }
     }
     hunks.sort_by_key(|(position, view)| (*position, view.stage != HunkStage::Staged));
-    let hunks: Vec<HunkView> = hunks.into_iter().map(|(_, h)| h).collect();
+    let mut hunks: Vec<HunkView> = hunks.into_iter().map(|(_, h)| h).collect();
+    let language = Language::from_path(&path);
+    if language.has_grammar() {
+        for hunk in &mut hunks {
+            highlight_lines(language, &mut hunk.lines);
+        }
+    }
 
     let kind = if untracked {
         FileKind::Untracked
@@ -333,6 +345,7 @@ fn hunk_view(stage: HunkStage, hunk: &DiffHunk, source: usize, source_hunk: usiz
                     new_no: Some(new_no),
                     text: raw[1..].to_string(),
                     word: None,
+                    spans: Vec::new(),
                 });
                 new_no += 1;
                 added += 1;
@@ -344,6 +357,7 @@ fn hunk_view(stage: HunkStage, hunk: &DiffHunk, source: usize, source_hunk: usiz
                     new_no: None,
                     text: raw[1..].to_string(),
                     word: None,
+                    spans: Vec::new(),
                 });
                 old_no += 1;
                 removed += 1;
@@ -356,6 +370,7 @@ fn hunk_view(stage: HunkStage, hunk: &DiffHunk, source: usize, source_hunk: usiz
                     new_no: Some(new_no),
                     text: raw.strip_prefix(' ').unwrap_or(raw).to_string(),
                     word: None,
+                    spans: Vec::new(),
                 });
                 old_no += 1;
                 new_no += 1;
@@ -371,6 +386,56 @@ fn hunk_view(stage: HunkStage, hunk: &DiffHunk, source: usize, source_hunk: usiz
         removed,
         source,
         source_hunk,
+    }
+}
+
+/// Largest hunk side (in bytes) that is syntax highlighted.
+const MAX_HIGHLIGHT_HUNK_BYTES: usize = 256 * 1024;
+
+/// Fills [`DiffLine::spans`]. A hunk is highlighted as two snippets — the old
+/// side (context + deleted) and the new side (context + added) — so each line
+/// is tokenised in the text it actually belongs to. Without the rest of the
+/// file, constructs that start outside the hunk may be classified loosely.
+fn highlight_lines(language: Language, lines: &mut [DiffLine]) {
+    for deleted_side in [true, false] {
+        let side: Vec<usize> = (0..lines.len())
+            .filter(|&i| {
+                let skip = if deleted_side {
+                    LineKind::Added
+                } else {
+                    LineKind::Deleted
+                };
+                lines[i].kind != skip
+            })
+            .collect();
+        let text = side
+            .iter()
+            .map(|&i| lines[i].text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        if text.is_empty() || text.len() > MAX_HIGHLIGHT_HUNK_BYTES {
+            continue;
+        }
+        let snapshot = EditorBuffer::from_text(&text).snapshot();
+        let mut highlighter = SyntaxHighlighter::new(language);
+        highlighter.update(&snapshot, 0..text.len());
+        for (row, &i) in side.iter().enumerate() {
+            // Context lines are painted from the new side; the old-side pass
+            // only supplies deleted lines.
+            if (lines[i].kind == LineKind::Deleted) != deleted_side {
+                continue;
+            }
+            let mut at = 0;
+            let mut spans = Vec::new();
+            for run in highlighter.line_runs(&snapshot, row) {
+                let end = at + run.text.len();
+                if let Some(kind) = run.kind {
+                    spans.push((at..end, kind));
+                }
+                at = end;
+            }
+            lines[i].spans = spans;
+        }
     }
 }
 
@@ -494,6 +559,44 @@ mod tests {
             diffs,
             raw: Vec::new(),
         }
+    }
+
+    #[test]
+    fn lines_carry_syntax_spans_from_their_own_side() {
+        let doc = DiffDocument::build(vec![one(
+            "src/lib.rs",
+            HunkStage::Unstaged,
+            &[
+                "@@ -1,2 +1,2 @@",
+                " fn a() {}",
+                "-let x = 1;",
+                "+let y = \"s\";",
+            ],
+        )]);
+        let lines = &doc.files[0].hunks[0].lines;
+        let kinds =
+            |i: usize| -> Vec<HighlightKind> { lines[i].spans.iter().map(|s| s.1).collect() };
+        assert!(
+            kinds(0).contains(&HighlightKind::Keyword),
+            "{:?}",
+            lines[0].spans
+        );
+        assert!(kinds(1).contains(&HighlightKind::Keyword));
+        assert!(kinds(2).contains(&HighlightKind::String));
+        // Spans are valid byte ranges of their line.
+        for line in lines {
+            assert!(line.spans.iter().all(|(r, _)| r.end <= line.text.len()));
+        }
+        // A file without a grammar carries none.
+        let plain = DiffDocument::build(vec![one(
+            "notes.unknownext",
+            HunkStage::Unstaged,
+            &["@@ -1 +1 @@", "-a", "+b"],
+        )]);
+        assert!(plain.files[0].hunks[0]
+            .lines
+            .iter()
+            .all(|l| l.spans.is_empty()));
     }
 
     fn one(path: &str, stage: HunkStage, body: &[&str]) -> FileInput {

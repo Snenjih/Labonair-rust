@@ -25,15 +25,17 @@ use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    canvas, div, list, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, Hsla,
-    InteractiveElement, IntoElement, ListAlignment, ListOffset, ListSizingBehavior, ListState,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    canvas, combine_highlights, div, list, px, App, ClickEvent, Context, Entity, FocusHandle,
+    Focusable, HighlightStyle, Hsla, InteractiveElement, IntoElement, ListAlignment, ListOffset,
+    ListSizingBehavior, ListState, ParentElement, Render, SharedString, StatefulInteractiveElement,
+    Styled, StyledText, Window,
 };
 use labonair_editor::diff_document::{
     DiffDocument, DiffLine, DiffStyle, FileInput, FileKind, FlatRow, HunkId, HunkOperation,
     HunkStage, HunkView, LineKind,
 };
 use labonair_editor::unified::{parse_diff_hunks, FileDiff};
+use labonair_editor_ui::EditorPalette;
 use labonair_git::GitService;
 use labonair_notifications::{notification_center, notify_err, Notification};
 use labonair_panel::{DiffSource, ProjectDiffFile, ProjectDiffRequest};
@@ -116,6 +118,7 @@ struct Colors {
 struct RowCtx {
     c: Colors,
     palette: Palette,
+    syntax: EditorPalette,
     doc: Rc<DiffDocument>,
     rows: Rc<Vec<FlatRow>>,
     folded: HashSet<String>,
@@ -337,8 +340,9 @@ impl ProjectDiffView {
         let source = self.source.clone();
         let files = self.files.clone();
         let tokio = self.tokio.clone();
+        // Parsing and syntax-highlighting the patches stays off the UI thread.
         let task = self.tokio.spawn(async move {
-            match source {
+            let inputs = match source {
                 DiffSource::WorkingTree | DiffSource::Staged | DiffSource::Unstaged => {
                     load_working_tree(git, tokio, root, session, files).await
                 }
@@ -354,7 +358,8 @@ impl ProjectDiffView {
                     let text = git.branch_diff(root, base, head, session).await?;
                     Ok(read_only_inputs(&text))
                 }
-            }
+            };
+            inputs.map(DiffDocument::build)
         });
         cx.spawn(async move |this, cx| {
             let res = task.await.unwrap_or_else(|e| Err(e.to_string()));
@@ -364,7 +369,7 @@ impl ProjectDiffView {
                 }
                 this.loading = false;
                 match res {
-                    Ok(inputs) => this.set_document(DiffDocument::build(inputs)),
+                    Ok(doc) => this.set_document(doc),
                     Err(e) => {
                         this.set_document(DiffDocument::default());
                         notification_center(cx).update(cx, |center, cx| {
@@ -828,6 +833,7 @@ impl Render for ProjectDiffView {
         let theme = self.theme.read(cx);
         let font = theme.buffer_font();
         let palette = Palette::from_theme(theme);
+        let syntax = EditorPalette::resolve(theme.editor_theme(), theme);
         let icon_theme = theme.icon_theme().clone();
         let view = cx.entity();
         let settings = EditorSettings::try_get(cx);
@@ -842,6 +848,7 @@ impl Render for ProjectDiffView {
             let ctx = Rc::new(RowCtx {
                 c,
                 palette,
+                syntax,
                 doc: self.doc.clone(),
                 rows: self.rows.clone(),
                 folded: self.folded.clone(),
@@ -1378,7 +1385,7 @@ fn marker_bar(kind: LineKind, hollow: bool, c: Colors) -> gpui::Div {
         .when_some(color, |d, color| d.bg(color.opacity(alpha)))
 }
 
-/// Line text with the matched word range emphasized.
+/// Line text with syntax colors and the matched word range emphasized.
 fn code_text(ctx: &RowCtx, line: &DiffLine) -> gpui::Div {
     let text = line.text.replace('\t', "    ");
     let tint = match line.kind {
@@ -1386,28 +1393,50 @@ fn code_text(ctx: &RowCtx, line: &DiffLine) -> gpui::Div {
         LineKind::Deleted => ctx.c.error,
         LineKind::Context => ctx.c.fg,
     };
-    let base = div()
+    // Tabs were widened to four spaces: shift every byte offset to match.
+    let shift = |pos: usize| {
+        let pos = pos.min(line.text.len());
+        pos + 3 * line.text.as_bytes()[..pos]
+            .iter()
+            .filter(|b| **b == b'\t')
+            .count()
+    };
+    let syntax: Vec<_> = line
+        .spans
+        .iter()
+        .map(|(range, kind)| {
+            (
+                shift(range.start)..shift(range.end),
+                HighlightStyle {
+                    color: Some(ctx.syntax.color(*kind)),
+                    ..Default::default()
+                },
+            )
+        })
+        .collect();
+    let word: Vec<_> = line
+        .word
+        .iter()
+        .filter(|_| ctx.word_diff)
+        .map(|range| {
+            (
+                shift(range.start)..shift(range.end),
+                HighlightStyle {
+                    background_color: Some(tint.opacity(0.35)),
+                    ..Default::default()
+                },
+            )
+        })
+        .collect();
+    div()
         .flex_1()
         .min_w_0()
         .overflow_hidden()
-        .whitespace_nowrap();
-    // Tabs were widened, so the byte range only applies to tab-free text.
-    let range = line
-        .word
-        .clone()
-        .filter(|r| ctx.word_diff && !line.text.contains('\t') && r.end <= text.len());
-    match range {
-        Some(range) => base
-            .flex()
-            .child(SharedString::from(text[..range.start].to_string()))
-            .child(
-                div()
-                    .bg(tint.opacity(0.35))
-                    .child(SharedString::from(text[range.clone()].to_string())),
-            )
-            .child(SharedString::from(text[range.end..].to_string())),
-        None => base.child(SharedString::from(text)),
-    }
+        .whitespace_nowrap()
+        .child(
+            StyledText::new(SharedString::from(text))
+                .with_highlights(combine_highlights(syntax, word)),
+        )
 }
 
 fn split_cell(

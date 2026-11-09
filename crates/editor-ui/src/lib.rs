@@ -12,3 +12,4 @@ mod syntax_theme;
 pub use editor::{EditorBufferSnapshot, EditorEvent, EditorSidePreviewContent, EditorView};
 pub use multibuffer::{MultiBufferEvent, MultiBufferView};
 pub use status_item::{status_item_registration, ActiveEditorProvider};
+pub use syntax_theme::EditorPalette;
