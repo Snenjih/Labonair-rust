@@ -183,7 +183,7 @@ impl GitDecorationProvider for WorkspaceGitBridge {
             Ok(context) => context,
             Err(error) => return Box::pin(async move { Err(error) }),
         };
-        let Some(root) = context.root.clone() else {
+        let Some(root) = root_or_file_dir(context.root.clone(), &request.path) else {
             return Box::pin(async move {
                 Ok(GitGutterSnapshot::no_repository(
                     request.path,
@@ -250,7 +250,7 @@ impl GitDecorationProvider for WorkspaceGitBridge {
                 ))
             });
         }
-        let Some(root) = context.root else {
+        let Some(root) = root_or_file_dir(context.root, &request.path) else {
             return Box::pin(async {
                 Err(GitGutterError::Provider(
                     "No repository is available for this file".into(),
@@ -326,7 +326,7 @@ impl WorkspaceGitBridge {
         let git = self.git.clone();
         let tokio = self.tokio.clone();
         Box::pin(run_on_tokio(tokio, async move {
-            let Some(root) = context.root else {
+            let Some(root) = root_or_file_dir(context.root, &preview.target.path) else {
                 return Err(GitGutterError::Provider(
                     "Git actions require an explicit repository workspace".into(),
                 ));
@@ -358,7 +358,7 @@ impl WorkspaceGitBridge {
         let git = self.git.clone();
         let tokio = self.tokio.clone();
         Box::pin(run_on_tokio(tokio, async move {
-            let Some(root) = context.root else {
+            let Some(root) = root_or_file_dir(context.root, &path) else {
                 return Err(GitGutterError::Provider(
                     "Git actions require an explicit repository workspace".into(),
                 ));
@@ -395,6 +395,16 @@ where
         Ok(result) => result,
         Err(error) => Err(GitGutterError::Provider(error.to_string())),
     }
+}
+
+/// The directory Git discovery starts from for `path`: the workspace's explicit
+/// root, else (standalone workspace) the file's own directory — Git finds the
+/// enclosing repository itself.
+pub(crate) fn root_or_file_dir(root: Option<String>, path: &str) -> Option<String> {
+    root.or_else(|| {
+        let parent = Path::new(path).parent()?;
+        Some(parent.to_string_lossy().into_owned())
+    })
 }
 
 pub(crate) fn relative_path(root: &str, path: &str) -> String {

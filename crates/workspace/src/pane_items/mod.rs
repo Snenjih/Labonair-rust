@@ -333,6 +333,9 @@ impl Workspace {
                 ))
             }
         }
+        if let Some(dir) = self.pane_anchors.get(&source).cloned() {
+            self.pane_anchors.insert(new_id, dir);
+        }
         self.register_pane(new_id, kind);
         Ok(())
     }
@@ -347,6 +350,7 @@ impl Workspace {
         self.retire_sftp_pane(pane, cx);
         self.pane_meta.remove(pane);
         self.explorer_modes.remove(&pane);
+        self.pane_anchors.remove(&pane);
     }
 
     /// Refresh the metadata the tab label and close confirmation read.

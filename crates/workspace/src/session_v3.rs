@@ -52,6 +52,10 @@ pub const MAX_TREE_DEPTH: usize = 64;
 #[serde(rename_all = "camelCase")]
 pub struct EditorPaneState {
     pub path: String,
+    /// Directory the editor was opened from (its pane anchor). Absent in
+    /// older sessions; restore then falls back to the file's directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
     /// Editor-owned view/session payload (opaque to the workspace).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<labonair_editor::EditorSessionSnapshot>,
@@ -606,6 +610,7 @@ pub fn migrate_tab(tab: &TabSnapshot) -> Option<PaneGroupSnapshot> {
             title: None,
             tree: single_leaf(PaneState::Editor(EditorPaneState {
                 path: e.path.clone(),
+                cwd: None,
                 state: e.state.clone(),
             }))?,
         }),
@@ -1221,6 +1226,7 @@ mod tests {
             1 => Some(PaneState::Terminal(local("/t", None))),
             2 | 3 => Some(PaneState::Editor(EditorPaneState {
                 path: format!("/f{id}.rs"),
+                cwd: None,
                 state: None,
             })),
             _ => None,

@@ -141,6 +141,7 @@ impl Workspace {
                 let path = editor.path()?.to_string_lossy().into_owned();
                 Some(PaneState::Editor(EditorPaneState {
                     path,
+                    cwd: self.pane_anchors.get(&pane).cloned(),
                     state: Some(editor.session_snapshot()),
                 }))
             }
@@ -334,6 +335,13 @@ impl Workspace {
                 }
             },
             PaneState::Editor(e) => {
+                self.set_pane_anchor(
+                    pane,
+                    e.cwd.clone().or_else(|| {
+                        let parent = std::path::Path::new(&e.path).parent()?;
+                        Some(parent.to_string_lossy().into_owned())
+                    }),
+                );
                 let shared = documents
                     .iter()
                     .find(|(path, _)| *path == e.path)

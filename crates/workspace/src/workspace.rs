@@ -727,6 +727,16 @@ pub struct Workspace {
     /// Last Explorer target a following pane reported, kept for panes that
     /// have no live cwd (editors).
     explorer_sticky: std::cell::RefCell<Option<context::ExplorerTarget>>,
+    /// Directory a non-terminal pane (editor, diff, git graph, preview) was
+    /// opened from. Set once when the pane is created and never follows
+    /// anything afterwards; `active_cwd` reports it for such panes so the
+    /// breadcrumb, Explorer and Git surfaces keep the path of the context
+    /// the pane came from.
+    pub(crate) pane_anchors: HashMap<PaneId, String>,
+    /// Last local cwd/anchor seen, for focused panes that have neither
+    /// (keymap, SFTP): Git and file surfaces keep their root instead of
+    /// going blank.
+    cwd_sticky: std::cell::RefCell<Option<String>>,
     /// Editor panes that are not the first pane of their document.
     pub(crate) editor_aliases: HashMap<PaneId, crate::pane_items::EditorBinding>,
     /// Per-tab zoom overlay (runtime only).
@@ -1089,6 +1099,8 @@ impl Workspace {
             pane_meta: crate::pane_kind::PaneMetaStore::new(),
             explorer_modes: HashMap::new(),
             explorer_sticky: std::cell::RefCell::new(None),
+            pane_anchors: HashMap::new(),
+            cwd_sticky: std::cell::RefCell::new(None),
             editor_aliases: HashMap::new(),
             zoom: crate::zoom::ZoomState::default(),
             fresh_pane: None,
@@ -1312,7 +1324,7 @@ impl Workspace {
                 .identity()
                 .project_root()
                 .map(std::path::Path::to_path_buf),
-            self.active_cwd(cx),
+            self.context_cwd(cx),
             dirs::home_dir(),
         )
     }
@@ -1398,7 +1410,7 @@ impl Workspace {
                 .identity()
                 .project_root()
                 .map(std::path::Path::to_path_buf),
-            self.active_cwd(cx),
+            self.context_cwd(cx),
         )
     }
 
@@ -1660,7 +1672,44 @@ impl Workspace {
     /// The working directory of the active pane's shell, if known — feeds the
     /// status-bar cwd breadcrumb (T04-003).
     pub fn active_cwd(&self, cx: &App) -> Option<String> {
-        self.active_pane_view(cx).and_then(|v| v.read(cx).cwd())
+        let (_, pane) = self.active_pane(cx)?;
+        self.panes
+            .get(&pane)
+            .and_then(|entry| entry.view.read(cx).cwd())
+            .or_else(|| self.pane_anchors.get(&pane).cloned())
+    }
+
+    /// [`Self::active_cwd`], falling back to the last local one for focused
+    /// panes that have neither a live cwd nor an anchor. Remote (SSH) cwds
+    /// are never remembered: the fallback feeds local-only surfaces.
+    fn context_cwd(&self, cx: &App) -> Option<String> {
+        let live = self.active_cwd(cx);
+        if live.is_some() && self.active_ssh_session_id(cx).is_none() {
+            *self.cwd_sticky.borrow_mut() = live.clone();
+        }
+        live.or_else(|| self.cwd_sticky.borrow().clone())
+    }
+
+    /// The directory a pane opened right now is anchored to: the current
+    /// workspace context (project root, else the focused pane's cwd/anchor),
+    /// falling back to the opened file's own directory.
+    fn anchor_dir(&self, file: Option<&str>, cx: &App) -> Option<String> {
+        self.git_root(cx).or_else(|| {
+            let parent = std::path::Path::new(file?).parent()?;
+            Some(parent.to_string_lossy().into_owned())
+        })
+    }
+
+    /// Pin `pane` to `dir` (see [`Self::pane_anchors`]).
+    pub(crate) fn set_pane_anchor(&mut self, pane: PaneId, dir: Option<String>) {
+        match dir {
+            Some(dir) => {
+                self.pane_anchors.insert(pane, dir);
+            }
+            None => {
+                self.pane_anchors.remove(&pane);
+            }
+        }
     }
 
     /// The working directory to seed a freshly spawned local terminal with.
@@ -1671,7 +1720,7 @@ impl Workspace {
     /// default (home) when there is no project scope either.
     fn terminal_spawn_cwd(&self, cx: &App) -> Option<String> {
         context::resolve_terminal_cwd(
-            self.active_cwd(cx),
+            self.context_cwd(cx),
             self.context
                 .identity()
                 .project_root()
@@ -2557,6 +2606,10 @@ impl Workspace {
             return;
         }
 
+        // Taken before the new tab becomes active, while the context it was
+        // opened from is still the focused one.
+        let anchor = self.anchor_dir(Some(&path), cx);
+
         // Reuse an existing peek tab if present.
         let peek_tab = self
             .tabs
@@ -2593,6 +2646,7 @@ impl Workspace {
             self.editors.insert(tab_id, view);
             tab_id
         };
+        self.set_pane_anchor(tab_id, anchor);
 
         let view = self.editors.get(&self.editor_slot_for_tab(tab_id)).cloned();
         if let Some(view) = view {
@@ -2751,6 +2805,7 @@ impl Workspace {
     }
 
     fn activate_preview_target(&mut self, target: String, cx: &mut Context<Self>) {
+        let anchor = self.anchor_dir(Some(target.as_str()).filter(|t| !t.contains("://")), cx);
         let title = std::path::Path::new(&target)
             .file_name()
             .and_then(|s| s.to_str())
@@ -2790,6 +2845,7 @@ impl Workspace {
             tab_id
         };
 
+        self.set_pane_anchor(tab_id, anchor);
         self.markdown_previews
             .retain(|_, preview_tab_id| *preview_tab_id != tab_id);
         if let Some(view) = self.previews.get(&tab_id).cloned() {
@@ -3367,7 +3423,9 @@ impl Workspace {
                 _ => continue,
             };
             let context = queued.context;
-            let Some(root) = context.root.clone() else {
+            let Some(root) =
+                crate::editor_git_bridge::root_or_file_dir(context.root.clone(), &target.path)
+            else {
                 labonair_notifications::notify_err::<()>(
                     "Open Project Diff",
                     Err("Git actions require an explicit repository workspace.".to_string()),
@@ -4539,8 +4597,9 @@ impl Workspace {
     pub fn open_git_graph_tab(&mut self, cx: &mut Context<Self>) {
         let view = self.ensure_git_graph_view(cx);
         view.update(cx, |graph, cx| graph.clear_file_history(cx));
+        let anchor = self.anchor_dir(None, cx);
         let existing = self.find_singleton_tab(crate::pane_kind::PaneKind::GitGraph, cx);
-        self.tabs.update(cx, |s, cx| {
+        let tab_id = self.tabs.update(cx, |s, cx| {
             let id = match existing {
                 Some(id) => {
                     s.set_active(id, cx);
@@ -4549,7 +4608,18 @@ impl Workspace {
                 None => s.open(TabKind::GitGraph, TabData::default(), cx),
             };
             s.set_custom_title(id, None, cx);
+            id
         });
+        self.anchor_git_graph(tab_id, anchor);
+    }
+
+    /// Pin the singleton Git Graph pane to the directory it was opened for.
+    fn anchor_git_graph(&mut self, tab_id: u64, dir: Option<String>) {
+        let pane = self
+            .pane_meta
+            .find_singleton(crate::pane_kind::PaneKind::GitGraph)
+            .unwrap_or(tab_id);
+        self.set_pane_anchor(pane, dir);
     }
 
     /// Open the Git Graph tab scoped to the history of one local editor file.
@@ -4564,8 +4634,9 @@ impl Workspace {
             .and_then(|name| name.to_str())
             .map(|name| format!("History · {name}"))
             .unwrap_or_else(|| "File History".to_string());
+        let anchor = self.anchor_dir(Some(&path), cx);
         let existing = self.find_singleton_tab(crate::pane_kind::PaneKind::GitGraph, cx);
-        self.tabs.update(cx, |tabs, cx| {
+        let tab_id = self.tabs.update(cx, |tabs, cx| {
             let id = match existing {
                 Some(id) => {
                     tabs.set_active(id, cx);
@@ -4574,7 +4645,9 @@ impl Workspace {
                 None => tabs.open(TabKind::GitGraph, TabData::default(), cx),
             };
             tabs.set_custom_title(id, Some(title), cx);
+            id
         });
+        self.anchor_git_graph(tab_id, anchor);
     }
 
     /// Open (or focus) the single keymap-management tab. The keymap tab
@@ -4679,22 +4752,30 @@ impl Workspace {
                 v
             }
         };
+        let repo_root = req.repo_root.clone();
         view.update(cx, |v, cx| v.apply_request(req, cx));
 
         let existing = self.find_singleton_tab(crate::pane_kind::PaneKind::Diff, cx);
-        self.tabs.update(cx, |s, cx| match existing {
-            Some(id) => s.set_active(id, cx),
-            None => {
-                s.open(TabKind::Diff, TabData::default(), cx);
+        let tab_id = self.tabs.update(cx, |s, cx| match existing {
+            Some(id) => {
+                s.set_active(id, cx);
+                id
             }
+            None => s.open(TabKind::Diff, TabData::default(), cx),
         });
+        // The diff stays on the repository it shows, whatever the focus did.
+        let pane = self
+            .pane_meta
+            .find_singleton(crate::pane_kind::PaneKind::Diff)
+            .unwrap_or(tab_id);
+        self.set_pane_anchor(pane, Some(repo_root));
     }
 
     /// Open the DiffView for `source` over the repository of the active
     /// workspace (`git: View Uncommitted / Unstaged / Staged Changes`).
     pub fn open_diff_source(&mut self, source: labonair_panel::DiffSource, cx: &mut Context<Self>) {
         let context = self.editor_git_bridge.context();
-        let Some(root) = context.root.clone() else {
+        let Some(root) = self.diff_root(&context, cx) else {
             labonair_notifications::notify_err::<()>(
                 "Open Diff",
                 Err("Git actions require an explicit repository workspace.".to_string()),
@@ -4717,6 +4798,17 @@ impl Workspace {
             });
         })
         .detach();
+    }
+
+    /// Repository directory for diffs opened from commands: the project root,
+    /// else (standalone) the active pane's local context directory.
+    fn diff_root(&self, context: &EditorGitContext, cx: &App) -> Option<String> {
+        context.root.clone().or_else(|| {
+            self.active_ssh_session_id(cx)
+                .is_none()
+                .then(|| self.git_root(cx))
+                .flatten()
+        })
     }
 
     /// `git: Diff`: the working tree against HEAD or, with `editorDiffBase =
@@ -4750,7 +4842,7 @@ impl Workspace {
     /// first other local branch); the base can be switched in the view.
     pub fn open_diff_since_default(&mut self, cx: &mut Context<Self>) {
         let context = self.editor_git_bridge.context();
-        let Some(root) = context.root.clone() else {
+        let Some(root) = self.diff_root(&context, cx) else {
             labonair_notifications::notify_err::<()>(
                 "Open Diff",
                 Err("Git actions require an explicit repository workspace.".to_string()),
@@ -4902,7 +4994,7 @@ impl Workspace {
             return;
         };
         let context = self.editor_git_bridge.context();
-        let Some(root) = context.root.clone() else {
+        let Some(root) = self.diff_root(&context, cx) else {
             labonair_notifications::notify_err::<()>(
                 "Open File Diff",
                 Err("Git actions require an explicit repository workspace.".to_string()),
