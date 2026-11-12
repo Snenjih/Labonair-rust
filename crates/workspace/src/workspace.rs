@@ -670,6 +670,9 @@ pub enum WorkspaceEvent {
     NewProjectSpace,
     /// Ask the application shell to open Settings on the Hosts page.
     OpenHosts,
+    /// Ask the application shell to open the palette's language page for the
+    /// active editor.
+    OpenLanguagePicker,
     /// The DiffView cursor moved into this repo-relative file; the Source
     /// Control panel selects the matching entry.
     DiffCursorFile(String),
@@ -1849,6 +1852,25 @@ impl Workspace {
         self.editors
             .get(&self.editor_slot_for_tab(active.id))
             .cloned()
+    }
+
+    /// Language state of the active editor, for the Editor-owned language page.
+    pub fn active_editor_language_picker(
+        &self,
+        cx: &App,
+    ) -> Option<labonair_editor::command_provider::EditorLanguagePicker> {
+        let slot = self.active_editor_slot(cx)?;
+        Some(self.editors.get(&slot)?.read(cx).language_picker())
+    }
+
+    /// Switch the active editor's language mode (`Language::id` or auto-detect).
+    pub fn set_active_editor_language(&mut self, id: &str, cx: &mut Context<Self>) {
+        let Some(slot) = self.active_editor_slot(cx) else {
+            return;
+        };
+        if let Some(editor) = self.editors.get(&slot) {
+            editor.update(cx, |editor, cx| editor.set_language_by_id(id, cx));
+        }
     }
 
     /// Symbols from every editor tab in the active space, for the Editor-owned
@@ -3528,6 +3550,9 @@ impl Workspace {
                     this.pending_preview_focus = true;
                     cx.notify();
                 }
+                EditorEvent::LanguagePickerRequested => {
+                    cx.emit(WorkspaceEvent::OpenLanguagePicker);
+                }
                 EditorEvent::ProjectDiagnosticsChanged => cx.notify(),
                 EditorEvent::ProjectDiagnosticsRefreshRequested => {
                     let source_space = this.tabs.read(cx).get(tab_id).map(|tab| tab.space_id);
@@ -4731,9 +4756,7 @@ impl Workspace {
                     });
                     let close = workspace.clone();
                     view.set_on_close(move |window, cx| {
-                        close
-                            .update(cx, |ws, cx| ws.close_active(window, cx))
-                            .ok();
+                        close.update(cx, |ws, cx| ws.close_active(window, cx)).ok();
                     });
                     view.set_on_commit(move |_window, cx| {
                         workspace
@@ -5068,6 +5091,36 @@ impl Workspace {
     /// (palette "Clear Terminal").
     pub fn clear_active_terminal(&self, cx: &App) {
         self.inject_into_active_terminal("\x1b[2J\x1b[H", cx);
+    }
+
+    pub fn terminal_copy_selection(&self, cx: &mut Context<Self>) {
+        if let Some(view) = self.active_pane_view(cx) {
+            view.update(cx, |view, cx| view.copy_selection(cx));
+        }
+    }
+
+    pub fn terminal_paste(&self, cx: &mut Context<Self>) {
+        if let Some(view) = self.active_pane_view(cx) {
+            view.update(cx, |view, cx| view.paste_from_clipboard(cx));
+        }
+    }
+
+    pub fn terminal_scroll_to_top(&self, cx: &App) {
+        if let Some(view) = self.active_pane_view(cx) {
+            view.read(cx).scroll_to_top();
+        }
+    }
+
+    pub fn terminal_scroll_to_bottom(&self, cx: &App) {
+        if let Some(view) = self.active_pane_view(cx) {
+            view.read(cx).snap_to_bottom();
+        }
+    }
+
+    pub fn terminal_reset(&self, cx: &App) {
+        if let Some(view) = self.active_pane_view(cx) {
+            view.read(cx).reset();
+        }
     }
 
     /// Tear down one pane's session + content view.

@@ -15,7 +15,9 @@ use labonair_command_palette::{
     Command as PaletteCommand, Page as PalettePage, PaletteData, PaletteEvent, PaletteWorkspace,
 };
 use labonair_command_palette_core::{CommandSubmenu, SubmenuRegistry, SubmenuSnapshot};
-use labonair_settings::{EditorSettings, GeneralSettings, Settings as _, ThemeSettings};
+use labonair_settings::{
+    EditorSettings, GeneralSettings, Settings as _, TerminalSettings, ThemeSettings,
+};
 
 use labonair_workspace::{file_finder::FileFinderView, search_overlay::SearchOverlay};
 
@@ -266,6 +268,40 @@ impl AppShell {
             self.workspace.read(cx).hidden_status_bar_items(),
         );
         register_snapshot(&mut submenus, status_bar_hidden);
+
+        register_snapshot(
+            &mut submenus,
+            labonair_settings::command_provider::choice_submenu(
+                CommandSubmenu::UiDensity,
+                "uiDensity",
+                "UI Density",
+                ThemeSettings::try_get(cx)
+                    .map(|s| s.ui_density().to_string())
+                    .as_deref()
+                    .unwrap_or("default"),
+            ),
+        );
+        register_snapshot(
+            &mut submenus,
+            labonair_settings::command_provider::choice_submenu(
+                CommandSubmenu::TerminalCursorStyle,
+                "terminalCursorStyle",
+                "Cursor Style",
+                match TerminalSettings::try_get(cx).map(|s| s.cursor_style()) {
+                    Some(labonair_settings::content::terminal::CursorStyle::Block) => "block",
+                    Some(labonair_settings::content::terminal::CursorStyle::Underline) => {
+                        "underline"
+                    }
+                    _ => "bar",
+                },
+            ),
+        );
+        register_snapshot(
+            &mut submenus,
+            labonair_editor::command_provider::language_submenu(
+                self.workspace.read(cx).active_editor_language_picker(cx),
+            ),
+        );
 
         let editor_themes = labonair_theme::command_provider::editor_themes_submenu(
             labonair_theme::EditorThemeId::ALL

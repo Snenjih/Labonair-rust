@@ -303,13 +303,13 @@ impl TerminalView {
             .filter(|t| !t.is_empty())
     }
 
-    fn copy_selection(&self, cx: &mut Context<Self>) {
+    pub fn copy_selection(&self, cx: &mut Context<Self>) {
         if let Ok(Some(text)) = self.handle.with(|s| s.selection_text()) {
             cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
     }
 
-    fn paste_from_clipboard(&self, cx: &mut Context<Self>) {
+    pub fn paste_from_clipboard(&self, cx: &mut Context<Self>) {
         let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) else {
             return;
         };
@@ -325,8 +325,17 @@ impl TerminalView {
         let _ = self.handle.with(|s| s.scroll(Scroll::Delta(delta)));
     }
 
-    fn snap_to_bottom(&self) {
+    pub fn snap_to_bottom(&self) {
         let _ = self.handle.with(|s| s.scroll(Scroll::Bottom));
+    }
+
+    pub fn scroll_to_top(&self) {
+        let _ = self.handle.with(|s| s.scroll(Scroll::Top));
+    }
+
+    /// Full terminal reset (`ESC c`): clears screen, scrollback and modes.
+    pub fn reset(&self) {
+        self.send_input(b"\x1bc");
     }
 
     fn send_input(&self, bytes: &[u8]) {

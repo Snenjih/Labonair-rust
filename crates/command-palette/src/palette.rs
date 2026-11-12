@@ -102,6 +102,13 @@ fn palette_keybind_display(cx: &App) -> KeybindDisplay {
         .unwrap_or_default()
 }
 
+/// ON/OFF state of a `Toggle: …` row: settings-table toggles first, then the
+/// hand-written ones keyed by [`toggle_pref_key`].
+fn toggle_state(id: CommandId, cx: &App) -> Option<bool> {
+    labonair_settings::command_provider::bool_toggle_state(id, cx)
+        .or_else(|| toggle_pref_key(id).map(|key| palette_toggle_state(key, cx)))
+}
+
 /// Current value of the boolean setting a `Toggle: …` row flips.
 fn palette_toggle_state(key: &str, cx: &App) -> bool {
     match key {
@@ -191,6 +198,9 @@ pub enum Page {
     Diagnostics,
     GitBranches,
     StatusBarHidden,
+    UiDensity,
+    TerminalCursorStyle,
+    EditorLanguage,
 }
 
 impl Page {
@@ -209,6 +219,9 @@ impl Page {
             Page::Diagnostics => "Search diagnostics\u{2026}",
             Page::GitBranches => "Search branches\u{2026}",
             Page::StatusBarHidden => "Search hidden items\u{2026}",
+            Page::UiDensity => "Search densities\u{2026}",
+            Page::TerminalCursorStyle => "Search cursor styles\u{2026}",
+            Page::EditorLanguage => "Search languages\u{2026}",
         }
     }
 
@@ -227,6 +240,9 @@ impl Page {
             Page::Diagnostics => "Diagnostics",
             Page::GitBranches => "Branches",
             Page::StatusBarHidden => "Hidden Status Bar Items",
+            Page::UiDensity => "UI Density",
+            Page::TerminalCursorStyle => "Cursor Style",
+            Page::EditorLanguage => "Language",
         }
     }
 }
@@ -317,6 +333,9 @@ fn page_for(page: CommandSubmenu) -> Page {
         CommandSubmenu::Diagnostics => Page::Diagnostics,
         CommandSubmenu::GitBranches => Page::GitBranches,
         CommandSubmenu::StatusBarHidden => Page::StatusBarHidden,
+        CommandSubmenu::UiDensity => Page::UiDensity,
+        CommandSubmenu::TerminalCursorStyle => Page::TerminalCursorStyle,
+        CommandSubmenu::EditorLanguage => Page::EditorLanguage,
     }
 }
 
@@ -472,6 +491,13 @@ enum RowKey {
     },
     /// Un-hide a status-bar item by id.
     ShowStatusBarItem(String),
+    /// Write an enumerated setting.
+    SetChoice {
+        setting: String,
+        value: String,
+    },
+    /// Switch the active editor's language mode.
+    SetEditorLanguage(String),
     /// Non-actionable (empty-state placeholder line).
     Noop,
 }
@@ -523,6 +549,11 @@ fn row_key_for_action(action: &SubmenuAction) -> RowKey {
             line: *line,
         },
         SubmenuAction::ShowStatusBarItem(id) => RowKey::ShowStatusBarItem(id.clone()),
+        SubmenuAction::SetChoice { setting, value } => RowKey::SetChoice {
+            setting: setting.clone(),
+            value: value.clone(),
+        },
+        SubmenuAction::SetEditorLanguage(id) => RowKey::SetEditorLanguage(id.clone()),
     }
 }
 
@@ -814,8 +845,8 @@ where
                     search_mode(&self.data.commands, &self.query, ctx, mode)
                         .into_iter()
                         .map(|c| {
-                            let right_label = toggle_pref_key(c.id).map(|k| {
-                                if palette_toggle_state(k, cx) {
+                            let right_label = toggle_state(c.id, cx).map(|on| {
+                                if on {
                                     "ON".to_string()
                                 } else {
                                     "OFF".to_string()
@@ -934,6 +965,41 @@ where
                 mode,
                 "No hidden status-bar items",
             ),
+            Page::UiDensity => self.submenu_rows(
+                CommandSubmenu::UiDensity,
+                "UI Density",
+                IconName::PanelTop,
+                mode,
+                "No densities available",
+            ),
+            Page::TerminalCursorStyle => self.submenu_rows(
+                CommandSubmenu::TerminalCursorStyle,
+                "Cursor Style",
+                IconName::Terminal,
+                mode,
+                "No cursor styles available",
+            ),
+            Page::EditorLanguage => {
+                // Language-server controls are `RunCommand` rows; everything
+                // else on the page picks a language mode (syntax grammar).
+                let mut rows = self.submenu_rows(
+                    CommandSubmenu::EditorLanguage,
+                    "Language Mode",
+                    IconName::FileCode,
+                    mode,
+                    "Open a file to change its language",
+                );
+                for row in &mut rows {
+                    if matches!(row.key, RowKey::Command(_)) {
+                        row.section = "Language Server".to_string();
+                        row.icon = Some(IconName::Server);
+                    }
+                }
+                // Stable sort keeps the server group first without reordering
+                // the matches inside either group.
+                rows.sort_by_key(|row| row.section != "Language Server");
+                rows
+            }
         }
     }
 
@@ -1028,6 +1094,18 @@ where
                 self.close(cx);
                 cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
                     SubmenuAction::ShowStatusBarItem(id),
+                )));
+            }
+            RowKey::SetChoice { setting, value } => {
+                self.close(cx);
+                cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
+                    SubmenuAction::SetChoice { setting, value },
+                )));
+            }
+            RowKey::SetEditorLanguage(id) => {
+                self.close(cx);
+                cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
+                    SubmenuAction::SetEditorLanguage(id),
                 )));
             }
         }
@@ -1141,7 +1219,6 @@ where
         card.a *= opacity;
         let sel_fill = t.selected_fill();
         let hover_fill = t.accent();
-        let chip_bg = t.muted();
 
         let page = self.page();
 
@@ -1186,16 +1263,16 @@ where
             .id("palette-list")
             .flex()
             .flex_col()
-            .p(px(8.0))
-            .max_h(px(384.0))
+            .p(px(4.0))
+            .max_h(px(400.0))
             .overflow_y_scroll();
         if result_count == 0 {
             list = list.child(
                 div()
-                    .py(px(40.0))
+                    .py(px(24.0))
                     .flex()
                     .justify_center()
-                    .text_size(px(13.0))
+                    .text_size(px(12.0))
                     .text_color(muted)
                     .child("No results found."),
             );
@@ -1205,8 +1282,9 @@ where
             if last_section.as_deref() != Some(row.section.as_str()) {
                 list = list.child(
                     div()
-                        .px(px(12.0))
-                        .py(px(8.0))
+                        .px(px(8.0))
+                        .pt(px(if i == 0 { 2.0 } else { 8.0 }))
+                        .pb(px(2.0))
                         .text_size(px(10.0))
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(muted.opacity(0.7))
@@ -1227,13 +1305,10 @@ where
                 .id(("palette-row", i))
                 .flex()
                 .items_center()
-                .gap(px(12.0))
-                .mx(px(2.0))
-                .my(px(2.0))
-                .px(px(12.0))
-                .py(px(8.0))
-                .min_h(px(40.0))
-                .rounded(px(8.0))
+                .gap(px(8.0))
+                .px(px(8.0))
+                .h(px(30.0))
+                .rounded(px(6.0))
                 .text_color(fg)
                 // Ciel §8: the selected row is a sunken fill + semibold label,
                 // not an accent bar.
@@ -1243,28 +1318,26 @@ where
                 .when(actionable && !is_sel, |d| d.hover(|s| s.bg(hover_fill)));
 
             if let Some(icon) = row.icon {
-                r = r.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .size(px(28.0))
-                        .rounded(px(6.0))
-                        .bg(chip_bg)
-                        .flex_none()
-                        .child(icon.svg(muted)),
-                );
+                r = r.child(icon.svg(muted).size(px(14.0)).flex_none());
             }
 
-            let mut text_col = div().flex().flex_col().flex_1().min_w_0().child(
-                div()
-                    .text_size(px(13.0))
-                    .truncate()
-                    .child(SharedString::from(row.title.clone())),
-            );
+            let mut text_col = div()
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .flex_1()
+                .min_w_0()
+                .child(
+                    div()
+                        .text_size(px(13.0))
+                        .truncate()
+                        .child(SharedString::from(row.title.clone())),
+                );
             if let Some(sub) = &row.subtitle {
                 text_col = text_col.child(
                     div()
+                        .flex_1()
+                        .min_w_0()
                         .text_size(px(11.0))
                         .text_color(muted)
                         .truncate()
@@ -1273,7 +1346,7 @@ where
             }
             r = r.child(text_col);
 
-            let mut right = div().flex().items_center().gap(px(6.0)).flex_none();
+            let mut right = div().flex().items_center().gap(px(4.0)).flex_none();
             if let Some(label) = &row.right_label {
                 let on = label == "ON" || label == "active";
                 right = right.child(
@@ -1302,11 +1375,11 @@ where
 
         // ── header (breadcrumb or search icon + input) ───────────────────────
         let mut header = div()
-            .h(px(56.0))
+            .h(px(44.0))
             .flex()
             .items_center()
-            .gap(px(12.0))
-            .px(px(16.0))
+            .gap(px(8.0))
+            .px(px(12.0))
             .border_b_1()
             .border_color(border);
         if self.pages.len() > 1 {
@@ -1343,14 +1416,14 @@ where
             }
             header = header.child(crumbs);
         } else {
-            header = header.child(IconName::Search.svg(muted));
+            header = header.child(IconName::Search.svg(muted).size(px(14.0)).flex_none());
         }
         let query_input = self
             .query_input
             .as_ref()
             .map(|input| {
                 search_input(input, c)
-                    .text_size(px(15.0))
+                    .text_size(px(14.0))
                     .into_any_element()
             })
             .unwrap_or_else(|| div().into_any_element());
@@ -1370,7 +1443,7 @@ where
         );
 
         // ── footer ───────────────────────────────────────────────────────────
-        let mut hints = div().flex().items_center().gap(px(12.0)).ml_auto();
+        let mut hints = div().flex().items_center().gap(px(8.0)).ml_auto();
         hints = hints
             .child(keybinding_hint("navigate", ["\u{2191}\u{2193}"], c))
             .child(keybinding_hint("select", ["\u{21b5}"], c));
@@ -1388,9 +1461,9 @@ where
         let footer = div()
             .flex()
             .items_center()
-            .gap(px(12.0))
-            .px(px(16.0))
-            .py(px(8.0))
+            .gap(px(8.0))
+            .px(px(8.0))
+            .py(px(4.0))
             .border_t_1()
             .border_color(border)
             .child(
@@ -1419,9 +1492,9 @@ where
             .child(hints);
 
         let top = match position.as_str() {
-            "high" => px(48.0),
-            "center" => px(160.0),
-            _ => px(96.0),
+            "high" => px(40.0),
+            "center" => px(140.0),
+            _ => px(80.0),
         };
 
         div()
@@ -1445,12 +1518,12 @@ where
                 div()
                     .id("palette-card")
                     .occlude()
-                    .w(px(640.0))
-                    .max_h(px(560.0))
+                    .w(px(560.0))
+                    .max_h(px(500.0))
                     .flex()
                     .flex_col()
                     .overflow_hidden()
-                    .rounded(px(16.0))
+                    .rounded(px(12.0))
                     .bg(card)
                     .border_1()
                     .border_color(border.opacity(0.6))
@@ -1603,6 +1676,9 @@ mod tests {
             Page::Outline,
             Page::GitBranches,
             Page::StatusBarHidden,
+            Page::UiDensity,
+            Page::TerminalCursorStyle,
+            Page::EditorLanguage,
         ];
         let labels: std::collections::HashSet<_> = pages.iter().map(|p| p.label()).collect();
         assert_eq!(labels.len(), pages.len());

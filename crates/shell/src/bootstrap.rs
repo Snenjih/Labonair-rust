@@ -447,6 +447,9 @@ pub(crate) fn bootstrap(
             WorkspaceEvent::OpenHosts => {
                 labonair_settings_ui::open_settings_window(Some("hosts"), cx)
             }
+            WorkspaceEvent::OpenLanguagePicker => {
+                this.show_command_palette(Some(PalettePage::EditorLanguage), _window, cx)
+            }
             WorkspaceEvent::DiffCursorFile(_) => {}
         },
     )
@@ -692,6 +695,9 @@ pub(crate) fn bootstrap(
     labonair_hosts_ui::command_provider::register_palette_action_handlers(
         command_registry.palette_action_handlers_mut(),
         open_host,
+    );
+    labonair_settings::command_provider::register_palette_action_handlers(
+        command_registry.palette_action_handlers_mut(),
     );
     labonair_theme_ui::command_provider::register_palette_action_handlers(
         command_registry.palette_action_handlers_mut(),

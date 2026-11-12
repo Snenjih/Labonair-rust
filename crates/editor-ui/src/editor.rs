@@ -19,9 +19,9 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     canvas, div, px, AnyElement, App, AppContext, Bounds, ClickEvent, ClipboardItem, Context,
     Entity, EventEmitter, FocusHandle, Focusable, HighlightStyle, InteractiveElement, IntoElement,
-    KeyContext, KeyDownEvent, ListAlignment, ListState, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollWheelEvent,
-    SharedString, StatefulInteractiveElement, Styled, StyledText, Task, Window,
+    KeyContext, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, Pixels, Point, Render, ScrollWheelEvent, SharedString,
+    StatefulInteractiveElement, Styled, StyledText, Task, Window,
 };
 use labonair_command_palette_core::CommandId;
 use labonair_filesystem::file::{
@@ -77,10 +77,10 @@ use crate::syntax_theme::EditorPalette;
 use labonair_notifications::{notification_center, Notification};
 use labonair_theme::{modal_scrim, ThemeStore};
 use labonair_ui_kit::{
-    banner, button, button_disabled, context_menu, icon_button_builder, popover_menu,
-    select_popover, text_field, text_field_surface, text_input, ButtonSize, ButtonVariant,
-    IconButtonShape, IconName, InputEvent, InputState, ListItem, MenuItem, Palette, SelectOption,
-    SelectPopoverAnchor, Severity, SubmenuHoverSource, TextFieldState, Tooltip,
+    banner, button, button_disabled, context_menu, icon_button_builder, popover_menu, text_field,
+    text_field_surface, text_input, ButtonSize, ButtonVariant, IconButtonShape, IconName,
+    InputEvent, InputState, ListItem, MenuItem, Palette, Severity, SubmenuHoverSource,
+    TextFieldState, Tooltip,
 };
 
 type CallHierarchyNavigator = Rc<dyn Fn(String, LspPosition, &mut Window, &mut App)>;
@@ -116,6 +116,9 @@ pub enum EditorEvent {
     BufferChanged(EditorBufferSnapshot),
     /// Vim `:q` / `:wq` — the hosting workspace should close this editor's tab.
     CloseRequested,
+    /// The statusbar language control was clicked — the shell presents the
+    /// palette's language page.
+    LanguagePickerRequested,
 }
 
 #[derive(Clone, Debug)]
@@ -1229,10 +1232,7 @@ pub struct EditorView {
     server_fold_ranges: Vec<FoldRange>,
     selection_menu_anchor: Option<Point<Pixels>>,
     editor_controls_anchor: Option<Point<Pixels>>,
-    language_menu_anchor: Option<Point<Pixels>>,
     diagnostics_menu_anchor: Option<Point<Pixels>>,
-    language_service_menu_anchor: Option<Point<Pixels>>,
-    language_list_state: ListState,
     line_ending_menu_anchor: Option<Point<Pixels>>,
     encoding_menu_anchor: Option<Point<Pixels>>,
     selection_drag: Option<EditorSelectionDrag>,
@@ -1568,10 +1568,7 @@ impl EditorView {
             server_fold_ranges: Vec::new(),
             selection_menu_anchor: None,
             editor_controls_anchor: None,
-            language_menu_anchor: None,
             diagnostics_menu_anchor: None,
-            language_service_menu_anchor: None,
-            language_list_state: ListState::new(Language::ALL.len(), ListAlignment::Top, px(32.0)),
             line_ending_menu_anchor: None,
             encoding_menu_anchor: None,
             selection_drag: None,
@@ -4704,6 +4701,43 @@ impl EditorView {
         self.doc.is_dirty()
     }
 
+    /// Language state for the palette's language page.
+    pub fn language_picker(&self) -> labonair_editor::command_provider::EditorLanguagePicker {
+        let status = &self.language_service_snapshot;
+        labonair_editor::command_provider::EditorLanguagePicker {
+            current: self.doc.language,
+            detected: self
+                .doc
+                .file_path()
+                .map(Language::from_path)
+                .unwrap_or(Language::PlainText),
+            server: language_service_controls_available(status).then(|| {
+                labonair_editor::command_provider::LanguageServerPickerRow {
+                    name: status.server.as_str().to_string(),
+                    status: language_service_status_label(status.status).to_string(),
+                    active: matches!(
+                        status.status,
+                        LanguageServiceRuntimeStatus::Starting
+                            | LanguageServiceRuntimeStatus::Running
+                    ),
+                }
+            }),
+        }
+    }
+
+    /// Switch the language mode to `id` (a `Language::id`), or back to the
+    /// path-detected language for [`LANGUAGE_AUTO_DETECT`](labonair_editor::command_provider::LANGUAGE_AUTO_DETECT).
+    pub fn set_language_by_id(&mut self, id: &str, cx: &mut Context<Self>) {
+        let language = if id == labonair_editor::command_provider::LANGUAGE_AUTO_DETECT {
+            Some(self.language_picker().detected)
+        } else {
+            Language::from_id(id)
+        };
+        if let Some(language) = language {
+            self.set_language_mode(language, cx);
+        }
+    }
+
     /// Document symbols for the palette "Go to Symbol" / outline page.
     pub fn document_symbols(&self) -> Vec<labonair_editor::DocumentSymbol> {
         if let Some(symbols) = self.language_service_state.snapshot().document_symbols {
@@ -5313,7 +5347,6 @@ impl EditorView {
         self.encoding_menu_anchor = None;
         self.editor_controls_anchor = None;
         self.diagnostics_menu_anchor = None;
-        self.language_service_menu_anchor = None;
         self.format_on_save_in_flight = false;
         self.save_intent_after_format = None;
         self.pending_navigation = None;
@@ -5434,7 +5467,6 @@ impl EditorView {
         self.encoding_menu_anchor = None;
         self.editor_controls_anchor = None;
         self.diagnostics_menu_anchor = None;
-        self.language_service_menu_anchor = None;
         self.format_on_save_in_flight = false;
         self.save_intent_after_format = None;
         self.invalidate_git_requests();
@@ -8228,73 +8260,6 @@ impl EditorView {
         )
     }
 
-    fn render_language_service_menu(
-        &self,
-        palette: Palette,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        let anchor = self.language_service_menu_anchor?;
-        let status = self.language_service_snapshot.clone();
-        if !language_service_controls_available(&status) {
-            return None;
-        }
-        let editor = cx.entity();
-        let mut items = vec![MenuItem::label(format!(
-            "{} · {}",
-            status.server.as_str(),
-            language_service_status_label(status.status)
-        ))];
-        if let Some(detail) = status.detail {
-            items.push(MenuItem::label(detail));
-        }
-        if matches!(
-            status.status,
-            LanguageServiceRuntimeStatus::Starting | LanguageServiceRuntimeStatus::Running
-        ) {
-            let stop_editor = editor.clone();
-            items.push(
-                MenuItem::new("editor-language-service-stop", "Stop Language Server").on_click(
-                    move |_, _window, app| {
-                        stop_editor.update(app, |this, cx| {
-                            this.language_service_menu_anchor = None;
-                            let _ = this.dispatch_registered_command(
-                                CommandId::EditorStopLanguageServer,
-                                cx,
-                            );
-                        });
-                    },
-                ),
-            );
-        }
-        let restart_label = if status.status == LanguageServiceRuntimeStatus::Fallback {
-            "Start Language Server"
-        } else {
-            "Restart Language Server"
-        };
-        let restart_editor = editor.clone();
-        items.push(
-            MenuItem::new("editor-language-service-restart", restart_label).on_click(
-                move |_, _window, app| {
-                    restart_editor.update(app, |this, cx| {
-                        this.language_service_menu_anchor = None;
-                        let _ = this.dispatch_registered_command(
-                            CommandId::EditorRestartLanguageServer,
-                            cx,
-                        );
-                    });
-                },
-            ),
-        );
-        let dismiss_editor = editor;
-        let dismiss = move |_window: &mut Window, app: &mut App| {
-            dismiss_editor.update(app, |this, cx| {
-                this.language_service_menu_anchor = None;
-                cx.notify();
-            });
-        };
-        Some(popover_menu(anchor, palette, dismiss, items))
-    }
-
     fn render_diagnostics_menu(
         &self,
         palette: Palette,
@@ -8762,14 +8727,12 @@ impl EditorView {
             ButtonSize::Xxs,
         )
         .child(SharedString::from(language.label()))
-        .tooltip(|window, cx| Tooltip::new("Select language mode").build(window, cx))
-        .on_click(cx.listener(|this, event: &ClickEvent, _window, cx| {
-            this.language_menu_anchor = Some(Point {
-                x: event.position().x,
-                y: event.position().y + px(4.0),
-            });
+        .tooltip(|window, cx| {
+            Tooltip::new("Language mode, syntax and language server").build(window, cx)
+        })
+        .on_click(cx.listener(|_this, _: &ClickEvent, _window, cx| {
+            cx.emit(EditorEvent::LanguagePickerRequested);
             cx.stop_propagation();
-            cx.notify();
         }));
         let mut right = div()
             .flex()
@@ -8793,17 +8756,10 @@ impl EditorView {
             .tooltip(|window, cx| {
                 Tooltip::new("Language service status and controls").build(window, cx)
             })
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, event: &MouseDownEvent, _window, cx| {
-                    this.language_service_menu_anchor = Some(Point {
-                        x: event.position.x,
-                        y: event.position.y + px(4.0),
-                    });
-                    cx.stop_propagation();
-                    cx.notify();
-                }),
-            );
+            .on_click(cx.listener(|_this, _: &ClickEvent, _window, cx| {
+                cx.emit(EditorEvent::LanguagePickerRequested);
+                cx.stop_propagation();
+            }));
             right = right.child(trigger);
         }
         if self.diagnostics_revision == Some(snapshot.revision()) {
@@ -8955,11 +8911,9 @@ impl EditorView {
     pub fn render_statusbar(&self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let palette = Palette::from_theme(self.theme.read(cx));
         let menus = self
-            .render_language_menu(palette, cx)
+            .render_line_ending_menu(palette, cx)
             .into_iter()
-            .chain(self.render_line_ending_menu(palette, cx))
             .chain(self.render_encoding_menu(palette, cx))
-            .chain(self.render_language_service_menu(palette, cx))
             .chain(self.render_diagnostics_menu(palette, cx));
         div()
             .relative()
@@ -8970,37 +8924,7 @@ impl EditorView {
             .into_any_element()
     }
 
-    fn render_language_menu(&self, palette: Palette, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let anchor = self.language_menu_anchor?;
-        let options: Vec<SelectOption> = Language::ALL
-            .iter()
-            .map(|language| (language.id().into(), language.label().into()))
-            .collect();
-        let editor = cx.entity();
-        let dismiss_editor = editor.clone();
-        let dismiss = move |_window: &mut Window, app: &mut App| {
-            dismiss_editor.update(app, |this, cx| {
-                this.language_menu_anchor = None;
-                cx.notify();
-            });
-        };
-        let on_select = move |token: &SharedString, _window: &mut Window, app: &mut App| {
-            if let Some(language) = Language::from_id(token.as_ref()) {
-                editor.update(app, |this, cx| this.set_language_mode(language, cx));
-            }
-        };
-        Some(select_popover(
-            SelectPopoverAnchor::new("editor-language", anchor, self.language_list_state.clone()),
-            palette,
-            &options,
-            self.doc.language.id(),
-            dismiss,
-            on_select,
-        ))
-    }
-
     fn set_language_mode(&mut self, language: Language, cx: &mut Context<Self>) {
-        self.language_menu_anchor = None;
         if !self.doc.set_language(language) {
             cx.notify();
             return;

@@ -1,6 +1,7 @@
 //! Editor-owned command metadata.
 
 use crate::editing::{DeleteTarget, EditIntent};
+use crate::language::Language;
 use crate::language_services::{Diagnostic, DiagnosticSeverity};
 use crate::symbols::DocumentSymbol;
 use labonair_command_palette_core::{
@@ -102,6 +103,88 @@ pub struct EditorDiagnosticPickerRow {
     pub tab_id: u64,
     pub file_label: String,
     pub diagnostic: Diagnostic,
+}
+
+/// The language-server half of the language picker: a locally attached server
+/// whose lifecycle the user can control.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LanguageServerPickerRow {
+    pub name: String,
+    /// Display label of the runtime status ("Running", "Crashed", …).
+    pub status: String,
+    /// Starting or running — i.e. there is something to stop.
+    pub active: bool,
+}
+
+/// State of the active editor's language, projected for the palette's
+/// language page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EditorLanguagePicker {
+    pub current: Language,
+    /// The language detected from the file path (target of "Auto Detect").
+    pub detected: Language,
+    pub server: Option<LanguageServerPickerRow>,
+}
+
+/// Wire value of [`SubmenuAction::SetEditorLanguage`] that resets the mode to
+/// the path-detected language.
+pub const LANGUAGE_AUTO_DETECT: &str = "auto";
+
+/// Build the editor-owned language page: language-server controls first, then
+/// the language mode (syntax grammar) choices. `None` (no active editor)
+/// yields an empty page.
+pub fn language_submenu(picker: Option<EditorLanguagePicker>) -> SubmenuSnapshot {
+    let mut items = Vec::new();
+    if let Some(picker) = picker {
+        if let Some(server) = &picker.server {
+            let restart = if server.active { "Restart" } else { "Start" };
+            items.push(SubmenuItem {
+                id: "server-restart".to_string(),
+                title: format!("{restart} Language Server"),
+                subtitle: Some(format!("{} \u{b7} {}", server.name, server.status)),
+                active: false,
+                action: SubmenuAction::RunCommand(CommandId::EditorRestartLanguageServer),
+                secondary: None,
+            });
+            if server.active {
+                items.push(SubmenuItem {
+                    id: "server-stop".to_string(),
+                    title: "Stop Language Server".to_string(),
+                    subtitle: Some(server.name.clone()),
+                    active: false,
+                    action: SubmenuAction::RunCommand(CommandId::EditorStopLanguageServer),
+                    secondary: None,
+                });
+            }
+        }
+        items.push(SubmenuItem {
+            id: LANGUAGE_AUTO_DETECT.to_string(),
+            title: "Auto Detect".to_string(),
+            subtitle: Some(picker.detected.label().to_string()),
+            active: false,
+            action: SubmenuAction::SetEditorLanguage(LANGUAGE_AUTO_DETECT.to_string()),
+            secondary: None,
+        });
+        items.extend(Language::ALL.into_iter().map(|language| SubmenuItem {
+            id: language.id().to_string(),
+            title: language.label().to_string(),
+            subtitle: (language != Language::PlainText).then(|| {
+                if language.has_grammar() {
+                    "Syntax highlighting"
+                } else {
+                    "No highlighting"
+                }
+                .to_string()
+            }),
+            active: language == picker.current,
+            action: SubmenuAction::SetEditorLanguage(language.id().to_string()),
+            secondary: None,
+        }));
+    }
+    SubmenuSnapshot {
+        descriptor: SubmenuDescriptor::new("language", "Language", CommandSubmenu::EditorLanguage),
+        items,
+    }
 }
 
 /// Resolve an editor-owned command ID without making Workspace understand
@@ -519,6 +602,15 @@ impl CommandProvider for EditorCommandProvider {
                 "Editor",
             )
             .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(
+                CommandId::EditorChangeLanguage,
+                "Change Language Mode…",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_aliases(&["syntax", "highlighting", "language server", "lsp"])
+            .with_icon(CommandIcon::FileCode)
+            .with_submenu(CommandSubmenu::EditorLanguage),
             CommandDescriptor::new(CommandId::GoToSymbol, "Go to Symbol…", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_icon(CommandIcon::FileCode)
@@ -903,6 +995,35 @@ impl CommandProvider for EditorCommandProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn language_submenu_lists_server_controls_then_every_language() {
+        let snapshot = language_submenu(Some(EditorLanguagePicker {
+            current: Language::Rust,
+            detected: Language::Python,
+            server: Some(LanguageServerPickerRow {
+                name: "rust-analyzer".to_string(),
+                status: "Running".to_string(),
+                active: true,
+            }),
+        }));
+        let actions: Vec<_> = snapshot.items.iter().map(|item| item.action.clone()).collect();
+        assert_eq!(
+            actions[..2],
+            [
+                SubmenuAction::RunCommand(CommandId::EditorRestartLanguageServer),
+                SubmenuAction::RunCommand(CommandId::EditorStopLanguageServer),
+            ]
+        );
+        assert_eq!(snapshot.items.len(), 2 + 1 + Language::ALL.len());
+        let active: Vec<_> = snapshot.items.iter().filter(|item| item.active).collect();
+        assert_eq!(active.len(), 1);
+        assert_eq!(
+            active[0].action,
+            SubmenuAction::SetEditorLanguage("rust".to_string())
+        );
+        assert!(language_submenu(None).items.is_empty());
+    }
 
     #[test]
     fn outline_submenu_targets_the_source_editor_and_line() {

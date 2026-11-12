@@ -31,6 +31,8 @@ ids = [
   "SelectTab3", "SelectTab4", "SelectTab5", "SelectTab6", "SelectTab7",
   "SelectTab8", "SelectTab9", "DebugCyclePanelDock", "DebugToggleDockZoom",
   "OpenComponentGallery", "ShowStatusBarItem",
+  "ToggleDimInactivePanes", "TogglePaneHighlight", "ToggleReduceMotion",
+  "ToggleTranslucentSurfaces", "ChangeUiDensity",
 ]
 
 [[group]]
@@ -50,7 +52,12 @@ undo_redo = "Not applicable."
 tests = ["crates/terminal/src", "crates/workspace/src/command_provider.rs"]
 visual_evidence = ["Pending: terminal normal, empty, loading, and error states."]
 source_files = ["crates/terminal/src", "crates/workspace/src/command_provider.rs"]
-ids = ["NewTerminalTab", "ClearTerminal"]
+ids = [
+  "NewTerminalTab", "ClearTerminal", "TerminalCopySelection", "TerminalPaste",
+  "TerminalScrollToTop", "TerminalScrollToBottom", "TerminalReset",
+  "ToggleCopyOnSelect", "ToggleRightClickPastes", "ToggleTerminalBell",
+  "ToggleConfirmCloseTerminalTab", "ChangeTerminalCursorStyle",
+]
 
 [[group]]
 id = "keymap"
@@ -215,6 +222,10 @@ ids = [
   "EditorFormatDocument", "EditorFormatSelection", "EditorOrganizeImports",
   "EditorRestartLanguageServer", "EditorStopLanguageServer", "EditorShowDiagnostics",
   "EditorNextDiagnostic", "EditorPreviousDiagnostic",
+  "EditorChangeLanguage", "ToggleRelativeLineNumbers", "ToggleIndentGuides",
+  "ToggleStickyContext", "ToggleFormatOnSave", "ToggleAutoSave", "ToggleGitGutter",
+  "ToggleErrorLens", "ToggleTrimTrailingWhitespace", "ToggleBracketMatching",
+  "ToggleGitBlame", "ToggleDiagnostics", "ToggleSemanticTokens",
 ]
 
 [[group]]

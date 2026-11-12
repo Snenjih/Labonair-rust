@@ -106,6 +106,31 @@ impl TerminalCommandTarget for WorkspaceTerminalCommandTarget {
         self.0
             .update(cx, |workspace, cx| workspace.clear_active_terminal(cx));
     }
+
+    fn copy_selection(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.terminal_copy_selection(cx));
+    }
+
+    fn paste(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.terminal_paste(cx));
+    }
+
+    fn scroll_to_top(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.terminal_scroll_to_top(cx));
+    }
+
+    fn scroll_to_bottom(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.terminal_scroll_to_bottom(cx));
+    }
+
+    fn reset(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.terminal_reset(cx));
+    }
 }
 
 /// Adapt Workspace's active-pane operation to the terminal command contract.
@@ -520,6 +545,12 @@ pub fn register_palette_action_handlers(
                 SubmenuAction::GoToEditorLine { tab_id, line } => {
                     workspace_handle.update(cx, |workspace, cx| {
                         workspace.goto_editor_line(*tab_id, *line, window, cx)
+                    });
+                    true
+                }
+                SubmenuAction::SetEditorLanguage(id) => {
+                    workspace_handle.update(cx, |workspace, cx| {
+                        workspace.set_active_editor_language(id, cx)
                     });
                     true
                 }

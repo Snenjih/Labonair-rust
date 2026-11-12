@@ -231,6 +231,38 @@ pub enum CommandId {
     EditorNextGitChange,
     EditorPreviousGitChange,
     EditorOpenProjectDiff,
+    // Settings toggles (owned by `labonair-settings`, one row per setting).
+    ToggleDimInactivePanes,
+    TogglePaneHighlight,
+    ToggleReduceMotion,
+    ToggleTranslucentSurfaces,
+    ToggleRelativeLineNumbers,
+    ToggleIndentGuides,
+    ToggleStickyContext,
+    ToggleFormatOnSave,
+    ToggleAutoSave,
+    ToggleGitGutter,
+    ToggleErrorLens,
+    ToggleTrimTrailingWhitespace,
+    ToggleBracketMatching,
+    ToggleGitBlame,
+    ToggleDiagnostics,
+    ToggleSemanticTokens,
+    ToggleCopyOnSelect,
+    ToggleRightClickPastes,
+    ToggleTerminalBell,
+    ToggleConfirmCloseTerminalTab,
+    // Settings pickers (open a palette sub-page).
+    ChangeUiDensity,
+    ChangeTerminalCursorStyle,
+    // Editor language mode / syntax / language-server sub-page.
+    EditorChangeLanguage,
+    // Terminal pane actions.
+    TerminalCopySelection,
+    TerminalPaste,
+    TerminalScrollToTop,
+    TerminalScrollToBottom,
+    TerminalReset,
 }
 
 /// A visual hint that the GPUI adapter maps to its icon set.
@@ -279,6 +311,9 @@ pub enum CommandSubmenu {
     Diagnostics,
     GitBranches,
     StatusBarHidden,
+    UiDensity,
+    TerminalCursorStyle,
+    EditorLanguage,
 }
 
 /// Stable identity and presentation metadata for a dynamic submenu.
@@ -322,6 +357,14 @@ pub enum SubmenuAction {
         line: usize,
     },
     ShowStatusBarItem(String),
+    /// Write one enumerated setting (`setting` = JSON key, `value` = its wire
+    /// value). Handled by `labonair-settings`.
+    SetChoice {
+        setting: String,
+        value: String,
+    },
+    /// Switch the active editor's language mode (`Language::id`).
+    SetEditorLanguage(String),
 }
 
 /// A user action emitted by a dynamic palette surface.
@@ -824,6 +867,34 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::EditorNextGitChange, "editor.next-git-change"),
     (CommandId::EditorPreviousGitChange, "editor.previous-git-change"),
     (CommandId::EditorOpenProjectDiff, "editor.open-project-diff"),
+    (CommandId::ToggleDimInactivePanes, "view::ToggleDimInactivePanes"),
+    (CommandId::TogglePaneHighlight, "view::TogglePaneHighlight"),
+    (CommandId::ToggleReduceMotion, "view::ToggleReduceMotion"),
+    (CommandId::ToggleTranslucentSurfaces, "view::ToggleTranslucentSurfaces"),
+    (CommandId::ToggleRelativeLineNumbers, "editor::ToggleRelativeLineNumbers"),
+    (CommandId::ToggleIndentGuides, "editor::ToggleIndentGuides"),
+    (CommandId::ToggleStickyContext, "editor::ToggleStickyContext"),
+    (CommandId::ToggleFormatOnSave, "editor::ToggleFormatOnSave"),
+    (CommandId::ToggleAutoSave, "editor::ToggleAutoSave"),
+    (CommandId::ToggleGitGutter, "editor::ToggleGitGutter"),
+    (CommandId::ToggleErrorLens, "editor::ToggleErrorLens"),
+    (CommandId::ToggleTrimTrailingWhitespace, "editor::ToggleTrimTrailingWhitespace"),
+    (CommandId::ToggleBracketMatching, "editor::ToggleBracketMatching"),
+    (CommandId::ToggleGitBlame, "editor::ToggleGitBlame"),
+    (CommandId::ToggleDiagnostics, "editor::ToggleDiagnostics"),
+    (CommandId::ToggleSemanticTokens, "editor::ToggleSemanticTokens"),
+    (CommandId::ToggleCopyOnSelect, "terminal::ToggleCopyOnSelect"),
+    (CommandId::ToggleRightClickPastes, "terminal::ToggleRightClickPastes"),
+    (CommandId::ToggleTerminalBell, "terminal::ToggleBell"),
+    (CommandId::ToggleConfirmCloseTerminalTab, "terminal::ToggleConfirmClose"),
+    (CommandId::ChangeUiDensity, "view::ChangeUiDensity"),
+    (CommandId::ChangeTerminalCursorStyle, "terminal::ChangeCursorStyle"),
+    (CommandId::EditorChangeLanguage, "editor::ChangeLanguage"),
+    (CommandId::TerminalCopySelection, "terminal::Copy"),
+    (CommandId::TerminalPaste, "terminal::Paste"),
+    (CommandId::TerminalScrollToTop, "terminal::ScrollToTop"),
+    (CommandId::TerminalScrollToBottom, "terminal::ScrollToBottom"),
+    (CommandId::TerminalReset, "terminal::Reset"),
 ];
 
 impl CommandId {
