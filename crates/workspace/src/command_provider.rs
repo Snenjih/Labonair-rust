@@ -174,7 +174,8 @@ impl TerminalCommandTarget for WorkspaceTerminalCommandTarget {
     }
 
     fn quit_and_stop_all_sessions(&self, cx: &mut gpui::App) {
-        crate::host_sessions::quit_and_stop_all_sessions(cx);
+        self.0
+            .update(cx, |workspace, cx| workspace.quit_and_stop_all_sessions(cx));
     }
 }
 

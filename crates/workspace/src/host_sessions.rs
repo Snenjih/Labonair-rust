@@ -3,6 +3,7 @@
 //! every session stopped.
 
 use gpui::{App, Context, Window};
+use labonair_settings::{GeneralSettings, Settings as _};
 use labonair_notifications::{notification_center, Notification};
 use labonair_terminal::{BackgroundSession, DaemonHost};
 
@@ -129,11 +130,20 @@ impl Workspace {
     }
 }
 
-/// `Terminal: Quit and Stop All Sessions`: stop the background host with all
-/// its sessions, then quit. App-bound sessions end with the process as usual.
-pub(crate) fn quit_and_stop_all_sessions(cx: &mut App) {
-    if let Some(host) = running_host(cx) {
-        host.shutdown();
+impl Workspace {
+    /// `Terminal: Quit and Stop All Sessions`: save the session snapshot like a
+    /// normal window close, stop the background host with all its sessions,
+    /// then quit. App-bound sessions end with the process as usual.
+    pub(crate) fn quit_and_stop_all_sessions(&self, cx: &mut App) {
+        if GeneralSettings::try_get(cx)
+            .map(|s| s.session_restore())
+            .unwrap_or(false)
+        {
+            crate::session::save_snapshot(&self.session_snapshot(cx));
+        }
+        if let Some(host) = running_host(cx) {
+            host.shutdown();
+        }
+        cx.quit();
     }
-    cx.quit();
 }
