@@ -36,8 +36,8 @@ use std::sync::{Arc, Mutex, RwLock};
 use crate::engine::{TermDimensions, TerminalEvent};
 use crate::host::{InProcessHost, SessionHost};
 use crate::session::{
-    RemoteFeed, RemoteResizer, RemoteSession, RemoteWriter, SessionAccess, SessionOptions,
-    TerminalSession,
+    ForegroundProcess, RemoteFeed, RemoteResizer, RemoteSession, RemoteWriter, SessionAccess,
+    SessionOptions, TerminalSession,
 };
 use crate::TerminalColors;
 
@@ -87,6 +87,13 @@ impl SessionBackend {
         match self {
             SessionBackend::Local(s) => s.has_foreground_job(),
             SessionBackend::Remote(_) | SessionBackend::Hosted(_) => false,
+        }
+    }
+
+    fn foreground_process(&self) -> Option<ForegroundProcess> {
+        match self {
+            SessionBackend::Local(s) => s.foreground_process(),
+            SessionBackend::Remote(_) | SessionBackend::Hosted(_) => None,
         }
     }
 
@@ -244,6 +251,12 @@ impl SessionHandle {
     /// close-confirmation prompt).
     pub fn has_foreground_job(&self) -> bool {
         self.slot.session.lock().unwrap().has_foreground_job()
+    }
+
+    /// The foreground job (other than the shell) and its process name, for
+    /// local sessions only — remote and hosted sessions report `None`.
+    pub fn foreground_process(&self) -> Option<ForegroundProcess> {
+        self.slot.session.lock().unwrap().foreground_process()
     }
 
     /// Respawn the shell in place after it exited, reusing the original options
@@ -508,6 +521,25 @@ mod tests {
             "close() hung on a foreground job"
         );
         assert!(reg.handle(id).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reports_the_foreground_process_by_name() {
+        let reg = TerminalRegistry::new();
+        let id = reg.create(colors(), dims(), sh(None)).unwrap();
+        let h = reg.handle(id).unwrap();
+        assert_eq!(h.foreground_process(), None, "idle shell is not a job");
+        h.write(b"sleep 300\n").unwrap();
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(5) && h.foreground_process().is_none() {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let fg = h
+            .foreground_process()
+            .expect("sleep never took the foreground");
+        assert_eq!(fg.name, "sleep");
+        reg.close(id);
     }
 
     #[test]

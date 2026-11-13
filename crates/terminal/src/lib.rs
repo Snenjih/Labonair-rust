@@ -18,6 +18,7 @@ pub mod input;
 pub mod palette;
 pub mod registry;
 pub mod render;
+pub mod resume;
 
 // GPUI-free engine, PTY session, scrollback and shell integration live in
 // `labonair-terminal-core` (shared with the detached session host daemon);
@@ -39,7 +40,7 @@ pub use palette::{ansi_self_test, TerminalColors, TerminalColorsExt};
 pub use registry::{SessionBackend, SessionHandle, SessionId, SessionStatus, TerminalRegistry};
 pub use render::{batch_runs, grid_size, RunStyle, StyledRun};
 pub use session::{
-    RemoteFeed, RemoteResizer, RemoteSession, RemoteWriter, SessionAccess, SessionOptions,
-    TerminalContext, TerminalSession,
+    ForegroundProcess, RemoteFeed, RemoteResizer, RemoteSession, RemoteWriter, SessionAccess,
+    SessionOptions, TerminalContext, TerminalSession,
 };
 pub use shell_integration::Shell;

@@ -66,6 +66,54 @@ pub struct TerminalContext {
     pub lines: Vec<String>,
 }
 
+/// The job currently in the foreground of a local session's tty.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForegroundProcess {
+    /// Executable name as the OS reports it (not normalised).
+    pub name: String,
+    pub pid: u32,
+}
+
+/// Name of process `pid`, or `None` if it vanished or the lookup is unsupported.
+#[cfg(target_os = "macos")]
+fn process_name(pid: u32) -> Option<String> {
+    // `proc_name` returns the name the process was exec'd under (a symlink such
+    // as `claude`), whereas `proc_pidpath` resolves to the real file, which for
+    // versioned installs is e.g. `.../versions/2.1.45`. Prefer the former.
+    let mut buf = [0u8; 256];
+    let n = unsafe {
+        libc::proc_name(
+            pid as libc::c_int,
+            buf.as_mut_ptr().cast(),
+            buf.len() as u32,
+        )
+    };
+    if n > 0 {
+        return Some(String::from_utf8_lossy(&buf[..n as usize]).into_owned());
+    }
+    let n = unsafe {
+        libc::proc_pidpath(
+            pid as libc::c_int,
+            buf.as_mut_ptr().cast(),
+            buf.len() as u32,
+        )
+    };
+    if n <= 0 {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&buf[..n as usize]).into_owned();
+    path.rsplit('/').next().map(str::to_string)
+}
+
+// ponytail: `comm` is the exec name (15 chars max); an interpreter-run tool
+// shows as `node`/`python`. Read /proc/<pid>/cmdline if that ever matters.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn process_name(pid: u32) -> Option<String> {
+    let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).ok()?;
+    let comm = comm.trim();
+    (!comm.is_empty()).then(|| comm.to_string())
+}
+
 /// A running local terminal session.
 pub struct TerminalSession {
     emulator: Arc<Mutex<TerminalEmulator>>,
@@ -288,6 +336,28 @@ impl TerminalSession {
     #[cfg(not(unix))]
     pub fn has_foreground_job(&self) -> bool {
         false
+    }
+
+    /// The foreground job owning the tty (see [`Self::has_foreground_job`]),
+    /// with its process name, or `None` while the shell itself is idle at its
+    /// prompt or the platform cannot tell. Used at session-snapshot time to
+    /// pick a resume command for the pane.
+    #[cfg(unix)]
+    pub fn foreground_process(&self) -> Option<ForegroundProcess> {
+        let shell_pid = self.shell_pid?;
+        let pid = self.master.process_group_leader().filter(|p| *p > 0)? as u32;
+        if pid == shell_pid {
+            return None;
+        }
+        Some(ForegroundProcess {
+            name: process_name(pid)?,
+            pid,
+        })
+    }
+
+    #[cfg(not(unix))]
+    pub fn foreground_process(&self) -> Option<ForegroundProcess> {
+        None
     }
 
     /// Politely ask the shell (and its foreground job, which shares the

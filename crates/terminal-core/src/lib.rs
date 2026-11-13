@@ -25,7 +25,7 @@ pub use engine::{
 };
 pub use palette::{ansi_self_test, TerminalColors};
 pub use session::{
-    RemoteFeed, RemoteResizer, RemoteSession, RemoteWriter, SessionAccess, SessionOptions,
-    TerminalContext, TerminalSession,
+    ForegroundProcess, RemoteFeed, RemoteResizer, RemoteSession, RemoteWriter, SessionAccess,
+    SessionOptions, TerminalContext, TerminalSession,
 };
 pub use shell_integration::Shell;
