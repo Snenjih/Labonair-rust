@@ -2,6 +2,7 @@
 
 use crate::MergeFrom;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// Terminal cursor shape.
 #[derive(
@@ -58,6 +59,47 @@ impl MergeFrom for FastScrollModifier {
     }
 }
 
+/// Where new terminal/SSH/SFTP sessions live. Fixed per session at creation;
+/// changing the setting only affects sessions opened afterwards.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionHostMode {
+    /// Sessions end with the app (in-process).
+    #[default]
+    App,
+    /// Sessions run in the background `labonair-host` daemon and survive quit.
+    Detached,
+}
+
+impl MergeFrom for SessionHostMode {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
+/// Whether a restored terminal re-runs the command that was in the foreground
+/// when the session was saved (e.g. `claude --continue`).
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum ResumeOnRestore {
+    Off,
+    /// Offer a one-click banner in the pane.
+    #[default]
+    Ask,
+    /// Re-run the command without asking.
+    Auto,
+}
+
+impl MergeFrom for ResumeOnRestore {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
 #[derive(
     Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema, MergeFrom,
 )]
@@ -107,6 +149,18 @@ pub struct TerminalContent {
     /// (e.g. `"-l --foo"`). No quoting support — use a wrapper script for
     /// arguments that contain spaces.
     pub terminal_shell_args: Option<String>,
+    /// Where new sessions live: `app` (end with the app) or `detached`
+    /// (background host that survives quit). Unix only.
+    pub session_host: Option<SessionHostMode>,
+    /// Re-run the foreground command of a restored terminal: `off`, `ask`
+    /// (banner) or `auto`.
+    pub resume_on_restore: Option<ResumeOnRestore>,
+    /// User overrides for the resume table: foreground process name -> command
+    /// to re-run (e.g. `"claude": "claude --continue"`). Built-in defaults live
+    /// in code; an entry here replaces the default for that process.
+    pub resume_commands: Option<BTreeMap<String, String>>,
+    /// Scrollback rows the detached session host keeps per session.
+    pub detached_scrollback_lines: Option<u32>,
 }
 
 /// Parse [`TerminalContent::terminal_environment_variables`]'s `KEY=value,
@@ -166,6 +220,33 @@ impl TerminalContent {
             terminal_opacity: Some(100),
             terminal_environment_variables: Some(String::new()),
             terminal_shell_args: Some(String::new()),
+            session_host: Some(SessionHostMode::App),
+            resume_on_restore: Some(ResumeOnRestore::Ask),
+            resume_commands: Some(BTreeMap::new()),
+            detached_scrollback_lines: Some(5_000),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_host_settings_default_and_parse() {
+        let d = TerminalContent::defaults();
+        assert_eq!(d.session_host, Some(SessionHostMode::App));
+        assert_eq!(d.resume_on_restore, Some(ResumeOnRestore::Ask));
+        assert_eq!(d.detached_scrollback_lines, Some(5_000));
+
+        let parsed: TerminalContent = serde_json::from_str(
+            r#"{"sessionHost":"detached","resumeOnRestore":"auto",
+                "resumeCommands":{"claude":"claude -c"},"detachedScrollbackLines":100}"#,
+        )
+        .unwrap();
+        assert_eq!(parsed.session_host, Some(SessionHostMode::Detached));
+        assert_eq!(parsed.resume_on_restore, Some(ResumeOnRestore::Auto));
+        assert_eq!(parsed.resume_commands.unwrap()["claude"], "claude -c");
+        assert_eq!(parsed.detached_scrollback_lines, Some(100));
     }
 }

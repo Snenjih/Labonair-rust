@@ -427,6 +427,10 @@ fn terminal_from(p: &Preferences) -> TerminalContent {
         // No v1 `Preferences` equivalent — inherits the shipped default.
         terminal_environment_variables: TerminalContent::defaults().terminal_environment_variables,
         terminal_shell_args: TerminalContent::defaults().terminal_shell_args,
+        session_host: None,
+        resume_on_restore: None,
+        resume_commands: None,
+        detached_scrollback_lines: None,
     }
 }
 

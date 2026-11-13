@@ -20,8 +20,8 @@ use labonair_settings_content::{
     file_manager::{default_sftp_columns, FileManagerContent, SftpColumn},
     general::{GeneralContent, StartupTab, ThemePref},
     terminal::{
-        CursorStyle, FastScrollModifier, TerminalContent, TerminalFontWeight,
-        DEFAULT_WORD_SEPARATOR,
+        CursorStyle, FastScrollModifier, ResumeOnRestore, SessionHostMode, TerminalContent,
+        TerminalFontWeight, DEFAULT_WORD_SEPARATOR,
     },
     workspace::{PaletteSearchMode, WorkspaceContent},
     MergeFrom, SettingsContent,
@@ -374,6 +374,26 @@ impl TerminalSettings {
             .as_deref()
             .map(labonair_settings_content::terminal::parse_shell_args)
             .unwrap_or_default()
+    }
+
+    /// Where new sessions live (`app` by default).
+    pub fn session_host(&self) -> SessionHostMode {
+        self.0.session_host.unwrap_or_default()
+    }
+
+    /// Whether a restored terminal re-runs its former foreground command.
+    pub fn resume_on_restore(&self) -> ResumeOnRestore {
+        self.0.resume_on_restore.unwrap_or_default()
+    }
+
+    /// User overrides of the foreground-process -> resume-command table.
+    pub fn resume_commands(&self) -> std::collections::BTreeMap<String, String> {
+        self.0.resume_commands.clone().unwrap_or_default()
+    }
+
+    /// Scrollback rows the detached session host keeps per session.
+    pub fn detached_scrollback_lines(&self) -> u32 {
+        self.0.detached_scrollback_lines.unwrap_or(5_000)
     }
 }
 
@@ -1253,6 +1273,22 @@ mod tests {
         assert_eq!(s.line_height(), 2.5, "line height clamps to the range max");
         assert_eq!(s.cursor_blink_interval_ms(), 100, "interval clamps up");
         assert_eq!(s.scroll_sensitivity(), 1, "sensitivity floors at 1");
+    }
+
+    #[test]
+    fn terminal_session_host_accessors_default_and_override() {
+        let base = TerminalSettings::from_settings(&SettingsContent::default());
+        assert_eq!(base.session_host(), SessionHostMode::App);
+        assert_eq!(base.resume_on_restore(), ResumeOnRestore::Ask);
+        assert!(base.resume_commands().is_empty());
+        assert_eq!(base.detached_scrollback_lines(), 5_000);
+
+        let mut content = SettingsContent::default();
+        content.terminal.session_host = Some(SessionHostMode::Detached);
+        content.terminal.resume_commands = Some([("claude".into(), "claude -c".into())].into());
+        let s = TerminalSettings::from_settings(&content);
+        assert_eq!(s.session_host(), SessionHostMode::Detached);
+        assert_eq!(s.resume_commands()["claude"], "claude -c");
     }
 
     #[test]

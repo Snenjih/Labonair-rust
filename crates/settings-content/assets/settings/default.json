@@ -93,7 +93,16 @@
     // "KEY=value,KEY2=value2" applied to every new shell.
     "terminalEnvironmentVariables": "",
     // Whitespace-separated extra shell arguments (no quoting support).
-    "terminalShellArgs": ""
+    "terminalShellArgs": "",
+    // "app" (sessions end with the app) | "detached" (background host keeps
+    // sessions alive after quit). Applies to newly opened sessions only.
+    "sessionHost": "app",
+    // "off" | "ask" | "auto" — re-run the foreground command of a restored terminal.
+    "resumeOnRestore": "ask",
+    // Process name -> command to re-run, e.g. { "claude": "claude --continue" }.
+    "resumeCommands": {},
+    // Scrollback rows the detached session host keeps per session.
+    "detachedScrollbackLines": 5000
   },
 
   "editor": {
