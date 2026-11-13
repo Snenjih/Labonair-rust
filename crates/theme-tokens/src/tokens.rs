@@ -151,8 +151,8 @@ pub enum VibrancyLayer {
     Popover,
     Control,
     Divider,
-    /// The terminal surface fill (the terminal's own opacity setting governs
-    /// it when no image is showing).
+    /// The terminal surface fill; matches `Canvas` so terminals are as glassy as
+    /// the rest of the app (on top of the terminal's own opacity setting).
     Terminal,
 }
 
@@ -168,7 +168,7 @@ impl VibrancyLayer {
             Self::Popover => 0.97,
             Self::Control => 0.94,
             Self::Divider => 0.56,
-            Self::Terminal => 1.0,
+            Self::Terminal => 0.92,
         }
     }
 

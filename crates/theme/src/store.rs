@@ -881,14 +881,17 @@ impl ThemeStore {
     /// Layer colors of the diff view (see [`DiffSurface`]).
     pub fn diff_surface(&self) -> DiffSurface {
         let core = &self.theme().core;
-        let code = Hsla {
+        // Layers are mixed over the opaque hue, then carry the canvas alpha so
+        // the diff view is as translucent as every other surface.
+        let canvas = self.background();
+        let solid = Hsla {
             a: 1.0,
             ..core.background
         };
         let fg = core.foreground;
-        let over = |alpha: f32| code.blend(fg.opacity(alpha));
+        let over = |alpha: f32| solid.blend(fg.opacity(alpha)).opacity(canvas.a);
         DiffSurface {
-            code,
+            code: canvas,
             gutter: over(0.03),
             gutter_border: fg.opacity(0.10),
             separator: over(0.055),

@@ -1294,7 +1294,7 @@ impl Render for ProjectDiffView {
                     .top_0()
                     .left_0()
                     .right_0()
-                    .bg(surface.code)
+                    .bg(surface.code.alpha(1.0))
                     .shadow_md()
                     .font(font.clone())
                     .text_size(px(font_px))
