@@ -208,7 +208,7 @@ impl IconButtonBuilder {
         .opacity(alpha);
         let glyph = icon
             .svg(color)
-            .size(palette.control_space(icon_size.unwrap_or_else(|| size.icon_size())));
+            .size(palette.control_space(icon_size.unwrap_or_else(|| button_size.icon_size())));
         let mut icon_content = div()
             .relative()
             .flex()

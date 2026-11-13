@@ -859,7 +859,15 @@ impl Render for SearchOverlay {
                         .py_1()
                         .cursor_pointer()
                         .hover(|style| style.bg(palette.accent))
-                        .child(if collapsed { "▸" } else { "▾" })
+                        .child(
+                            if collapsed {
+                                labonair_ui_kit::IconName::ChevronRight
+                            } else {
+                                labonair_ui_kit::IconName::ChevronDown
+                            }
+                            .svg(palette.muted)
+                            .size(px(14.0)),
+                        )
                         .child(div().flex_1().text_xs().text_color(palette.fg).child(path))
                         .child(
                             div()

@@ -108,14 +108,14 @@ impl ButtonSize {
     /// fills the hit area; labelled buttons keep the smaller text-adjacent size.
     pub(crate) fn icon_size(self) -> f32 {
         match self {
-            ButtonSize::Xs
-            | ButtonSize::IconXs
-            | ButtonSize::None
-            | ButtonSize::IconNone
-            | ButtonSize::Xxs
-            | ButtonSize::IconXxs => 12.0,
-            ButtonSize::Default | ButtonSize::Sm | ButtonSize::Icon | ButtonSize::IconSm => 14.0,
-            ButtonSize::Lg | ButtonSize::IconLg => 16.0,
+            ButtonSize::Icon => 16.0,
+            ButtonSize::IconXs => 14.0,
+            ButtonSize::IconSm => 18.0,
+            ButtonSize::IconLg => 20.0,
+            ButtonSize::IconNone | ButtonSize::IconXxs => 12.0,
+            ButtonSize::Xs | ButtonSize::None | ButtonSize::Xxs => 12.0,
+            ButtonSize::Default | ButtonSize::Sm => 14.0,
+            ButtonSize::Lg => 16.0,
         }
     }
 

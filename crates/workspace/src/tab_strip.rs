@@ -197,7 +197,11 @@ impl Workspace {
                     d.child(caret(fg, 12.0))
                 })
                 .into_any_element(),
-            None => div().child(label.clone()).into_any_element(),
+            // Fill mode: the title takes the slack so the close button sits flush right.
+            None => div()
+                .when(fill, |d| d.flex_1().min_w_0())
+                .child(label.clone())
+                .into_any_element(),
         };
 
         let view = cx.entity();

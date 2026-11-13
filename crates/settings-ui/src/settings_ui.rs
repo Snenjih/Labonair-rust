@@ -16,6 +16,7 @@ mod panes;
 mod schema;
 mod search;
 mod services;
+mod terminal_preview;
 mod view;
 mod window;
 

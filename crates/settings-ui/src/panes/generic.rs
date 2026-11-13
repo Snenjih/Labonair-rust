@@ -1113,7 +1113,14 @@ impl SettingsView {
         } else {
             Vec::new()
         };
-        let blocks = section_blocks(items, &self.all_fields, &leftover);
+        let mut blocks = section_blocks(items, &self.all_fields, &leftover);
+        // The Terminal page opens its Font card with a live sample of the
+        // terminal, so typography edits show up right where they are made.
+        if self.pages[self.active_area].key == "terminal" && self.active_subpage.is_none() {
+            if let Some(font) = blocks.iter_mut().find(|b| b.title == Some("Font")) {
+                font.items.insert(0, SectionItem::TerminalPreview);
+            }
+        }
 
         // A sidebar anchor click or a search jump asks to land on a section or
         // a specific field; both resolve to a block index.
@@ -1267,6 +1274,20 @@ impl SettingsView {
                 SectionItem::OwnerSurface(id) => {
                     self.render_owner_surface_row(*id, embed, window, c, cx)
                 }
+                SectionItem::TerminalPreview => {
+                    let theme = self.theme.clone();
+                    let preview = self
+                        .terminal_preview
+                        .get_or_insert_with(|| {
+                            cx.new(|cx| crate::terminal_preview::TerminalPreview::new(theme, cx))
+                        })
+                        .clone();
+                    div()
+                        .w_full()
+                        .p(c.space(12.0))
+                        .child(preview)
+                        .into_any_element()
+                }
             };
             group = group.row(row);
         }
@@ -1372,6 +1393,8 @@ struct SectionBlock {
 enum SectionItem {
     Field(AnyField),
     OwnerSurface(SettingsSurfaceId),
+    /// Live terminal sample (`crate::terminal_preview`).
+    TerminalPreview,
 }
 
 /// Group a page's items into section cards. Rows before the first header form

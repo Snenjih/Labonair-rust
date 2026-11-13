@@ -11147,7 +11147,11 @@ impl Render for EditorView {
             if !continuation {
                 if let Some(marker) = fold_marker_for_line(&fold_candidates, &self.folds, line) {
                     let fold_view = cx.entity();
-                    let fold_label = if marker.folded { "▸" } else { "▾" };
+                    let fold_icon = if marker.folded {
+                        IconName::ChevronRight
+                    } else {
+                        IconName::ChevronDown
+                    };
                     let fold_tooltip = if marker.folded {
                         "Expand folded region"
                     } else {
@@ -11162,7 +11166,7 @@ impl Render for EditorView {
                         )
                         .tab_index(0)
                         .tooltip(move |window, cx| Tooltip::new(fold_tooltip).build(window, cx))
-                        .child(fold_label)
+                        .child(fold_icon.svg(ui_palette.muted).size(px(14.0)))
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(|_, _: &MouseDownEvent, _window, cx| cx.stop_propagation()),

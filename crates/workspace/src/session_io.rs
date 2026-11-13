@@ -277,6 +277,10 @@ impl Workspace {
                 s.set_custom_title(tab_id, Some(title.clone()), cx)
             });
         }
+        // Terminal panes are not registered by `restore_pane`; without metadata
+        // the group label reads "Empty" until the tab is first selected.
+        self.ensure_layout(tab_id, cx);
+        self.sync_pane_meta(cx);
         self.sync_tab_kind(tab_id, cx);
         Some(tab_id)
     }

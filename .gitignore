@@ -24,5 +24,6 @@ temp/
 __pycache__/
 *.py[cod]
 
+reference/
 # reference-src/ is the frozen in-repo reference copy and IS tracked.
 # This fork is standalone — no external symlink to any other Labonair repo.

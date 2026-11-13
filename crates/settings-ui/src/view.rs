@@ -218,6 +218,8 @@ pub struct SettingsView {
     /// State for the virtualized variable-height content list.
     pub(crate) content_list: ListState,
     pub(crate) content_list_key: Option<String>,
+    /// Live terminal sample above the Terminal page, built on first use.
+    pub(crate) terminal_preview: Option<Entity<crate::terminal_preview::TerminalPreview>>,
     // ── T19-007: global settings search ─────────────────────────────────
     /// Every SettingsContent field, indexed once (`open()`) — never rebuilt
     /// per keystroke (task Warnung).
@@ -354,6 +356,7 @@ impl SettingsView {
             scroll_to_section: None,
             content_list: ListState::new(0, ListAlignment::Top, px(120.0)),
             content_list_key: None,
+            terminal_preview: None,
             search_index,
             search_results: Vec::new(),
             search_selected: 0,
