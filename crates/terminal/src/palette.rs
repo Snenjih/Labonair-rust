@@ -260,12 +260,12 @@ mod tests {
     }
 
     #[test]
-    fn dark_values_match_ciel_tokens() {
+    fn dark_values_match_the_default_theme_tokens() {
         let c = TerminalColors::from_theme(&Theme::dark());
-        // .dark --terminal-ansi-yellow #ff9412
-        assert!(close(c.normal[3], [0xFF, 0x94, 0x12], 2));
-        // .dark --terminal-ansi-red #fd2f3b
-        assert!(close(c.normal[1], [0xFD, 0x2F, 0x3B], 2));
+        // dark --terminal-ansi-yellow #e5c07b (the softened floating-layer palette)
+        assert!(close(c.normal[3], [0xE5, 0xC0, 0x7B], 2));
+        // dark --terminal-ansi-red #ff6b7f
+        assert!(close(c.normal[1], [0xFF, 0x6B, 0x7F], 2));
         // --terminal-bright-white / --terminal-bright-foreground == white
         assert!(close(c.bright[7], [0xFF, 0xFF, 0xFF], 2));
         assert!(close(c.bright_foreground, [0xFF, 0xFF, 0xFF], 2));

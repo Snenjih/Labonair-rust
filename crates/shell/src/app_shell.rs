@@ -207,6 +207,15 @@ impl Render for AppShell {
             (t.ui_font(), t.ui_font_size())
         };
         let background_layer = self.background.read(cx).layer(LayerScope::App);
+        // The floating layer: in the comfortable pane layout the window has a
+        // gradient canvas that the titlebar, the cards and the statusbar sit
+        // on. Compact keeps the flat, opaque chrome.
+        let canvas = {
+            let theme = self.theme.read(cx);
+            (theme.metrics().pane_layout == labonair_theme::PaneLayout::Comfortable).then(|| {
+                labonair_ui_kit::canvas_backdrop(labonair_ui_kit::Palette::from_theme(theme))
+            })
+        };
         let show_statusbar = labonair_settings::ThemeSettings::try_get(cx)
             .map(|s| s.zen_mode_show_statusbar())
             .unwrap_or(true);
@@ -230,7 +239,8 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::act_zoom_window));
         let root = crate::commands::attach_action_handlers(root, can_split, has_split, cx);
 
-        root.children(background_layer)
+        root.children(canvas)
+            .children(background_layer)
             .child(self.titlebar.clone())
             .child(
                 div()

@@ -61,10 +61,11 @@ pub fn dialog_surface(id: impl Into<ElementId>, palette: Palette) -> Stateful<Di
         .flex_col()
         .gap(palette.space(12.0))
         .p(palette.space(24.0))
-        // Ciel dialogs carry a 1px `line-strong` border and no shadow.
+        // A 1px `line-strong` rim plus the theme's `modal` shadow tier.
         .rounded(px(palette.radius.xl4))
         .border_1()
         .border_color(palette.line_strong)
+        .shadow(palette.modal_shadow())
         .bg(palette.popover)
         .text_color(palette.fg)
 }

@@ -1538,7 +1538,7 @@ where
                     .bg(card)
                     .border_1()
                     .border_color(border.opacity(0.6))
-                    .shadow_lg()
+                    .shadow(c.modal_shadow())
                     .child(header)
                     .child(div().flex().flex_col().min_h_0().child(list))
                     .child(footer)

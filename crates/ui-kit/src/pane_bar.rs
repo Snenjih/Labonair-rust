@@ -24,14 +24,14 @@
 //! The whole bar is the drag handle: `render` returns a `Stateful<Div>` so the
 //! caller attaches `on_drag` itself (the payload type lives in the workspace).
 //! Action buttons swallow mouse-down so pressing one never starts a drag. They
-//! are always visible, active or not.
+//! show on the focused bar and on hover.
 
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder, px, AnyElement, App, Div, ElementId, FontWeight,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, SharedString, Stateful,
-    StatefulInteractiveElement, Styled, Window,
+    div, linear_color_stop, linear_gradient, prelude::FluentBuilder, px, relative, AnyElement, App,
+    Div, ElementId, FontWeight, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    Pixels, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
 };
 
 use crate::button::{ButtonSize, ButtonVariant};
@@ -42,7 +42,7 @@ use crate::palette::Palette;
 
 /// The gap between panes in the comfortable layout, in logical pixels before
 /// density scaling.
-pub const PANE_GAP: f32 = 6.0;
+pub const PANE_GAP: f32 = 8.0;
 
 /// The `appearance.paneLayout` choice.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -71,10 +71,12 @@ impl PaneLayoutStyle {
     }
 }
 
-/// The frame around one pane: comfortable panes get a `radius.lg` corner, a
-/// 1px `line_subtle` ring (`line_strong` while `focused`) and the main fill;
-/// compact panes only get the fill. The caller sizes it and adds the bar and
-/// body as children.
+/// The frame around one pane. Comfortable panes are floating **cards**: a
+/// `radius.lg` corner, the `float.pane` fill, a 1px `float.pane_border` rim and
+/// the `shadows.pane` tier; focusing swaps in `float.pane_focused`, the
+/// `pane_border_focused` rim and the stronger `shadows.pane_focused` tier.
+/// Compact panes are flush and only get the canvas fill. The caller sizes it
+/// and adds the bar and body as children.
 pub fn pane_frame(
     id: impl Into<ElementId>,
     c: Palette,
@@ -88,17 +90,68 @@ pub fn pane_frame(
         .min_w_0()
         .min_h_0()
         .overflow_hidden()
-        .bg(c.bg)
+        .when(!style.is_framed(), |frame| frame.bg(c.bg))
         .when(style.is_framed(), |frame| {
             frame
+                .bg(if focused { c.pane_focused } else { c.pane })
                 .rounded(px(c.radius.lg))
                 .border_1()
                 .border_color(if focused {
-                    c.line_strong
+                    c.pane_line_focused
                 } else {
-                    c.line_subtle
+                    c.pane_line
                 })
+                .shadow(c.pane_shadow(focused))
         })
+}
+
+/// The window's canvas: the gradient the floating cards sit on. Four stops
+/// from `float.canvas_top` to `canvas_bottom` (split 38 % / 32 % / 30 %) and a
+/// `canvas_tint` wash over the right 65 %. Place it as the **first** child of
+/// the window root; it is absolute and fills its parent. Give the floating
+/// chrome (titlebar, statusbar) no fill of its own so it shows through.
+pub fn canvas_backdrop(c: Palette) -> Div {
+    let band = |height: f32, from: gpui::Hsla, to: gpui::Hsla| {
+        div()
+            .w_full()
+            .h(relative(height))
+            .flex_shrink_0()
+            .bg(linear_gradient(
+                180.0,
+                linear_color_stop(from, 0.0),
+                linear_color_stop(to, 1.0),
+            ))
+    };
+    let [top, mid, low, bottom] = c.canvas;
+    let clear = gpui::Hsla {
+        a: 0.0,
+        ..c.canvas_tint
+    };
+    div()
+        .absolute()
+        .inset_0()
+        .flex()
+        .flex_col()
+        .child(band(0.38, top, mid))
+        .child(band(0.32, mid, low))
+        .child(div().w_full().flex_1().bg(linear_gradient(
+            180.0,
+            linear_color_stop(low, 0.0),
+            linear_color_stop(bottom, 1.0),
+        )))
+        .child(
+            div()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .right_0()
+                .left(relative(0.35))
+                .bg(linear_gradient(
+                    90.0,
+                    linear_color_stop(clear, 0.0),
+                    linear_color_stop(c.canvas_tint, 1.0),
+                )),
+        )
 }
 
 type PaneCallback = Rc<dyn Fn(&mut Window, &mut App)>;
@@ -294,6 +347,7 @@ impl PaneBar {
             })
             .collect();
 
+        let group = SharedString::from(format!("{id}-group"));
         let mut bar = div()
             .id(ElementId::from(id.clone()))
             .flex()
@@ -302,21 +356,34 @@ impl PaneBar {
             .flex_shrink_0()
             .gap(c.space(6.0))
             .h(density.pane_bar_height())
-            .px(c.space(8.0))
-            .border_b_1()
-            .border_color(c.line_subtle)
-            .text_size(c.control_space(12.0))
+            .pl(c.space(12.0))
+            .pr(c.space(8.0))
+            .text_size(c.control_space(12.5))
+            .group(group.clone())
+            // Framed: the bar is part of the card — no divider, no fill, and
+            // the title stays full strength; only the card's rim and shadow
+            // (and a dimmer unfocused title) say which pane has focus. Compact
+            // panes are flush, so they keep the hairline and the sunken fill.
             .when(layout.is_framed(), |bar| {
                 bar.rounded_t(px((c.radius.lg - 1.0).max(0.0)))
+                    .text_color(if active { c.fg } else { c.fg.opacity(0.72) })
             })
-            .when(active, |bar| bar.bg(c.sunken).text_color(c.fg))
-            .when(!active, |bar| {
-                bar.text_color(c.muted).hover(|style| style.bg(c.accent))
+            .when(!layout.is_framed(), |bar| {
+                bar.border_b_1()
+                    .border_color(c.line_subtle)
+                    .when(active, |bar| bar.bg(c.sunken).text_color(c.fg))
+                    .when(!active, |bar| {
+                        bar.text_color(c.muted).hover(|style| style.bg(c.accent))
+                    })
             })
             .child(
                 div().flex_shrink_0().child(
-                    icon.svg(if active { c.fg } else { c.muted })
-                        .size(c.control_space(14.0)),
+                    icon.svg(if active || layout.is_framed() {
+                        c.fg
+                    } else {
+                        c.muted
+                    })
+                    .size(c.control_space(14.5)),
                 ),
             );
         if let Some(leading) = leading {
@@ -329,7 +396,9 @@ impl PaneBar {
                 .overflow_hidden()
                 .whitespace_nowrap()
                 .text_ellipsis()
-                .when(active, |title| title.font_weight(FontWeight::SEMIBOLD))
+                .when(active || layout.is_framed(), |title| {
+                    title.font_weight(FontWeight::SEMIBOLD)
+                })
                 .child(title),
         );
         bar = bar.child(
@@ -347,7 +416,14 @@ impl PaneBar {
                     .flex()
                     .flex_shrink_0()
                     .items_center()
-                    .gap(c.space(2.0))
+                    .gap(c.space(1.0))
+                    // The actions appear on the focused bar or while the bar is
+                    // hovered; they stay in layout so the title never shifts.
+                    .when(!active, |actions| {
+                        actions
+                            .opacity(0.0)
+                            .group_hover(group, |style| style.opacity(1.0))
+                    })
                     .children(buttons),
             );
         }
@@ -387,6 +463,7 @@ fn action_button(
     let mut button = icon_button_builder(SharedString::from(format!("{bar_id}-{key}")), c, glyph)
         .variant(ButtonVariant::Subtle)
         .size(ButtonSize::IconXs)
+        .icon_size(15.0)
         .shape(IconButtonShape::Square)
         .selected(selected)
         .disabled(!enabled)
@@ -445,6 +522,11 @@ mod tests {
     }
 
     #[test]
+    fn canvas_backdrop_builds() {
+        let _ = canvas_backdrop(test_palette());
+    }
+
+    #[test]
     fn frame_builds_in_both_layouts_and_focus_states() {
         for style in [PaneLayoutStyle::Comfortable, PaneLayoutStyle::Compact] {
             for focused in [true, false] {
@@ -454,13 +536,13 @@ mod tests {
     }
 
     #[test]
-    fn pane_gap_is_six_comfortable_and_zero_compact() {
+    fn pane_gap_is_eight_comfortable_and_zero_compact() {
         let mut c = test_palette();
         c.density = 1.0;
-        assert_eq!(PaneLayoutStyle::Comfortable.gap(&c), px(6.0));
+        assert_eq!(PaneLayoutStyle::Comfortable.gap(&c), px(8.0));
         assert_eq!(PaneLayoutStyle::Compact.gap(&c), px(0.0));
         c.density = 1.15;
-        assert!(PaneLayoutStyle::Comfortable.gap(&c) > px(6.0));
+        assert!(PaneLayoutStyle::Comfortable.gap(&c) > px(8.0));
         assert_eq!(PaneLayoutStyle::Compact.gap(&c), px(0.0));
     }
 
@@ -468,9 +550,9 @@ mod tests {
     fn bar_height_follows_density() {
         let mut c = test_palette();
         c.density = 1.0;
-        assert_eq!(Density::from_palette(&c).pane_bar_height(), px(28.0));
+        assert_eq!(Density::from_palette(&c).pane_bar_height(), px(32.0));
         c.density = 0.85;
-        assert!(Density::from_palette(&c).pane_bar_height() < px(28.0));
+        assert!(Density::from_palette(&c).pane_bar_height() < px(32.0));
     }
 
     #[test]

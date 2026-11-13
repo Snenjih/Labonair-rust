@@ -44,7 +44,7 @@ use serde::{Deserialize, Serialize};
 use crate::import::{get_token, set_token, ThemeFile};
 use crate::COLOR_TOKENS;
 use labonair_theme_tokens::parse_color;
-use labonair_theme_tokens::Theme;
+use labonair_theme_tokens::{ShadowLayer, Theme};
 
 /// Which system appearance a theme variant targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -152,6 +152,65 @@ pub struct ThemeVariantContent {
     /// Token name → color string. Omitted tokens inherit the built-in default.
     #[serde(default)]
     pub colors: BTreeMap<String, String>,
+    /// Shadow tier name (see [`SHADOW_TIERS`]) → its layers. Omitted tiers
+    /// inherit the built-in default; an empty list removes the tier's shadow.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub shadows: BTreeMap<String, Vec<ShadowSpec>>,
+}
+
+/// One shadow layer in a theme document: the CSS `box-shadow` quintuple.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ShadowSpec {
+    #[serde(default)]
+    pub x: f32,
+    #[serde(default)]
+    pub y: f32,
+    #[serde(default)]
+    pub blur: f32,
+    #[serde(default)]
+    pub spread: f32,
+    /// Any color string [`parse_color`] accepts; usually `#rrggbbaa`.
+    pub color: String,
+}
+
+/// The shadow tiers a theme may override, in document order.
+pub const SHADOW_TIERS: &[&str] = &["row", "pane", "pane_focused", "popover", "modal"];
+
+fn shadow_tier<'a>(theme: &'a mut Theme, name: &str) -> Option<&'a mut Vec<ShadowLayer>> {
+    Some(match name {
+        "row" => &mut theme.shadows.row,
+        "pane" => &mut theme.shadows.pane,
+        "pane_focused" => &mut theme.shadows.pane_focused,
+        "popover" => &mut theme.shadows.popover,
+        "modal" => &mut theme.shadows.modal,
+        _ => return None,
+    })
+}
+
+fn shadow_specs_of(theme: &Theme) -> BTreeMap<String, Vec<ShadowSpec>> {
+    let tiers = [
+        ("row", &theme.shadows.row),
+        ("pane", &theme.shadows.pane),
+        ("pane_focused", &theme.shadows.pane_focused),
+        ("popover", &theme.shadows.popover),
+        ("modal", &theme.shadows.modal),
+    ];
+    tiers
+        .into_iter()
+        .map(|(name, layers)| {
+            let specs = layers
+                .iter()
+                .map(|l| ShadowSpec {
+                    x: l.x,
+                    y: l.y,
+                    blur: l.blur,
+                    spread: l.spread,
+                    color: crate::to_hex(l.color),
+                })
+                .collect();
+            (name.to_string(), specs)
+        })
+        .collect()
 }
 
 /// A theme family document: a name plus one or more light/dark variants.
@@ -217,11 +276,13 @@ impl ThemeFamilyContent {
                     name: format!("{name} Light"),
                     appearance: Appearance::Light,
                     colors: colors_of(light),
+                    shadows: shadow_specs_of(light),
                 },
                 ThemeVariantContent {
                     name: format!("{name} Dark"),
                     appearance: Appearance::Dark,
                     colors: colors_of(dark),
+                    shadows: shadow_specs_of(dark),
                 },
             ],
         }
@@ -245,6 +306,36 @@ impl ThemeFamilyContent {
                 }
                 Err(e) => warnings.push(format!(
                     "{}: bad color for {key:?} ({value:?}): {e} — kept default",
+                    self.name
+                )),
+            }
+        }
+        for (tier, specs) in &variant.shadows {
+            let Some(slot) = shadow_tier(&mut theme, tier) else {
+                warnings.push(format!(
+                    "{}: unknown shadow tier {tier:?} — ignored",
+                    self.name
+                ));
+                continue;
+            };
+            let parsed: Result<Vec<ShadowLayer>, String> = specs
+                .iter()
+                .map(|spec| {
+                    parse_color(&spec.color)
+                        .map(|color| ShadowLayer {
+                            x: spec.x,
+                            y: spec.y,
+                            blur: spec.blur.max(0.0),
+                            spread: spec.spread,
+                            color,
+                        })
+                        .map_err(|e| format!("{:?}: {e}", spec.color))
+                })
+                .collect();
+            match parsed {
+                Ok(layers) => *slot = layers,
+                Err(e) => warnings.push(format!(
+                    "{}: bad shadow for {tier:?} ({e}) — kept default",
                     self.name
                 )),
             }
@@ -273,6 +364,7 @@ impl From<&ThemeFile> for ThemeFamilyContent {
                     Appearance::Light
                 },
                 colors: v.colors.clone(),
+                shadows: BTreeMap::new(),
             })
             .collect();
         Self {
@@ -634,6 +726,40 @@ mod tests {
     }
 
     #[test]
+    fn a_theme_can_replace_or_remove_shadow_tiers() {
+        let json = r##"{
+            "name": "Flat",
+            "themes": [
+                { "name": "Flat Dark", "appearance": "dark",
+                  "shadows": { "pane": [], "popover": [{ "y": 4, "blur": 10, "color": "#00000080" }] } },
+                { "name": "Flat Light", "appearance": "light", "shadows": { "nope": [] } }
+            ]
+        }"##;
+        let content = ThemeFamilyContent::from_json(json).unwrap();
+        let (dark, warnings) = content.resolve_variant(&content.themes[0]);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(dark.shadows.pane.is_empty(), "an empty tier removes it");
+        assert_eq!(dark.shadows.popover.len(), 1);
+        assert_eq!(dark.shadows.popover[0].blur, 10.0);
+        assert_eq!(
+            dark.shadows.pane_focused,
+            Theme::dark().shadows.pane_focused
+        );
+        let (_, warnings) = content.resolve_variant(&content.themes[1]);
+        assert_eq!(warnings.len(), 1, "unknown tier warns");
+    }
+
+    #[test]
+    fn builtin_json_carries_float_tokens_and_shadows() {
+        let fam = ThemeFamilyContent::from_json(BUILTIN_THEME_JSON).unwrap();
+        for v in &fam.themes {
+            assert!(v.colors.contains_key("canvas.top"));
+            assert!(v.colors.contains_key("pane.border_focused"));
+            assert_eq!(v.shadows.len(), SHADOW_TIERS.len());
+        }
+    }
+
+    #[test]
     fn json_theme_round_trips() {
         let fam = ThemeFamilyContent::from_themes("Trip", &Theme::light(), &Theme::dark());
         let json = fam.to_json().unwrap();
@@ -713,6 +839,7 @@ mod tests {
                     name: format!("Fam {i}"),
                     appearance: *a,
                     colors: BTreeMap::new(),
+                    shadows: BTreeMap::new(),
                 })
                 .collect(),
         }

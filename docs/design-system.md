@@ -1,13 +1,15 @@
 # Labonair Design System
 
 **Status:** Normative
-**Version:** 2
+**Version:** 3
 
 ## Visual objective
 
 Labonair adopts **Ciel's design system** (clean-room: measured values and rules,
 no source copied): calm, dense, precise, fast. Surfaces separate by **fill
-contrast**, not by borders and shadows. The pinned Zed build remains the
+contrast**, not by borders and shadows — except in the comfortable pane
+layout, where the **floating layer** (see below) lifts panes and docks off a
+gradient canvas with a shared shadow recipe. The pinned Zed build remains the
 behavioral reference for parity; Ciel is the visual reference. Labonair owns
 its implementation, tokens, and identity.
 
@@ -18,9 +20,11 @@ Core rules (Ciel `DESIGN.md` §2, §6–§10):
   area is `core.background`. Inside the main area, separate by spacing and at
   most a `core.card`/`core.muted` fill — never border *and* shadow together,
   never a card in a card.
-- **Only floating layers carry elevation:** menus, dropdowns, popovers,
-  tooltips use a 1px `border.variant` hairline plus the popover shadow;
-  dialogs use a 1px `border.strong` hairline and no shadow.
+- **Elevation comes from the shadow tiers, nowhere else:** menus, dropdowns,
+  popovers and tooltips use a 1px `border.variant` hairline plus the `popover`
+  tier; dialogs and the command palette use a 1px `border.strong` hairline plus
+  the `modal` tier; panes and docks in the comfortable layout use the `pane` /
+  `pane_focused` tiers. No view invents its own shadow (see *Shadow tiers*).
 - **One active state.** Selected/active rows, tabs, nav items, and toggles use
   `surface.sunken` plus a semibold label. Hover is `core.accent`. No accent
   tint, no side stripe, no underline. The blue `core.primary` accent is for
@@ -98,11 +102,113 @@ while an image shows.
 | `--action-surface` family | `surface.action`, `action_foreground`, `action_hover`, `action_active` |
 | `--radius-sm/md/lg/xl/3xl/bubble/modal` | `RadiusScale` `sm/md/lg/xl/xl2/xl3/xl4` = 4/8/12/14/20/22/30 |
 | `--dur-fast/base/slow` | `Animation` 120/160/200 ms |
+| canvas gradient, cards, tab track, hover/pressed | `float.*` (`FloatColors`) |
+| `--shadow-*` | `Shadows` tiers `row/pane/pane_focused/popover/modal` |
 
 Built-in themes are `Theme::light()` (warm neutral) and `Theme::dark()`
 (neutral dark); the embedded `labonair.json` is regenerated from them
 (`REGEN_BUILTIN_THEME=1 cargo test -p labonair-theme builtin_json`).
 
+
+## Floating layer
+
+The comfortable pane layout (`appearance.paneLayout = comfortable`, the
+default) paints the window as a **canvas with cards on it**; the compact layout
+keeps the flat, opaque chrome. The look comes from five things, each a token a
+theme can replace.
+
+1. **Canvas.** `ui-kit::canvas_backdrop` is the first child of the shell root:
+   a vertical gradient `float.canvas_top` → `canvas_mid` (first 38 %) →
+   `canvas_low` (next 32 %) → `canvas_bottom` (last 30 %), plus a horizontal
+   `float.canvas_tint` wash over the right 65 %. In Glassy / image materials
+   every stop's alpha is scaled by the `Canvas` vibrancy opacity, so the blur
+   and the image still read through.
+2. **Cards.** A pane (`pane_frame`) and a dock are cards: `radius.lg`
+   corners, a 1 px rim (`float.pane_border`, `pane_border_focused` while
+   focused), the `float.pane` / `pane_focused` fill (docks keep `sidebar`) and
+   the `shadows.pane` / `pane_focused` tier. A single pane is a card too (no
+   bar). Cards sit `PANE_GAP` = 8 px apart and 8 px from the window edge; a
+   dock has the margin on its outer sides and the pane area supplies the inner
+   one. The card fills are **opaque** by default because editor and terminal
+   bodies paint their own opaque surface; a theme that wants translucent cards
+   may lower the alpha but the body surface then shows through as a solid
+   inset.
+3. **Transparent chrome.** The titlebar and statusbar draw no fill and no
+   divider in this layout, so the canvas shows through. The titlebar tabs sit
+   in a pill **track** (`float.track`, `track_border`); the selected tab is a
+   `float.tab_active` pill with the `row` shadow tier.
+4. **Neutral state overlays.** Borderless controls hover to `float.hover` and
+   press to `float.pressed` — alpha black on light, alpha white on dark — so
+   one pair works on any surface. Icon-only buttons are soft squares
+   (`edge / 2.6` radius).
+5. **Focus is depth.** The focused card gets the stronger shadow and rim; the
+   unfocused bar keeps its title at 72 % opacity. The pane bar has no fill and
+   no divider here; its split / zoom / close actions show on the focused bar
+   and on hover. Dividers show a 3 × 36 px grip pill (`muted` at 60 %) while
+   hovered instead of tinting the whole gap.
+
+### Shadow tiers
+
+All shadows are `Theme::shadows` tiers, read through the `Palette` helpers
+(`row_shadow`, `pane_shadow(focused)`, `popover_shadow`, `modal_shadow`).
+Every tier follows one recipe: a tight **contact** layer plus a wide, soft
+**ambient** layer; the ambient layer of a card uses a negative spread so it
+never leaks past the card's edge. Light themes tint the shadow toward the
+canvas (`60, 40, 50`) instead of pure black; dark themes use black.
+
+| Tier | Layers (`x y blur spread`) | Alpha light / dark | Used by |
+|---|---|---:|---|
+| `row` | `0 1 2 0`, `0 2 8 0` | .07 / .25 | selected tab pill, sticky diff header |
+| `pane` | `0 1 2 0`, `0 6 22 -2` | .07 / .25 | unfocused pane, dock |
+| `pane_focused` | same geometry | .12 / .40 | focused pane |
+| `popover` | `0 1 2 0`, `0 8 24 0` | .12 / .40 | menus, dropdowns, tooltips, toasts, editor popovers |
+| `modal` | `0 2 6 0`, `0 18 48 -4` | .12 / .40 | dialogs, command palette |
+
+### Default colors
+
+The default themes follow the floating layer: neutral cool greys instead of
+the former warm beige (light) and near-black (dark). Light foreground
+`#1d1d1f`, muted `#636366`; dark foreground `#f2f2f7`, muted `#aeaeb2`, paper
+`#1e1e22`. Light canvas `#f6e7f6 → #efe1e6 → #eee0d3 → #ece1bd`, dark canvas
+`#2c2131 → #231e27 → #221f22 → #2a2619`. Borders are alpha overlays (light
+black 5–12 %, dark white 4–12 %). The terminal uses the same soft ink on paper
+(`#2a2d31` on `#fbfbfb`, `#e6e6ea` on `#1e1e22`) with a softened 16-color
+palette.
+
+### Theming the floating layer
+
+Every value above is a token, so a theme replaces them freely.
+
+- **Colors**: the `colors` map of a theme variant gains
+  `canvas.top|mid|low|bottom|tint`, `pane.background`,
+  `pane.background_focused`, `pane.border`, `pane.border_focused`,
+  `tabs.track`, `tabs.track_border`, `tabs.active`, `tabs.separator`,
+  `state.hover` and `state.pressed` (listed in `COLOR_TOKENS`). Omitted tokens
+  inherit the built-in default of the same appearance.
+- **Shadows**: a variant may carry a `shadows` map from tier name (`row`,
+  `pane`, `pane_focused`, `popover`, `modal`) to a list of
+  `{ "x", "y", "blur", "spread", "color" }` layers (at most three are used).
+  An omitted tier inherits the default; an empty list removes the shadow.
+  Unknown tiers and bad colors are skipped with a warning.
+- **Flat look**: set the four canvas stops to one color, `canvas.tint` to
+  transparent, and every tier under `shadows` to `[]`. Nothing else depends on
+  the gradient. `appearance.paneLayout = compact` switches the layer off
+  entirely.
+
+```json
+{ "name": "Paper", "themes": [
+  { "name": "Paper Light", "appearance": "light",
+    "colors": { "canvas.top": "#f4f1ea", "canvas.mid": "#f4f1ea",
+                "canvas.low": "#f4f1ea", "canvas.bottom": "#f4f1ea",
+                "canvas.tint": "#00000000" },
+    "shadows": { "pane": [{ "y": 1, "blur": 3, "color": "#00000014" }] } },
+  { "name": "Paper Dark", "appearance": "dark" } ] }
+```
+
+Known limits: GPUI has no CSS-style transitions, so hover and focus changes
+switch instantly (selection and reveal keep their existing tweens); the
+separator between two inactive tabs (`float.tab_separator`) is defined but not
+drawn yet.
 
 ## Default typography
 
@@ -332,7 +438,7 @@ use `motion_fade_in` keyed by the tab id instead of a local `with_animation`.
 ## Pane chrome
 
 `pane_bar` and `pane_frame` (`ui-kit/src/pane_bar.rs`) are generic: they know
-nothing about tabs or pane kinds. The bar is 28 px (`Density::pane_bar_height`)
+nothing about tabs or pane kinds. The bar is 32 px (`Density::pane_bar_height`)
 with an icon, a title, an optional leading slot (status marker) and trailing
 slot (path, cwd), and four optional actions: split horizontal (new pane to the
 right), split vertical (new pane below), zoom (toggle, restore glyph while
@@ -340,16 +446,22 @@ zoomed) and close, each with a tooltip, an enabled flag and a callback.
 `can_split(false)` disables both split actions and swaps their tooltip. The
 whole bar is the drag handle: `render()` returns a `Stateful<Div>` and the
 caller attaches `on_drag`; action buttons swallow mouse-down so pressing one
-never starts a drag. Double-clicking the bar calls the zoom hook. The active
-bar uses the sunken fill and a semibold title; inactive bars use hover accent
-and show their actions on hover only. A `line_subtle` hairline separates bar
-and body.
+never starts a drag. Double-clicking the bar calls the zoom hook.
 
-The workspace shows a pane bar only from two panes on (a single pane is full-bleed). Because GPUI clips to rectangles, the pane body is inset by `radius.lg * 0.3` in the comfortable layout so square content stays inside the rounded frame; divider hit areas are 6 px wider than the gap. `PaneLayoutStyle` mirrors `appearance.paneLayout`. Comfortable panes float with
-`PANE_GAP` (6 px, density scaled) between them in a rounded (`radius.lg`) frame
-with a 1 px `line_subtle` ring (`line_strong` while focused). Compact panes
-have no gap, no rounding and no ring; the dividers belong to the tiling
-container's resize handles.
+In the comfortable layout the bar is part of the card: no divider, no fill,
+semibold title (72 % opacity while unfocused) and the actions only on the
+focused bar and on hover (they keep their layout space, so the title never
+shifts). In the compact layout the bar keeps a `line_subtle` hairline, the
+sunken fill while active and the hover accent.
+
+The workspace shows a pane bar only from two panes on; a single pane is still
+a card, without a bar. Because GPUI clips to rectangles, the pane body is
+inset by `radius.lg * 0.3` in the comfortable layout so square content stays
+inside the rounded frame; divider hit areas are 6 px wider than the gap.
+`PaneLayoutStyle` mirrors `appearance.paneLayout`. Comfortable panes and docks
+float with `PANE_GAP` (8 px, density scaled) between them, styled by the
+*Floating layer* section above. Compact panes have no gap, no rounding and no
+ring; the dividers belong to the tiling container's resize handles.
 
 ## Settings widgets
 
@@ -381,15 +493,22 @@ fill and semibold label, and section anchors are indented muted rows.
 
 ## Floating tabs
 
-`TabStyle::Floating` (default `Classic`) renders tab items as 28 px blocks with
-`radius.md`: selected is the sunken fill, a 1 px `line_subtle` ring and a
-semibold label; unselected hover is the accent fill; the close button appears
-on hover only. Blocks keep a constant 1 px border so selection does not shift
-layout. `floating_tab_strip` is the container (40 px bar, 6 px padding, 4 px
-gap horizontally; a column with 2 px gaps vertically), `tab_group_gap` replaces
-the pinned/unpinned divider with a larger gap, and `tab_drop_marker` is the
-absolutely positioned 2 px `primary` insertion bar (no border, no layout
-shift).
+`TabStyle::Floating` (default `Classic`) renders tab items as 28 px blocks;
+the close button appears on hover only. Blocks keep a constant 1 px border so
+selection does not shift layout.
+
+- **Horizontal (titlebar):** pills in a translucent track. The track
+  (`floating_tab_strip`) is a 34 px pill (28 px pills, 2 px padding, 1 px rim,
+  2 px gaps) filled with `float.track` and ringed with `float.track_border`.
+  The selected pill is `float.tab_active` with the `row` shadow tier, faded in
+  and out with the state tween; unselected tabs hover to `float.hover`.
+- **Vertical (Tabs panel):** `radius.md` blocks; selected is the sunken fill, a
+  1 px `line_subtle` ring and a semibold label; hover is the accent fill. The
+  strip is a column with 6 px padding and 2 px gaps.
+
+`tab_group_gap` replaces the pinned/unpinned divider with a larger gap, and
+`tab_drop_marker` is the absolutely positioned 2 px `primary` insertion bar (no
+border, no layout shift).
 
 The workspace renders every tab as a floating block, in the titlebar strip and
 in the vertical Tabs sidebar (`workspace/src/tab_strip.rs`). Everything a block
@@ -426,9 +545,9 @@ block the same way (it joins that group); over empty strip space it shows the
 there). Rejected targets (other Space, a tab onto itself, pinned merges, a
 zoomed tab) show nothing. Esc cancels; the strips scroll near their ends.
 
-Deviation: the selected ring is `line_subtle` as specified, but that token is
-almost invisible against the sunken fill in both Dark (3.5 % white) and Light
-(`#edece7` on `#d8d0ba`); the sunken fill and the semibold label carry the
+Deviation (vertical Tabs panel): the selected ring is `line_subtle` as specified, but that token is
+almost invisible against the sunken fill in both Dark (4 % white) and Light
+(5 % black on `#e4e4e8`); the sunken fill and the semibold label carry the
 selection, the ring only adds a hairline.
 
 ## Spaces popover

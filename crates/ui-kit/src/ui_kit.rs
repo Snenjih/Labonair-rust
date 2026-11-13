@@ -111,7 +111,9 @@ pub use kbd::{kbd, kbd_row, keybinding_hint};
 pub use list::{list_header, list_separator, ListItem};
 pub use number_field::{number_field, step_value, NumberField};
 pub use palette::Palette;
-pub use pane_bar::{pane_bar, pane_frame, PaneAction, PaneBar, PaneLayoutStyle, PANE_GAP};
+pub use pane_bar::{
+    canvas_backdrop, pane_bar, pane_frame, PaneAction, PaneBar, PaneLayoutStyle, PANE_GAP,
+};
 pub use popover::{popover, popover_with_exit};
 pub use presence::{exit_duration, exit_fade, Presence, PresenceSlot, PresenceStep};
 pub use preview_tile::{

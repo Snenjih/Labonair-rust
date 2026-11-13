@@ -25,10 +25,10 @@
 //! renders nothing and the OS window frame / traffic lights take over.
 
 use gpui::{
-    canvas, div, point, px, App, Bounds, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, ParentElement, Pixels, Point, Render, StatefulInteractiveElement, Styled, Window,
-    WindowControlArea,
+    canvas, div, point, prelude::FluentBuilder, px, App, Bounds, ClickEvent, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
+    StatefulInteractiveElement, Styled, Window, WindowControlArea,
 };
 use labonair_command_palette::Page as PalettePage;
 use labonair_settings::{Settings as _, SettingsStore, ThemeSettings};
@@ -257,9 +257,16 @@ impl Render for Titlebar {
             return div().into_any_element();
         }
 
-        let (toolbar, border) = {
+        // Floating layer (comfortable pane layout): the titlebar has no fill
+        // and no divider, so the window canvas shows through and the tab
+        // track floats on it. Compact keeps the flat toolbar.
+        let (toolbar, border, floating) = {
             let theme = self.theme.read(cx);
-            (theme.toolbar(), theme.border())
+            (
+                theme.toolbar(),
+                theme.border(),
+                theme.metrics().pane_layout == labonair_theme::PaneLayout::Comfortable,
+            )
         };
 
         // `tabsLocation === "sidebar"` moves the tab strip out of the titlebar
@@ -283,9 +290,9 @@ impl Render for Titlebar {
             .flex_shrink_0()
             .pl(px(TRAFFIC_LIGHT_INSET))
             .pr_2()
-            .bg(toolbar)
-            .border_b_1()
-            .border_color(border)
+            .when(!floating, |bar| {
+                bar.bg(toolbar).border_b_1().border_color(border)
+            })
             // Whole background is a window drag region; a bare press-then-drag
             // starts a window move (Zed `platform_title_bar` mechanism). A
             // double-click zooms. Interactive children consume their own

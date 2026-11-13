@@ -141,12 +141,34 @@ impl Workspace {
         if !multi {
             let pane = root.first_leaf();
             let body = self.pane_body(pane, window, cx);
-            let area = div()
-                .relative()
+            let body = Self::pane_context(body);
+            if !style.is_framed() {
+                let area = div().relative().size_full().child(probe).child(body);
+                return self.with_pane_dnd(area, tab_id, cx).into_any_element();
+            }
+            // A single pane is a floating card too (no bar: there is nothing
+            // to split or zoom yet); its body keeps the same corner inset as
+            // the tiled panes so square content stays inside the rounding.
+            let inset = px(c.radius.lg * 0.3);
+            let card = pane_frame(("pane-frame", pane), c, style, true)
                 .size_full()
-                .child(probe)
-                .child(Self::pane_context(body));
-            return self.with_pane_dnd(area, tab_id, cx).into_any_element();
+                .child(
+                    div()
+                        .relative()
+                        .flex_1()
+                        .min_h_0()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .p(inset)
+                        .child(body),
+                );
+            let area = div().relative().size_full().child(probe).child(card);
+            let area = self.with_pane_dnd(area, tab_id, cx);
+            return div()
+                .size_full()
+                .p(px(metrics.gap))
+                .child(area)
+                .into_any_element();
         }
 
         let ctx = TreeCtx {
@@ -289,6 +311,7 @@ impl Workspace {
         } else {
             c.line_subtle
         };
+        let handle_group = SharedString::from(format!("axis-handle-group-{axis_id}-{boundary}"));
         let hit_area = div()
             .id(SharedString::from(format!(
                 "axis-handle-{axis_id}-{boundary}"
@@ -308,7 +331,22 @@ impl Workspace {
                     .h(px(hit))
                     .cursor_row_resize()
             })
-            .hover(move |s| s.bg(c.primary.opacity(0.35)))
+            .flex()
+            .items_center()
+            .justify_center()
+            .group(handle_group.clone())
+            // A small grip pill in the middle of the gap while hovered, as
+            // the floating layer draws it (not a full-gap tint).
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .when(row, |d| d.w(px(3.0)).h(px(36.0)))
+                    .when(!row, |d| d.h(px(3.0)).w(px(36.0)))
+                    .rounded_full()
+                    .bg(c.muted.opacity(0.6))
+                    .opacity(0.0)
+                    .group_hover(handle_group, |s| s.opacity(1.0)),
+            )
             .on_drag(PaneResize { axis_id, boundary }, |_, _, _, cx| {
                 cx.new(|_| DragGhost)
             })

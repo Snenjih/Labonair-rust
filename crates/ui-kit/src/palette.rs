@@ -13,11 +13,21 @@
 //! token-bound (Critical Rule 3) without forcing the borrow gymnastics — a call
 //! site literally cannot pass a hardcoded colour without writing one itself.
 
-use gpui::{point, px, BoxShadow, Hsla, Pixels};
-use labonair_theme_tokens::{RadiusScale, VibrancyLayer};
+use gpui::{px, BoxShadow, Hsla, Pixels};
+use labonair_theme_tokens::{RadiusScale, ShadowStack, VibrancyLayer};
 
 use crate::animation::MotionPrefs;
 use crate::theme::UiTheme;
+
+/// The five shadow tiers of a theme as `Copy` stacks.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct PaletteShadows {
+    row: ShadowStack,
+    pane: ShadowStack,
+    pane_focused: ShadowStack,
+    popover: ShadowStack,
+    modal: ShadowStack,
+}
 
 /// A per-render snapshot of the design tokens the primitives read.
 ///
@@ -111,6 +121,29 @@ pub struct Palette {
     pub info: Hsla,
     /// Status `success`.
     pub success: Hsla,
+    /// The canvas gradient behind the window, top to bottom, and its
+    /// horizontal wash (`float.canvas_*`). Alphas are already scaled by the
+    /// surface material so Glassy and background images show through.
+    pub canvas: [Hsla; 4],
+    pub canvas_tint: Hsla,
+    /// A floating card's fill and rim, at rest and focused (`float.pane*`).
+    pub pane: Hsla,
+    pub pane_focused: Hsla,
+    pub pane_line: Hsla,
+    pub pane_line_focused: Hsla,
+    /// The tab track pill, its rim, the selected tab's pill and the divider
+    /// between inactive tabs (`float.track*`, `float.tab_*`).
+    pub track: Hsla,
+    pub track_line: Hsla,
+    pub tab_active: Hsla,
+    pub tab_separator: Hsla,
+    /// Neutral hover / pressed overlays for borderless controls
+    /// (`float.hover` / `float.pressed`).
+    pub hover: Hsla,
+    pub pressed: Hsla,
+    /// Elevation shadows (`Theme::shadows`); read them through
+    /// [`Palette::row_shadow`] and friends.
+    shadows: PaletteShadows,
     /// The active `--radius` family — already scaled by the T20-007
     /// `corner_radius_scale` metric (via [`UiTheme::radius`]).
     pub radius: RadiusScale,
@@ -133,7 +166,40 @@ impl Palette {
         let core = &t.core;
         let status = &t.status;
         let translucent = theme.surface_material();
+        let f = &t.float;
+        // The canvas fades with the surface material; opaque keeps the stops.
+        let canvas_alpha = VibrancyLayer::Canvas.resolve(f.canvas_top, translucent).a
+            / f.canvas_top.a.max(f32::EPSILON);
+        let fade = |c: Hsla| Hsla {
+            a: c.a * canvas_alpha,
+            ..c
+        };
+        let shadows = &t.shadows;
         Self {
+            canvas: [
+                fade(f.canvas_top),
+                fade(f.canvas_mid),
+                fade(f.canvas_low),
+                fade(f.canvas_bottom),
+            ],
+            canvas_tint: fade(f.canvas_tint),
+            pane: VibrancyLayer::Canvas.resolve(f.pane, translucent),
+            pane_focused: VibrancyLayer::Canvas.resolve(f.pane_focused, translucent),
+            pane_line: f.pane_border,
+            pane_line_focused: f.pane_border_focused,
+            track: f.track,
+            track_line: f.track_border,
+            tab_active: f.tab_active,
+            tab_separator: f.tab_separator,
+            hover: f.hover,
+            pressed: f.pressed,
+            shadows: PaletteShadows {
+                row: ShadowStack::from_layers(&shadows.row),
+                pane: ShadowStack::from_layers(&shadows.pane),
+                pane_focused: ShadowStack::from_layers(&shadows.pane_focused),
+                popover: ShadowStack::from_layers(&shadows.popover),
+                modal: ShadowStack::from_layers(&shadows.modal),
+            },
             bg: VibrancyLayer::Canvas.resolve(core.background, translucent),
             toolbar_bg: VibrancyLayer::Toolbar.resolve(t.surface.toolbar, translucent),
             fg: core.foreground,
@@ -193,34 +259,29 @@ impl Palette {
         }
     }
 
-    /// The floating-layer shadow (`--shadow-popover`): menus, dropdowns,
-    /// tooltips and toasts. Dialogs use a `line_strong` border instead.
+    /// The floating-layer shadow (`shadows.popover`): menus, dropdowns,
+    /// tooltips and toasts.
     pub fn popover_shadow(&self) -> Vec<BoxShadow> {
-        let (a, b) = if self.is_dark {
-            (0.26, 0.18)
+        self.shadows.popover.to_box_shadows()
+    }
+
+    /// The dialog / command-palette shadow (`shadows.modal`).
+    pub fn modal_shadow(&self) -> Vec<BoxShadow> {
+        self.shadows.modal.to_box_shadows()
+    }
+
+    /// A raised control at rest (`shadows.row`): the selected tab pill.
+    pub fn row_shadow(&self) -> Vec<BoxShadow> {
+        self.shadows.row.to_box_shadows()
+    }
+
+    /// A floating card (`shadows.pane` / `shadows.pane_focused`).
+    pub fn pane_shadow(&self, focused: bool) -> Vec<BoxShadow> {
+        if focused {
+            self.shadows.pane_focused.to_box_shadows()
         } else {
-            (0.12, 0.06)
-        };
-        let black = |alpha: f32| Hsla {
-            h: 0.0,
-            s: 0.0,
-            l: 0.0,
-            a: alpha,
-        };
-        vec![
-            BoxShadow {
-                color: black(a),
-                offset: point(px(0.0), px(12.0)),
-                blur_radius: px(32.0),
-                spread_radius: px(0.0),
-            },
-            BoxShadow {
-                color: black(b),
-                offset: point(px(0.0), px(1.0)),
-                blur_radius: px(4.0),
-                spread_radius: px(0.0),
-            },
-        ]
+            self.shadows.pane.to_box_shadows()
+        }
     }
 
     /// A spacing/size literal (px) scaled by the active UI density (T20-007).
@@ -263,6 +324,24 @@ mod tests {
         assert_eq!(c.selected_fill, c.sunken);
         assert_eq!(c.warning, theme.0.status.warning);
         assert_eq!(c.radius.sm, theme.0.radius.sm);
+    }
+
+    #[test]
+    fn shadows_and_float_colors_come_from_the_theme() {
+        let theme = TestTheme(Theme::light());
+        let c = Palette::from_theme(&theme);
+        assert_eq!(c.pane_shadow(false).len(), theme.0.shadows.pane.len());
+        let focused = c.pane_shadow(true);
+        assert_eq!(focused[1].color, theme.0.shadows.pane_focused[1].color);
+        assert_eq!(
+            c.popover_shadow()[0].color,
+            theme.0.shadows.popover[0].color
+        );
+        assert_eq!(
+            c.canvas[0], theme.0.float.canvas_top,
+            "opaque keeps the stops"
+        );
+        assert_eq!(c.hover, theme.0.float.hover);
     }
 
     #[test]

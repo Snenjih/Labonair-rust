@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use gpui::Hsla;
 
-use crate::color::{oklch_a, parse_color, transparent};
+use crate::color::{parse_color, transparent};
 
 /// The complete set of design tokens for one theme variant.
 #[derive(Debug, Clone, PartialEq)]
@@ -19,6 +19,7 @@ pub struct Theme {
     pub core: CoreColors,
     pub sidebar: SidebarColors,
     pub surface: SurfaceColors,
+    pub float: FloatColors,
     pub border: BorderVariants,
     pub status: StatusColors,
     pub diff: DiffColors,
@@ -86,6 +87,42 @@ pub struct SurfaceColors {
     pub action_foreground: Hsla,
     pub action_hover: Hsla,
     pub action_active: Hsla,
+}
+
+/// The floating layer: a gradient **canvas** behind the window, **cards**
+/// (panes, docks) that float on it, the pill **track** that holds the tabs and
+/// the neutral **state** overlays every control uses for hover and press.
+///
+/// Every value is a plain colour a theme can replace. A theme that wants the
+/// flat look sets the four canvas stops to one colour and the card fills to
+/// `background`; nothing else in the UI depends on the gradient.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FloatColors {
+    /// The canvas gradient, top to bottom (`canvas_top` → `canvas_mid` over the
+    /// first 38 %, → `canvas_low` over the next 32 %, → `canvas_bottom`).
+    pub canvas_top: Hsla,
+    pub canvas_mid: Hsla,
+    pub canvas_low: Hsla,
+    pub canvas_bottom: Hsla,
+    /// A horizontal wash from 35 % of the width to the right edge.
+    pub canvas_tint: Hsla,
+    /// The fill of a floating card (pane, dock) at rest and while focused.
+    pub pane: Hsla,
+    pub pane_focused: Hsla,
+    /// The 1 px rim of a card at rest and while focused.
+    pub pane_border: Hsla,
+    pub pane_border_focused: Hsla,
+    /// The pill that holds the tabs, and its 0.5 px rim.
+    pub track: Hsla,
+    pub track_border: Hsla,
+    /// The selected tab's pill.
+    pub tab_active: Hsla,
+    /// The 1 px divider between two inactive tabs.
+    pub tab_separator: Hsla,
+    /// Neutral hover / pressed overlays for borderless controls. Alpha black on
+    /// light, alpha white on dark, so they work on any surface.
+    pub hover: Hsla,
+    pub pressed: Hsla,
 }
 
 /// How surface fills relate to what is painted behind them.
@@ -421,9 +458,50 @@ pub struct ShadowLayer {
 /// Elevation shadows — each tier can have multiple stacked layers.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Shadows {
+    /// A raised control at rest: the active tab pill, a tile.
     pub row: Vec<ShadowLayer>,
+    /// A floating card (pane, dock) at rest.
+    pub pane: Vec<ShadowLayer>,
+    /// The focused card: same geometry, stronger alpha.
+    pub pane_focused: Vec<ShadowLayer>,
+    /// Menus, dropdowns, tooltips, toasts.
     pub popover: Vec<ShadowLayer>,
+    /// Dialogs and the command palette.
     pub modal: Vec<ShadowLayer>,
+}
+
+/// A [`Shadows`] tier as a `Copy` value (at most [`ShadowStack::MAX`] layers),
+/// so it can ride along in the `Copy` ui-kit `Palette`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShadowStack {
+    layers: [Option<ShadowLayer>; Self::MAX],
+}
+
+impl ShadowStack {
+    pub const MAX: usize = 3;
+
+    /// The first [`Self::MAX`] layers of `layers`.
+    pub fn from_layers(layers: &[ShadowLayer]) -> Self {
+        let mut out = [None; Self::MAX];
+        for (slot, layer) in out.iter_mut().zip(layers) {
+            *slot = Some(*layer);
+        }
+        Self { layers: out }
+    }
+
+    /// The stack as GPUI box shadows, ready for `.shadow(..)`.
+    pub fn to_box_shadows(&self) -> Vec<gpui::BoxShadow> {
+        self.layers
+            .iter()
+            .flatten()
+            .map(|l| gpui::BoxShadow {
+                color: l.color,
+                offset: gpui::point(gpui::px(l.x), gpui::px(l.y)),
+                blur_radius: gpui::px(l.blur),
+                spread_radius: gpui::px(l.spread),
+            })
+            .collect()
+    }
 }
 
 /// A cubic-bezier easing curve (`cubic-bezier(x1, y1, x2, y2)`).
@@ -592,14 +670,62 @@ impl Default for Typography {
     }
 }
 
-fn shadow(x: f32, y: f32, blur: f32, spread: f32, alpha: f32) -> ShadowLayer {
-    // Every shadow in globals.css uses `oklch(0% 0 0 / a)` — pure black.
+/// One shadow layer in the colour `rgb` (0–255 per channel) at `alpha`.
+fn shadow(x: f32, y: f32, blur: f32, spread: f32, rgb: [u8; 3], alpha: f32) -> ShadowLayer {
     ShadowLayer {
         x,
         y,
         blur,
         spread,
-        color: oklch_a(0.0, 0.0, 0.0, alpha),
+        color: rgba8(rgb, alpha),
+    }
+}
+
+/// `rgb` (0–255 per channel) at `alpha` as an [`Hsla`].
+fn rgba8(rgb: [u8; 3], alpha: f32) -> Hsla {
+    let c = |v: u8| f32::from(v) / 255.0;
+    let mut out: Hsla = gpui::Rgba {
+        r: c(rgb[0]),
+        g: c(rgb[1]),
+        b: c(rgb[2]),
+        a: alpha,
+    }
+    .into();
+    out.a = alpha;
+    out
+}
+
+/// Light shadows are tinted toward the canvas (a warm plum), never pure black:
+/// pure black on a pastel canvas reads as dirt.
+const LIGHT_SHADOW: [u8; 3] = [60, 40, 50];
+const DARK_SHADOW: [u8; 3] = [0, 0, 0];
+
+/// The shadow recipe of the floating layer. Every tier is a tight **contact**
+/// layer plus a wide, soft **ambient** layer; the ambient layer's negative
+/// spread keeps it from leaking past the card's edges. `rest` and `lift` are
+/// the alphas of an unfocused and a focused/raised element.
+fn shadow_tiers(rgb: [u8; 3], rest: f32, lift: f32) -> Shadows {
+    Shadows {
+        row: vec![
+            shadow(0.0, 1.0, 2.0, 0.0, rgb, rest),
+            shadow(0.0, 2.0, 8.0, 0.0, rgb, rest),
+        ],
+        pane: vec![
+            shadow(0.0, 1.0, 2.0, 0.0, rgb, rest),
+            shadow(0.0, 6.0, 22.0, -2.0, rgb, rest),
+        ],
+        pane_focused: vec![
+            shadow(0.0, 1.0, 2.0, 0.0, rgb, lift),
+            shadow(0.0, 6.0, 22.0, -2.0, rgb, lift),
+        ],
+        popover: vec![
+            shadow(0.0, 1.0, 2.0, 0.0, rgb, lift),
+            shadow(0.0, 8.0, 24.0, 0.0, rgb, lift),
+        ],
+        modal: vec![
+            shadow(0.0, 2.0, 6.0, 0.0, rgb, lift),
+            shadow(0.0, 18.0, 48.0, -4.0, rgb, lift),
+        ],
     }
 }
 
@@ -621,23 +747,23 @@ impl Theme {
             is_dark: false,
             core: CoreColors {
                 background: hex("#ffffff"),
-                foreground: hex("#2a2822"),
-                card: hex("#f0eee6"),
-                card_foreground: hex("#2a2822"),
+                foreground: hex("#1d1d1f"),
+                card: hex("#f4f4f6"),
+                card_foreground: hex("#1d1d1f"),
                 popover: hex("#ffffff"),
-                popover_foreground: hex("#2a2822"),
+                popover_foreground: hex("#1d1d1f"),
                 primary: hex("#007cf7"),
                 primary_foreground: hex("#ffffff"),
-                secondary: hex("#f0eee6"),
-                secondary_foreground: hex("#4a473c"),
-                muted: hex("#f0eee6"),
-                muted_foreground: hex("#5c5849"),
-                accent: hex("#f0ede4"),
-                accent_foreground: hex("#2a2822"),
+                secondary: hex("#f4f4f6"),
+                secondary_foreground: hex("#48484a"),
+                muted: hex("#f4f4f6"),
+                muted_foreground: hex("#636366"),
+                accent: hex("#efeff2"),
+                accent_foreground: hex("#1d1d1f"),
                 destructive: hex("#e8222d"),
                 destructive_foreground: hex("#ffffff"),
-                border: hex("#e3e2dd"),
-                input: hex("#dcdad5"),
+                border: hex("#00000014"),
+                input: hex("#d9d9de"),
                 ring: hex("#6b6b70"),
                 charts: [
                     hex("#2a78d6"),
@@ -648,35 +774,54 @@ impl Theme {
                 ],
             },
             sidebar: SidebarColors {
-                background: hex("#f5f4ee"),
-                foreground: hex("#2a2822"),
+                background: hex("#f6f6f8"),
+                foreground: hex("#1d1d1f"),
                 primary: hex("#007cf7"),
                 primary_foreground: hex("#ffffff"),
-                accent: hex("#f0ede4"),
-                accent_foreground: hex("#2a2822"),
-                border: hex("#e3e2dd"),
+                accent: hex("#efeff2"),
+                accent_foreground: hex("#1d1d1f"),
+                border: hex("#00000014"),
                 ring: hex("#6b6b70"),
             },
             // `--surface-chrome` for every window bar and dock.
             surface: SurfaceColors {
-                toolbar: hex("#f5f4ee"),
-                title_bar: hex("#f5f4ee"),
-                status_bar: hex("#f5f4ee"),
-                hover_strong: hex("#e2dccb"),
-                sunken: hex("#d8d0ba"),
+                toolbar: hex("#f6f6f8"),
+                title_bar: hex("#f6f6f8"),
+                status_bar: hex("#f6f6f8"),
+                hover_strong: hex("#dcdce0"),
+                sunken: hex("#e4e4e8"),
                 action: hex("#1c1c1e"),
                 action_foreground: hex("#ffffff"),
                 action_hover: hex("#343436"),
                 action_active: hex("#080809"),
             },
+            // The floating layer: the Gorex-style pastel canvas, paper cards,
+            // a translucent tab track and neutral alpha hover/pressed overlays.
+            float: FloatColors {
+                canvas_top: hex("#f6e7f6"),
+                canvas_mid: hex("#efe1e6"),
+                canvas_low: hex("#eee0d3"),
+                canvas_bottom: hex("#ece1bd"),
+                canvas_tint: rgba8([242, 214, 222], 0.35),
+                pane: hex("#ffffff"),
+                pane_focused: hex("#ffffff"),
+                pane_border: hex("#ffffffb8"),
+                pane_border_focused: hex("#ffffff"),
+                track: hex("#ffffff57"),
+                track_border: hex("#ffffff73"),
+                tab_active: hex("#fffffff7"),
+                tab_separator: hex("#00000021"),
+                hover: hex("#0000000e"),
+                pressed: hex("#0000001a"),
+            },
             border: BorderVariants {
-                variant: hex("#e3e2dd"),  // --line
-                focused: hex("#6b6b70"),  // --ring
-                selected: hex("#dcdad5"), // --line-strong
+                variant: hex("#00000014"),  // --line
+                focused: hex("#6b6b70"),    // --ring
+                selected: hex("#0000001f"), // --line-strong
                 transparent: transparent(),
-                disabled: hex("#edece7"), // --line-subtle
-                strong: hex("#dcdad5"),
-                subtle: hex("#edece7"),
+                disabled: hex("#0000000d"), // --line-subtle
+                strong: hex("#0000001f"),
+                subtle: hex("#0000000d"),
             },
             status: StatusColors {
                 modified: hex("#3a6ea5"),
@@ -688,33 +833,33 @@ impl Theme {
             },
             diff: DiffColors::default(),
             interaction: InteractionColors {
-                cursor: hex("#2a2822"),
+                cursor: hex("#3a3d42"),
                 selection: hex("#007cf740"),
             },
             terminal: TerminalPalette {
-                background: hex("#faf9f5"),
-                foreground: hex("#3d3a2f"),
-                bright_foreground: hex("#1a1814"),
-                dim_foreground: hex("#73705f"),
+                background: hex("#fbfbfb"),
+                foreground: hex("#2a2d31"),
+                bright_foreground: hex("#1d1d1f"),
+                dim_foreground: hex("#6e7178"),
                 normal: AnsiColors {
-                    black: hex("#3d3a2f"),
-                    red: hex("#c0141d"),
-                    green: hex("#187a41"),
-                    yellow: hex("#9c5200"),
-                    blue: hex("#0064c8"),
-                    magenta: hex("#a05278"),
-                    cyan: hex("#127589"),
-                    white: hex("#cbc8bd"),
+                    black: hex("#2a2d31"),
+                    red: hex("#c2465a"),
+                    green: hex("#4e8e5f"),
+                    yellow: hex("#b07a1e"),
+                    blue: hex("#2e6fd0"),
+                    magenta: hex("#9050c8"),
+                    cyan: hex("#1e8c9c"),
+                    white: hex("#8a8d93"),
                 },
                 bright: AnsiColors {
-                    black: hex("#73705f"),
-                    red: hex("#e8222d"),
-                    green: hex("#1fa85a"),
-                    yellow: hex("#f08a00"),
-                    blue: hex("#007cf7"),
-                    magenta: hex("#b0608a"),
-                    cyan: hex("#16849b"),
-                    white: hex("#3d3a2f"),
+                    black: hex("#6e7178"),
+                    red: hex("#d9566b"),
+                    green: hex("#5ba671"),
+                    yellow: hex("#c89026"),
+                    blue: hex("#4a8fe0"),
+                    magenta: hex("#a56bd8"),
+                    cyan: hex("#2ba2b3"),
+                    white: hex("#b5b8be"),
                 },
                 dim: AnsiColors {
                     black: hex("#3d3a2f"),
@@ -730,15 +875,7 @@ impl Theme {
                 selection: hex("#007cf740"),
             },
             radius: RadiusScale::ciel(),
-            shadows: Shadows {
-                row: vec![shadow(0.0, 1.0, 2.0, 0.0, 0.04)],
-                popover: vec![
-                    shadow(0.0, 12.0, 32.0, 0.0, 0.12),
-                    shadow(0.0, 1.0, 4.0, 0.0, 0.06),
-                ],
-                // Ciel dialogs carry a 1px `line-strong` border, not a shadow.
-                modal: Vec::new(),
-            },
+            shadows: shadow_tiers(LIGHT_SHADOW, 0.07, 0.12),
             animation: Animation::default(),
             typography: Typography::default(),
         }
@@ -750,25 +887,25 @@ impl Theme {
         Self {
             is_dark: true,
             core: CoreColors {
-                background: hex("#1a1a1a"),
-                foreground: hex("#ffffff"),
-                card: hex("#212121"),
-                card_foreground: hex("#ffffff"),
-                popover: hex("#1a1a1a"),
+                background: hex("#1e1e22"),
+                foreground: hex("#f2f2f7"),
+                card: hex("#26262b"),
+                card_foreground: hex("#f2f2f7"),
+                popover: hex("#26262b"),
                 popover_foreground: hex("#ffffff"),
                 primary: hex("#007cf7"),
                 primary_foreground: hex("#ffffff"),
-                secondary: hex("#212121"),
-                secondary_foreground: hex("#dcdcdc"),
-                muted: hex("#212121"),
-                muted_foreground: hex("#979797"),
-                accent: hex("#2e2e2e"),
+                secondary: hex("#26262b"),
+                secondary_foreground: hex("#d1d1d6"),
+                muted: hex("#26262b"),
+                muted_foreground: hex("#aeaeb2"),
+                accent: hex("#303036"),
                 accent_foreground: hex("#ffffff"),
                 destructive: hex("#fd2f3b"),
                 destructive_foreground: hex("#ffffff"),
-                border: hex("#ffffff0b"),
-                input: hex("#ffffff14"),
-                ring: hex("#979797"),
+                border: hex("#ffffff0f"),
+                input: hex("#ffffff1a"),
+                ring: hex("#98989d"),
                 charts: [
                     hex("#3987e5"),
                     hex("#d95926"),
@@ -778,34 +915,51 @@ impl Theme {
                 ],
             },
             sidebar: SidebarColors {
-                background: hex("#0d0d0d"),
-                foreground: hex("#ffffff"),
+                background: hex("#19191d"),
+                foreground: hex("#f2f2f7"),
                 primary: hex("#007cf7"),
                 primary_foreground: hex("#ffffff"),
-                accent: hex("#2e2e2e"),
-                accent_foreground: hex("#ffffff"),
-                border: hex("#ffffff0b"),
-                ring: hex("#979797"),
+                accent: hex("#303036"),
+                accent_foreground: hex("#f2f2f7"),
+                border: hex("#ffffff0f"),
+                ring: hex("#98989d"),
             },
             surface: SurfaceColors {
-                toolbar: hex("#0d0d0d"),
-                title_bar: hex("#0d0d0d"),
-                status_bar: hex("#0d0d0d"),
-                hover_strong: hex("#4d4d4d"),
-                sunken: hex("#4a4a4a"),
+                toolbar: hex("#19191d"),
+                title_bar: hex("#19191d"),
+                status_bar: hex("#19191d"),
+                hover_strong: hex("#46464c"),
+                sunken: hex("#3a3a40"),
                 action: hex("#f0f0f0"),
                 action_foreground: hex("#141414"),
                 action_hover: hex("#cdcdcd"),
                 action_active: hex("#c8c8c8"),
             },
+            float: FloatColors {
+                canvas_top: hex("#2c2131"),
+                canvas_mid: hex("#231e27"),
+                canvas_low: hex("#221f22"),
+                canvas_bottom: hex("#2a2619"),
+                canvas_tint: rgba8([80, 40, 60], 0.25),
+                pane: hex("#1e1e22"),
+                pane_focused: hex("#1e1e22"),
+                pane_border: hex("#ffffff0d"),
+                pane_border_focused: hex("#ffffff24"),
+                track: hex("#ffffff0f"),
+                track_border: hex("#ffffff0f"),
+                tab_active: hex("#ffffff24"),
+                tab_separator: hex("#ffffff24"),
+                hover: hex("#ffffff14"),
+                pressed: hex("#ffffff24"),
+            },
             border: BorderVariants {
-                variant: hex("#ffffff0b"),
+                variant: hex("#ffffff0f"),
                 focused: hex("#cdcdcd"), // --field-ring
-                selected: hex("#ffffff14"),
+                selected: hex("#ffffff1f"),
                 transparent: transparent(),
-                disabled: hex("#ffffff09"),
-                strong: hex("#ffffff14"),
-                subtle: hex("#ffffff09"),
+                disabled: hex("#ffffff0a"),
+                strong: hex("#ffffff1f"),
+                subtle: hex("#ffffff0a"),
             },
             status: StatusColors {
                 modified: hex("#6bc7d9"),
@@ -821,28 +975,28 @@ impl Theme {
                 selection: hex("#007cf740"),
             },
             terminal: TerminalPalette {
-                background: hex("#1a1a1a"),
-                foreground: hex("#dcdcdc"),
+                background: hex("#1e1e22"),
+                foreground: hex("#e6e6ea"),
                 bright_foreground: hex("#ffffff"),
-                dim_foreground: hex("#979797"),
+                dim_foreground: hex("#98989d"),
                 normal: AnsiColors {
-                    black: hex("#141414"),
-                    red: hex("#fd2f3b"),
-                    green: hex("#31cf76"),
-                    yellow: hex("#ff9412"),
-                    blue: hex("#42a0ff"),
-                    magenta: hex("#d6adf2"),
-                    cyan: hex("#6bc7d9"),
-                    white: hex("#dcdcdc"),
+                    black: hex("#3a3a40"),
+                    red: hex("#ff6b7f"),
+                    green: hex("#7bd88f"),
+                    yellow: hex("#e5c07b"),
+                    blue: hex("#6cb2ff"),
+                    magenta: hex("#c792ea"),
+                    cyan: hex("#56d4dd"),
+                    white: hex("#d0d0d6"),
                 },
                 bright: AnsiColors {
-                    black: hex("#6a6a6a"),
-                    red: hex("#ff6069"),
-                    green: hex("#48e18a"),
-                    yellow: hex("#ffab43"),
-                    blue: hex("#74b9ff"),
-                    magenta: hex("#e4c1f7"),
-                    cyan: hex("#8bdee8"),
+                    black: hex("#6e6e78"),
+                    red: hex("#ff8c9c"),
+                    green: hex("#9be8a8"),
+                    yellow: hex("#f2d28a"),
+                    blue: hex("#8ec5ff"),
+                    magenta: hex("#d7a8f2"),
+                    cyan: hex("#7fe3ea"),
                     white: hex("#ffffff"),
                 },
                 dim: AnsiColors {
@@ -859,14 +1013,7 @@ impl Theme {
                 selection: hex("#007cf740"),
             },
             radius: RadiusScale::ciel(),
-            shadows: Shadows {
-                row: vec![shadow(0.0, 1.0, 2.0, 0.0, 0.24)],
-                popover: vec![
-                    shadow(0.0, 12.0, 32.0, 0.0, 0.26),
-                    shadow(0.0, 1.0, 4.0, 0.0, 0.18),
-                ],
-                modal: Vec::new(),
-            },
+            shadows: shadow_tiers(DARK_SHADOW, 0.25, 0.40),
             animation: Animation::default(),
             typography: Typography::default(),
         }
@@ -876,7 +1023,7 @@ impl Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::to_rgb8;
+    use crate::color::{oklch_a, to_rgb8};
 
     fn close(a: [u8; 3], b: [u8; 3], tol: i32) -> bool {
         a.iter()
@@ -951,13 +1098,42 @@ mod tests {
     fn ciel_theme_defaults_use_the_ciel_radius_scale_and_soft_dark_shadows() {
         for theme in [Theme::light(), Theme::dark()] {
             assert_eq!(theme.radius, RadiusScale::ciel());
-            // Ciel dialogs are bordered, not shadowed.
-            assert!(theme.shadows.modal.is_empty());
+            // Every tier is a contact layer plus an ambient layer.
+            for tier in [
+                &theme.shadows.row,
+                &theme.shadows.pane,
+                &theme.shadows.pane_focused,
+                &theme.shadows.popover,
+                &theme.shadows.modal,
+            ] {
+                assert_eq!(tier.len(), 2);
+            }
+            // A focused card casts a stronger shadow than a resting one.
+            assert!(theme.shadows.pane_focused[1].color.a > theme.shadows.pane[1].color.a);
         }
 
         let dark = Theme::dark();
         assert!(dark.shadows.row[0].color.a < 0.3);
-        assert!(dark.shadows.popover[0].color.a < 0.4);
+        assert!(dark.shadows.popover[0].color.a <= 0.4);
+    }
+
+    #[test]
+    fn float_layer_defaults_are_a_gradient_canvas_with_translucent_chrome() {
+        for theme in [Theme::light(), Theme::dark()] {
+            let f = theme.float;
+            assert_ne!(f.canvas_top, f.canvas_bottom, "the canvas is a gradient");
+            assert!(f.track.a < 1.0 && f.hover.a < 1.0 && f.pressed.a > f.hover.a);
+            assert!(f.pane.a == 1.0, "cards are opaque so editor bodies match");
+        }
+    }
+
+    #[test]
+    fn shadow_stack_keeps_at_most_three_layers() {
+        let s = Theme::light().shadows;
+        let four = vec![s.pane[0]; 4];
+        assert_eq!(ShadowStack::from_layers(&four).to_box_shadows().len(), 3);
+        assert_eq!(ShadowStack::from_layers(&s.pane).to_box_shadows().len(), 2);
+        assert!(ShadowStack::from_layers(&[]).to_box_shadows().is_empty());
     }
 
     #[test]
@@ -969,23 +1145,23 @@ mod tests {
     #[test]
     fn dark_spot_checks_against_ciel_tokens() {
         let d = Theme::dark();
-        // --accent #007cf7, --surface #1a1a1a, --surface-chrome #0d0d0d,
-        // --surface-sunken #4a4a4a, --destructive #fd2f3b
+        // --accent #007cf7, --surface #1e1e22, --surface-chrome #19191d,
+        // --surface-sunken #3a3a40, --destructive #fd2f3b
         assert!(close(to_rgb8(d.core.primary), [0x00, 0x7C, 0xF7], 1));
-        assert!(close(to_rgb8(d.core.background), [0x1A, 0x1A, 0x1A], 1));
-        assert!(close(to_rgb8(d.surface.toolbar), [0x0D, 0x0D, 0x0D], 1));
-        assert!(close(to_rgb8(d.surface.sunken), [0x4A, 0x4A, 0x4A], 1));
+        assert!(close(to_rgb8(d.core.background), [0x1E, 0x1E, 0x22], 1));
+        assert!(close(to_rgb8(d.surface.toolbar), [0x19, 0x19, 0x1D], 1));
+        assert!(close(to_rgb8(d.surface.sunken), [0x3A, 0x3A, 0x40], 1));
         assert!(close(to_rgb8(d.core.destructive), [0xFD, 0x2F, 0x3B], 1));
     }
 
     #[test]
     fn light_spot_checks_against_ciel_tokens() {
         let l = Theme::light();
-        // --surface #fff, --surface-chrome #f5f4ee, --surface-sunken #d8d0ba,
+        // --surface #fff, --surface-chrome #f6f6f8, --surface-sunken #e4e4e8,
         // --action-surface #1c1c1e
         assert!(close(to_rgb8(l.core.background), [0xFF, 0xFF, 0xFF], 1));
-        assert!(close(to_rgb8(l.surface.toolbar), [0xF5, 0xF4, 0xEE], 1));
-        assert!(close(to_rgb8(l.surface.sunken), [0xD8, 0xD0, 0xBA], 1));
+        assert!(close(to_rgb8(l.surface.toolbar), [0xF6, 0xF6, 0xF8], 1));
+        assert!(close(to_rgb8(l.surface.sunken), [0xE4, 0xE4, 0xE8], 1));
         assert!(close(to_rgb8(l.surface.action), [0x1C, 0x1C, 0x1E], 1));
     }
 
@@ -1008,9 +1184,11 @@ mod tests {
     #[test]
     fn shadow_layer_counts() {
         let s = Theme::dark().shadows;
-        assert_eq!(s.row.len(), 1);
+        assert_eq!(s.row.len(), 2);
         assert_eq!(s.popover.len(), 2);
-        assert!((s.popover[0].color.a - 0.26).abs() < 1e-6);
+        assert!((s.popover[0].color.a - 0.40).abs() < 1e-6);
+        assert!((s.pane[1].color.a - 0.25).abs() < 1e-6);
+        assert_eq!(s.pane[1].spread, -2.0);
     }
 
     #[test]

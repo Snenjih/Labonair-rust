@@ -8511,6 +8511,7 @@ impl EditorView {
         let (pos, desc) = self.hover.clone()?;
         let theme = self.theme.read(cx);
         let (card, fg, border) = (theme.card(), theme.foreground(), theme.border());
+        let shadow = labonair_ui_kit::Palette::from_theme(theme).popover_shadow();
         let origin = self.bounds.map(|b| b.origin).unwrap_or_default();
         Some(
             div()
@@ -8526,7 +8527,7 @@ impl EditorView {
                 .bg(card)
                 .text_size(px(11.0))
                 .text_color(fg)
-                .shadow_md()
+                .shadow(shadow)
                 .child(desc),
         )
     }
@@ -10058,7 +10059,7 @@ impl EditorView {
             .border_1()
             .border_color(palette.border)
             .bg(palette.popover)
-            .shadow_md();
+            .shadow(palette.popover_shadow());
         let mut shown = false;
         if self.completion_visible && self.prefs.completion() {
             if let Some(list) = state.completion.clone() {
@@ -10476,7 +10477,7 @@ impl EditorView {
             .border_1()
             .border_color(palette.border)
             .bg(palette.popover)
-            .shadow_md()
+            .shadow(palette.popover_shadow())
             .child(labonair_ui_kit::list_header(
                 "Signature help",
                 palette.muted,
@@ -10557,7 +10558,7 @@ impl EditorView {
             .border_1()
             .border_color(palette.border)
             .bg(palette.popover)
-            .shadow_md()
+            .shadow(palette.popover_shadow())
             .child(
                 div()
                     .text_xs()
@@ -10632,7 +10633,7 @@ impl EditorView {
             .border_1()
             .border_color(palette.border)
             .bg(palette.popover)
-            .shadow_md()
+            .shadow(palette.popover_shadow())
             .child(
                 div()
                     .text_xs()
@@ -10750,7 +10751,7 @@ impl EditorView {
             .border_1()
             .border_color(palette.border)
             .bg(palette.popover)
-            .shadow_md()
+            .shadow(palette.popover_shadow())
             .child(
                 div()
                     .text_xs()
@@ -10833,7 +10834,7 @@ impl EditorView {
             .border_1()
             .border_color(palette.border)
             .bg(palette.popover)
-            .shadow_md()
+            .shadow(palette.popover_shadow())
             .child(
                 div()
                     .text_xs()

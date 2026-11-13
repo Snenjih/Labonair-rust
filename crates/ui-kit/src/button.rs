@@ -104,6 +104,8 @@ impl ButtonSize {
         }
     }
 
+    /// Glyph size. Square icon-only buttons get ~0.57x their edge so the glyph
+    /// fills the hit area; labelled buttons keep the smaller text-adjacent size.
     pub(crate) fn icon_size(self) -> f32 {
         match self {
             ButtonSize::Xs
@@ -203,7 +205,12 @@ fn button_surface(
         .justify_center()
         .gap(c.control_space(4.0))
         .h(height)
-        .rounded(px(c.radius.md))
+        // Icon-only buttons are soft squares (edge / 2.6, the floating-layer
+        // squircle); labelled buttons keep the `md` control radius.
+        .when(size.is_icon(), |button| {
+            button.rounded(height * (1.0 / 2.6))
+        })
+        .when(!size.is_icon(), |button| button.rounded(px(c.radius.md)))
         .font_weight(FontWeight::MEDIUM)
         .text_size(px(size.label_size() * c.ui_font_scale))
         .when(size.is_icon(), |button| button.w(height))
@@ -269,8 +276,9 @@ fn variant_hover(
     c: Palette,
 ) -> impl Fn(StyleRefinement) -> StyleRefinement {
     move |style| match variant {
-        ButtonVariant::Subtle | ButtonVariant::OutlinedGhost => style.bg(c.accent),
-        ButtonVariant::Info => style.bg(c.accent).text_color(c.fg),
+        // Borderless controls hover to the neutral `float.hover` overlay.
+        ButtonVariant::Subtle | ButtonVariant::OutlinedGhost => style.bg(c.hover),
+        ButtonVariant::Info => style.bg(c.hover).text_color(c.fg),
         ButtonVariant::Filled => style.bg(c.hover_strong),
         ButtonVariant::Outlined => style.bg(c.accent).border_color(c.line_strong),
         ButtonVariant::Action => style.bg(c.action_hover),
@@ -294,7 +302,7 @@ fn focus_style(style: StyleRefinement, variant: ButtonVariant, c: Palette) -> St
 fn active_style(style: StyleRefinement, variant: ButtonVariant, c: Palette) -> StyleRefinement {
     match variant {
         ButtonVariant::Subtle | ButtonVariant::OutlinedGhost | ButtonVariant::Info => {
-            style.bg(c.hover_strong)
+            style.bg(c.pressed)
         }
         ButtonVariant::Filled | ButtonVariant::Outlined => style.bg(c.hover_strong),
         ButtonVariant::Action => style.bg(c.action_active),

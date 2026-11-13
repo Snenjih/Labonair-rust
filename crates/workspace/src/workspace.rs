@@ -6905,6 +6905,14 @@ impl Workspace {
             )
         };
 
+        // Comfortable layout: a dock is a floating card like a pane — rounded,
+        // rimmed, shadowed, with a gap margin on its outer sides (the pane
+        // area supplies the gap on the inner side). Compact keeps the flat
+        // dock with its structural border.
+        let (style, tiling) = self.pane_style(cx);
+        let framed = style.is_framed();
+        let gap = px(if framed { tiling.gap } else { 0.0 });
+        let card = Palette::from_theme(self.theme.read(cx));
         let is_bottom = pos == DockPosition::Bottom;
         let (size, zoomed, body) = {
             let dock = self.dock(pos);
@@ -6963,13 +6971,28 @@ impl Workspace {
             .when(is_bottom, |d| d.w_full())
             .bg(sidebar_bg)
             .text_color(sidebar_fg)
-            .when(pos == DockPosition::Left, |d| {
+            .when(framed, |d| {
+                // GPUI clips to rectangles: the inset keeps square panel
+                // content inside the rounded corners (as pane bodies do).
+                d.rounded(px(card.radius.lg))
+                    .border_1()
+                    .border_color(card.pane_line)
+                    .shadow(card.pane_shadow(false))
+                    .p(px(card.radius.lg * 0.3))
+                    .my(if is_bottom { px(0.0) } else { gap })
+                    .when(is_bottom, |d| d.mx(gap).mb(gap))
+                    .when(pos == DockPosition::Left, |d| d.ml(gap))
+                    .when(pos == DockPosition::Right, |d| d.mr(gap))
+            })
+            .when(!framed && pos == DockPosition::Left, |d| {
                 d.border_r_1().border_color(sidebar_border)
             })
-            .when(pos == DockPosition::Right, |d| {
+            .when(!framed && pos == DockPosition::Right, |d| {
                 d.border_l_1().border_color(sidebar_border)
             })
-            .when(is_bottom, |d| d.border_t_1().border_color(sidebar_border))
+            .when(!framed && is_bottom, |d| {
+                d.border_t_1().border_color(sidebar_border)
+            })
             .children(body)
             .children(handle)
     }
@@ -7104,6 +7127,15 @@ impl Render for Workspace {
             .flex_col()
             .child(div().flex_1().min_h_0().min_w_0().child(content))
             .children(bottom_dock);
+        // The docks' outer margin is part of the area the drag is measured in.
+        let dock_gap = {
+            let (style, tiling) = self.pane_style(cx);
+            if style.is_framed() {
+                tiling.gap
+            } else {
+                0.0
+            }
+        };
         let docked = div()
             .flex_1()
             .min_h_0()
@@ -7113,14 +7145,18 @@ impl Render for Workspace {
             .child(center)
             .children(right_dock)
             .on_drag_move(
-                cx.listener(|this, ev: &DragMoveEvent<DockResize>, _window, cx| {
+                cx.listener(move |this, ev: &DragMoveEvent<DockResize>, _window, cx| {
                     let pos = ev.drag(cx).0;
                     let b = ev.bounds;
                     let p = ev.event.position;
                     let size = match pos {
-                        DockPosition::Left => f32::from(p.x - b.origin.x),
-                        DockPosition::Right => f32::from(b.origin.x + b.size.width - p.x),
-                        DockPosition::Bottom => f32::from(b.origin.y + b.size.height - p.y),
+                        DockPosition::Left => f32::from(p.x - b.origin.x) - dock_gap,
+                        DockPosition::Right => {
+                            f32::from(b.origin.x + b.size.width - p.x) - dock_gap
+                        }
+                        DockPosition::Bottom => {
+                            f32::from(b.origin.y + b.size.height - p.y) - dock_gap
+                        }
                     };
                     this.set_dock_size(pos, size, cx);
                 }),

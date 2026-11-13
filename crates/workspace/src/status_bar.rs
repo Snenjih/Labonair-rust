@@ -23,9 +23,9 @@
 //! window persisted a change).
 
 use gpui::{
-    div, px, AnyElement, AnyView, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
-    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString,
-    Styled, Window,
+    div, prelude::FluentBuilder, px, AnyElement, AnyView, Context, Entity, FocusHandle,
+    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement,
+    Pixels, Point, Render, SharedString, Styled, Window,
 };
 use labonair_panel::{AnyStatusItemHandle, StatusItemConstructor, StatusMenuEntry, StatusSide};
 use labonair_ui_kit::{context_menu, MenuItem, Palette};
@@ -355,9 +355,14 @@ impl Render for StatusBar {
             tracing::trace_span!(target: "labonair::perf", "render", view = "status_bar").entered();
         self.ensure_built(window, cx);
 
-        let (status_bar_bg, muted, border) = {
+        let (status_bar_bg, muted, border, floating) = {
             let t = self.theme.read(cx);
-            (t.status_bar(), t.muted_foreground(), t.border())
+            (
+                t.status_bar(),
+                t.muted_foreground(),
+                t.border(),
+                t.metrics().pane_layout == labonair_theme::PaneLayout::Comfortable,
+            )
         };
         let left = self.cluster(StatusSide::Left, cx);
         let right = self.cluster(StatusSide::Right, cx);
@@ -374,9 +379,10 @@ impl Render for StatusBar {
             .w_full()
             .flex_shrink_0()
             .px_3()
-            .bg(status_bar_bg)
-            .border_t_1()
-            .border_color(border)
+            // Floating layer: no fill, no divider — the canvas shows through.
+            .when(!floating, |bar| {
+                bar.bg(status_bar_bg).border_t_1().border_color(border)
+            })
             .text_size(px(11.0))
             .text_color(muted)
             .child(

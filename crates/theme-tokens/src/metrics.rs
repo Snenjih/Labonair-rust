@@ -100,7 +100,7 @@ pub enum PaneLayout {
 }
 
 /// Gap between floating panes (px, before density scaling).
-pub const PANE_GAP_COMFORTABLE: f32 = 6.0;
+pub const PANE_GAP_COMFORTABLE: f32 = 8.0;
 
 /// The resolved metric bundle — the "settings" half of [`ActiveTheme`].
 ///

@@ -559,6 +559,8 @@ impl TransfersView {
             list = list.child(self.render_job(&record, c, cx));
         }
 
+        let popover_shadow =
+            labonair_ui_kit::Palette::from_theme(self.theme.read(cx)).popover_shadow();
         div()
             .w(px(380.0))
             .max_h(px(460.0))
@@ -569,7 +571,7 @@ impl TransfersView {
             .border_color(c.border)
             .bg(c.card)
             .text_color(c.fg)
-            .shadow_lg()
+            .shadow(popover_shadow)
             .child(header)
             .child(list)
             .into_any_element()

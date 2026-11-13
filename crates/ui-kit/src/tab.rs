@@ -8,7 +8,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window,
 };
 
-use crate::animation::state_fill;
+use crate::animation::{state_fill, MotionExt};
 use crate::{
     icon_button_builder, indicator, ButtonSize, ButtonVariant, IconButtonShape, IconName,
     IndicatorSize, Palette, DISABLED_OPACITY,
@@ -33,11 +33,13 @@ pub enum TabStyle {
     /// The flat, contiguous strip (the current titlebar tabs).
     #[default]
     Classic,
-    /// Rounded floating blocks: 28px blocks with `radius.md`, a sunken fill and
-    /// a `line_subtle` ring when selected, hover fill otherwise, and a close
-    /// button on hover only. Lay blocks out with [`floating_tab_strip`]; the
-    /// strip supplies the 40px bar, 6px padding and 4px (horizontal) or 2px
-    /// (vertical) gap.
+    /// Rounded floating blocks, laid out with [`floating_tab_strip`].
+    ///
+    /// Horizontal blocks are 28px **pills** sitting in the strip's translucent
+    /// track: the selected pill is `float.tab_active` with the `row` shadow,
+    /// the others hover to `float.hover`. Vertical blocks (the Tabs panel)
+    /// are 28px blocks with `radius.md`, a sunken fill and a `line_subtle`
+    /// ring when selected. Both show the close button on hover only.
     Floating,
 }
 
@@ -214,6 +216,8 @@ impl TabItemBuilder {
 
         let horizontal = layout == TabLayout::Horizontal;
         let floating = style == TabStyle::Floating;
+        // Horizontal floating tabs are pills on the strip's track.
+        let pill = floating && horizontal;
         let mut row = div()
             .id(id.clone())
             .group("tab_item")
@@ -231,6 +235,8 @@ impl TabItemBuilder {
             }))
             .rounded(if horizontal && !floating {
                 px(0.0)
+            } else if pill {
+                px(FLOATING_PILL_HEIGHT / 2.0)
             } else {
                 px(palette.radius.md)
             })
@@ -254,7 +260,9 @@ impl TabItemBuilder {
             .when(selected, |row| row.font_weight(FontWeight::SEMIBOLD))
             // Hover stays under the selected layer so a click on a hovered tab
             // blends into the selection instead of dipping to the bar colour.
-            .when(!disabled, |row| row.hover(|style| style.bg(palette.accent)))
+            .when(!disabled, |row| {
+                row.hover(|style| style.bg(if pill { palette.hover } else { palette.accent }))
+            })
             .when(!disabled, |row| {
                 row.cursor_pointer()
                     .tab_index(0)
@@ -265,23 +273,36 @@ impl TabItemBuilder {
         // Selected fill (classic: editor surface; floating: sunken block with a
         // 1px ring). An always-built layer, so selecting and deselecting
         // crossfade; paints behind everything that follows.
-        row = row.child(state_fill(
-            (ElementId::from(id.clone()), "fill"),
-            palette,
-            selected,
-            if horizontal && !floating {
-                palette.bg
-            } else {
-                palette.selected_fill
-            },
-            floating.then_some(palette.line_subtle),
-            if horizontal && !floating {
-                px(0.0)
-            } else {
-                px(palette.radius.md)
-            },
-            px(if floating { 1.0 } else { 0.0 }),
-        ));
+        row = if pill {
+            // The selected pill: `float.tab_active` plus the `row` shadow tier.
+            row.child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .rounded(px(FLOATING_PILL_HEIGHT / 2.0))
+                    .bg(palette.tab_active)
+                    .shadow(palette.row_shadow())
+                    .motion_state_fade((ElementId::from(id.clone()), "fill"), palette, selected),
+            )
+        } else {
+            row.child(state_fill(
+                (ElementId::from(id.clone()), "fill"),
+                palette,
+                selected,
+                if horizontal && !floating {
+                    palette.bg
+                } else {
+                    palette.selected_fill
+                },
+                floating.then_some(palette.line_subtle),
+                if horizontal && !floating {
+                    px(0.0)
+                } else {
+                    px(palette.radius.md)
+                },
+                px(if floating { 1.0 } else { 0.0 }),
+            ))
+        };
 
         if let Some(icon) = leading {
             row = row.child(
@@ -337,6 +358,9 @@ impl TabItemBuilder {
             .shape(IconButtonShape::Square)
             .tooltip("Close tab")
             .render()
+            // The tab hovers to `float.hover` and the X's own hover overlay
+            // stacks on it, so it reads as its own target without a second
+            // `.hover` (GPUI asserts a style is set once).
             .on_click(move |_, window, cx| {
                 cx.stop_propagation();
                 click_close(window, cx);
@@ -404,20 +428,24 @@ impl TabItemBuilder {
     }
 }
 
-/// Bar height of a horizontal [`TabStyle::Floating`] strip, before density.
-const FLOATING_BAR_HEIGHT: f32 = 40.0;
-/// Padding around the blocks of a floating strip.
+/// Height of a horizontal floating pill (the tab block).
+const FLOATING_PILL_HEIGHT: f32 = 28.0;
+/// Padding between the track's edge and its pills (horizontal strip).
+const FLOATING_TRACK_PADDING: f32 = 2.0;
+/// Padding around the blocks of a vertical floating strip.
 const FLOATING_BAR_PADDING: f32 = 6.0;
 /// Gap between floating blocks: horizontal and vertical strips.
-const FLOATING_GAP_H: f32 = 4.0;
+const FLOATING_GAP_H: f32 = 2.0;
 const FLOATING_GAP_V: f32 = 2.0;
 /// Extra space that replaces the pinned/unpinned divider of the classic strip.
 const FLOATING_GROUP_GAP: f32 = 8.0;
 /// Thickness of the drop-insertion marker.
 const DROP_MARKER_THICKNESS: f32 = 2.0;
 
-/// The container for [`TabStyle::Floating`] blocks: a 40px bar with 6px
-/// padding and 4px gaps (horizontal), or a column with 2px gaps (vertical).
+/// The container for [`TabStyle::Floating`] blocks: a translucent pill-shaped
+/// **track** (`float.track` with a `float.track_border` rim) as tall as its
+/// pills plus 2px padding and the rim on every side and 2px gaps (horizontal), or a column
+/// with 6px padding and 2px gaps (vertical).
 /// The caller adds the tab blocks, and [`tab_group_gap`] between groups.
 pub fn floating_tab_strip(
     id: impl Into<ElementId>,
@@ -426,12 +454,20 @@ pub fn floating_tab_strip(
 ) -> Stateful<Div> {
     let strip = div().id(id).flex().flex_shrink_0();
     match layout {
-        TabLayout::Horizontal => strip
-            .flex_row()
-            .items_center()
-            .h(c.space(FLOATING_BAR_HEIGHT))
-            .px(c.space(FLOATING_BAR_PADDING))
-            .gap(c.space(FLOATING_GAP_H)),
+        TabLayout::Horizontal => {
+            // Pills + padding + the 1px rim on both sides (border-box sizing).
+            let height = c.space(FLOATING_PILL_HEIGHT + 2.0 * FLOATING_TRACK_PADDING) + px(2.0);
+            strip
+                .flex_row()
+                .items_center()
+                .h(height)
+                .p(c.space(FLOATING_TRACK_PADDING))
+                .gap(c.space(FLOATING_GAP_H))
+                .rounded(height / 2.0)
+                .bg(c.track)
+                .border_1()
+                .border_color(c.track_line)
+        }
         TabLayout::Vertical => strip
             .flex_col()
             .w_full()
