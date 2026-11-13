@@ -10,6 +10,7 @@
 //! `PreferencesStore` / `GlobalPreferences` bridge has been retired.
 
 mod apply;
+mod background_host;
 pub mod command_provider;
 mod pages;
 mod panes;
@@ -24,6 +25,7 @@ mod window;
 mod tests;
 
 pub use services::{
+    BackgroundHostService, BackgroundHostSession, BackgroundHostSnapshot, BackgroundHostStatus,
     ServiceFuture, SettingsFileTarget, SettingsServices, SettingsSurface,
     SettingsSurfaceContribution, SettingsSurfaceId, SettingsSurfacePage, SettingsSurfaceRegistry,
     SystemFontService,

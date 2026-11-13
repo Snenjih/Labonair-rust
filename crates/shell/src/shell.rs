@@ -17,6 +17,8 @@
 pub mod actions;
 pub mod app_shell;
 pub mod assets;
+#[cfg(unix)]
+mod background_host_service;
 pub mod bootstrap;
 pub mod commands;
 pub mod composition;

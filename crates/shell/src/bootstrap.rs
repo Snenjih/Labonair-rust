@@ -634,7 +634,12 @@ pub(crate) fn bootstrap(
     crate::keymap_loader::reload_and_apply(cx, &command_registry);
     crate::keymap_loader::watch(cx, command_registry.clone());
     set_settings_deps(
-        settings_services(cx.entity(), window.window_handle(), host_manager.clone()),
+        settings_services(
+            cx.entity(),
+            window.window_handle(),
+            host_manager.clone(),
+            cx,
+        ),
         tokio.clone(),
         cx,
     );

@@ -196,6 +196,8 @@ pub struct SettingsView {
     pub(crate) font_loading: bool,
     pub(crate) font_loaded: bool,
     pub(crate) font_error: Option<String>,
+    /// Background-host status block (see `crate::background_host`).
+    pub(crate) host: crate::background_host::HostBlock,
     pub(crate) focus: FocusHandle,
     // ── T19-004: generated settings UI ──────────────────────────────────
     /// Every generated field (`crate::schema::all_fields()`), computed once.
@@ -346,6 +348,7 @@ impl SettingsView {
             font_loading: false,
             font_loaded: false,
             font_error: None,
+            host: Default::default(),
             focus: cx.focus_handle(),
             all_fields,
             pages,

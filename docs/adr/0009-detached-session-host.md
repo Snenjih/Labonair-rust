@@ -145,6 +145,19 @@ the daemon, and Windows.
   daemon lifetime); otherwise the scrollback replay and resume hook apply.
   Unattached sessions matching no open pane are offered once at startup
   ("N background sessions found") and by `Terminal: Recover Background Sessions`.
+* **Settings status block.** Settings > Terminal > "Background host" shows the
+  host state, its sessions (Kill each), "Stop all sessions" and, for an
+  incompatible host, "Restart host (N sessions end)". `labonair-settings-ui`
+  owns the view and a UI-free `BackgroundHostService`; the shell adapts
+  `DaemonHost` to it. Calls run on the tokio runtime (`spawn_blocking`), and the
+  poll (3 s) runs only while the page is rendered.
+* **Quit and Stop All Sessions** saves the session snapshot like a window close
+  before it stops the host and quits.
+* **Hosted panes.** The local emulator is built with the same `EmulatorConfig`
+  as a local pane (`SessionOptions::emulator_config`). Live hosted output (not
+  snapshot or resync bytes) feeds the agent output tap, so MCP/agent terminal
+  tools work on hosted terminals. `foreground()` answers from a cache refreshed
+  on a background thread (3 s), so a hung daemon never stalls the UI.
 
 ## Implementation notes: daemon side (SSH, SFTP, transfers)
 

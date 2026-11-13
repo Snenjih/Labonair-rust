@@ -25,6 +25,7 @@ pub(crate) fn settings_services(
     shell: Entity<AppShell>,
     main_window: AnyWindowHandle,
     hosts: Entity<labonair_hosts_ui::HostManagerView>,
+    cx: &gpui::App,
 ) -> SettingsServices {
     let mut surfaces = SettingsSurfaceRegistry::default();
     // The owner surfaces of the Themes page render inline in the Settings
@@ -84,7 +85,7 @@ pub(crate) fn settings_services(
 
     let file_shell = shell.clone();
     let file_window = main_window;
-    SettingsServices::new(
+    let services = SettingsServices::new(
         Arc::new(ThemeSystemFontService),
         move |target, _settings_window, cx| {
             let result = file_window.update(cx, |_, main_window, cx| {
@@ -108,7 +109,19 @@ pub(crate) fn settings_services(
             }
         },
         surfaces,
-    )
+    );
+    // The background session host is unix-only (ADR 0009).
+    #[cfg(unix)]
+    let services = {
+        use labonair_settings::{Settings as _, TerminalSettings};
+        let lines = TerminalSettings::try_get(cx).map_or(5_000, |s| s.detached_scrollback_lines());
+        services.with_background_host(Arc::new(
+            crate::background_host_service::DaemonHostService::new(lines),
+        ))
+    };
+    #[cfg(not(unix))]
+    let _ = cx;
+    services
 }
 
 fn surface_opener(

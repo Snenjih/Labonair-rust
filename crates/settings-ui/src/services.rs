@@ -23,6 +23,51 @@ pub trait SystemFontService: Send + Sync {
     fn list(&self) -> ServiceFuture<Vec<String>>;
 }
 
+/// Whether the detached session host (ADR 0009) is up, as the Settings status
+/// block reports it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BackgroundHostStatus {
+    NotRunning,
+    Running,
+    /// A host built for another protocol is running; `sessions` end when it is
+    /// restarted.
+    Incompatible {
+        build_id: String,
+        sessions: u32,
+    },
+}
+
+/// One session living in the background host.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackgroundHostSession {
+    pub id: u64,
+    pub label: Option<String>,
+    pub cwd: Option<String>,
+    /// Foreground job when it is not the shell.
+    pub foreground: Option<String>,
+    pub attached: bool,
+    pub exited: bool,
+}
+
+/// What the status block shows; one poll of the host.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackgroundHostSnapshot {
+    pub status: BackgroundHostStatus,
+    pub sessions: Vec<BackgroundHostSession>,
+}
+
+/// The imperative side of the "Background host" status block. Every call may
+/// block on the host's socket: implementations must not do that on the calling
+/// thread (the futures run on the tokio runtime).
+pub trait BackgroundHostService: Send + Sync {
+    fn snapshot(&self) -> ServiceFuture<BackgroundHostSnapshot>;
+    fn kill(&self, id: u64) -> ServiceFuture<()>;
+    /// Kill every session and stop the host.
+    fn stop_all(&self) -> ServiceFuture<()>;
+    /// Stop an incompatible host (ending its sessions) and start a fresh one.
+    fn restart(&self) -> ServiceFuture<()>;
+}
+
 #[derive(Clone, Copy)]
 pub enum SettingsFileTarget {
     User,
@@ -38,6 +83,7 @@ pub struct SettingsServices {
     pub fonts: Arc<dyn SystemFontService>,
     open_settings_file: SettingsFileOpener,
     surfaces: SettingsSurfaceRegistry,
+    background_host: Option<Arc<dyn BackgroundHostService>>,
 }
 
 impl SettingsServices {
@@ -50,7 +96,19 @@ impl SettingsServices {
             fonts,
             open_settings_file: Rc::new(open_settings_file),
             surfaces,
+            background_host: None,
         }
+    }
+
+    /// Provide the background-host status block (unix composition roots only;
+    /// without it the block is not shown).
+    pub fn with_background_host(mut self, service: Arc<dyn BackgroundHostService>) -> Self {
+        self.background_host = Some(service);
+        self
+    }
+
+    pub fn background_host(&self) -> Option<Arc<dyn BackgroundHostService>> {
+        self.background_host.clone()
     }
 
     pub fn open_settings_file(

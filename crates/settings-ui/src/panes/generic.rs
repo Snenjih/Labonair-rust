@@ -1120,6 +1120,17 @@ impl SettingsView {
             if let Some(font) = blocks.iter_mut().find(|b| b.title == Some("Font")) {
                 font.items.insert(0, SectionItem::TerminalPreview);
             }
+            // The background session host's live status and session list close
+            // its group (unix only: without a service there are no rows).
+            let live = self.background_host_items(cx);
+            if let Some(group) = blocks
+                .iter_mut()
+                .find(|b| b.title == Some(crate::background_host::SECTION))
+            {
+                group
+                    .items
+                    .extend(live.into_iter().map(SectionItem::BackgroundHost));
+            }
         }
 
         // A sidebar anchor click or a search jump asks to land on a section or
@@ -1274,6 +1285,7 @@ impl SettingsView {
                 SectionItem::OwnerSurface(id) => {
                     self.render_owner_surface_row(*id, embed, window, c, cx)
                 }
+                SectionItem::BackgroundHost(item) => self.render_host_item(item, c, cx),
                 SectionItem::TerminalPreview => {
                     let theme = self.theme.clone();
                     let preview = self
@@ -1395,6 +1407,8 @@ enum SectionItem {
     OwnerSurface(SettingsSurfaceId),
     /// Live terminal sample (`crate::terminal_preview`).
     TerminalPreview,
+    /// A live row of the background-host group (`crate::background_host`).
+    BackgroundHost(crate::background_host::HostItem),
 }
 
 /// Group a page's items into section cards. Rows before the first header form
