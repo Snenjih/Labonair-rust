@@ -30,6 +30,9 @@ use crate::TerminalColors;
 pub const DEFAULT_SCROLLBACK_LINES: usize = 10_000;
 const SEARCH_REFRESH_INTERVAL: Duration = Duration::from_millis(100);
 
+mod snapshot;
+pub use snapshot::{resize_wiggle_sizes, SnapshotOptions};
+
 /// Terminal grid dimensions in cells, plus the pixel size of the text area
 /// (needed by some programs via `TIOCGWINSZ` / `CSI 14 t`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -574,6 +577,12 @@ pub struct TerminalEmulator {
     pty_out: Arc<Mutex<Vec<u8>>>,
     metadata: SessionMetadata,
     search: SearchState,
+    /// Shadow state `alacritty_terminal` keeps private (scroll region, tab
+    /// stops), mirrored from the byte stream so [`Self::snapshot`] can emit it.
+    tracker: snapshot::StateTracker,
+    /// Cursor style the config implies; a different live style was set by the
+    /// program (DECSCUSR) and must be part of a snapshot.
+    default_cursor_style: alacritty_terminal::vte::ansi::CursorStyle,
 }
 
 /// Literal (non-regex) scrollback search state (T18-002). `matches` hold
@@ -676,6 +685,7 @@ impl TerminalEmulator {
         let config = cfg.to_alac_config();
         let pty_out = Arc::new(Mutex::new(Vec::new()));
         let proxy = EventProxy::new(event_tx, Arc::clone(&pty_out));
+        let default_cursor_style = config.default_cursor_style;
         let term = Term::new(config, &dimensions, proxy);
         Self {
             term,
@@ -686,6 +696,8 @@ impl TerminalEmulator {
             pty_out,
             metadata: SessionMetadata::default(),
             search: SearchState::default(),
+            tracker: snapshot::StateTracker::new(dimensions.columns, dimensions.screen_lines),
+            default_cursor_style,
         }
     }
 
@@ -760,6 +772,10 @@ impl TerminalEmulator {
             }
         }
         for &byte in bytes {
+            if let Some(op) = self.tracker.step(byte) {
+                let column = self.term.grid().cursor.point.column.0;
+                self.tracker.tab_op(op, column);
+            }
             self.parser.advance(&mut self.term, byte);
         }
         if !self.search.query.is_empty() {
@@ -913,7 +929,9 @@ impl TerminalEmulator {
     /// cursor shape/blink, word separators) on a live session — used when the
     /// user changes a terminal setting while terminals are open.
     pub fn apply_config(&mut self, cfg: &EmulatorConfig) {
-        self.term.set_options(cfg.to_alac_config());
+        let config = cfg.to_alac_config();
+        self.default_cursor_style = config.default_cursor_style;
+        self.term.set_options(config);
     }
 
     /// Select the word under the given **viewport** cell `(column, row)` using
@@ -943,6 +961,8 @@ impl TerminalEmulator {
     /// ([`crate::session::TerminalSession::resize`] does both).
     pub fn resize(&mut self, dimensions: TermDimensions) {
         self.dimensions = dimensions;
+        self.tracker
+            .resize(dimensions.columns, dimensions.screen_lines);
         self.term.resize(dimensions);
     }
 
