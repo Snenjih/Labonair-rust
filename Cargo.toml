@@ -30,6 +30,7 @@ members = [
     "crates/shell",
     "crates/terminal",
     "crates/terminal-core",
+    "crates/terminal-host",
     "crates/terminal-integration",
     "crates/editor",
     "crates/editor-ui",

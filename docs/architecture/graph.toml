@@ -383,6 +383,12 @@ role = "capability"
 layer = "product"
 
 [[crate]]
+name = "labonair-terminal-host"
+owner = "terminal"
+role = "capability"
+layer = "product"
+
+[[crate]]
 name = "labonair-terminal-integration"
 owner = "terminal"
 role = "contract"
@@ -498,6 +504,7 @@ layer = "product"
 "labonair-ssh-transport" = ["labonair-errors", "labonair-events", "labonair-filesystem", "labonair-persistence", "labonair-secrets", "labonair-ssh", "labonair-terminal-integration"]
 "labonair-terminal" = ["labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-terminal-core", "labonair-theme"]
 "labonair-terminal-core" = ["labonair-terminal-integration"]
+"labonair-terminal-host" = ["labonair-terminal-core"]
 "labonair-terminal-integration" = []
 "labonair-theme" = ["labonair-command-palette-core", "labonair-theme-tokens"]
 "labonair-theme-tokens" = []

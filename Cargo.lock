@@ -4857,8 +4857,22 @@ dependencies = [
  "labonair-terminal-integration",
  "libc",
  "portable-pty",
+ "rustix 0.38.44",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "labonair-terminal-host"
+version = "0.1.0"
+dependencies = [
+ "labonair-terminal-core",
+ "libc",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
