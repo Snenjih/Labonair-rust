@@ -3,6 +3,7 @@
 //! * [`palette`] — theme → engine color bridge (T02-004).
 //! * [`engine`] — render-free VTE emulation core (T03-001).
 //! * [`session`] — local PTY-backed terminal sessions (T03-001).
+//! * [`host`] — session-creation seam ([`SessionHost`]) for the detached host.
 //! * [`registry`] — multi-session registry + tab-system seam (T03-005).
 //! * [`input`] — keyboard/mouse → terminal byte-sequence mapping (T03-003).
 //! * [`shell_integration`] — OSC 7 / OSC 133 shell-integration rc-file bootstrap
@@ -12,6 +13,7 @@
 //!   renderer (T03-002). The GPUI element itself lives in `labonair-ui`.
 
 pub mod command_provider;
+pub mod host;
 pub mod input;
 pub mod palette;
 pub mod registry;
@@ -27,13 +29,14 @@ pub use engine::{
     SelectionSpan, SessionMetadata, TermDimensions, TerminalEmulator, TerminalEvent,
     DEFAULT_SCROLLBACK_LINES,
 };
+pub use host::{InProcessHost, SessionHost};
 pub use input::{
     key_to_bytes, mouse_report, paste_payload, wheel_action, Key, KeyInput, Modifiers, MouseButton,
     MouseEventKind, MouseInput, NamedKey, WheelAction, WheelInput,
 };
 pub use labonair_terminal_core::{CursorShape, Rgb, Scroll};
 pub use palette::{ansi_self_test, TerminalColors, TerminalColorsExt};
-pub use registry::{SessionHandle, SessionId, SessionStatus, TerminalRegistry};
+pub use registry::{SessionBackend, SessionHandle, SessionId, SessionStatus, TerminalRegistry};
 pub use render::{batch_runs, grid_size, RunStyle, StyledRun};
 pub use session::{
     RemoteFeed, RemoteResizer, RemoteSession, RemoteWriter, SessionAccess, SessionOptions,

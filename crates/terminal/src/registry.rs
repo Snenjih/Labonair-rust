@@ -34,66 +34,73 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use crate::engine::{TermDimensions, TerminalEvent};
+use crate::host::{InProcessHost, SessionHost};
 use crate::session::{
     RemoteFeed, RemoteResizer, RemoteSession, RemoteWriter, SessionAccess, SessionOptions,
     TerminalSession,
 };
 use crate::TerminalColors;
 
-/// The transport backing one registered session: a local PTY or an external
-/// (SSH) transport. Both expose the same operations to [`SessionHandle`].
-enum SessionBackend {
+/// The transport backing one registered session: a local PTY, an external
+/// (SSH) transport, or a session hosted by the detached session host. All
+/// expose the same operations to [`SessionHandle`]. Public only so a
+/// [`crate::SessionHost`] can return it.
+pub enum SessionBackend {
     Local(TerminalSession),
     Remote(RemoteSession),
+    /// A session living in the detached session host daemon (ADR 0009). It
+    /// reuses the [`RemoteSession`] / [`RemoteFeed`] seam: the host client
+    /// pumps daemon output into the feed and forwards writes/resizes.
+    Hosted(RemoteSession),
 }
 
 impl SessionBackend {
     fn write(&self, bytes: &[u8]) -> Result<(), String> {
         match self {
             SessionBackend::Local(s) => s.write(bytes),
-            SessionBackend::Remote(s) => s.write(bytes),
+            SessionBackend::Remote(s) | SessionBackend::Hosted(s) => s.write(bytes),
         }
     }
 
     fn resize(&mut self, dimensions: TermDimensions) -> Result<(), String> {
         match self {
             SessionBackend::Local(s) => s.resize(dimensions),
-            SessionBackend::Remote(s) => s.resize(dimensions),
+            SessionBackend::Remote(s) | SessionBackend::Hosted(s) => s.resize(dimensions),
         }
     }
 
     fn set_colors(&self, colors: TerminalColors) -> Result<(), String> {
         match self {
             SessionBackend::Local(s) => s.set_colors(colors),
-            SessionBackend::Remote(s) => s.set_colors(colors),
+            SessionBackend::Remote(s) | SessionBackend::Hosted(s) => s.set_colors(colors),
         }
     }
 
     fn drain_events(&self) -> Vec<TerminalEvent> {
         match self {
             SessionBackend::Local(s) => s.drain_events(),
-            SessionBackend::Remote(s) => s.drain_events(),
+            SessionBackend::Remote(s) | SessionBackend::Hosted(s) => s.drain_events(),
         }
     }
 
     fn has_foreground_job(&self) -> bool {
         match self {
             SessionBackend::Local(s) => s.has_foreground_job(),
-            SessionBackend::Remote(_) => false,
+            SessionBackend::Remote(_) | SessionBackend::Hosted(_) => false,
         }
     }
 
     fn terminate(&self) {
         match self {
             SessionBackend::Local(s) => s.terminate(),
-            SessionBackend::Remote(_) => {}
+            SessionBackend::Remote(_) | SessionBackend::Hosted(_) => {}
         }
     }
 
     fn access(&self) -> &dyn SessionAccess {
         match self {
             SessionBackend::Local(s) => s,
-            SessionBackend::Remote(s) => s,
+            SessionBackend::Remote(s) | SessionBackend::Hosted(s) => s,
         }
     }
 
@@ -104,14 +111,14 @@ impl SessionBackend {
                 .ok()
                 .filter(|t| !t.trim().is_empty()),
             // Remote (SSH) panes are not persisted with scrollback.
-            SessionBackend::Remote(_) => None,
+            SessionBackend::Remote(_) | SessionBackend::Hosted(_) => None,
         }
     }
 
     fn subscribe_agent_output(&self) -> Result<tokio::sync::broadcast::Receiver<Vec<u8>>, String> {
         match self {
             SessionBackend::Local(session) => Ok(session.subscribe_agent_output()),
-            SessionBackend::Remote(_) => {
+            SessionBackend::Remote(_) | SessionBackend::Hosted(_) => {
                 Err("agent output subscription is only available for local sessions".to_string())
             }
         }
@@ -294,8 +301,21 @@ impl TerminalRegistry {
         dimensions: TermDimensions,
         options: SessionOptions,
     ) -> Result<SessionId, String> {
+        self.create_with_host(&InProcessHost, colors, dimensions, options)
+    }
+
+    /// Create a session through `host` (in-process PTY or the detached session
+    /// host) and register it. The host is chosen per session, so one registry
+    /// can hold both kinds.
+    pub fn create_with_host(
+        &self,
+        host: &dyn SessionHost,
+        colors: TerminalColors,
+        dimensions: TermDimensions,
+        options: SessionOptions,
+    ) -> Result<SessionId, String> {
         let event_notify = Arc::new(tokio::sync::Notify::new());
-        let session = TerminalSession::spawn_with_notifier(
+        let session = host.create_session(
             colors,
             dimensions,
             options.clone(),
@@ -303,7 +323,7 @@ impl TerminalRegistry {
         )?;
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let slot = Arc::new(Slot {
-            session: Mutex::new(SessionBackend::Local(session)),
+            session: Mutex::new(session),
             colors: Mutex::new(colors),
             options,
             status: Mutex::new(SessionStatus::Running),
