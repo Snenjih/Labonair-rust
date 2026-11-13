@@ -1,6 +1,16 @@
 # Terminal Text and Keystroke Action Classification
 
-**Status:** Pinned input paths and Labonair owner gap classified; native dispatch and PTY acceptance pending
+**Status:** Implemented in Labonair (keymap argument bindings, `terminal::SendText`, `terminal::SendKeystroke`, Terminal default bindings, `terminalOptionAsMeta`); native dispatch and PTY acceptance still pending
+
+## Labonair implementation
+
+- `keymap.json` accepts `["action", "argument"]` for the actions in `labonair_keymap::file::ARGUMENT_ACTIONS` (`terminal::SendText`, `terminal::SendKeystroke`); a missing or surplus argument is a validation error. The argument rides on `EffectiveBinding::arg`.
+- `crates/shell/src/menu.rs` `action_with_arg` turns them into `labonair_workspace::views::terminal::{SendText, SendKeystroke}`, handled by the focused `TerminalView` (`process_keystroke` is shared with real key presses). A `SendKeystroke` argument that is not exactly one keystroke is skipped with a warning.
+- Terminal defaults (macOS and Linux blocks of `crates/keymap/assets/keymaps/default-*.json`) mirror the pinned Zed set: line editing, Alt word movement, Copy/Paste/PasteText/Clear, scroll page/line/top/bottom, character palette. Zed's identity forwards (`up`, `enter`, `ctrl-c`, ...) are omitted because no global binding shadows them here.
+- New commands: `terminal::ScrollPageUp/PageDown/LineUp/LineDown`, `terminal::PasteText`, `terminal::ShowCharacterPalette`, `terminal::Rename`.
+- Not implemented: `terminal::ToggleViMode` (and the `vi_mode` key context) and `terminal::RerunTask` (no tasks system).
+
+The text below is the original pinned-baseline analysis; its "no named action" gap statements predate this implementation.
 
 **Baseline:** Zed commit `3569541038dd51524b03998ba4d38d253cb54f80`
 

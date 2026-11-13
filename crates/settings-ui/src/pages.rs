@@ -614,6 +614,7 @@ const TERMINAL_ADVANCED: &[Group] = &[
         paths!("terminal":
             "terminalCopyOnSelect",
             "terminalRightClickPastes",
+            "terminalOptionAsMeta",
             "terminalWordSeparator"
         ),
     ),

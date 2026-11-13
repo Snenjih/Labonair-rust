@@ -18,12 +18,16 @@
 //!                                             // `null` action = explicit unbind
 //! ]
 //! ```
+//! A binding may also carry one string argument, written as a two-element
+//! array: `"cmd-l": ["terminal::SendKeystroke", "ctrl-l"]`. Only the actions in
+//! [`ARGUMENT_ACTIONS`] take one.
+//!
 //! Chords need no bespoke parser: a keystrokes string is just passed through
 //! space-joined to `gpui::KeyBinding::new`/`load`, which already splits it.
 
 use serde_json::Value;
 use std::cell::RefCell;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 
 thread_local! {
@@ -34,6 +38,16 @@ thread_local! {
     static LAST_ISSUES: RefCell<Vec<ValidationIssue>> = const { RefCell::new(Vec::new()) };
 }
 
+/// Writes the argument's UTF-8 bytes straight to the focused terminal's PTY.
+pub const TERMINAL_SEND_TEXT: &str = "terminal::SendText";
+/// Feeds the argument, parsed as one keystroke, through the focused terminal's
+/// normal key handling.
+pub const TERMINAL_SEND_KEYSTROKE: &str = "terminal::SendKeystroke";
+/// Actions that require a string argument in `keymap.json`. They are not
+/// palette commands (a command needs a payload), so they are accepted here
+/// instead of coming from the command registry.
+pub const ARGUMENT_ACTIONS: [&str; 2] = [TERMINAL_SEND_TEXT, TERMINAL_SEND_KEYSTROKE];
+
 /// One `{ context, bindings }` block in a keymap.json array.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct KeymapBlock {
@@ -42,6 +56,9 @@ pub struct KeymapBlock {
     /// JSON object, so insertion order across the vec doesn't matter for
     /// correctness (only cross-block order, i.e. array order, does).
     pub bindings: Vec<(String, Option<String>)>,
+    /// String argument of an argument-taking action, keyed by the binding's
+    /// keystrokes (as written).
+    pub args: BTreeMap<String, String>,
 }
 
 /// A parsed `keymap.json` document.
@@ -426,14 +443,29 @@ pub fn parse_keymap_jsonc(text: &str) -> Result<KeymapFile, KeymapParseError> {
             });
         };
         let mut bindings = Vec::with_capacity(bindings_obj.len());
+        let mut args = BTreeMap::new();
         for (key, val) in bindings_obj.into_iter() {
             let action = match val {
                 Value::Null => None,
                 Value::String(s) => Some(s),
+                Value::Array(items) => match items.as_slice() {
+                    [Value::String(action), Value::String(arg)] => {
+                        args.insert(key.clone(), arg.clone());
+                        Some(action.clone())
+                    }
+                    _ => {
+                        return Err(KeymapParseError {
+                            message: format!(
+                                "keymap block {i}: binding `{key}` must be `[\"action\", \"argument\"]`"
+                            ),
+                            line: 1,
+                        });
+                    }
+                },
                 _ => {
                     return Err(KeymapParseError {
                         message: format!(
-                            "keymap block {i}: binding `{key}` must be a string action name or null"
+                            "keymap block {i}: binding `{key}` must be a string action name, `[action, argument]` or null"
                         ),
                         line: 1,
                     });
@@ -441,7 +473,11 @@ pub fn parse_keymap_jsonc(text: &str) -> Result<KeymapFile, KeymapParseError> {
             };
             bindings.push((key, action));
         }
-        blocks.push(KeymapBlock { context, bindings });
+        blocks.push(KeymapBlock {
+            context,
+            bindings,
+            args,
+        });
     }
     Ok(KeymapFile(blocks))
 }
@@ -497,6 +533,8 @@ pub struct EffectiveBinding {
     /// unnormalized — this is what gets handed to `gpui::KeyBinding`.
     pub keystrokes: String,
     pub action: String,
+    /// The string argument of an [`ARGUMENT_ACTIONS`] binding.
+    pub arg: Option<String>,
     pub context: Option<String>,
     pub source: KeybindSource,
 }
@@ -521,6 +559,7 @@ pub fn merge_keymaps(layers: &[(KeybindSource, &KeymapFile)]) -> Vec<EffectiveBi
                 let resolved = action.as_ref().map(|a| EffectiveBinding {
                     keystrokes: keystrokes.clone(),
                     action: a.clone(),
+                    arg: block.args.get(keystrokes).cloned(),
                     context: block.context.clone(),
                     source: *source,
                 });
@@ -568,6 +607,19 @@ pub fn validate_keymap(
                 if !known_actions.contains(a.as_str()) {
                     issues.push(ValidationIssue {
                         message: format!("unknown action `{a}`"),
+                        line: line_for_needle(text, a),
+                        severity: Severity::Error,
+                    });
+                } else if ARGUMENT_ACTIONS.contains(&a.as_str())
+                    != block.args.contains_key(keystrokes)
+                {
+                    let message = if block.args.contains_key(keystrokes) {
+                        format!("action `{a}` does not take an argument")
+                    } else {
+                        format!("action `{a}` needs an argument: `[\"{a}\", \"...\"]`")
+                    };
+                    issues.push(ValidationIssue {
+                        message,
                         line: line_for_needle(text, a),
                         severity: Severity::Error,
                     });
@@ -689,6 +741,7 @@ fn owner_defaults_file(bindings: &[crate::runtime::KeymapBinding]) -> KeymapFile
                     binding.keystrokes.clone(),
                     Some(binding.command.action_name().to_string()),
                 )],
+                args: BTreeMap::new(),
             })
             .collect(),
     )
@@ -767,6 +820,7 @@ mod tests {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.map(str::to_string)))
                 .collect(),
+            ..Default::default()
         }
     }
 
@@ -860,6 +914,46 @@ mod tests {
         assert_ne!(eff_v1, eff_v2);
         assert_eq!(eff_v1[0].action, "tab::NewTerminal");
         assert_eq!(eff_v2[0].action, "tab::NewEditor");
+    }
+
+    #[test]
+    fn argument_bindings_parse_merge_and_validate() {
+        let known: BTreeSet<&str> = ARGUMENT_ACTIONS.into_iter().collect();
+        let text = r#"[{ "context": "Terminal", "bindings": {
+            "cmd-l": ["terminal::SendKeystroke", "ctrl-l"],
+            "shift-enter": ["terminal::SendText", "\u001b\r"]
+        }}]"#;
+        let file = parse_keymap_jsonc(text).unwrap();
+        assert!(validate_keymap(&file, &known, text).is_empty());
+
+        let effective = merge_keymaps(&[(KeybindSource::User, &file)]);
+        assert_eq!(effective.len(), 2);
+        assert_eq!(effective[0].action, TERMINAL_SEND_KEYSTROKE);
+        assert_eq!(effective[0].arg.as_deref(), Some("ctrl-l"));
+        assert_eq!(effective[1].arg.as_deref(), Some("\u{1b}\r"));
+    }
+
+    #[test]
+    fn argument_binding_shape_is_validated() {
+        let known: BTreeSet<&str> = ARGUMENT_ACTIONS
+            .into_iter()
+            .chain(["tab::NewTerminal"])
+            .collect();
+        for text in [
+            r#"[{ "bindings": { "cmd-l": "terminal::SendText" } }]"#,
+            r#"[{ "bindings": { "cmd-l": ["tab::NewTerminal", "x"] } }]"#,
+        ] {
+            let file = parse_keymap_jsonc(text).unwrap();
+            let issues = validate_keymap(&file, &known, text);
+            assert_eq!(issues.len(), 1, "{text}");
+            assert_eq!(issues[0].severity, Severity::Error);
+        }
+        for text in [
+            r#"[{ "bindings": { "cmd-l": ["terminal::SendText"] } }]"#,
+            r#"[{ "bindings": { "cmd-l": ["terminal::SendText", 1] } }]"#,
+        ] {
+            assert!(parse_keymap_jsonc(text).is_err(), "{text}");
+        }
     }
 
     #[test]

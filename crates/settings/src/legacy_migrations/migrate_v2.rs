@@ -417,6 +417,7 @@ fn terminal_from(p: &Preferences) -> TerminalContent {
         terminal_cursor_blink_interval: Some(p.terminal_cursor_blink_interval),
         terminal_copy_on_select: Some(p.terminal_copy_on_select),
         terminal_right_click_pastes: Some(p.terminal_right_click_pastes),
+        terminal_option_as_meta: None,
         terminal_word_separator: Some(p.terminal_word_separator.clone()),
         terminal_scroll_sensitivity: Some(p.terminal_scroll_sensitivity),
         terminal_fast_scroll_modifier: Some(fast_scroll_modifier(&p.terminal_fast_scroll_modifier)),

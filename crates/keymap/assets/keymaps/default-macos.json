@@ -45,7 +45,36 @@
     "context": "Terminal",
     "bindings": {
       "cmd-d": "pane::SplitRight",
-      "cmd-shift-d": "pane::SplitDown"
+      "cmd-shift-d": "pane::SplitDown",
+      "cmd-c": "terminal::Copy",
+      "cmd-v": "terminal::Paste",
+      "ctrl-cmd-v": "terminal::PasteText",
+      "ctrl-cmd-space": "terminal::ShowCharacterPalette",
+      "cmd-k": "terminal::Clear",
+      // Line editing the way macOS terminals do it: the keys are forwarded
+      // to the shell as the readline control keys. `SendKeystroke` takes one
+      // keystroke, `SendText` writes its argument to the PTY verbatim.
+      "cmd-backspace": ["terminal::SendKeystroke", "ctrl-u"],
+      "cmd-delete": ["terminal::SendKeystroke", "ctrl-k"],
+      "cmd-left": ["terminal::SendKeystroke", "ctrl-a"],
+      "cmd-right": ["terminal::SendKeystroke", "ctrl-e"],
+      "ctrl-backspace": ["terminal::SendKeystroke", "ctrl-w"],
+      "alt-delete": ["terminal::SendText", "\u001bd"],
+      "ctrl-delete": ["terminal::SendText", "\u001b[3;5~"],
+      "alt-left": ["terminal::SendText", "\u001bb"],
+      "alt-right": ["terminal::SendText", "\u001bf"],
+      "alt-b": ["terminal::SendText", "\u001bb"],
+      "alt-f": ["terminal::SendText", "\u001bf"],
+      "shift-pageup": "terminal::ScrollPageUp",
+      "cmd-up": "terminal::ScrollPageUp",
+      "shift-pagedown": "terminal::ScrollPageDown",
+      "cmd-down": "terminal::ScrollPageDown",
+      "shift-up": "terminal::ScrollLineUp",
+      "shift-down": "terminal::ScrollLineDown",
+      "shift-home": "terminal::ScrollToTop",
+      "cmd-home": "terminal::ScrollToTop",
+      "shift-end": "terminal::ScrollToBottom",
+      "cmd-end": "terminal::ScrollToBottom"
     }
   },
   {

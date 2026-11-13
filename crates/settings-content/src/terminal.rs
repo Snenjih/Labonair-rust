@@ -85,6 +85,9 @@ pub struct TerminalContent {
     pub terminal_cursor_blink_interval: Option<u32>,
     pub terminal_copy_on_select: Option<bool>,
     pub terminal_right_click_pastes: Option<bool>,
+    /// macOS: treat Option as Meta, so Option+key sends `ESC` + the base key
+    /// (e.g. Option+B = `ESC b`) instead of the composed character (`∫`).
+    pub terminal_option_as_meta: Option<bool>,
     /// Characters that terminate a double-click word selection.
     pub terminal_word_separator: Option<String>,
     /// Multiplier applied to every mouse-wheel scroll step.
@@ -154,6 +157,7 @@ impl TerminalContent {
             terminal_cursor_blink_interval: Some(1_000),
             terminal_copy_on_select: Some(false),
             terminal_right_click_pastes: Some(false),
+            terminal_option_as_meta: Some(false),
             terminal_word_separator: Some(DEFAULT_WORD_SEPARATOR.to_string()),
             terminal_scroll_sensitivity: Some(1),
             terminal_fast_scroll_modifier: Some(FastScrollModifier::Alt),

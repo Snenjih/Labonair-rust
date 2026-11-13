@@ -78,6 +78,7 @@
     "terminalCursorBlinkInterval": 1000,
     "terminalCopyOnSelect": false,
     "terminalRightClickPastes": false,
+    "terminalOptionAsMeta": false,
     // Characters that end a double-click word selection.
     "terminalWordSeparator": " ()[]{}',\"`",
     // Multiplier applied to every mouse-wheel scroll step.

@@ -380,6 +380,7 @@ mod tests {
             effective_bindings: vec![EffectiveBinding {
                 keystrokes: "cmd-f".into(),
                 action: CommandId::OpenSettings.action_name().into(),
+                arg: None,
                 context: Some("Editor".into()),
                 source: KeybindSource::User,
             }],
@@ -439,12 +440,14 @@ mod tests {
                 EffectiveBinding {
                     keystrokes: "cmd-p".into(),
                     action: CommandId::OpenCommandPalette.action_name().into(),
+                    arg: None,
                     context: None,
                     source: KeybindSource::Default,
                 },
                 EffectiveBinding {
                     keystrokes: "cmd-p".into(),
                     action: CommandId::Find.action_name().into(),
+                    arg: None,
                     context: Some("Editor".into()),
                     source: KeybindSource::Default,
                 },
@@ -465,6 +468,7 @@ mod tests {
             effective_bindings: vec![EffectiveBinding {
                 keystrokes: "cmd-f".into(),
                 action: CommandId::Find.action_name().into(),
+                arg: None,
                 context: Some("Editor".into()),
                 source: KeybindSource::Default,
             }],
@@ -527,6 +531,7 @@ mod tests {
             effective_bindings: vec![EffectiveBinding {
                 keystrokes: "cmd-f".into(),
                 action: CommandId::Find.action_name().into(),
+                arg: None,
                 context: Some("Editor".into()),
                 source: KeybindSource::Default,
             }],

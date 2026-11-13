@@ -19,8 +19,9 @@
 //! [`KeyInput`] / [`MouseInput`] / [`WheelInput`] descriptions, folds in the
 //! live [`ModeState`] from the engine, and writes the resulting bytes to the
 //! PTY. Mouse-wheel scrolling walks the scrollback unless a mouse-reporting or
-//! alternate-scroll mode is active; drag selects text (copy-on-select), Cmd+C /
-//! Cmd+V and right-click drive the clipboard with bracketed-paste support.
+//! alternate-scroll mode is active; drag selects text (copy-on-select), the Copy /
+//! Paste keymap actions and right-click drive the clipboard with
+//! bracketed-paste support.
 
 use std::time::{Duration, Instant};
 
@@ -43,6 +44,25 @@ use labonair_background_host::{BackgroundHost, LayerScope};
 use labonair_explorer_host::{quote_paths, DraggedPaths};
 use labonair_settings::Settings as _;
 use labonair_ui_kit::{context_menu, IconName, MenuItem, Palette};
+
+/// `keymap.json`: `["terminal::SendText", "..."]` — writes `text` straight to
+/// the focused terminal's PTY, bypassing key parsing, mode-aware encoding and
+/// bracketed paste.
+#[derive(Clone, Debug, PartialEq, gpui::Action)]
+#[action(namespace = terminal, no_json)]
+pub struct SendText {
+    pub text: String,
+}
+
+/// `keymap.json`: `["terminal::SendKeystroke", "ctrl-l"]` — feeds one
+/// keystroke through the focused terminal's normal key handling (terminal
+/// modes, Alt-as-Meta), as if it had been typed. Binding a key to itself in
+/// the `Terminal` context forwards it to the shell instead of the app.
+#[derive(Clone, Debug, PartialEq, gpui::Action)]
+#[action(namespace = terminal, no_json)]
+pub struct SendKeystroke {
+    pub keystroke: String,
+}
 
 /// A running terminal, rendered with GPUI.
 ///
@@ -321,8 +341,53 @@ impl TerminalView {
         self.snap_to_bottom();
     }
 
+    /// Paste the clipboard as plain input, without bracketed-paste wrapping
+    /// (`terminal::PasteText`).
+    pub fn paste_text(&self, cx: &mut Context<Self>) {
+        let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) else {
+            return;
+        };
+        if !text.is_empty() {
+            self.send_input(&paste_payload(&text, false));
+            self.snap_to_bottom();
+        }
+    }
+
     fn scroll_lines(&self, delta: i32) {
-        let _ = self.handle.with(|s| s.scroll(Scroll::Delta(delta)));
+        self.scroll(Scroll::Delta(delta));
+    }
+
+    pub fn scroll(&self, scroll: Scroll) {
+        let _ = self.handle.with(|s| s.scroll(scroll));
+    }
+
+    /// Encode `ks` for the PTY with the live terminal modes and send it.
+    /// Shared by real key presses and `terminal::SendKeystroke`.
+    fn process_keystroke(&mut self, ks: &Keystroke, cx: &mut Context<Self>) {
+        let option_as_meta = labonair_settings::TerminalSettings::try_get(cx)
+            .map(|s| s.option_as_meta())
+            .unwrap_or(false);
+        let Some(input) = keystroke_to_input(ks, option_as_meta) else {
+            return;
+        };
+        if let Some(bytes) = key_to_bytes(&input, &self.mode()) {
+            self.send_input(&bytes);
+            self.after_input(cx);
+        }
+    }
+
+    /// `terminal::SendText`: write `text` verbatim.
+    fn send_text(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.send_input(text.as_bytes());
+        self.after_input(cx);
+    }
+
+    fn after_input(&mut self, cx: &mut Context<Self>) {
+        self.snap_to_bottom();
+        let _ = self.handle.with(|s| s.clear_selection());
+        self.activity_at = Instant::now();
+        self.blink_on = true;
+        cx.notify();
     }
 
     pub fn snap_to_bottom(&self) {
@@ -676,33 +741,22 @@ impl Render for TerminalView {
                     cx.notify();
                 }),
             )
+            .on_action(cx.listener(|this, action: &SendText, _window, cx| {
+                this.send_text(&action.text, cx);
+            }))
+            .on_action(cx.listener(|this, action: &SendKeystroke, _window, cx| {
+                match Keystroke::parse(&action.keystroke) {
+                    Ok(ks) => this.process_keystroke(&ks, cx),
+                    Err(error) => tracing::warn!(
+                        keystroke = %action.keystroke,
+                        %error,
+                        "terminal::SendKeystroke: unparseable keystroke"
+                    ),
+                }
+            }))
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _window, cx| {
                 let ks = &ev.keystroke;
-                // App-level clipboard shortcuts never reach the shell.
-                if ks.modifiers.platform && !ks.modifiers.control && !ks.modifiers.alt {
-                    match ks.key.as_str() {
-                        "c" => {
-                            this.copy_selection(cx);
-                            return;
-                        }
-                        "v" => {
-                            this.paste_from_clipboard(cx);
-                            cx.notify();
-                            return;
-                        }
-                        _ => {}
-                    }
-                }
-                if let Some(input) = keystroke_to_input(ks) {
-                    if let Some(bytes) = key_to_bytes(&input, &this.mode()) {
-                        this.send_input(&bytes);
-                        this.snap_to_bottom();
-                        let _ = this.handle.with(|s| s.clear_selection());
-                        this.activity_at = Instant::now();
-                        this.blink_on = true;
-                        cx.notify();
-                    }
-                }
+                this.process_keystroke(ks, cx);
             }))
             .on_drop(cx.listener(|this, d: &DraggedPaths, _window, _cx| {
                 // Explorer file dragged onto the terminal → insert its quoted
@@ -916,7 +970,10 @@ fn to_term_mods(m: &gpui::Modifiers) -> Modifiers {
 /// Map a GPUI keystroke to a framework-agnostic [`KeyInput`] for
 /// [`key_to_bytes`]. Returns `None` for keys the terminal never consumes (bare
 /// modifiers, unknown named keys).
-fn keystroke_to_input(ks: &Keystroke) -> Option<KeyInput> {
+///
+/// With `option_as_meta`, Option+key encodes the base key (`ESC b`) rather
+/// than the platform-composed character (`∫`).
+fn keystroke_to_input(ks: &Keystroke, option_as_meta: bool) -> Option<KeyInput> {
     let mods = to_term_mods(&ks.modifiers);
     let key = ks.key.as_str();
 
@@ -953,14 +1010,21 @@ fn keystroke_to_input(ks: &Keystroke) -> Option<KeyInput> {
 
     // Text-producing key. Prefer the platform-resolved char; for Ctrl combos
     // GPUI often reports no `key_char`, so fall back to the key name.
-    let ch = ks
+    let key_char = ks
         .key_char
+        .clone()
+        .filter(|_| !(option_as_meta && ks.modifiers.alt));
+    let ch = key_char
         .as_deref()
         .filter(|t| t.chars().count() == 1)
         .and_then(|t| t.chars().next())
         .or_else(|| {
             let mut it = key.chars();
             match (it.next(), it.next()) {
+                // A parsed keystroke (`shift-a`) has no `key_char`.
+                (Some(c), None) if ks.modifiers.shift && c.is_ascii_alphabetic() => {
+                    Some(c.to_ascii_uppercase())
+                }
                 (Some(c), None) => Some(c),
                 _ => None,
             }
@@ -969,7 +1033,7 @@ fn keystroke_to_input(ks: &Keystroke) -> Option<KeyInput> {
     Some(KeyInput {
         key: Key::Char(ch),
         mods,
-        text: ks.key_char.clone(),
+        text: key_char,
     })
 }
 
@@ -1027,7 +1091,7 @@ mod tests {
     }
 
     fn bytes(ks: &Keystroke) -> Option<Vec<u8>> {
-        key_to_bytes(&keystroke_to_input(ks)?, &ModeState::default())
+        key_to_bytes(&keystroke_to_input(ks, false)?, &ModeState::default())
     }
 
     #[test]
@@ -1054,8 +1118,33 @@ mod tests {
             app_cursor: true,
             ..ModeState::default()
         };
-        let input = keystroke_to_input(&ks("left", gpui::Modifiers::default())).unwrap();
+        let input = keystroke_to_input(&ks("left", gpui::Modifiers::default()), false).unwrap();
         assert_eq!(key_to_bytes(&input, &mode), Some(vec![0x1b, b'O', b'D']));
+    }
+
+    #[test]
+    fn option_as_meta_sends_the_base_key_not_the_composed_char() {
+        let alt = gpui::Modifiers {
+            alt: true,
+            ..Default::default()
+        };
+        let mut k = ks("b", alt);
+        k.key_char = Some("\u{222b}".into()); // macOS Option+B
+        let input = keystroke_to_input(&k, true).unwrap();
+        assert_eq!(
+            key_to_bytes(&input, &ModeState::default()),
+            Some(vec![0x1b, b'b'])
+        );
+    }
+
+    #[test]
+    fn parsed_keystrokes_encode_like_typed_ones() {
+        let enc = |s: &str| bytes(&Keystroke::parse(s).unwrap());
+        assert_eq!(enc("ctrl-l"), Some(vec![0x0c]));
+        assert_eq!(enc("alt-b"), Some(vec![0x1b, b'b']));
+        assert_eq!(enc("shift-a"), Some(vec![b'A']));
+        assert_eq!(enc("escape"), Some(vec![0x1b]));
+        assert_eq!(enc("cmd-l"), None);
     }
 
     #[test]

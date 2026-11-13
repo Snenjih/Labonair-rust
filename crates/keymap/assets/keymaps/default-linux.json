@@ -46,7 +46,30 @@
     "context": "Terminal",
     "bindings": {
       "ctrl-d": "pane::SplitRight",
-      "ctrl-shift-d": "pane::SplitDown"
+      "ctrl-shift-d": "pane::SplitDown",
+      "ctrl-shift-c": "terminal::Copy",
+      "ctrl-insert": "terminal::Copy",
+      "ctrl-shift-v": "terminal::Paste",
+      "shift-insert": "terminal::Paste",
+      "ctrl-alt-space": "terminal::ShowCharacterPalette",
+      "ctrl-shift-l": "terminal::Clear",
+      // Keys the app binds globally but a shell needs: forwarded back to the
+      // terminal. `SendKeystroke` takes one keystroke, `SendText` writes its
+      // argument to the PTY verbatim.
+      "ctrl-b": ["terminal::SendKeystroke", "ctrl-b"],
+      "ctrl-e": ["terminal::SendKeystroke", "ctrl-e"],
+      "ctrl-w": ["terminal::SendKeystroke", "ctrl-w"],
+      "ctrl-backspace": ["terminal::SendKeystroke", "ctrl-w"],
+      "ctrl-delete": ["terminal::SendText", "\u001b[3;5~"],
+      "alt-b": ["terminal::SendText", "\u001bb"],
+      "alt-f": ["terminal::SendText", "\u001bf"],
+      "alt-.": ["terminal::SendText", "\u001b."],
+      "shift-pageup": "terminal::ScrollPageUp",
+      "shift-pagedown": "terminal::ScrollPageDown",
+      "shift-up": "terminal::ScrollLineUp",
+      "shift-down": "terminal::ScrollLineDown",
+      "shift-home": "terminal::ScrollToTop",
+      "shift-end": "terminal::ScrollToBottom"
     }
   },
   {

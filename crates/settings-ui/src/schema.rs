@@ -572,6 +572,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Paste the clipboard on right-click instead of a context menu."
         ),
         field!(
+            terminal.terminal_option_as_meta,
+            "terminalOptionAsMeta",
+            Switch,
+            "Option as Meta",
+            "macOS: Option+key sends Escape + the key (Option+B = Esc b) instead of the composed character."
+        ),
+        field!(
             terminal.terminal_word_separator,
             "terminalWordSeparator",
             Text,

@@ -30,6 +30,7 @@ use std::rc::Rc;
 use labonair_command_palette_core::CommandId;
 use labonair_keymap::file::EffectiveBinding;
 use labonair_notifications::{notification_center, Notification};
+use labonair_workspace::views::terminal::{SendKeystroke, SendText};
 
 /// GPUI keymap action that forwards a stable registered command identity to
 /// its owner-provided handler. Shell only carries the identity across GPUI's
@@ -309,6 +310,33 @@ fn action_for(
     })
 }
 
+/// The GPUI action for an argument-taking keymap action
+/// (`["terminal::SendText", "..."]`). A `terminal::SendKeystroke` payload that
+/// is not one valid keystroke is dropped here so a typo cannot bind nothing
+/// silently — it is logged instead.
+fn action_with_arg(binding: &EffectiveBinding) -> Option<Box<dyn Action>> {
+    let arg = binding.arg.clone()?;
+    match binding.action.as_str() {
+        labonair_keymap::file::TERMINAL_SEND_TEXT => Some(Box::new(SendText { text: arg })),
+        labonair_keymap::file::TERMINAL_SEND_KEYSTROKE => {
+            // `Keystroke::parse` takes a space-separated string as one key, so
+            // a sequence like "ctrl-a ctrl-b" must be rejected explicitly.
+            let valid = Keystroke::parse(&arg)
+                .map(|keystroke| !keystroke.key.contains(char::is_whitespace))
+                .unwrap_or(false);
+            if !valid {
+                tracing::warn!(
+                    keystroke = %arg,
+                    "keymap.json: terminal::SendKeystroke argument is not one valid keystroke, skipping binding"
+                );
+                return None;
+            }
+            Some(Box::new(SendKeystroke { keystroke: arg }))
+        }
+        _ => None,
+    }
+}
+
 /// Turn the merged effective keymap into real `gpui::KeyBinding`s. Every
 /// keystroke token and context predicate is pre-validated with the same
 /// fallible parsers GPUI itself uses internally, so the panicking
@@ -321,7 +349,9 @@ fn bindings_from_keymap(
 ) -> Vec<KeyBinding> {
     let mut out = Vec::with_capacity(effective.len());
     for binding in effective {
-        let Some(action) = action_for(&binding.action, commands) else {
+        let Some(action) =
+            action_with_arg(binding).or_else(|| action_for(&binding.action, commands))
+        else {
             continue; // no concrete Action for this command — not key-bindable yet.
         };
         if binding
@@ -486,13 +516,59 @@ mod tests {
             labonair_keymap::file::KeybindSource::Default,
             &default,
         )]);
-        let commands = crate::commands::register_builtin_commands();
+        let mut commands = crate::commands::register_builtin_commands();
+        // The terminal handlers need a live Workspace entity (registered at
+        // startup); stand in for them so the bindings resolve as they do there.
+        for descriptor in labonair_terminal::command_provider::TerminalCommandProvider.commands() {
+            commands.register(descriptor, |_shell, _window, _cx| {});
+        }
         let loaded = bindings_from_keymap(&effective, &commands);
         // Every action referenced in the shipped default asset has a concrete
         // `menu::` Action in `action_for` (this test would fail loudly via
         // count mismatch if a new default binding's action were forgotten
         // there).
+        let unbound: Vec<_> = effective
+            .iter()
+            .filter(|binding| {
+                action_with_arg(binding)
+                    .or_else(|| action_for(&binding.action, &commands))
+                    .is_none()
+            })
+            .map(|binding| format!("{} -> {}", binding.keystrokes, binding.action))
+            .collect();
+        assert!(
+            unbound.is_empty(),
+            "default bindings without an Action: {unbound:?}"
+        );
         assert_eq!(loaded.len(), effective.len());
+    }
+
+    #[test]
+    fn argument_actions_become_terminal_actions() {
+        let file = labonair_keymap::file::parse_keymap_jsonc(
+            r#"[{ "context": "Terminal", "bindings": {
+                "cmd-l": ["terminal::SendKeystroke", "ctrl-l"],
+                "shift-enter": ["terminal::SendText", "\u001b\r"],
+                "cmd-j": ["terminal::SendKeystroke", "not a keystroke"]
+            }}]"#,
+        )
+        .unwrap();
+        let effective = labonair_keymap::file::merge_keymaps(&[(
+            labonair_keymap::file::KeybindSource::User,
+            &file,
+        )]);
+        let commands = crate::commands::register_builtin_commands();
+        let loaded = bindings_from_keymap(&effective, &commands);
+        // The invalid keystroke payload is skipped, the other two load.
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(
+            action_with_arg(&effective[0]).unwrap().name(),
+            SendKeystroke::name_for_type()
+        );
+        assert_eq!(
+            action_with_arg(&effective[1]).unwrap().name(),
+            SendText::name_for_type()
+        );
     }
 
     #[test]
@@ -536,6 +612,7 @@ mod tests {
             .map(|binding| EffectiveBinding {
                 keystrokes: binding.keystrokes,
                 action: binding.command.action_name().to_owned(),
+                arg: None,
                 context: binding
                     .context
                     .map(labonair_keymap::runtime::context_name)

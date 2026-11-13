@@ -12,6 +12,7 @@ use labonair_command_palette_core::{
 };
 use labonair_command_palette_runtime::CommandHandlerRegistry;
 use labonair_terminal::command_provider::TerminalCommandTarget;
+use labonair_terminal::Scroll;
 
 use crate::context::WorkspaceTransition;
 use crate::views::preview::PreviewImageAction;
@@ -130,6 +131,40 @@ impl TerminalCommandTarget for WorkspaceTerminalCommandTarget {
     fn reset(&self, cx: &mut gpui::App) {
         self.0
             .update(cx, |workspace, cx| workspace.terminal_reset(cx));
+    }
+
+    fn scroll_page_up(&self, cx: &mut gpui::App) {
+        self.0.update(cx, |workspace, cx| {
+            workspace.terminal_scroll(Scroll::PageUp, cx)
+        });
+    }
+
+    fn scroll_page_down(&self, cx: &mut gpui::App) {
+        self.0.update(cx, |workspace, cx| {
+            workspace.terminal_scroll(Scroll::PageDown, cx)
+        });
+    }
+
+    fn scroll_line_up(&self, cx: &mut gpui::App) {
+        self.0.update(cx, |workspace, cx| {
+            workspace.terminal_scroll(Scroll::Delta(1), cx)
+        });
+    }
+
+    fn scroll_line_down(&self, cx: &mut gpui::App) {
+        self.0.update(cx, |workspace, cx| {
+            workspace.terminal_scroll(Scroll::Delta(-1), cx)
+        });
+    }
+
+    fn paste_text(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.terminal_paste_text(cx));
+    }
+
+    fn rename(&self, window: &mut gpui::Window, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.rename_active_tab(window, cx));
     }
 }
 

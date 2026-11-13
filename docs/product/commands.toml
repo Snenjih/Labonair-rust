@@ -55,6 +55,9 @@ source_files = ["crates/terminal/src", "crates/workspace/src/command_provider.rs
 ids = [
   "NewTerminalTab", "ClearTerminal", "TerminalCopySelection", "TerminalPaste",
   "TerminalScrollToTop", "TerminalScrollToBottom", "TerminalReset",
+  "TerminalScrollPageUp", "TerminalScrollPageDown", "TerminalScrollLineUp",
+  "TerminalScrollLineDown", "TerminalPasteText", "TerminalShowCharacterPalette",
+  "TerminalRename",
   "ToggleCopyOnSelect", "ToggleRightClickPastes", "ToggleTerminalBell",
   "ToggleConfirmCloseTerminalTab", "ChangeTerminalCursorStyle",
 ]

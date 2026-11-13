@@ -121,7 +121,7 @@ use labonair_ssh::{
     SshTunnelService,
 };
 use labonair_terminal::{
-    RemoteFeed, RemoteResizer, RemoteWriter, SessionHandle, SessionId, SessionOptions,
+    RemoteFeed, RemoteResizer, RemoteWriter, Scroll, SessionHandle, SessionId, SessionOptions,
     TermDimensions, TerminalColors, TerminalRegistry,
 };
 use labonair_transfers::{TransferDirection, TransferRequest, TransferService};
@@ -5152,6 +5152,25 @@ impl Workspace {
         if let Some(view) = self.active_pane_view(cx) {
             view.read(cx).snap_to_bottom();
         }
+    }
+
+    /// Scroll the active terminal's viewport (`Delta(n)`: positive = up).
+    pub fn terminal_scroll(&self, scroll: Scroll, cx: &App) {
+        if let Some(view) = self.active_pane_view(cx) {
+            view.read(cx).scroll(scroll);
+        }
+    }
+
+    pub fn terminal_paste_text(&self, cx: &mut Context<Self>) {
+        if let Some(view) = self.active_pane_view(cx) {
+            view.update(cx, |view, cx| view.paste_text(cx));
+        }
+    }
+
+    /// Start inline rename of the active tab.
+    pub fn rename_active_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let id = self.tabs.read(cx).active_id();
+        self.begin_tab_rename(id, window, cx);
     }
 
     pub fn terminal_reset(&self, cx: &App) {

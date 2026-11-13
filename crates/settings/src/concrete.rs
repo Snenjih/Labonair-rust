@@ -258,6 +258,10 @@ impl TerminalSettings {
         self.0.terminal_right_click_pastes.unwrap_or(false)
     }
 
+    pub fn option_as_meta(&self) -> bool {
+        self.0.terminal_option_as_meta.unwrap_or(false)
+    }
+
     /// Terminal text size, px.
     pub fn font_size(&self) -> u32 {
         self.0.terminal_font_size.unwrap_or(14)

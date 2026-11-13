@@ -40,6 +40,7 @@ pub fn load_descriptors<'a>(
         .map(|descriptor| descriptor.id.action_name())
         .collect::<BTreeSet<_>>();
     known_actions.extend(compatibility_action_names());
+    known_actions.extend(file::ARGUMENT_ACTIONS);
 
     let owner_defaults = crate::runtime::defaults_from_descriptors(descriptors.iter());
     let effective_bindings =

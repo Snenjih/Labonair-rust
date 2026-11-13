@@ -264,6 +264,13 @@ pub enum CommandId {
     TerminalScrollToTop,
     TerminalScrollToBottom,
     TerminalReset,
+    TerminalScrollPageUp,
+    TerminalScrollPageDown,
+    TerminalScrollLineUp,
+    TerminalScrollLineDown,
+    TerminalPasteText,
+    TerminalShowCharacterPalette,
+    TerminalRename,
 }
 
 /// A visual hint that the GPUI adapter maps to its icon set.
@@ -897,6 +904,13 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::TerminalScrollToTop, "terminal::ScrollToTop"),
     (CommandId::TerminalScrollToBottom, "terminal::ScrollToBottom"),
     (CommandId::TerminalReset, "terminal::Reset"),
+    (CommandId::TerminalScrollPageUp, "terminal::ScrollPageUp"),
+    (CommandId::TerminalScrollPageDown, "terminal::ScrollPageDown"),
+    (CommandId::TerminalScrollLineUp, "terminal::ScrollLineUp"),
+    (CommandId::TerminalScrollLineDown, "terminal::ScrollLineDown"),
+    (CommandId::TerminalPasteText, "terminal::PasteText"),
+    (CommandId::TerminalShowCharacterPalette, "terminal::ShowCharacterPalette"),
+    (CommandId::TerminalRename, "terminal::Rename"),
 ];
 
 impl CommandId {

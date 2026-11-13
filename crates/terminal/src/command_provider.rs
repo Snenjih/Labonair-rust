@@ -20,6 +20,13 @@ pub trait TerminalCommandTarget {
     fn scroll_to_top(&self, cx: &mut App);
     fn scroll_to_bottom(&self, cx: &mut App);
     fn reset(&self, cx: &mut App);
+    fn scroll_page_up(&self, cx: &mut App);
+    fn scroll_page_down(&self, cx: &mut App);
+    fn scroll_line_up(&self, cx: &mut App);
+    fn scroll_line_down(&self, cx: &mut App);
+    /// Paste without bracketed-paste wrapping.
+    fn paste_text(&self, cx: &mut App);
+    fn rename(&self, window: &mut gpui::Window, cx: &mut App);
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -60,6 +67,41 @@ impl CommandProvider for TerminalCommandProvider {
                 "Scroll to Bottom",
                 CommandIcon::PanelBottom,
             ),
+            terminal_command(
+                CommandId::TerminalScrollPageUp,
+                "Scroll Page Up",
+                CommandIcon::PanelTop,
+            ),
+            terminal_command(
+                CommandId::TerminalScrollPageDown,
+                "Scroll Page Down",
+                CommandIcon::PanelBottom,
+            ),
+            terminal_command(
+                CommandId::TerminalScrollLineUp,
+                "Scroll Line Up",
+                CommandIcon::PanelTop,
+            ),
+            terminal_command(
+                CommandId::TerminalScrollLineDown,
+                "Scroll Line Down",
+                CommandIcon::PanelBottom,
+            ),
+            terminal_command(
+                CommandId::TerminalPasteText,
+                "Paste Without Bracketed Paste",
+                CommandIcon::Download,
+            ),
+            terminal_command(
+                CommandId::TerminalShowCharacterPalette,
+                "Show Character Palette",
+                CommandIcon::Terminal,
+            ),
+            terminal_command(
+                CommandId::TerminalRename,
+                "Rename Terminal",
+                CommandIcon::Terminal,
+            ),
         ]
     }
 }
@@ -83,4 +125,20 @@ pub fn register_handlers(
     register!(CommandId::TerminalPaste, paste);
     register!(CommandId::TerminalScrollToTop, scroll_to_top);
     register!(CommandId::TerminalScrollToBottom, scroll_to_bottom);
+    register!(CommandId::TerminalScrollPageUp, scroll_page_up);
+    register!(CommandId::TerminalScrollPageDown, scroll_page_down);
+    register!(CommandId::TerminalScrollLineUp, scroll_line_up);
+    register!(CommandId::TerminalScrollLineDown, scroll_line_down);
+    register!(CommandId::TerminalPasteText, paste_text);
+    registry
+        .register(CommandId::TerminalShowCharacterPalette, |window, _cx| {
+            window.show_character_palette()
+        })
+        .expect("terminal command handler must have a unique id");
+    let rename_target = target.clone();
+    registry
+        .register(CommandId::TerminalRename, move |window, cx| {
+            rename_target.rename(window, cx)
+        })
+        .expect("terminal command handler must have a unique id");
 }
