@@ -217,3 +217,54 @@ the daemon, and Windows.
   (also on a later attach). The session stays until `Ack` (24 h at most); the
   daemon never reconnects. Keepalive defaults to 25 s x 3 when the request
   leaves it open.
+
+## Implementation notes: app side (SSH, SFTP, transfers)
+
+* **Proxies.** `labonair_terminal_host::proxy::DaemonServices` implements the
+  eight service traits over the shared `HostClient` (`rpc` is async and never
+  blocks the reader: replies arrive out of order, an `SshConnect` may wait
+  minutes for a host-key answer). On creation it subscribes to the daemon's
+  events (re-subscribing after every reconnect) and re-emits each `BusEvent`
+  on the app's `EventBus`, so `SshEventSourceAdapter` and
+  `TransferEventSourceAdapter` are unchanged. The crate stays GPUI-free;
+  `labonair-shell` is the only composition root (`session_host.rs`).
+* **Host choice at connect.** `proxy::router::RoutedServices` wraps the
+  concrete in-process services. A new connection goes to the daemon when
+  `terminal.sessionHost = detached` (`ensure_daemon`; failure -> notification
+  and the connection stays in the app), else it never touches the daemon. The
+  session -> host map keeps later calls (trust, PTY, SFTP handles, remote
+  edits) on the owning host; transfer jobs follow the host of their SSH session
+  and a job the app never enqueued (replayed after a restart) belongs to the
+  daemon. Tunnels follow the host id's last connection. `TransferConfigure` is
+  sent from the app's transfer settings before every daemon connect.
+* **Credentials.** `proxy::snapshot::build` reads the host, its (single-hop)
+  jump host, referenced credentials and exactly the secrets `ssh_connect`
+  would read from the app's own database and secret store.
+* **Hosted SSH panes.** With `detached` the pane is a `SessionBackend::Hosted`
+  created by `labonair_terminal::SshHostedHost` (same `HostedLink` states and
+  banners as a local hosted pane); the connect call still goes through
+  `SshConnectionService`. The pane tag is the SSH session id. `ConnectionLost`
+  prints the humanized reason into the pane and uses the existing
+  "connection lost" state; closing the tab kills the session (acknowledges a
+  lost one); quitting only detaches, and hosted SSH panes do not trigger the
+  quit confirmation. Pane snapshots store `scrollbackId = <ssh id>`,
+  `hostSessionId`, `hostKind: detached`; restore matches `ListSshSessions`
+  (wire id, pane tag, host id) and adopts the session instead of connecting
+  again, else the normal reconnect flow applies.
+* **`ListSessions`** no longer lists SSH sessions without a pane tag (SFTP
+  browsers, agent-opened tabs): they are not terminals to recover. They stay
+  visible through `ListSshSessions`.
+* **Other readers of the in-process session map.** `RpcCall::SshExec`
+  (`SshExecService`, base64 stdin/stdout, new dependency `base64` in
+  `labonair-terminal-host` for that) serves them for daemon sessions, through
+  `labonair_ssh_transport::hosted` (a `OnceLock` of `SshHostedAccess` installed by the
+  shell; without it every lookup is `None` and the in-process paths are
+  untouched): remote git (`GitExecutor`), snippet runs and the MCP bridge
+  (PTY write and `agent_tap`, fed from the client-side live stream).
+  Limits for daemon-hosted sessions: snippet output arrives when the command
+  ends (not streamed) and a running snippet cannot be cancelled.
+* **Known limits.** SFTP-only connections left behind by a crash stay in the
+  daemon until the app disconnects them (the daemon is not allowed to idle
+  while sessions exist); there is no UI for them yet. The router's
+  `attach_running_daemon` joins a running daemon at startup so the transfers
+  panel shows live jobs again.

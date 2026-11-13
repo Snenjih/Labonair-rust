@@ -4749,6 +4749,7 @@ dependencies = [
  "labonair-ssh",
  "labonair-ssh-transport",
  "labonair-terminal",
+ "labonair-terminal-host",
  "labonair-theme",
  "labonair-theme-ui",
  "labonair-transfers",

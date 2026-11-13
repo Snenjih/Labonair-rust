@@ -62,6 +62,8 @@ labonair-panel-scm = { path = "../panel-scm" }
 labonair-panel-git-graph = { path = "../panel-git-graph" }
 labonair-panel-snippets = { path = "../panel-snippets" }
 labonair-terminal = { path = "../terminal" }
+# Composition root of the detached session host proxies (ADR 0009).
+labonair-terminal-host = { path = "../terminal-host" }
 labonair-persistence = { path = "../persistence" }
 labonair-ssh = { path = "../ssh" }
 labonair-ssh-transport = { path = "../ssh-transport" }

@@ -253,39 +253,16 @@ pub(crate) fn bootstrap(
         .unwrap_or(false)
         .then(crate::session::load_snapshot)
         .flatten();
-    let ssh_service: Arc<dyn SshConnectionService> = Arc::new(
-        labonair_ssh_transport::contract::SshConnectionServiceAdapter::new(
-            composition.ssh().clone(),
-            composition.trust().clone(),
-            composition.db().clone(),
-            composition.secrets().clone(),
-            composition.events().clone(),
-        ),
-    );
-    let ssh_pty_service: Arc<dyn SshPtyService> = Arc::new(
-        labonair_ssh_transport::contract::SshPtyServiceAdapter::new(composition.ssh().clone()),
-    );
-    let ssh_remote_service: Arc<dyn SshRemoteCommandService> = Arc::new(
-        labonair_ssh_transport::contract::SshRemoteServiceAdapter::new(
-            composition.ssh().clone(),
-            composition.events().clone(),
-        ),
-    );
-    let ssh_remote_file_service: Arc<dyn SshRemoteFileService> = Arc::new(
-        labonair_ssh_transport::contract::SshRemoteServiceAdapter::new(
-            composition.ssh().clone(),
-            composition.events().clone(),
-        ),
-    );
-    let ssh_tunnel_service: Arc<dyn SshTunnelService> = Arc::new(
-        labonair_ssh_transport::contract::SshTunnelServiceAdapter::new(
-            composition.tunnels().clone(),
-            composition.db().clone(),
-            composition.secrets().clone(),
-            composition.trust().clone(),
-            composition.events().clone(),
-        ),
-    );
+    // SSH / SFTP / transfers: the in-process services plus, when the user opts
+    // in (`terminal.sessionHost = detached`), the background session host's
+    // proxies. The router picks per connection and keeps each session on the
+    // host it was created on (ADR 0009); in `app` mode it only forwards.
+    let routed = crate::session_host::routed_services(&composition, cx);
+    let ssh_service: Arc<dyn SshConnectionService> = Arc::new(routed.clone());
+    let ssh_pty_service: Arc<dyn SshPtyService> = Arc::new(routed.clone());
+    let ssh_remote_service: Arc<dyn SshRemoteCommandService> = Arc::new(routed.clone());
+    let ssh_remote_file_service: Arc<dyn SshRemoteFileService> = Arc::new(routed.clone());
+    let ssh_tunnel_service: Arc<dyn SshTunnelService> = Arc::new(routed.clone());
     let ssh_tester: Arc<dyn SshConnectionTester> = Arc::new(
         labonair_ssh_transport::contract::SshConnectionTesterAdapter::new(
             composition.trust().clone(),
@@ -326,21 +303,9 @@ pub(crate) fn bootstrap(
             )
         })
     };
-    let sftp_session_service: Arc<dyn SftpSessionService> =
-        Arc::new(labonair_sftp_ssh::contract::SftpTransportService::new(
-            composition.ssh().clone(),
-            composition.events().clone(),
-        ));
-    let sftp_browser_service: Arc<dyn SftpBrowserService> =
-        Arc::new(labonair_sftp_ssh::contract::SftpTransportService::new(
-            composition.ssh().clone(),
-            composition.events().clone(),
-        ));
-    let transfer_service: Arc<dyn TransferService> = Arc::new(
-        labonair_transfers_ssh::adapter::TransferServiceAdapter::new(
-            composition.transfer().clone(),
-        ),
-    );
+    let sftp_session_service: Arc<dyn SftpSessionService> = Arc::new(routed.clone());
+    let sftp_browser_service: Arc<dyn SftpBrowserService> = Arc::new(routed.clone());
+    let transfer_service: Arc<dyn TransferService> = Arc::new(routed);
     let transfer_events: Arc<dyn TransferEventSource> = Arc::new(
         labonair_transfers_ssh::adapter::TransferEventSourceAdapter::new(
             composition.events().clone(),
