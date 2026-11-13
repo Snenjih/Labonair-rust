@@ -433,6 +433,10 @@ pub struct CreateOptions {
     /// daemon persists scrollback on SIGTERM. Derived from the wire id when
     /// `None`.
     pub persist_key: Option<String>,
+    /// Previously persisted scrollback (ANSI text) the daemon feeds into the
+    /// shadow emulator before the shell starts, so a restored pane keeps its
+    /// history above the new prompt.
+    pub replay_scrollback: Option<String>,
 }
 
 /// Serializable mirror of the engine palette (`TerminalColors`).

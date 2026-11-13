@@ -731,6 +731,45 @@ impl RemoteFeed {
         send_event(&self.events, TerminalEvent::Exit);
         self.event_notify.notify_one();
     }
+
+    /// Feed output of a session living in the detached session host. The
+    /// daemon's shadow emulator already answers DA/DSR, so the replies this
+    /// emulator queues are dropped instead of being written back. With
+    /// `replay` (a snapshot or resync) the prompt/command events the sniffer
+    /// recovers describe history, not activity, and are not forwarded.
+    pub fn feed_hosted(&self, bytes: &[u8], replay: bool) {
+        let Ok(mut guard) = self.emulator.lock() else {
+            return;
+        };
+        let extra = guard.feed(bytes);
+        let _ = guard.take_pty_output();
+        drop(guard);
+        for ev in extra {
+            if !replay || matches!(ev, TerminalEvent::Wakeup) {
+                send_event(&self.events, ev);
+            }
+        }
+        self.event_notify.notify_one();
+    }
+
+    /// Resize only the local emulator (the host already knows the size).
+    pub fn resize_emulator(&self, dimensions: TermDimensions) {
+        if let Ok(mut guard) = self.emulator.lock() {
+            guard.resize(dimensions);
+        }
+    }
+
+    /// The hosted child exited with `code`.
+    pub fn mark_exited(&self, code: i32) {
+        send_event(&self.events, TerminalEvent::ChildExit(code));
+        self.event_notify.notify_one();
+    }
+
+    /// Ask the view to repaint (a link state changed, no output).
+    pub fn notify_changed(&self) {
+        send_event(&self.events, TerminalEvent::Wakeup);
+        self.event_notify.notify_one();
+    }
 }
 
 impl RemoteSession {
@@ -805,6 +844,14 @@ impl RemoteSession {
 
     pub fn drain_events(&self) -> Vec<TerminalEvent> {
         self.events.try_iter().collect()
+    }
+
+    /// Scrollback + screen as ANSI text for session persistence. `None` for an
+    /// empty grid.
+    pub fn serialize_scrollback(&self, max_lines: Option<usize>) -> Option<String> {
+        self.with_emulator(|e| e.serialize_scrollback(max_lines))
+            .ok()
+            .filter(|t| !t.trim().is_empty())
     }
 
     fn with_emulator<R>(&self, f: impl FnOnce(&mut TerminalEmulator) -> R) -> Result<R, String> {
