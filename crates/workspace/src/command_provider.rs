@@ -166,6 +166,16 @@ impl TerminalCommandTarget for WorkspaceTerminalCommandTarget {
         self.0
             .update(cx, |workspace, cx| workspace.rename_active_tab(window, cx));
     }
+
+    fn recover_background_sessions(&self, window: &mut gpui::Window, cx: &mut gpui::App) {
+        self.0.update(cx, |workspace, cx| {
+            workspace.recover_background_sessions(window, cx)
+        });
+    }
+
+    fn quit_and_stop_all_sessions(&self, cx: &mut gpui::App) {
+        crate::host_sessions::quit_and_stop_all_sessions(cx);
+    }
 }
 
 /// Adapt Workspace's active-pane operation to the terminal command contract.

@@ -271,6 +271,9 @@ pub enum CommandId {
     TerminalPasteText,
     TerminalShowCharacterPalette,
     TerminalRename,
+    // Detached session host (ADR 0009).
+    TerminalRecoverBackgroundSessions,
+    TerminalQuitAndStopAllSessions,
 }
 
 /// A visual hint that the GPUI adapter maps to its icon set.
@@ -911,6 +914,14 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::TerminalPasteText, "terminal::PasteText"),
     (CommandId::TerminalShowCharacterPalette, "terminal::ShowCharacterPalette"),
     (CommandId::TerminalRename, "terminal::Rename"),
+    (
+        CommandId::TerminalRecoverBackgroundSessions,
+        "terminal::RecoverBackgroundSessions",
+    ),
+    (
+        CommandId::TerminalQuitAndStopAllSessions,
+        "terminal::QuitAndStopAllSessions",
+    ),
 ];
 
 impl CommandId {

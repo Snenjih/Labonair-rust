@@ -27,6 +27,10 @@ pub trait TerminalCommandTarget {
     /// Paste without bracketed-paste wrapping.
     fn paste_text(&self, cx: &mut App);
     fn rename(&self, window: &mut gpui::Window, cx: &mut App);
+    /// Open every unclaimed session of the detached session host as a tab.
+    fn recover_background_sessions(&self, window: &mut gpui::Window, cx: &mut App);
+    /// Stop the detached session host with all its sessions, then quit.
+    fn quit_and_stop_all_sessions(&self, cx: &mut App);
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -102,6 +106,19 @@ impl CommandProvider for TerminalCommandProvider {
                 "Rename Terminal",
                 CommandIcon::Terminal,
             ),
+            // Global (no terminal context): usable with no terminal focused.
+            CommandDescriptor::new(
+                CommandId::TerminalRecoverBackgroundSessions,
+                "Recover Background Sessions",
+                "Terminal",
+            )
+            .with_icon(CommandIcon::Terminal),
+            CommandDescriptor::new(
+                CommandId::TerminalQuitAndStopAllSessions,
+                "Quit and Stop All Sessions",
+                "Terminal",
+            )
+            .with_icon(CommandIcon::Terminal),
         ]
     }
 }
@@ -134,6 +151,20 @@ pub fn register_handlers(
         .register(CommandId::TerminalShowCharacterPalette, |window, _cx| {
             window.show_character_palette()
         })
+        .expect("terminal command handler must have a unique id");
+    let recover_target = target.clone();
+    registry
+        .register(
+            CommandId::TerminalRecoverBackgroundSessions,
+            move |window, cx| recover_target.recover_background_sessions(window, cx),
+        )
+        .expect("terminal command handler must have a unique id");
+    let quit_target = target.clone();
+    registry
+        .register(
+            CommandId::TerminalQuitAndStopAllSessions,
+            move |_window, cx| quit_target.quit_and_stop_all_sessions(cx),
+        )
         .expect("terminal command handler must have a unique id");
     let rename_target = target.clone();
     registry
