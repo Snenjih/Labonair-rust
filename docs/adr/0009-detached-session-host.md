@@ -119,3 +119,88 @@ the daemon, and Windows.
   client, conflict with no UI) are part of the implementation tasks.
 * Behaviour in the default `app` mode must remain byte-for-byte identical to
   the pre-ADR terminal; `InProcessHost` exists to prove that.
+
+## Implementation notes: app side (terminals)
+
+* **Client.** `labonair-terminal-host::client::HostClient` is one synchronous
+  socket connection per app process (a reader and a writer thread, request
+  correlation by `req_id`, per-session `SessionSink` routing). `spawn::shared_client`
+  is the process-wide instance; `DaemonHost` (`labonair-terminal`, because it returns
+  the registry's `SessionBackend`) implements `SessionHost` on top of it.
+* **Helper discovery.** `spawn::ensure_daemon` looks for `labonair-host` at
+  `$LABONAIR_HOST_BIN`, next to the running executable (`target/{debug,release}`,
+  `Contents/MacOS`) and in `Contents/Resources`, copies it to
+  `<data_dir>/host/bin/labonair-host-<content hash>` (older copies are removed) and
+  spawns that copy with `setsid`, stdio to `/dev/null`. `scripts/package-macos.sh`
+  builds `labonair-terminal-host` with the app and puts the helper into
+  `Contents/MacOS`. In development `cargo run -p labonair` does not build it: run
+  `cargo build -p labonair-terminal-host` once (the notification on a missing helper
+  says so and the pane falls back to an app-bound session).
+* **Lifecycle in the registry.** `TerminalRegistry::close` kills a hosted session
+  (acknowledges it when it already exited); `close_all` and dropping a handle only
+  detach. `has_running_shells` ignores hosted sessions.
+* **Restore.** Pane snapshots carry `hostSessionId` and `hostKind` (`app` is the
+  default and is not written). A `detached` pane attaches only when the daemon's
+  session carries the pane's scrollback uuid as `pane_tag` (ids restart with every
+  daemon lifetime); otherwise the scrollback replay and resume hook apply.
+  Unattached sessions matching no open pane are offered once at startup
+  ("N background sessions found") and by `Terminal: Recover Background Sessions`.
+
+## Implementation notes: daemon side (SSH, SFTP, transfers)
+
+* **Seam.** `server::HostServices` bundles the UI-free trait objects the daemon
+  drives (`SshConnectionService`, `SshPtyService`, `SshRemoteCommandService`,
+  `SshRemoteFileService`, `SshTunnelService`, `SftpSessionService`,
+  `SftpBrowserService`, `TransferService`) plus the `EventBus` they report on.
+  `labonair_terminal_host::stack::concrete_services` wires the same adapters
+  the app composes in `labonair-shell`; tests inject fakes. A host built
+  without services refuses every service call. This is why `labonair-terminal-host`
+  depends on `labonair-ssh-transport`, `labonair-sftp-ssh` and
+  `labonair-transfers-ssh` (the daemon is its own composition root).
+* **Wire.** Request/response is `Message::Rpc { req_id, call: RpcCall }`
+  answered by `RpcOk { req_id, value: RpcValue }` or `RpcErr { req_id, error:
+  WireError }` (answers may arrive out of order). `RpcCall` mirrors the traits
+  1:1 (`SshConnect`, `SshDisconnect`, `SshTrustHost`, `SshPtyWrite`,
+  `SshPtyResize`, `SshChown`, `SshCalculateSize`, `SshPrepareRemoteEdit`,
+  `SshSaveRemoteEdit`, `SshCleanupRemoteEditTemp`, `SshTunnelStart/Stop/Active`,
+  `SftpOpen/Close/ReadDir/Rename/Delete/Mkdir/CreateFile/Chmod`,
+  `TransferEnqueue/Cancel/Resolve`) plus `SubscribeEvents`, `UnsubscribeEvents`,
+  `TransferConfigure`, `ListTransfers`, `ListSshSessions`. `WireError.code`
+  carries the `LabonairError` variant so typed errors survive the wire.
+* **Events.** Service events arrive as `Message::BusEvent { name, payload }` in
+  the shape of the in-process bus (`ssh_connect_log`, `known_hosts_warning`,
+  `auth_required`, `passphrase_required`, `session_established`,
+  `ssh_connection_lost`, `sftp_ready`, `transfer_progress`, `transfer_step`,
+  `file_conflict`, `file_error`), so the app proxy re-emits them on a local bus
+  and the existing `SshEventSourceAdapter` / `TransferEventSourceAdapter` work
+  unchanged. They are sent only to connections that called `SubscribeEvents`,
+  which first replays the current state (live SSH sessions, transfer jobs with
+  steps and pending prompts) and then streams live events.
+* **SSH PTY.** `SshConnect` creates a hosted session (`Source::Ssh`: shadow
+  emulator fed by the transport's output sink; input and resizes go to
+  `SshPtyService`). It uses the same `Attach`/`Snapshot`/`Resync`/steal/`Ack`
+  machinery as a local terminal and appears in `ListSessions`. Input bytes are
+  converted to UTF-8 text because `SshPtyService::write` takes a `String`.
+* **Credentials.** `SshConnectParams` carries `password`, `passphrase` and an
+  `SshHostSnapshot` (host row, jump host, credential rows, resolved secrets).
+  The daemon loads them into an in-memory SQLite database and
+  `SecretsState::in_memory()`; nothing is read from the app's database or secret
+  store and nothing is written to disk. `Debug` of every carrier redacts
+  secrets. Tunnels need the same snapshot (`SshTunnelStart.host`). The daemon
+  uses the `SSH_AUTH_SOCK` it inherited when it was spawned.
+* **Fail closed.** `known_hosts_warning` with no subscribed connection, or the
+  last subscriber leaving with a prompt open, calls `trust_host(.., false)`.
+  Tunnels and jump hops never prompt (they fail fast in the transport).
+* **Transfers.** The worker lives in the daemon; the daemon keeps a
+  `TransferRegistry` for replay and `jobs_active` (queued, running, paused or
+  parked jobs keep the daemon alive; its auto-resolve answers are ignored).
+  While no client is subscribed a configured `overwrite` default is downgraded
+  to `ask`, so a conflict parks the job until `TransferResolve`. Local paths in
+  `TransferEnqueue` and `Ssh{Save,Cleanup}RemoteEdit` must be absolute (or
+  `~`-prefixed). History is in memory only, as in the app; finished jobs are
+  dropped from the daemon once replayed to a subscriber.
+* **Connection loss.** `ssh_connection_lost` turns the hosted session into an
+  `Exited`-like state and sends `Message::ConnectionLost { session, reason }`
+  (also on a later attach). The session stays until `Ack` (24 h at most); the
+  daemon never reconnects. Keepalive defaults to 25 s x 3 when the request
+  leaves it open.
