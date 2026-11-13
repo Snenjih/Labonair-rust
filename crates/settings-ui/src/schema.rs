@@ -641,6 +641,34 @@ pub fn all_fields() -> Vec<AnyField> {
             "Shell arguments",
             "Extra arguments appended to the shell, space-separated."
         ),
+        field_with_details!(
+            terminal.session_host,
+            "sessionHost",
+            Segmented(&[
+                ("app", "Tied to the app"),
+                ("detached", "Keep running in the background")
+            ]),
+            "Session host",
+            "Whether new terminal, SSH and SFTP sessions end with the app or keep running in a background host and can be re-attached.",
+            "",
+            "Only applies to newly opened sessions; existing sessions keep their mode."
+        ),
+        field!(
+            terminal.resume_on_restore,
+            "resumeOnRestore",
+            Segmented(&[("off", "Off"), ("ask", "Ask"), ("auto", "Automatic")]),
+            "Resume on restore",
+            "Re-run the program that was in the foreground (for example claude or codex) when a terminal is restored. Ask shows a one-click banner in the pane."
+        ),
+        field_with_details!(
+            terminal.detached_scrollback_lines,
+            "detachedScrollbackLines",
+            Int { min: 0, max: 200_000, step: 1000 },
+            "Background host scrollback",
+            "Rows of history the background session host keeps per session.",
+            "lines",
+            "Only applies to sessions running in the background host."
+        ),
         // ── editor ──────────────────────────────────────────────────────
         field!(
             editor.editor_font_family,
@@ -1715,6 +1743,17 @@ pub fn all_fields() -> Vec<AnyField> {
             "Fallback missed-ping tolerance for hosts that don't set their own."
         ),
     ];
+    // The background session host is unix-only.
+    #[cfg(not(unix))]
+    let fields: Vec<AnyField> = fields
+        .into_iter()
+        .filter(|f| {
+            !matches!(
+                f.json_path,
+                "terminal.sessionHost" | "terminal.detachedScrollbackLines"
+            )
+        })
+        .collect();
     fields
 }
 

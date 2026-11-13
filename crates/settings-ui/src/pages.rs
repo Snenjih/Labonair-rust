@@ -596,6 +596,13 @@ const TERMINAL_MAIN: &[Group] = &[
             "scrollbackRetentionDays"
         ),
     ),
+    ("Sessions", paths!("terminal": "resumeOnRestore")),
+    // The background session host is unix-only (see `schema::all_fields`).
+    #[cfg(unix)]
+    (
+        "Background host",
+        paths!("terminal": "sessionHost", "detachedScrollbackLines"),
+    ),
     ("Bell", paths!("terminal": "terminalBell")),
     ("Appearance", paths!("terminal": "terminalOpacity")),
     (
