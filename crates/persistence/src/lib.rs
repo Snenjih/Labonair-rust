@@ -24,6 +24,21 @@ pub fn initialize_database(app_local_data_dir: PathBuf) -> Result<rusqlite::Conn
     let conn = rusqlite::Connection::open(&labonair_path).map_err(|e| e.to_string())?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys = ON;")
         .map_err(|e| e.to_string())?;
+    apply_schema(&conn)?;
+    Ok(conn)
+}
+
+/// Open a private, never-persisted database with the shared schema. The
+/// detached session host keeps the host rows of its SSH sessions here (they
+/// arrive with each connect request) instead of reading the app's database.
+/// Foreign keys stay off so rows can be upserted in any order.
+pub fn initialize_in_memory_database() -> Result<rusqlite::Connection, String> {
+    let conn = rusqlite::Connection::open_in_memory().map_err(|e| e.to_string())?;
+    apply_schema(&conn)?;
+    Ok(conn)
+}
+
+fn apply_schema(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS groups (
             id TEXT PRIMARY KEY,
@@ -110,12 +125,12 @@ pub fn initialize_database(app_local_data_dir: PathBuf) -> Result<rusqlite::Conn
         let _ = conn.execute_batch(sql);
     }
 
-    Ok(conn)
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::initialize_database;
+    use super::{initialize_database, initialize_in_memory_database};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -137,5 +152,18 @@ mod tests {
         assert_eq!(count, 5);
 
         std::fs::remove_dir_all(dir).expect("cleanup test database");
+    }
+
+    #[test]
+    fn in_memory_database_has_the_shared_schema() {
+        let conn = initialize_in_memory_database().expect("database initializes");
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('groups', 'hosts', 'credentials', 'snippet_groups', 'snippets')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("table query");
+        assert_eq!(count, 5);
     }
 }

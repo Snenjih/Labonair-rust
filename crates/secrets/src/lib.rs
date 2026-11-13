@@ -31,6 +31,8 @@ pub struct SecretsState {
     data_dir: PathBuf,
     cache: Mutex<Option<HashMap<String, String>>>,
     enc_key: Mutex<Option<[u8; 32]>>,
+    /// RAM-only store: nothing is ever read from or written to `data_dir`.
+    memory_only: bool,
 }
 
 impl SecretsState {
@@ -39,6 +41,18 @@ impl SecretsState {
             data_dir,
             cache: Mutex::new(None),
             enc_key: Mutex::new(None),
+            memory_only: false,
+        }
+    }
+
+    /// A store that lives in RAM only (the detached session host receives
+    /// secrets per connect request and must never persist them).
+    pub fn in_memory() -> Self {
+        Self {
+            data_dir: PathBuf::new(),
+            cache: Mutex::new(Some(HashMap::new())),
+            enc_key: Mutex::new(None),
+            memory_only: true,
         }
     }
 }
@@ -184,6 +198,9 @@ fn read_map(state: &SecretsState) -> Result<HashMap<String, String>, String> {
 }
 
 fn write_map(state: &SecretsState, map: &HashMap<String, String>) -> Result<(), String> {
+    if state.memory_only {
+        return Ok(());
+    }
     let json = serde_json::to_vec(map).map_err(|e| e.to_string())?;
     if is_encryption_enabled(state) {
         let key = get_enc_key(state)?;
@@ -208,6 +225,9 @@ where
 }
 
 fn invalidate_cache(state: &SecretsState) {
+    if state.memory_only {
+        return;
+    }
     if let Ok(mut g) = state.cache.lock() {
         *g = None;
     }
@@ -397,6 +417,18 @@ pub fn get_password(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn in_memory_store_round_trips_without_touching_disk() {
+        let state = SecretsState::in_memory();
+        store_password(&state, "svc", "acct", "hunter2").unwrap();
+        assert_eq!(
+            get_password(&state, "svc", "acct").unwrap().as_deref(),
+            Some("hunter2")
+        );
+        assert!(!std::path::Path::new(PLAIN_FILE).exists());
+        assert!(!std::path::Path::new(ENC_FILE).exists());
+    }
 
     fn test_dir(label: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
