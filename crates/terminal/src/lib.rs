@@ -12,17 +12,16 @@
 //!   renderer (T03-002). The GPUI element itself lives in `labonair-ui`.
 
 pub mod command_provider;
-pub mod engine;
 pub mod input;
 pub mod palette;
 pub mod registry;
 pub mod render;
-pub mod scrollback;
-pub mod session;
-pub mod shell_integration;
 
-pub use alacritty_terminal::grid::Scroll;
-pub use alacritty_terminal::vte::ansi::{CursorShape, Rgb};
+// GPUI-free engine, PTY session, scrollback and shell integration live in
+// `labonair-terminal-core` (shared with the detached session host daemon);
+// re-exported so every `labonair_terminal::{engine, session, ...}` path holds.
+pub use labonair_terminal_core::{engine, scrollback, session, shell_integration};
+
 pub use engine::{
     EmulatorConfig, ModeState, PromptPhase, RenderableCell, RenderableCursor, RenderableScreen,
     SelectionSpan, SessionMetadata, TermDimensions, TerminalEmulator, TerminalEvent,
@@ -32,7 +31,8 @@ pub use input::{
     key_to_bytes, mouse_report, paste_payload, wheel_action, Key, KeyInput, Modifiers, MouseButton,
     MouseEventKind, MouseInput, NamedKey, WheelAction, WheelInput,
 };
-pub use palette::{ansi_self_test, TerminalColors};
+pub use labonair_terminal_core::{CursorShape, Rgb, Scroll};
+pub use palette::{ansi_self_test, TerminalColors, TerminalColorsExt};
 pub use registry::{SessionHandle, SessionId, SessionStatus, TerminalRegistry};
 pub use render::{batch_runs, grid_size, RunStyle, StyledRun};
 pub use session::{

@@ -122,7 +122,7 @@ use labonair_ssh::{
 };
 use labonair_terminal::{
     RemoteFeed, RemoteResizer, RemoteWriter, Scroll, SessionHandle, SessionId, SessionOptions,
-    TermDimensions, TerminalColors, TerminalRegistry,
+    TermDimensions, TerminalColors, TerminalColorsExt, TerminalRegistry,
 };
 use labonair_transfers::{TransferDirection, TransferRequest, TransferService};
 use tokio::runtime::Handle as TokioHandle;

@@ -4839,12 +4839,22 @@ name = "labonair-terminal"
 version = "0.1.0"
 dependencies = [
  "alacritty_terminal",
- "flate2",
  "gpui",
  "labonair-command-palette-core",
  "labonair-command-palette-runtime",
- "labonair-terminal-integration",
+ "labonair-terminal-core",
  "labonair-theme",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "labonair-terminal-core"
+version = "0.1.0"
+dependencies = [
+ "alacritty_terminal",
+ "flate2",
+ "labonair-terminal-integration",
  "libc",
  "portable-pty",
  "tokio",

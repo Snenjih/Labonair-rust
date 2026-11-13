@@ -13,7 +13,9 @@
 use std::time::{Duration, Instant};
 
 use labonair_shell::{AppComposition, UpdateManifest, CURRENT_VERSION};
-use labonair_terminal::{SessionOptions, TermDimensions, TerminalColors, TerminalSession};
+use labonair_terminal::{
+    SessionOptions, TermDimensions, TerminalColors, TerminalColorsExt, TerminalSession,
+};
 
 #[test]
 fn backend_state_initializes_in_a_fresh_data_dir() {

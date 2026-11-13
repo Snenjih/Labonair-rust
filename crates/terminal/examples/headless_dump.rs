@@ -5,7 +5,7 @@
 
 use std::time::{Duration, Instant};
 
-use labonair_terminal::{SessionOptions, TerminalColors, TerminalSession};
+use labonair_terminal::{SessionOptions, TerminalColors, TerminalColorsExt, TerminalSession};
 use labonair_terminal::{TermDimensions, TerminalEvent};
 
 fn main() {

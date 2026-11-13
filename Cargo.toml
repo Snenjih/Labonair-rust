@@ -29,6 +29,7 @@ members = [
     "crates/panel-snippets",
     "crates/shell",
     "crates/terminal",
+    "crates/terminal-core",
     "crates/terminal-integration",
     "crates/editor",
     "crates/editor-ui",

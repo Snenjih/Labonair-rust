@@ -94,7 +94,7 @@ impl TerminalSession {
     /// Spawn a session using a caller-owned event notifier. The registry keeps
     /// this notifier stable across restarts so a terminal view can wait for
     /// output without maintaining one timer per live terminal.
-    pub(crate) fn spawn_with_notifier(
+    pub fn spawn_with_notifier(
         colors: TerminalColors,
         dimensions: TermDimensions,
         options: SessionOptions,
@@ -480,7 +480,7 @@ impl Drop for TerminalSession {
 }
 
 /// The interior-mutable read/selection/scroll surface the GPUI renderer reaches
-/// through [`crate::SessionHandle::with`]. Implemented by the local
+/// through `SessionHandle::with` (in `labonair-terminal`). Implemented by the local
 /// [`TerminalSession`] and the transport-backed [`RemoteSession`] alike so the
 /// renderer never needs to know which one backs a tab (T07-001).
 pub trait SessionAccess {
@@ -624,7 +624,7 @@ impl RemoteSession {
         Self::new_with_notifier(colors, dimensions, writer, resizer, Arc::new(Notify::new()))
     }
 
-    pub(crate) fn new_with_notifier(
+    pub fn new_with_notifier(
         colors: TerminalColors,
         dimensions: TermDimensions,
         writer: RemoteWriter,
@@ -764,7 +764,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     fn dark_colors() -> TerminalColors {
-        TerminalColors::from_theme(&labonair_theme::Theme::dark())
+        TerminalColors::xterm_default()
     }
 
     /// Pump events until `pred` sees the rendered screen text, or we time out.

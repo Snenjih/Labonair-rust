@@ -5,17 +5,12 @@ edition = "2021"
 
 [dependencies]
 gpui = { workspace = true }
+labonair-terminal-core = { path = "../terminal-core" }
 labonair-theme = { path = "../theme" }
-labonair-terminal-integration = { path = "../terminal-integration" }
 labonair-command-palette-runtime = { path = "../command-palette-runtime" }
 alacritty_terminal = { workspace = true }
-flate2 = "1"
-portable-pty = { workspace = true }
 tokio = { workspace = true }
 labonair-command-palette-core = { path = "../command-palette-core" }
-
-[target.'cfg(unix)'.dependencies]
-libc = { workspace = true }
 
 [dev-dependencies]
 uuid = { workspace = true }

@@ -1228,7 +1228,7 @@ mod tests {
 
     fn emulator(cols: usize, rows: usize) -> (TerminalEmulator, Receiver<TerminalEvent>) {
         let (tx, rx) = sync_channel(256);
-        let colors = TerminalColors::from_theme(&labonair_theme::Theme::dark());
+        let colors = TerminalColors::xterm_default();
         (
             TerminalEmulator::new(colors, TermDimensions::new(cols, rows), tx),
             rx,
@@ -1238,7 +1238,7 @@ mod tests {
     #[test]
     fn emulator_config_caps_scrollback_history() {
         let (tx, _rx) = sync_channel(256);
-        let colors = TerminalColors::from_theme(&labonair_theme::Theme::dark());
+        let colors = TerminalColors::xterm_default();
         let mut term = TerminalEmulator::new_with(
             colors,
             TermDimensions::new(20, 5),
@@ -1278,7 +1278,7 @@ mod tests {
     #[test]
     fn select_word_at_uses_the_configured_separators() {
         let (tx, _rx) = sync_channel(256);
-        let colors = TerminalColors::from_theme(&labonair_theme::Theme::dark());
+        let colors = TerminalColors::xterm_default();
         let mut term = TerminalEmulator::new_with(
             colors,
             TermDimensions::new(40, 5),
@@ -1311,7 +1311,7 @@ mod tests {
             .into_iter()
             .find(|c| c.c == 'X')
             .unwrap();
-        let expected = TerminalColors::from_theme(&labonair_theme::Theme::dark()).normal[1];
+        let expected = TerminalColors::xterm_default().normal[1];
         assert_eq!(cell.fg, expected);
     }
 
@@ -1549,7 +1549,7 @@ mod tests {
     fn inverse_attribute_swaps_fg_and_bg() {
         let (mut term, _rx) = emulator(20, 3);
         term.feed(b"\x1b[7mI\x1b[0m");
-        let palette = TerminalColors::from_theme(&labonair_theme::Theme::dark());
+        let palette = TerminalColors::xterm_default();
         let cell = term
             .render()
             .cells

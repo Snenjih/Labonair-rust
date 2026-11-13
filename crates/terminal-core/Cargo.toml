@@ -1,0 +1,19 @@
+[package]
+name = "labonair-terminal-core"
+version = "0.1.0"
+edition = "2021"
+
+# GPUI-free terminal engine and PTY session. The future `labonair-host` daemon
+# depends on this crate; `labonair-terminal` re-exports it for the app.
+[dependencies]
+labonair-terminal-integration = { path = "../terminal-integration" }
+alacritty_terminal = { workspace = true }
+flate2 = "1"
+portable-pty = { workspace = true }
+tokio = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+[dev-dependencies]
+uuid = { workspace = true }

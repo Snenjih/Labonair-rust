@@ -399,7 +399,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     fn colors() -> TerminalColors {
-        TerminalColors::from_theme(&labonair_theme::Theme::dark())
+        TerminalColors::xterm_default()
     }
 
     fn dims() -> TermDimensions {

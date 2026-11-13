@@ -130,7 +130,7 @@ mod tests {
 
     fn emulator(cols: usize, rows: usize) -> TerminalEmulator {
         let (tx, _rx) = sync_channel(256);
-        let colors = TerminalColors::from_theme(&labonair_theme::Theme::dark());
+        let colors = TerminalColors::xterm_default();
         TerminalEmulator::new(colors, TermDimensions::new(cols, rows), tx)
     }
 
@@ -161,7 +161,7 @@ mod tests {
         assert_eq!(runs[0].text, "a");
         assert_eq!(runs[1].text, "bb");
         assert!(runs[2].text.starts_with('c'));
-        let palette = TerminalColors::from_theme(&labonair_theme::Theme::dark());
+        let palette = TerminalColors::xterm_default();
         assert_eq!(runs[1].style.fg, palette.normal[1]);
         assert_eq!(runs[0].style.fg, palette.foreground);
     }

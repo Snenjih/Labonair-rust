@@ -36,7 +36,7 @@ use labonair_terminal::{
     batch_runs, grid_size, key_to_bytes, mouse_report, paste_payload, wheel_action, CursorShape,
     Key, KeyInput, ModeState, Modifiers, MouseButton as TermMouseButton, MouseEventKind,
     MouseInput, NamedKey, RenderableScreen, Rgb, Scroll, SessionHandle, SessionStatus, StyledRun,
-    TermDimensions, TerminalColors, TerminalEvent, WheelAction, WheelInput,
+    TermDimensions, TerminalColors, TerminalColorsExt, TerminalEvent, WheelAction, WheelInput,
 };
 
 use crate::theme::ThemeStore;
