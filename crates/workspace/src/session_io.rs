@@ -19,11 +19,13 @@
 use std::cell::RefCell;
 
 use gpui::{AppContext, Context, Window};
+use labonair_terminal::DaemonHost;
 
+use crate::host_restore::{self, HostRestore};
 use crate::pane::{PaneId, WorkspaceLayout};
 use crate::pane_kind::PaneKind;
 use crate::resume::{self, Resume};
-use crate::session::{PaneSessionKind, PaneSessionSnapshot, RestoreResult};
+use crate::session::{HostKind, PaneSessionKind, PaneSessionSnapshot, RestoreResult};
 use crate::session_v3::{
     restore_tree, EditorPaneState, PaneGroupSnapshot, PaneState, PreviewPaneState, SerializedTree,
     SessionSnapshotV3, SftpPaneState, SpaceEntryV3, SpacesSnapshotV3,
@@ -134,6 +136,7 @@ impl Workspace {
                         &ts.resume_commands(),
                     )
                 });
+                let host_session_id = view.handle().host_session_id();
                 Some(PaneState::Terminal(PaneSessionSnapshot {
                     kind: if ssh.is_none() {
                         PaneSessionKind::Local
@@ -144,6 +147,12 @@ impl Workspace {
                     host_id: ssh.map(|s| s.host_id.clone()),
                     scrollback_id,
                     resume_command,
+                    host_session_id,
+                    host_kind: if host_session_id.is_some() {
+                        HostKind::Detached
+                    } else {
+                        HostKind::App
+                    },
                 }))
             }
             PaneKind::Editor => {
@@ -300,6 +309,66 @@ impl Workspace {
         Some(tab_id)
     }
 
+    /// Restore a terminal pane by attaching its still-living detached-host
+    /// session. `false` = not applicable or not alive: replay instead.
+    fn restore_hosted_pane(
+        &mut self,
+        tab_id: u64,
+        pane: PaneId,
+        t: &PaneSessionSnapshot,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if t.host_kind != HostKind::Detached || t.host_session_id.is_none() {
+            return false;
+        }
+        let ts = terminal_settings(cx);
+        let alive = DaemonHost::connect(
+            &labonair_filesystem::paths::data_dir(),
+            ts.detached_scrollback_lines(),
+            false,
+        )
+        .and_then(|host| host.list_sessions());
+        let Ok(alive) = alive else {
+            return false;
+        };
+        let HostRestore::Attach(host_session_id) = host_restore::decide(
+            t.host_kind,
+            t.host_session_id,
+            t.scrollback_id.as_deref(),
+            &alive,
+        ) else {
+            return false;
+        };
+        let scrollback_id = t.scrollback_id.clone().unwrap_or_default();
+        let Ok((session_id, handle, scrollback_id)) =
+            self.adopt_hosted_session(host_session_id, scrollback_id, cx)
+        else {
+            return false;
+        };
+        let view = self.new_terminal_view(handle, window, cx);
+        self.panes.insert(
+            pane,
+            PaneEntry {
+                session_id,
+                view,
+                scrollback_id,
+            },
+        );
+        if tab_id != 0
+            && self
+                .tabs
+                .read(cx)
+                .get(tab_id)
+                .is_some_and(|tab| tab.data.session_id.is_none() && tab.kind == TabKind::Workspace)
+        {
+            let cwd = t.cwd.clone();
+            self.tabs
+                .update(cx, |s, cx| s.set_session(tab_id, session_id, cwd, cx));
+        }
+        true
+    }
+
     fn pane_has_resources(&self, pane: PaneId) -> bool {
         self.panes.contains_key(&pane)
             || self.editors.contains_key(&pane)
@@ -318,7 +387,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         match state {
-            PaneState::Terminal(t) => match (t.kind, t.host_id) {
+            PaneState::Terminal(t) => match (t.kind, t.host_id.clone()) {
                 (PaneSessionKind::Ssh, Some(host_id)) => {
                     if let Some((ssh_id, session_id, feed, handle)) =
                         self.new_ssh_session(&host_id, cx)
@@ -329,6 +398,11 @@ impl Workspace {
                     }
                 }
                 _ => {
+                    // The session may still be running in the detached host:
+                    // attach it, no resume banner (the process never stopped).
+                    if self.restore_hosted_pane(tab_id, pane, &t, window, cx) {
+                        return;
+                    }
                     // Evaluated now, not at save time: the setting may have
                     // changed since. A pane without cwd never resumes.
                     let resume = if t.kind == PaneSessionKind::Local && t.cwd.is_some() {

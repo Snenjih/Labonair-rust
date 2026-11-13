@@ -35,9 +35,10 @@ use gpui::{
 };
 use labonair_terminal::{
     batch_runs, grid_size, key_to_bytes, mouse_report, paste_payload, wheel_action, CursorShape,
-    Key, KeyInput, ModeState, Modifiers, MouseButton as TermMouseButton, MouseEventKind,
-    MouseInput, NamedKey, RenderableScreen, Rgb, Scroll, SessionHandle, SessionStatus, StyledRun,
-    TermDimensions, TerminalColors, TerminalColorsExt, TerminalEvent, WheelAction, WheelInput,
+    HostedLink, Key, KeyInput, ModeState, Modifiers, MouseButton as TermMouseButton,
+    MouseEventKind, MouseInput, NamedKey, RenderableScreen, Rgb, Scroll, SessionHandle,
+    SessionStatus, StyledRun, TermDimensions, TerminalColors, TerminalColorsExt, TerminalEvent,
+    WheelAction, WheelInput,
 };
 
 use crate::theme::ThemeStore;
@@ -283,6 +284,57 @@ impl TerminalView {
                         .on_click(cx.listener(
                             |this, _: &ClickEvent, window, cx| {
                                 this.dismiss_resume(window, cx);
+                            },
+                        )),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    /// Inline notice for a hosted session that lost its link to the
+    /// background host (taken over by another window, or host gone).
+    fn render_host_link_banner(
+        &self,
+        link: HostedLink,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let palette = Palette::from_theme(self.theme.read(cx));
+        let (message, action) = match link {
+            HostedLink::Stolen => (
+                "Session taken over by another window or app instance",
+                "Reattach",
+            ),
+            _ => ("Background host disconnected", "Reconnect"),
+        };
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .right_0()
+            .p(palette.space(8.0))
+            // Keep clicks on the banner from starting a terminal selection.
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .child(
+                banner(Severity::Warning, palette)
+                    .child(div().flex_1().child(SharedString::from(message)))
+                    .child(
+                        button(
+                            "term-host-reattach",
+                            palette,
+                            ButtonVariant::Filled,
+                            ButtonSize::Xs,
+                        )
+                        .child(action)
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, window, cx| {
+                                let result = this.handle.reattach();
+                                labonair_notifications::notify_err(
+                                    "Could not reattach the session",
+                                    result,
+                                    cx,
+                                );
+                                window.focus(&this.focus_handle);
+                                cx.notify();
                             },
                         )),
                     ),
@@ -874,6 +926,12 @@ impl Render for TerminalView {
                 self.resume_offer
                     .clone()
                     .map(|command| self.render_resume_banner(&command, cx)),
+            )
+            .children(
+                self.handle
+                    .hosted_link()
+                    .filter(|link| *link != HostedLink::Live)
+                    .map(|link| self.render_host_link_banner(link, cx)),
             )
             .children(self.menu.map(|pos| self.render_menu(pos, cx)))
             .into_any_element()

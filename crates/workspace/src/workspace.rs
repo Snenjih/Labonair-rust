@@ -34,6 +34,8 @@ pub mod dock_reveal;
 pub mod dock_status_item;
 pub mod editor_git_bridge;
 pub mod file_finder;
+mod host_restore;
+mod host_sessions;
 pub mod layout;
 pub mod live_bridge;
 pub mod markdown;
@@ -122,8 +124,8 @@ use labonair_ssh::{
     SshTunnelService,
 };
 use labonair_terminal::{
-    RemoteFeed, RemoteResizer, RemoteWriter, Scroll, SessionHandle, SessionId, SessionOptions,
-    TermDimensions, TerminalColors, TerminalColorsExt, TerminalRegistry,
+    DaemonHost, RemoteFeed, RemoteResizer, RemoteWriter, Scroll, SessionHandle, SessionId,
+    SessionOptions, TermDimensions, TerminalColors, TerminalColorsExt, TerminalRegistry,
 };
 use labonair_transfers::{TransferDirection, TransferRequest, TransferService};
 use tokio::runtime::Handle as TokioHandle;
@@ -158,7 +160,7 @@ use labonair_hosts_ui::HostManagerView;
 use labonair_keymap_ui::KeymapManagementView;
 use labonair_panel_git_graph::GitGraphView;
 use labonair_settings::content::general::StartupTab;
-use labonair_settings::content::terminal::CursorStyle as PrefCursorStyle;
+use labonair_settings::content::terminal::{CursorStyle as PrefCursorStyle, SessionHostMode};
 use labonair_settings::{ConnectionsSettings, GeneralSettings, Settings as _, TerminalSettings};
 use labonair_ui_kit::{
     h_stack, indicator, BlinkCursor, ButtonSize, ButtonVariant, IndicatorSize, Palette,
@@ -1249,6 +1251,18 @@ impl Workspace {
         // exist plus anything past the retention window. Runs once on startup,
         // after restore has re-registered the panes it could bring back.
         this.cleanup_scrollback(cx);
+        // Detached session host (ADR 0009): offer sessions no pane claimed.
+        this.announce_background_sessions(cx);
+        cx.subscribe_in(
+            &labonair_notifications::notification_center(cx),
+            window,
+            |this, _, event: &labonair_notifications::NotificationActionEvent, window, cx| {
+                if event.action_id == host_sessions::RECOVER_ACTION {
+                    this.recover_background_sessions(window, cx);
+                }
+            },
+        )
+        .detach();
         this
     }
 
@@ -3801,7 +3815,7 @@ impl Workspace {
         &self,
         cwd: Option<String>,
         replay_scrollback_id: Option<&str>,
-        cx: &App,
+        cx: &mut App,
     ) -> Option<(SessionId, SessionHandle, String)> {
         self.spawn_session_with(cwd, replay_scrollback_id, None, cx)
     }
@@ -3813,7 +3827,7 @@ impl Workspace {
         cwd: Option<String>,
         replay_scrollback_id: Option<&str>,
         startup_command: Option<String>,
-        cx: &App,
+        cx: &mut App,
     ) -> Option<(SessionId, SessionHandle, String)> {
         let ts = terminal_settings(cx);
         let shell = (!ts.shell().trim().is_empty()).then(|| ts.shell().to_string());
@@ -3845,19 +3859,95 @@ impl Workspace {
             startup_command,
             ..SessionOptions::default()
         };
-        let session_id =
-            match self
-                .registry
-                .create(self.theme_colors(cx), TermDimensions::new(80, 24), options)
-            {
-                Ok(id) => id,
-                Err(err) => {
-                    tracing::error!(%err, "failed to spawn terminal session");
-                    return None;
-                }
-            };
+        let session_id = match self.create_registry_session(&ts, &scrollback_id, options, cx) {
+            Ok(id) => id,
+            Err(err) => {
+                tracing::error!(%err, "failed to spawn terminal session");
+                return None;
+            }
+        };
         let handle = self.registry.handle(session_id)?;
         Some((session_id, handle, scrollback_id))
+    }
+
+    /// Create the registry session of a new pane. The host is chosen now and
+    /// stays fixed for the session (ADR 0009): `detached` starts or reuses the
+    /// background host; if it cannot be used the pane falls back to an
+    /// app-bound session and the problem is reported.
+    fn create_registry_session(
+        &self,
+        ts: &TerminalSettings,
+        scrollback_id: &str,
+        options: SessionOptions,
+        cx: &mut App,
+    ) -> Result<SessionId, String> {
+        let colors = self.theme_colors(cx);
+        let dimensions = TermDimensions::new(80, 24);
+        if ts.session_host() == SessionHostMode::Detached {
+            let hosted = DaemonHost::connect(
+                &labonair_filesystem::paths::data_dir(),
+                ts.detached_scrollback_lines(),
+                true,
+            )
+            .and_then(|host| {
+                self.registry.create_with_host(
+                    &host.for_pane(scrollback_id),
+                    colors,
+                    dimensions,
+                    options.clone(),
+                )
+            });
+            match hosted {
+                Ok(id) => return Ok(id),
+                Err(err) => {
+                    labonair_notifications::notification_center(cx).update(cx, |center, cx| {
+                        center.push(
+                            labonair_notifications::Notification::error(
+                                "Background session host unavailable",
+                                "The terminal runs inside the app and ends when the app quits.",
+                            )
+                            .source("terminal")
+                            .details(err)
+                            .dedupe_key("terminal:session-host-unavailable"),
+                            cx,
+                        );
+                    });
+                }
+            }
+        }
+        self.registry.create(colors, dimensions, options)
+    }
+
+    /// Attach the daemon session `host_session_id` (session restore, recovered
+    /// sessions) instead of spawning a shell. Same return as
+    /// [`Self::spawn_session`]; `scrollback_id` keys the pane's persisted
+    /// scrollback.
+    fn adopt_hosted_session(
+        &self,
+        host_session_id: u64,
+        scrollback_id: String,
+        cx: &mut App,
+    ) -> Result<(SessionId, SessionHandle, String), String> {
+        let ts = terminal_settings(cx);
+        // Never starts a daemon: a session can only be alive in a running one.
+        let host = DaemonHost::connect(
+            &labonair_filesystem::paths::data_dir(),
+            ts.detached_scrollback_lines(),
+            false,
+        )?
+        .for_pane(scrollback_id.clone())
+        .adopting(host_session_id);
+        let session_id = self.registry.create_with_host(
+            &host,
+            self.theme_colors(cx),
+            TermDimensions::new(80, 24),
+            SessionOptions::default(),
+        )?;
+        let handle = self
+            .registry
+            .handle(session_id)
+            .ok_or_else(|| "session vanished".to_string())?;
+        Ok((session_id, handle, scrollback_id))
     }
 
     fn new_terminal_view(
@@ -4036,11 +4126,12 @@ impl Workspace {
     /// Whether *any* open pane — terminal or SSH — still has a live shell.
     /// Gates `confirmQuitWithActiveSessions` at the window-close boundary.
     pub fn has_running_shells(&self, cx: &App) -> bool {
+        // Hosted sessions survive the quit (they only detach), so they never
+        // count; app-bound ones still do.
         self.panes.values().any(|entry| {
-            matches!(
-                entry.view.read(cx).handle().status(),
-                labonair_terminal::SessionStatus::Running
-            )
+            let handle = entry.view.read(cx).handle();
+            !handle.is_hosted()
+                && matches!(handle.status(), labonair_terminal::SessionStatus::Running)
         })
     }
 

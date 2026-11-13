@@ -297,6 +297,30 @@ pub struct PaneSessionSnapshot {
     /// or run is decided at restore time. Never set for SSH panes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume_command: Option<String>,
+    /// The detached session host's id for this pane's session (ADR 0009).
+    /// Only meaningful with `host_kind == Detached`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_session_id: Option<u64>,
+    /// Which host the session lived in. Old snapshots read as `app`.
+    #[serde(default, skip_serializing_if = "HostKind::is_app")]
+    pub host_kind: HostKind,
+}
+
+/// Who owned a terminal pane's session when the snapshot was taken.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HostKind {
+    /// A PTY owned by the app process (the pre-ADR-0009 behaviour).
+    #[default]
+    App,
+    /// A session of the detached session host daemon.
+    Detached,
+}
+
+impl HostKind {
+    fn is_app(&self) -> bool {
+        *self == Self::App
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -616,6 +640,8 @@ mod tests {
                             host_id: None,
                             scrollback_id: Some("sb-a".into()),
                             resume_command: None,
+                            host_session_id: None,
+                            host_kind: HostKind::App,
                         },
                         PaneSessionSnapshot {
                             kind: PaneSessionKind::Local,
@@ -623,6 +649,8 @@ mod tests {
                             host_id: None,
                             scrollback_id: None,
                             resume_command: None,
+                            host_session_id: None,
+                            host_kind: HostKind::App,
                         },
                         PaneSessionSnapshot {
                             kind: PaneSessionKind::Local,
@@ -630,6 +658,8 @@ mod tests {
                             host_id: None,
                             scrollback_id: None,
                             resume_command: None,
+                            host_session_id: None,
+                            host_kind: HostKind::App,
                         },
                     ],
                 }),
@@ -642,6 +672,8 @@ mod tests {
                         host_id: Some("host-1".into()),
                         scrollback_id: None,
                         resume_command: None,
+                        host_session_id: None,
+                        host_kind: HostKind::App,
                     }],
                 }),
                 TabSnapshot::Editor(EditorTabSnapshot {
@@ -808,6 +840,30 @@ mod tests {
         let p: PaneSessionSnapshot = serde_json::from_str(json).unwrap();
         assert_eq!(p.scrollback_id, None);
         assert_eq!(p.cwd.as_deref(), Some("/x"));
+    }
+
+    #[test]
+    fn pane_snapshot_host_fields_are_optional_on_the_wire() {
+        let old = r#"{"kind":"local","cwd":"/x","hostId":null}"#;
+        let p: PaneSessionSnapshot = serde_json::from_str(old).unwrap();
+        assert_eq!(p.host_kind, HostKind::App);
+        assert_eq!(p.host_session_id, None);
+        // The default (app-bound) is not written, so old readers stay happy.
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(!json.contains("hostKind") && !json.contains("hostSessionId"));
+
+        let hosted = PaneSessionSnapshot {
+            host_kind: HostKind::Detached,
+            host_session_id: Some(7),
+            ..p
+        };
+        let json = serde_json::to_string(&hosted).unwrap();
+        assert!(json.contains(r#""hostKind":"detached""#));
+        assert!(json.contains(r#""hostSessionId":7"#));
+        assert_eq!(
+            serde_json::from_str::<PaneSessionSnapshot>(&json).unwrap(),
+            hosted
+        );
     }
 
     #[test]

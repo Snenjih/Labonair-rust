@@ -513,6 +513,8 @@ fn default_terminal() -> PaneSessionSnapshot {
         host_id: None,
         scrollback_id: None,
         resume_command: None,
+        host_session_id: None,
+        host_kind: crate::session::HostKind::App,
     }
 }
 
@@ -729,6 +731,8 @@ mod tests {
             host_id: None,
             scrollback_id: sb.map(Into::into),
             resume_command: None,
+            host_session_id: None,
+            host_kind: crate::session::HostKind::App,
         }
     }
 
@@ -954,6 +958,8 @@ mod tests {
                 host_id: Some("host-1".into()),
                 scrollback_id: None,
                 resume_command: None,
+                host_session_id: None,
+                host_kind: crate::session::HostKind::App,
             }],
         });
         let g = migrate_tab(&ssh).unwrap();
