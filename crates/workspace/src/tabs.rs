@@ -63,6 +63,8 @@ pub enum TabKind {
     CommitDiff,
     /// The keymap management surface (browse + rebind every command).
     Keymap,
+    /// The first-run onboarding page, hosted from a view the shell supplies.
+    Onboarding,
 }
 
 impl TabKind {
@@ -79,6 +81,7 @@ impl TabKind {
             TabKind::Diff => IconName::GitBranch,
             TabKind::CommitDiff => IconName::GitBranch,
             TabKind::Keymap => IconName::Command,
+            TabKind::Onboarding => IconName::Home,
         }
     }
 
@@ -95,6 +98,7 @@ impl TabKind {
             TabKind::Diff => "Diffs",
             TabKind::CommitDiff => "Commit Diffs",
             TabKind::Keymap => "Keymaps",
+            TabKind::Onboarding => "Onboarding",
         }
     }
 
@@ -110,6 +114,7 @@ impl TabKind {
             TabKind::Diff => "Diff",
             TabKind::CommitDiff => "Commit",
             TabKind::Keymap => "Keymap",
+            TabKind::Onboarding => "Onboarding",
         }
     }
 }

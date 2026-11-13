@@ -785,6 +785,10 @@ pub struct Workspace {
     /// `labonair-keymap-ui` owns its rendering; the workspace owns its tab
     /// lifecycle (mirrors `git_graph`).
     pub(crate) keymap: Option<Entity<KeymapManagementView>>,
+    /// The onboarding page and its focus handle for the single `Onboarding`
+    /// tab. The shell supplies the view (the workspace must not depend on the
+    /// onboarding crate); the workspace owns the tab lifecycle.
+    pub(crate) onboarding: Option<(gpui::AnyView, FocusHandle)>,
     /// The host-management view for the single `Hosts` tab. Unlike `keymap`,
     /// this is never `None`: the composition root constructs it eagerly
     /// because it also serves as the live host-data hub (tunnel status,
@@ -1116,6 +1120,7 @@ impl Workspace {
             following_svg_editor: None,
             git_graph: None,
             keymap: None,
+            onboarding: None,
             hosts,
             project_diff: None,
             diff_compare_mark: None,
@@ -4716,6 +4721,38 @@ impl Workspace {
                 s.open(TabKind::Keymap, TabData::default(), cx);
             }
         });
+    }
+
+    /// Focus the onboarding tab if it is open. Returns `false` (and does
+    /// nothing) when it is not, so the caller can build the page and call
+    /// [`Self::open_onboarding_tab`].
+    pub fn focus_onboarding_tab(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(id) = self.find_singleton_tab(crate::pane_kind::PaneKind::Onboarding, cx) else {
+            return false;
+        };
+        self.tabs.update(cx, |s, cx| s.set_active(id, cx));
+        true
+    }
+
+    /// Open the single onboarding tab, hosting `view`.
+    pub fn open_onboarding_tab(
+        &mut self,
+        view: gpui::AnyView,
+        focus: FocusHandle,
+        cx: &mut Context<Self>,
+    ) {
+        self.onboarding = Some((view, focus));
+        self.tabs.update(cx, |s, cx| {
+            s.open(TabKind::Onboarding, TabData::default(), cx);
+        });
+    }
+
+    /// Close the onboarding tab if it is open.
+    pub fn close_onboarding_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(id) = self.find_singleton_tab(crate::pane_kind::PaneKind::Onboarding, cx) {
+            self.do_close(id, window, cx);
+        }
+        self.onboarding = None;
     }
 
     /// Ask the shell to open Settings on the Hosts page. Host management

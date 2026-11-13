@@ -28,11 +28,12 @@ pub enum PaneKind {
     CommitDiff,
     AiDiff,
     Keymap,
+    Onboarding,
 }
 
 impl PaneKind {
     /// Every kind, in a stable order (tests, menus).
-    pub const ALL: [PaneKind; 9] = [
+    pub const ALL: [PaneKind; 10] = [
         PaneKind::Terminal,
         PaneKind::Editor,
         PaneKind::Preview,
@@ -42,6 +43,7 @@ impl PaneKind {
         PaneKind::CommitDiff,
         PaneKind::AiDiff,
         PaneKind::Keymap,
+        PaneKind::Onboarding,
     ];
 
     /// The tab kind this pane kind corresponds to.
@@ -56,6 +58,7 @@ impl PaneKind {
             PaneKind::CommitDiff => TabKind::CommitDiff,
             PaneKind::AiDiff => TabKind::AiDiff,
             PaneKind::Keymap => TabKind::Keymap,
+            PaneKind::Onboarding => TabKind::Onboarding,
         }
     }
 
@@ -77,7 +80,11 @@ impl PaneKind {
     pub fn is_singleton(self) -> bool {
         matches!(
             self,
-            PaneKind::GitGraph | PaneKind::Diff | PaneKind::CommitDiff | PaneKind::Keymap
+            PaneKind::GitGraph
+                | PaneKind::Diff
+                | PaneKind::CommitDiff
+                | PaneKind::Keymap
+                | PaneKind::Onboarding
         )
     }
 
@@ -101,6 +108,7 @@ impl From<TabKind> for PaneKind {
             TabKind::CommitDiff => PaneKind::CommitDiff,
             TabKind::AiDiff => PaneKind::AiDiff,
             TabKind::Keymap => PaneKind::Keymap,
+            TabKind::Onboarding => PaneKind::Onboarding,
         }
     }
 }
@@ -273,6 +281,7 @@ mod tests {
             PaneKind::Diff,
             PaneKind::CommitDiff,
             PaneKind::Keymap,
+            PaneKind::Onboarding,
         ] {
             assert!(k.is_singleton(), "{k:?}");
             assert!(!k.can_split(), "{k:?}");

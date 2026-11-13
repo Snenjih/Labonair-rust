@@ -319,7 +319,7 @@ pub(crate) fn bootstrap(
                 labonair_filesystem::paths::data_dir(),
                 Some(host_event_handler),
                 ssh_tester,
-                ssh_config,
+                ssh_config.clone(),
                 tokio.clone(),
                 theme.clone(),
                 cx,
@@ -605,6 +605,11 @@ pub(crate) fn bootstrap(
         Rc::new(move |window: &mut Window, app: &mut App| {
             file_finder_shell.update(app, |shell, cx| shell.toggle_file_finder(window, cx));
         });
+    let onboarding_shell = shell.clone();
+    let onboarding_open: labonair_onboarding::command_provider::OpenHandler =
+        Rc::new(move |window: &mut Window, app: &mut App| {
+            onboarding_shell.update(app, |shell, cx| shell.open_onboarding(true, window, cx));
+        });
     let palette_shell = shell;
     let host_picker_shell = palette_shell.clone();
     let palette_toggle: labonair_command_palette::command_provider::ToggleHandler =
@@ -624,6 +629,7 @@ pub(crate) fn bootstrap(
         search_toggle,
         file_finder_toggle,
         host_picker,
+        onboarding_open,
     );
     crate::keymap_loader::reload_and_apply(cx, &command_registry);
     crate::keymap_loader::watch(cx, command_registry.clone());
@@ -989,7 +995,35 @@ pub(crate) fn bootstrap(
         command_palette,
     };
 
-    AppShell::from_parts(
+    let onboarding = crate::onboarding::Onboarding::new(
+        labonair_onboarding::OnboardingServices {
+            theme: theme.clone(),
+            tokio: tokio.clone(),
+            ssh_config,
+            existing_host_names: {
+                let host_manager = host_manager.clone();
+                Rc::new(move |cx: &App| {
+                    host_manager
+                        .read(cx)
+                        .picker_rows()
+                        .into_iter()
+                        .map(|row| row.name)
+                        .collect()
+                })
+            },
+            on_hosts_imported: {
+                let host_manager = host_manager.clone();
+                Rc::new(move |cx: &mut App| host_manager.update(cx, |hosts, cx| hosts.reload(cx)))
+            },
+            apply_appearance: {
+                let theme = theme.clone();
+                Rc::new(move |cx: &mut App| labonair_theme_ui::apply_prefs_to_theme(&theme, cx))
+            },
+        },
+        labonair_filesystem::paths::data_dir().join("onboarding.json"),
+    );
+
+    let shell = AppShell::from_parts(
         theme,
         background,
         workspace,
@@ -1000,6 +1034,9 @@ pub(crate) fn bootstrap(
         modal_layer,
         live_bridge,
         live_drain,
+        onboarding,
         cx,
-    )
+    );
+    shell.start_onboarding(window, cx);
+    shell
 }

@@ -319,7 +319,7 @@ fn command_descriptor(
 
 #[allow(dead_code)]
 pub(crate) fn register_builtin_commands() -> CommandDispatcher {
-    compose_builtin_commands(None, None, None, None, None, None)
+    compose_builtin_commands(None, None, None, None, None, None, None)
 }
 
 /// Compose the command registry with owner-provided executable handlers.
@@ -330,6 +330,7 @@ pub(crate) fn register_builtin_commands_for(
     search_toggle: labonair_workspace::command_provider::SearchToggleHandler,
     file_finder_toggle: labonair_workspace::command_provider::FileFinderToggleHandler,
     host_picker: labonair_hosts_ui::command_provider::HostPickerHandler,
+    onboarding_open: labonair_onboarding::command_provider::OpenHandler,
 ) -> CommandDispatcher {
     compose_builtin_commands(
         Some(workspace),
@@ -338,6 +339,7 @@ pub(crate) fn register_builtin_commands_for(
         Some(search_toggle),
         Some(file_finder_toggle),
         Some(host_picker),
+        Some(onboarding_open),
     )
 }
 
@@ -348,6 +350,7 @@ fn compose_builtin_commands(
     search_toggle: Option<labonair_workspace::command_provider::SearchToggleHandler>,
     file_finder_toggle: Option<labonair_workspace::command_provider::FileFinderToggleHandler>,
     host_picker: Option<labonair_hosts_ui::command_provider::HostPickerHandler>,
+    onboarding_open: Option<labonair_onboarding::command_provider::OpenHandler>,
 ) -> CommandDispatcher {
     let mut r = CommandDispatcher::default();
     let always = ALWAYS;
@@ -370,6 +373,7 @@ fn compose_builtin_commands(
     );
     r.register_provider(&ShellCommandProvider);
     r.register_provider(&labonair_updater_ui::command_provider::UpdaterCommandProvider);
+    r.register_provider(&labonair_onboarding::command_provider::OnboardingCommandProvider);
     labonair_settings::command_provider::register_handlers(&mut r.owner_handlers);
     labonair_settings_ui::command_provider::register_handlers(&mut r.owner_handlers);
     if let Some(palette_toggle) = palette_toggle {
@@ -394,6 +398,12 @@ fn compose_builtin_commands(
         labonair_hosts_ui::command_provider::register_picker_handlers(
             &mut r.owner_handlers,
             host_picker,
+        );
+    }
+    if let Some(onboarding_open) = onboarding_open {
+        labonair_onboarding::command_provider::register_handlers(
+            &mut r.owner_handlers,
+            onboarding_open,
         );
     }
     if let Some(updater) = updater {

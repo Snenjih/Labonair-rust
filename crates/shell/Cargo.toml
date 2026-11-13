@@ -79,6 +79,7 @@ labonair-mcp-core = { path = "../mcp-core" }
 labonair-mcp-server = { path = "../mcp-server" }
 labonair-updater = { path = "../updater" }
 labonair-updater-ui = { path = "../updater-ui" }
+labonair-onboarding = { path = "../onboarding" }
 labonair-secrets = { path = "../secrets" }
 labonair-events = { path = "../events" }
 

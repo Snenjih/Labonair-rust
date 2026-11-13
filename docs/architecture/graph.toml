@@ -245,6 +245,12 @@ role = "contract"
 layer = "foundation"
 
 [[crate]]
+name = "labonair-onboarding"
+owner = "onboarding"
+role = "capability"
+layer = "product"
+
+[[crate]]
 name = "labonair-panel"
 owner = "panel"
 role = "contract"
@@ -463,6 +469,7 @@ layer = "product"
 "labonair-mcp-server" = ["labonair-errors", "labonair-events", "labonair-hosts", "labonair-mcp-core", "labonair-persistence", "labonair-secrets", "labonair-ssh-transport"]
 "labonair-notifications" = ["labonair-notifications-core", "labonair-panel", "labonair-theme", "labonair-ui-kit"]
 "labonair-notifications-core" = []
+"labonair-onboarding" = ["labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-notifications", "labonair-settings", "labonair-ssh", "labonair-theme", "labonair-ui-kit"]
 "labonair-panel" = ["labonair-gpui-ext"]
 "labonair-panel-explorer" = ["labonair-explorer-host", "labonair-filesystem", "labonair-notifications", "labonair-panel", "labonair-settings", "labonair-theme", "labonair-ui-kit"]
 "labonair-panel-git-graph" = ["labonair-git", "labonair-notifications", "labonair-theme", "labonair-ui-kit"]
@@ -477,7 +484,7 @@ layer = "product"
 "labonair-settings-ui" = ["labonair-command-palette", "labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-filesystem", "labonair-gpui-ext", "labonair-notifications", "labonair-settings", "labonair-settings-content", "labonair-theme", "labonair-theme-ui", "labonair-ui-kit"]
 "labonair-sftp" = ["labonair-errors", "labonair-ssh"]
 "labonair-sftp-ssh" = ["labonair-errors", "labonair-events", "labonair-persistence", "labonair-secrets", "labonair-sftp", "labonair-ssh", "labonair-ssh-transport"]
-"labonair-shell" = ["labonair-background", "labonair-command-palette", "labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-editor", "labonair-events", "labonair-explorer-host", "labonair-filesystem", "labonair-git", "labonair-git-transport", "labonair-gpui-ext", "labonair-hosts", "labonair-hosts-host", "labonair-hosts-ui", "labonair-keymap", "labonair-keymap-ui", "labonair-mcp-core", "labonair-mcp-server", "labonair-notifications", "labonair-panel", "labonair-panel-explorer", "labonair-panel-git-graph", "labonair-panel-scm", "labonair-panel-snippets", "labonair-persistence", "labonair-secrets", "labonair-settings", "labonair-settings-ui", "labonair-sftp", "labonair-sftp-ssh", "labonair-snippets", "labonair-snippets-host", "labonair-snippets-ssh", "labonair-ssh", "labonair-ssh-transport", "labonair-terminal", "labonair-theme", "labonair-theme-ui", "labonair-transfers", "labonair-transfers-ssh", "labonair-transfers-ui", "labonair-ui-kit", "labonair-updater", "labonair-updater-ui", "labonair-workspace"]
+"labonair-shell" = ["labonair-background", "labonair-command-palette", "labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-editor", "labonair-events", "labonair-explorer-host", "labonair-filesystem", "labonair-git", "labonair-git-transport", "labonair-gpui-ext", "labonair-hosts", "labonair-hosts-host", "labonair-hosts-ui", "labonair-keymap", "labonair-keymap-ui", "labonair-mcp-core", "labonair-mcp-server", "labonair-notifications", "labonair-onboarding", "labonair-panel", "labonair-panel-explorer", "labonair-panel-git-graph", "labonair-panel-scm", "labonair-panel-snippets", "labonair-persistence", "labonair-secrets", "labonair-settings", "labonair-settings-ui", "labonair-sftp", "labonair-sftp-ssh", "labonair-snippets", "labonair-snippets-host", "labonair-snippets-ssh", "labonair-ssh", "labonair-ssh-transport", "labonair-terminal", "labonair-theme", "labonair-theme-ui", "labonair-transfers", "labonair-transfers-ssh", "labonair-transfers-ui", "labonair-ui-kit", "labonair-updater", "labonair-updater-ui", "labonair-workspace"]
 "labonair-snippets" = ["labonair-command-palette-core", "labonair-errors", "labonair-persistence"]
 "labonair-snippets-host" = []
 "labonair-snippets-ssh" = ["labonair-events", "labonair-snippets", "labonair-ssh-transport"]

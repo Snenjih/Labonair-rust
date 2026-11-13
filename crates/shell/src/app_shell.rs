@@ -82,6 +82,8 @@ pub struct AppShell {
     pub(crate) command_registry: CommandDispatcher,
     /// The app's single modal-overlay slot (T17-005).
     pub(crate) modal_layer: Entity<ModalLayer>,
+    /// First-run onboarding: its step registry and progress file.
+    pub(crate) onboarding: crate::onboarding::Onboarding,
     /// Real `LiveBridge` for the AI agent — snapshot refreshed event-driven
     /// (T17-006), command queue drained by [`Self`]'s background task.
     pub(crate) live_bridge: WorkspaceLiveBridge,
@@ -147,6 +149,7 @@ impl AppShell {
         modal_layer: Entity<ModalLayer>,
         live_bridge: WorkspaceLiveBridge,
         live_drain: Task<()>,
+        onboarding: crate::onboarding::Onboarding,
         cx: &mut Context<Self>,
     ) -> Self {
         Self {
@@ -158,6 +161,7 @@ impl AppShell {
             status_bar,
             command_registry,
             modal_layer,
+            onboarding,
             live_bridge,
             _live_drain: live_drain,
             focus_handle: cx.focus_handle(),

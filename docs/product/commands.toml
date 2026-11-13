@@ -117,6 +117,25 @@ source_files = ["crates/updater/src", "crates/updater-ui/src"]
 ids = ["CheckForUpdates"]
 
 [[group]]
+id = "onboarding"
+owner_module = "onboarding"
+canonical_crate = "labonair-onboarding"
+menu_path = "Command palette only"
+context = "global"
+availability = "Available when at least one onboarding step is applicable."
+default_keymap = ["none"]
+palette_visibility = "Visible through the Onboarding provider; reopens every applicable step."
+execution_handler = "labonair-onboarding through the shell-supplied open handler"
+success_behavior = "Open or focus the single Onboarding workspace tab."
+failure_behavior = "Not applicable; with no applicable step the command does nothing."
+notification_behavior = "Import and settings-write failures use the notification registry."
+undo_redo = "Not applicable."
+tests = ["crates/onboarding/src"]
+visual_evidence = ["Pending: native capture of the Onboarding tab, light and dark."]
+source_files = ["crates/onboarding/src/command_provider.rs", "crates/shell/src/onboarding.rs"]
+ids = ["OpenOnboarding"]
+
+[[group]]
 id = "hosts"
 owner_module = "hosts"
 canonical_crate = "labonair-hosts"

@@ -4485,6 +4485,24 @@ name = "labonair-notifications-core"
 version = "0.1.0"
 
 [[package]]
+name = "labonair-onboarding"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "labonair-command-palette-core",
+ "labonair-command-palette-runtime",
+ "labonair-notifications",
+ "labonair-settings",
+ "labonair-ssh",
+ "labonair-theme",
+ "labonair-ui-kit",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "labonair-panel"
 version = "0.1.0"
 dependencies = [
@@ -4713,6 +4731,7 @@ dependencies = [
  "labonair-mcp-core",
  "labonair-mcp-server",
  "labonair-notifications",
+ "labonair-onboarding",
  "labonair-panel",
  "labonair-panel-explorer",
  "labonair-panel-git-graph",

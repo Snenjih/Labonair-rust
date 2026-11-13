@@ -27,6 +27,7 @@ pub mod keymap_loader;
 mod local_terminal_access;
 pub mod menu;
 pub mod modals;
+mod onboarding;
 mod settings_services;
 pub mod status_items;
 mod theme_loader;

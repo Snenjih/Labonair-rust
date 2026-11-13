@@ -1,0 +1,25 @@
+[package]
+name = "labonair-onboarding"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_onboarding"
+path = "src/lib.rs"
+
+[dependencies]
+gpui = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = "0.1"
+labonair-theme = { path = "../theme" }
+labonair-ui-kit = { path = "../ui-kit" }
+labonair-notifications = { path = "../notifications" }
+labonair-settings = { path = "../settings" }
+labonair-ssh = { path = "../ssh" }
+labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-command-palette-runtime = { path = "../command-palette-runtime" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

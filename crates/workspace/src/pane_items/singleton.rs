@@ -39,6 +39,10 @@ impl Workspace {
                 Some(view) => view.clone().into_any_element(),
                 None => placeholder(self, cx),
             },
+            PaneKind::Onboarding => match &self.onboarding {
+                Some((view, _)) => view.clone().into_any_element(),
+                None => placeholder(self, cx),
+            },
             _ => placeholder(self, cx),
         }
     }

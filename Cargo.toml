@@ -60,6 +60,7 @@ members = [
     "crates/background",
     "crates/updater",
     "crates/updater-ui",
+    "crates/onboarding",
 ]
 
 [workspace.dependencies]

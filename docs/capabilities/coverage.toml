@@ -263,6 +263,19 @@ next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 last_verified = "2026-10-09"
 
 [[coverage.capability]]
+id = "onboarding"
+display_name = "Onboarding"
+owner_module = "onboarding"
+architecture_owner = "onboarding"
+canonical_crate = "labonair-onboarding"
+descriptor_file = "none"
+coverage_status = "matrix-tracked"
+canonical_entry_point = "First launch (workspace tab), then palette Onboarding: Open"
+next_action = "Exercise the click paths by hand and align the Hosts import dialog with the masking rule."
+next_task = "tasks/rework/R11-001-onboarding-module.md"
+last_verified = "2026-11-13"
+
+[[coverage.capability]]
 id = "ai"
 display_name = "AI"
 owner_module = "ai"

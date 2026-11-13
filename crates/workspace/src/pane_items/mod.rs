@@ -302,6 +302,12 @@ impl Workspace {
                     return;
                 }
             }
+            PaneKind::Onboarding => {
+                if let Some((_, focus)) = &self.onboarding {
+                    window.focus(focus);
+                    return;
+                }
+            }
             _ => {}
         }
         window.focus(&self.focus_handle);
