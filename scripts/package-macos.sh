@@ -50,15 +50,20 @@ BUILD="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 echo "==> Labonair $VERSION (build $BUILD)"
 
 # --- release build -----------------------------------------------------------
-echo "==> cargo build --release -p labonair ${CARGO_TARGET_ARGS[*]:-}"
-cargo build --release -p labonair ${CARGO_TARGET_ARGS[@]+"${CARGO_TARGET_ARGS[@]}"}
+# `labonair-host` is the detached session host daemon (ADR 0009). The app finds
+# it next to its own executable, copies it to the data dir and starts that copy.
+echo "==> cargo build --release -p labonair -p labonair-terminal-host ${CARGO_TARGET_ARGS[*]:-}"
+cargo build --release -p labonair -p labonair-terminal-host ${CARGO_TARGET_ARGS[@]+"${CARGO_TARGET_ARGS[@]}"}
 
 if [[ -n "$TARGET_TRIPLE" ]]; then
 	BIN="target/$TARGET_TRIPLE/release/labonair"
+	HOST_BIN="target/$TARGET_TRIPLE/release/labonair-host"
 else
 	BIN="target/release/labonair"
+	HOST_BIN="target/release/labonair-host"
 fi
 [[ -x "$BIN" ]] || { echo "build produced no binary at $BIN" >&2; exit 1; }
+[[ -x "$HOST_BIN" ]] || { echo "build produced no binary at $HOST_BIN" >&2; exit 1; }
 
 # --- assemble the bundle ----------------------------------------------------
 APP="target/release/bundle/macos/Labonair.app"
@@ -66,6 +71,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$BIN" "$APP/Contents/MacOS/labonair"
+cp "$HOST_BIN" "$APP/Contents/MacOS/labonair-host"
 cp packaging/macos/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" \
 	packaging/macos/Info.plist > "$APP/Contents/Info.plist"
