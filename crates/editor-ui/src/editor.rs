@@ -455,21 +455,60 @@ fn mark_minimap_line_range(
     }
 }
 
+const MINIMAP_LINE_PX: f32 = 3.0;
+const MINIMAP_CHAR_PX: f32 = 2.0;
+
+/// Geometry of the code-pixel minimap. Every source line is `MINIMAP_LINE_PX`
+/// tall; when the document is taller than the track the content scrolls
+/// proportionally with the editor (VS Code style) instead of being squeezed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct MinimapLayout {
+    content: f32,
+    scroll: f32,
+    thumb_top: f32,
+    thumb_len: f32,
+}
+
+fn minimap_layout(
+    line_count: usize,
+    total_rows: usize,
+    viewport_rows: usize,
+    top_row: f32,
+    track: f32,
+) -> MinimapLayout {
+    let content = line_count as f32 * MINIMAP_LINE_PX;
+    let max_top = total_rows.saturating_sub(viewport_rows) as f32;
+    let fraction = if max_top > 0.0 {
+        (top_row / max_top).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let scroll = (content - track).max(0.0) * fraction;
+    let scale = content / total_rows.max(1) as f32;
+    let thumb_len = (viewport_rows as f32 * scale).clamp(8.0, track.max(8.0));
+    let thumb_top = (top_row * scale - scroll).clamp(0.0, (track - thumb_len).max(0.0));
+    MinimapLayout {
+        content,
+        scroll,
+        thumb_top,
+        thumb_len,
+    }
+}
+
+/// Top visual row that centres the viewport on `pointer` (relative to the track top).
 fn minimap_scroll_from_pointer(
     pointer: f32,
-    track_start: f32,
-    track_length: f32,
+    layout: MinimapLayout,
     total_rows: usize,
     viewport_rows: usize,
 ) -> usize {
-    if track_length <= 0.0 || total_rows <= viewport_rows {
+    if layout.content <= 0.0 || total_rows <= viewport_rows {
         return 0;
     }
-    let fraction = ((pointer - track_start) / track_length).clamp(0.0, 1.0);
-    let center_row = (fraction * total_rows as f32).round() as usize;
-    center_row
-        .saturating_sub(viewport_rows / 2)
-        .min(total_rows.saturating_sub(viewport_rows))
+    let center_row = (pointer + layout.scroll) / layout.content * total_rows as f32;
+    (center_row - viewport_rows as f32 / 2.0)
+        .clamp(0.0, total_rows.saturating_sub(viewport_rows) as f32)
+        .round() as usize
 }
 
 fn scrollbar_marker_offset(visual_row: usize, total_rows: usize, track_length: f32) -> Option<f32> {
@@ -707,14 +746,26 @@ impl EditorControl {
     }
 }
 
+impl EditorControl {
+    /// Controls render in groups separated by a divider (Zed-style).
+    fn group(self) -> u8 {
+        match self {
+            Self::LineNumbers | Self::Minimap | Self::SelectionMenu => 0,
+            Self::Diagnostics | Self::InlineDiagnostics => 1,
+            Self::InlayHints | Self::CodeLens | Self::SemanticHighlights => 2,
+            Self::GitBlame => 3,
+            Self::VimMode | Self::HelixMode => 4,
+        }
+    }
+}
+
 fn available_editor_controls(capabilities: LanguageServiceCapabilities) -> Vec<EditorControl> {
     let mut controls = vec![
-        EditorControl::Diagnostics,
-        EditorControl::InlineDiagnostics,
-        EditorControl::GitBlame,
         EditorControl::LineNumbers,
         EditorControl::Minimap,
         EditorControl::SelectionMenu,
+        EditorControl::Diagnostics,
+        EditorControl::InlineDiagnostics,
     ];
     if capabilities.inlay_hints {
         controls.push(EditorControl::InlayHints);
@@ -725,7 +776,11 @@ fn available_editor_controls(capabilities: LanguageServiceCapabilities) -> Vec<E
     if capabilities.semantic_tokens {
         controls.push(EditorControl::SemanticHighlights);
     }
-    controls.extend([EditorControl::VimMode, EditorControl::HelixMode]);
+    controls.extend([
+        EditorControl::GitBlame,
+        EditorControl::VimMode,
+        EditorControl::HelixMode,
+    ]);
     controls
 }
 
@@ -9274,12 +9329,17 @@ impl EditorView {
     ) -> Option<AnyElement> {
         let anchor = self.editor_controls_anchor?;
         let editor = cx.entity();
-        let mut items = vec![MenuItem::label("Editor Controls")];
+        let mut items = Vec::new();
+        let mut last_group = None;
         for control in available_editor_controls(self.language_service_snapshot.capabilities) {
             let editor = editor.clone();
+            if last_group.is_some_and(|g| g != control.group()) {
+                items.push(MenuItem::separator());
+            }
+            last_group = Some(control.group());
             items.push(
                 MenuItem::new(control.id(), control.label())
-                    .checked(self.editor_control_enabled(control))
+                    .toggled(self.editor_control_enabled(control))
                     .on_click(move |_, _window, app| {
                         editor.update(app, |this, cx| {
                             this.editor_controls_anchor = None;
@@ -9731,11 +9791,7 @@ impl EditorView {
             .map(|bounds| f32::from(bounds.size.height))
             .unwrap_or(480.0);
         let track_length = (height - 16.0).max(1.0);
-        let slot_count = line_count
-            .min(500)
-            .min(track_length.floor().max(1.0) as usize)
-            .max(1);
-        let slot_height = track_length / slot_count as f32;
+        let slot_count = line_count;
         let selection_ranges = self.doc.selection_set().ranges(snapshot);
         let selected_text = selection_ranges
             .iter()
@@ -9824,82 +9880,77 @@ impl EditorView {
         };
         let minimap_width = minimap_width_pixels(self.prefs.minimap_max_width_columns());
         let content_width = (minimap_width - 20.0).max(12.0);
-        let rows = (0..slot_count).map(|slot| {
-            let line = (slot.saturating_mul(line_count) / slot_count).min(line_count - 1);
-            let width = (snapshot.line_len(line).min(60) as f32 / 60.0 * content_width).max(4.0);
-            let marker = markers[slot];
-            let mut row = div()
-                .relative()
-                .w_full()
-                .h(px(slot_height))
-                .when(marker.cursor && show_current_line, |row| {
-                    row.bg(palette.accent.opacity(0.12))
-                })
-                .child(
-                    div()
-                        .absolute()
-                        .left(px(10.0))
-                        .top_0()
-                        .h_full()
-                        .w(px(width))
-                        .bg(palette
-                            .muted
-                            .opacity(if marker.cursor { 0.9 } else { 0.42 })),
-                );
-            if marker.selection {
-                row = row.child(
-                    div()
-                        .absolute()
-                        .left(px(10.0))
-                        .top_0()
-                        .h_full()
-                        .w(px((width * 0.72).max(3.0)))
-                        .bg(palette.selected_accent.opacity(0.85)),
-                );
+        let layout = minimap_layout(
+            line_count,
+            display.total_rows,
+            display.viewport.height_rows,
+            display.viewport.top_row as f32 + self.scroll_offset_y / self.metrics.1.max(1.0),
+            track_length,
+        );
+        let editor_palette = {
+            let theme = self.theme.read(cx);
+            EditorPalette::resolve(theme.editor_theme(), theme)
+        };
+        let first_line = (layout.scroll / MINIMAP_LINE_PX).floor() as usize;
+        let last_line =
+            (((layout.scroll + track_length) / MINIMAP_LINE_PX).ceil() as usize).min(line_count);
+        let max_cols = (content_width / MINIMAP_CHAR_PX) as usize;
+        // (x, y, w, h, colour) relative to the canvas origin.
+        let mut quads: Vec<(f32, f32, f32, f32, gpui::Hsla)> = Vec::new();
+        for line in first_line..last_line {
+            let y = line as f32 * MINIMAP_LINE_PX - layout.scroll;
+            let marker = markers[line];
+            let mut tint = |color: gpui::Hsla| {
+                quads.push((0.0, y, minimap_width, MINIMAP_LINE_PX, color));
+            };
+            if marker.cursor && show_current_line {
+                tint(palette.accent.opacity(0.14));
             }
-            if marker.search {
-                row = row.child(
-                    div()
-                        .absolute()
-                        .left(px(10.0))
-                        .top_0()
-                        .h_full()
-                        .w(px((width * 0.45).max(3.0)))
-                        .bg(palette.info.opacity(0.9)),
-                );
+            if marker.selection {
+                tint(palette.selected_accent.opacity(0.28));
             }
             if marker.selected_text_occurrence {
-                row = row.child(
-                    div()
-                        .absolute()
-                        .left(px(10.0))
-                        .top_0()
-                        .h_full()
-                        .w(px((width * 0.55).max(3.0)))
-                        .bg(palette.selected_accent.opacity(0.75)),
-                );
+                tint(palette.selected_accent.opacity(0.2));
             }
             if marker.selected_symbol_occurrence {
-                row = row.child(
-                    div()
-                        .absolute()
-                        .left(px(8.0))
-                        .top_0()
-                        .h_full()
-                        .w(px(2.0))
-                        .bg(palette.accent),
-                );
+                tint(palette.accent.opacity(0.2));
             }
-            if marker.cursor {
-                row = row.child(
-                    div()
-                        .absolute()
-                        .left_0()
-                        .top_0()
-                        .h_full()
-                        .w(px(2.0))
-                        .bg(palette.primary),
-                );
+            if marker.search {
+                tint(palette.info.opacity(0.35));
+            }
+            let mut col = 0usize;
+            for run in self.syntax.line_runs(snapshot, line) {
+                let color = run
+                    .kind
+                    .map_or(palette.muted, |kind| editor_palette.color(kind))
+                    .opacity(0.8);
+                let mut block: Option<usize> = None;
+                for ch in run.text.chars().take(max_cols.saturating_sub(col)) {
+                    if ch.is_whitespace() {
+                        if let Some(start) = block.take() {
+                            quads.push((
+                                10.0 + start as f32 * MINIMAP_CHAR_PX,
+                                y + 0.5,
+                                (col - start) as f32 * MINIMAP_CHAR_PX,
+                                2.0,
+                                color,
+                            ));
+                        }
+                        col += if ch == '\t' { 4 } else { 1 };
+                    } else {
+                        block.get_or_insert(col);
+                        col += 1;
+                    }
+                }
+                if let Some(start) = block {
+                    quads.push((
+                        10.0 + start as f32 * MINIMAP_CHAR_PX,
+                        y + 0.5,
+                        (col - start) as f32 * MINIMAP_CHAR_PX,
+                        2.0,
+                        color,
+                    ));
+                }
             }
             if let Some(status) = marker.git {
                 let color = match status {
@@ -9907,15 +9958,7 @@ impl EditorView {
                     GitHunkStatus::Modified => palette.warning,
                     GitHunkStatus::Deleted => palette.error,
                 };
-                row = row.child(
-                    div()
-                        .absolute()
-                        .left(px(3.0))
-                        .top_0()
-                        .h_full()
-                        .w(px(2.0))
-                        .bg(color),
-                );
+                quads.push((2.0, y, 2.0, MINIMAP_LINE_PX, color));
             }
             if let Some(severity) = marker.diagnostic {
                 let color = match severity {
@@ -9926,48 +9969,48 @@ impl EditorView {
                     labonair_editor::language_services::DiagnosticSeverity::Information
                     | labonair_editor::language_services::DiagnosticSeverity::Hint => palette.info,
                 };
-                row = row.child(
-                    div()
-                        .absolute()
-                        .left(px(6.0))
-                        .top_0()
-                        .h_full()
-                        .w(px(2.0))
-                        .bg(color),
-                );
+                quads.push((5.0, y, 2.0, MINIMAP_LINE_PX, color));
             }
-            row
-        });
-        let show_thumb =
-            self.prefs.minimap_thumb() == EditorMinimapThumb::Always || self.minimap_hovered;
-        let thumb = show_thumb
-            .then(|| {
-                scrollbar_geometry_at(
-                    display.total_rows,
-                    display.viewport.height_rows,
-                    display.viewport.top_row as f32
-                        + self.scroll_offset_y / self.metrics.1.max(1.0),
-                    track_length,
-                )
-            })
-            .flatten()
-            .map(|geometry| {
-                let thumb = div()
-                    .absolute()
-                    .top(px(8.0 + geometry.thumb_offset))
-                    .right_0()
-                    .w(px(3.0))
-                    .h(px(geometry.thumb_length))
-                    .rounded(px(2.0))
-                    .bg(palette.muted.opacity(0.78));
-                match self.prefs.minimap_thumb_border() {
-                    EditorMinimapThumbBorder::All => thumb.border_1().border_color(palette.border),
-                    EditorMinimapThumbBorder::LeftOpen => {
-                        thumb.border_l_1().border_color(palette.border)
-                    }
-                    EditorMinimapThumbBorder::None => thumb,
+            if marker.cursor {
+                quads.push((0.0, y, 2.0, MINIMAP_LINE_PX, palette.primary));
+            }
+        }
+        let code = canvas(
+            |_, _, _| (),
+            move |bounds, _, window, _| {
+                for (x, y, w, h, color) in &quads {
+                    window.paint_quad(gpui::fill(
+                        Bounds::new(
+                            gpui::point(bounds.origin.x + px(*x), bounds.origin.y + px(*y)),
+                            gpui::size(px(*w), px(*h)),
+                        ),
+                        *color,
+                    ));
                 }
-            });
+            },
+        )
+        .absolute()
+        .top(px(8.0))
+        .left_0()
+        .right_0()
+        .h(px(track_length));
+        let show_thumb = (self.prefs.minimap_thumb() == EditorMinimapThumb::Always
+            || self.minimap_hovered)
+            && display.total_rows > display.viewport.height_rows;
+        let thumb = show_thumb.then(|| {
+            let thumb = div()
+                .absolute()
+                .top(px(8.0 + layout.thumb_top))
+                .left_0()
+                .right_0()
+                .h(px(layout.thumb_len))
+                .bg(palette.muted.opacity(0.18));
+            match self.prefs.minimap_thumb_border() {
+                EditorMinimapThumbBorder::All => thumb.border_1().border_color(palette.border),
+                EditorMinimapThumbBorder::LeftOpen => thumb.border_l_1().border_color(palette.border),
+                EditorMinimapThumbBorder::None => thumb,
+            }
+        });
         let drag = EditorMinimapDrag {
             total_rows: display.total_rows,
             viewport_rows: display.viewport.height_rows,
@@ -9981,32 +10024,21 @@ impl EditorView {
             .bottom_0()
             .right_0()
             .w(px(minimap_width))
-            .flex()
-            .flex_col()
-            .gap(px(2.0))
             .overflow_hidden()
-            .p_2()
             .bg(palette.sidebar.opacity(0.86))
             .border_l_1()
             .border_color(palette.border)
-            .children(rows)
+            .child(code)
             .children(thumb)
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
-                    let (track_start, length) = this
+                    let track_start = this
                         .bounds
-                        .map(|bounds| {
-                            (
-                                f32::from(bounds.origin.y) + 8.0,
-                                (f32::from(bounds.size.height) - 16.0).max(1.0),
-                            )
-                        })
-                        .unwrap_or((8.0, 1.0));
+                        .map_or(8.0, |bounds| f32::from(bounds.origin.y) + 8.0);
                     let row = minimap_scroll_from_pointer(
-                        f32::from(event.position.y),
-                        track_start,
-                        length,
+                        f32::from(event.position.y) - track_start,
+                        layout,
                         minimap_total_rows,
                         minimap_viewport_rows,
                     );
@@ -10019,11 +10051,9 @@ impl EditorView {
                 move |this, event: &gpui::DragMoveEvent<EditorMinimapDrag>, _window, cx| {
                     let drag = event.drag(cx);
                     let track_start = f32::from(event.bounds.origin.y) + 8.0;
-                    let track_length = (f32::from(event.bounds.size.height) - 16.0).max(1.0);
                     let row = minimap_scroll_from_pointer(
-                        f32::from(event.event.position.y),
-                        track_start,
-                        track_length,
+                        f32::from(event.event.position.y) - track_start,
+                        layout,
                         drag.total_rows,
                         drag.viewport_rows,
                     );
@@ -15037,11 +15067,20 @@ mod tests {
 
     #[test]
     fn minimap_pointer_scroll_is_centered_and_clamped() {
-        assert_eq!(minimap_scroll_from_pointer(50.0, 0.0, 100.0, 100, 10), 45);
-        assert_eq!(minimap_scroll_from_pointer(-10.0, 0.0, 100.0, 100, 10), 0);
-        assert_eq!(minimap_scroll_from_pointer(110.0, 0.0, 100.0, 100, 10), 90);
-        assert_eq!(minimap_scroll_from_pointer(50.0, 0.0, 100.0, 100, 100), 0);
-        assert_eq!(minimap_scroll_from_pointer(50.0, 0.0, 0.0, 100, 10), 0);
+        // 100 lines fit the track: no minimap scrolling, 1:1 with the rows.
+        let fits = minimap_layout(100, 100, 10, 0.0, 400.0);
+        assert_eq!(fits.scroll, 0.0);
+        assert_eq!(minimap_scroll_from_pointer(150.0, fits, 100, 10), 45);
+        assert_eq!(minimap_scroll_from_pointer(-10.0, fits, 100, 10), 0);
+        assert_eq!(minimap_scroll_from_pointer(900.0, fits, 100, 10), 90);
+        assert_eq!(minimap_scroll_from_pointer(50.0, fits, 100, 100), 0);
+
+        // 1000 lines overflow the 300px track: content scrolls with the editor.
+        let top = minimap_layout(1000, 1000, 50, 0.0, 300.0);
+        let bottom = minimap_layout(1000, 1000, 50, 950.0, 300.0);
+        assert_eq!(top.scroll, 0.0);
+        assert_eq!(bottom.scroll, 2700.0);
+        assert_eq!(bottom.thumb_top + bottom.thumb_len, 300.0);
     }
 
     #[test]

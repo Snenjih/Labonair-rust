@@ -84,6 +84,9 @@ enum Kind {
         destructive: bool,
         disabled: bool,
         checked: bool,
+        /// Zed-style toggle: a check column is always reserved (so labels stay
+        /// aligned) and a plain primary-coloured check marks the `true` state.
+        toggled: Option<bool>,
         /// Right-aligned keybinding hint (`["\u{2318}", "K"]`), rendered as
         /// [`crate::kbd`] chips — radix `ContextMenuShortcut`.
         keybind: Vec<SharedString>,
@@ -123,6 +126,7 @@ impl MenuItem {
                 destructive: false,
                 disabled: false,
                 checked: false,
+                toggled: None,
                 keybind: Vec::new(),
                 handler: None,
             },
@@ -228,6 +232,15 @@ impl MenuItem {
     pub fn checked(mut self, checked: bool) -> Self {
         if let Kind::Action { checked: c, .. } = &mut self.kind {
             *c = checked;
+        }
+        self
+    }
+
+    /// Zed-style toggle row: reserves the check column on every row and shows a
+    /// plain check when `on`. Prefer over [`Self::checked`] for on/off settings.
+    pub fn toggled(mut self, on: bool) -> Self {
+        if let Kind::Action { toggled, .. } = &mut self.kind {
+            *toggled = Some(on);
         }
         self
     }
@@ -479,6 +492,7 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
             destructive,
             disabled,
             checked,
+            toggled,
             keybind,
             handler,
         } => {
@@ -500,7 +514,18 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                 .rounded(px(c.radius.md))
                 .text_size(c.control_space(13.0))
                 .text_color(text_color)
-                .when(checked || icon.is_some(), |d| {
+                .when_some(toggled, |d, on| {
+                    d.child(
+                        div()
+                            .flex_none()
+                            .size(px(16.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .when(on, |s| s.child(IconName::Check.svg(c.primary).size(px(14.0)))),
+                    )
+                })
+                .when(toggled.is_none() && (checked || icon.is_some()), |d| {
                     let glyph = if checked {
                         IconName::CircleCheck
                     } else {
