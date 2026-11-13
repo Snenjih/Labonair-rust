@@ -4867,6 +4867,7 @@ dependencies = [
 name = "labonair-terminal-host"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "labonair-errors",
  "labonair-events",
  "labonair-persistence",

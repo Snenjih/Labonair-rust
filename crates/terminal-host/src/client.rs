@@ -24,7 +24,8 @@ use std::time::{Duration, Instant};
 
 use crate::protocol::{
     control_frame, data_frame, read_frame_blocking, CreateOptions, DataKind, DetachReason, Frame,
-    Hello, HelloAck, Message, SessionEvent, SessionId, SessionInfo, WireColors,
+    Hello, HelloAck, Message, RpcCall, RpcValue, SessionEvent, SessionId, SessionInfo, WireColors,
+    WireError,
 };
 use crate::server::HostPaths;
 
@@ -60,6 +61,42 @@ pub trait SessionSink: Send + Sync {
     /// own emulator derives the same from the byte stream, so the default is
     /// to ignore it.
     fn event(&self, _event: SessionEvent) {}
+    /// The SSH connection behind a hosted SSH session dropped; `reason` is the
+    /// humanized text. The session stays in the daemon until acknowledged.
+    fn connection_lost(&self, _reason: &str) {}
+}
+
+/// Receives the service events (`ssh_connect_log`, `transfer_progress`, ...)
+/// of [`Message::BusEvent`]. Called on the reader thread: must not block.
+pub type BusSink = Arc<dyn Fn(String, serde_json::Value) + Send + Sync>;
+
+type RpcResult = Result<RpcValue, WireError>;
+
+/// Where the answer of an outstanding call goes: an async caller or a
+/// blocking one (restore on the UI thread).
+enum RpcReply {
+    Async(tokio::sync::oneshot::Sender<RpcResult>),
+    Blocking(SyncSender<RpcResult>),
+}
+
+impl RpcReply {
+    fn send(self, result: RpcResult) {
+        match self {
+            Self::Async(tx) => {
+                let _ = tx.send(result);
+            }
+            Self::Blocking(tx) => {
+                let _ = tx.send(result);
+            }
+        }
+    }
+}
+
+fn not_connected(error: ClientError) -> WireError {
+    WireError {
+        code: Some("NotConnected".into()),
+        message: error.to_string(),
+    }
 }
 
 /// State of the connection, for the UI.
@@ -125,6 +162,11 @@ struct State {
     creates: HashMap<u64, SyncSender<Result<SessionId, String>>>,
     lists: VecDeque<SyncSender<Vec<SessionInfo>>>,
     cached: Option<(Instant, Vec<SessionInfo>)>,
+    /// Outstanding [`HostClient::rpc`] calls. Answers may arrive in any order.
+    rpcs: HashMap<u64, RpcReply>,
+    bus: Option<BusSink>,
+    /// Re-subscribe to service events after every (re)connect.
+    events_wanted: bool,
 }
 
 struct Inner {
@@ -160,6 +202,9 @@ impl HostClient {
                     creates: HashMap::new(),
                     lists: VecDeque::new(),
                     cached: None,
+                    rpcs: HashMap::new(),
+                    bus: None,
+                    events_wanted: false,
                 }),
             }),
         }
@@ -221,7 +266,74 @@ impl HostClient {
         std::thread::Builder::new()
             .name("labonair-host-write".into())
             .spawn(move || writer_loop(writer, rx))?;
+        if ack.compatible && lock(&self.inner.state).events_wanted {
+            self.send_subscribe();
+        }
         Ok(())
+    }
+
+    fn send_subscribe(&self) {
+        // The answer is not awaited (the replay is the answer); an unmatched
+        // `RpcOk` is ignored by the reader.
+        let req_id = self.inner.next_req.fetch_add(1, Ordering::Relaxed);
+        let _ = self.send(&Message::Rpc {
+            req_id,
+            call: RpcCall::SubscribeEvents,
+        });
+    }
+
+    /// Route service events to `sink` and subscribe on the daemon (now, and
+    /// again after every reconnect). The daemon replays its current state
+    /// first. Without a subscriber every host-key prompt is rejected.
+    pub fn subscribe_events(&self, sink: BusSink) {
+        let connected = {
+            let mut state = lock(&self.inner.state);
+            state.bus = Some(sink);
+            let already = state.events_wanted;
+            state.events_wanted = true;
+            !already && state.status == HostStatus::Connected
+        };
+        if connected {
+            self.send_subscribe();
+        }
+    }
+
+    /// Request/response call into the SSH, SFTP and transfer services. Does
+    /// not block the reader: the answer is delivered whenever it arrives, so a
+    /// connect waiting minutes for a host-key decision never holds anything up.
+    /// A lost connection fails every outstanding call.
+    pub async fn rpc(&self, call: RpcCall) -> RpcResult {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.start_rpc(call, RpcReply::Async(tx))?;
+        match rx.await {
+            Ok(result) => result,
+            Err(_) => Err(not_connected(ClientError::NotConnected)),
+        }
+    }
+
+    /// [`Self::rpc`] for callers that are not async (session restore on the
+    /// UI thread). Bounded by `timeout`.
+    pub fn rpc_blocking(&self, call: RpcCall, timeout: Duration) -> RpcResult {
+        let (tx, rx) = mpsc::sync_channel(1);
+        let req_id = self.start_rpc(call, RpcReply::Blocking(tx))?;
+        rx.recv_timeout(timeout).unwrap_or_else(|error| {
+            lock(&self.inner.state).rpcs.remove(&req_id);
+            Err(not_connected(match error {
+                mpsc::RecvTimeoutError::Timeout => ClientError::Timeout,
+                mpsc::RecvTimeoutError::Disconnected => ClientError::NotConnected,
+            }))
+        })
+    }
+
+    fn start_rpc(&self, call: RpcCall, reply: RpcReply) -> Result<u64, WireError> {
+        self.require_compatible().map_err(not_connected)?;
+        let req_id = self.inner.next_req.fetch_add(1, Ordering::Relaxed);
+        lock(&self.inner.state).rpcs.insert(req_id, reply);
+        if let Err(error) = self.send(&Message::Rpc { req_id, call }) {
+            lock(&self.inner.state).rpcs.remove(&req_id);
+            return Err(not_connected(error));
+        }
+        Ok(req_id)
     }
 
     fn send_raw(&self, frame: Vec<u8>) -> Result<(), ClientError> {
@@ -475,6 +587,29 @@ fn dispatch(inner: &Inner, frame: Frame) {
                     sink.event(event);
                 }
             }
+            Message::RpcOk { req_id, value } => {
+                let reply = lock(&inner.state).rpcs.remove(&req_id);
+                if let Some(reply) = reply {
+                    reply.send(Ok(value));
+                }
+            }
+            Message::RpcErr { req_id, error } => {
+                let reply = lock(&inner.state).rpcs.remove(&req_id);
+                if let Some(reply) = reply {
+                    reply.send(Err(error));
+                }
+            }
+            Message::BusEvent { name, payload } => {
+                let sink = lock(&inner.state).bus.clone();
+                if let Some(sink) = sink {
+                    sink(name, payload);
+                }
+            }
+            Message::ConnectionLost { session, reason } => {
+                if let Some(sink) = sink_for(inner, session) {
+                    sink.connection_lost(&reason);
+                }
+            }
             Message::SessionExited { session, exit_code } => {
                 if let Some(sink) = sink_for(inner, session) {
                     sink.exited(exit_code);
@@ -501,6 +636,7 @@ fn connection_lost(inner: &Inner, generation: u64) {
         // Dropping the senders fails every waiting request.
         state.creates.clear();
         state.lists.clear();
+        state.rpcs.clear();
         state.sinks.values().cloned().collect()
     };
     for sink in sinks {

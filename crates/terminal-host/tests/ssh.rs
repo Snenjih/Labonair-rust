@@ -15,8 +15,9 @@ use labonair_sftp::{
     BoxFuture, RemoteEntry, SftpBrowserService, SftpSessionHandle, SftpSessionService,
 };
 use labonair_ssh::{
-    ActiveTunnel, SharedSshEventSink, SshConnectRequest, SshConnectionService, SshPtyService,
-    SshRemoteCommandService, SshRemoteFileService, SshSessionEvent, SshSessionId, SshTunnelService,
+    ActiveTunnel, SharedSshEventSink, SshConnectRequest, SshConnectionService, SshExecOutput,
+    SshExecService, SshPtyService, SshRemoteCommandService, SshRemoteFileService, SshSessionEvent,
+    SshSessionId, SshTunnelService,
 };
 use labonair_terminal_core::{TermDimensions, TerminalColors, TerminalEmulator, TerminalEvent};
 use labonair_terminal_host::protocol::*;
@@ -73,6 +74,7 @@ impl Fake {
             pty: self.clone(),
             remote_command: self.clone(),
             remote_file: self.clone(),
+            exec: self.clone(),
             tunnels: self.clone(),
             sftp_session: self.clone(),
             sftp_browser: self.clone(),
@@ -246,6 +248,26 @@ impl SshRemoteFileService for Fake {
 
     fn cleanup_remote_edit_temp<'a>(&'a self, _: String) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async { Ok(()) })
+    }
+}
+
+impl SshExecService for Fake {
+    fn exec<'a>(
+        &'a self,
+        session_id: SshSessionId,
+        command: String,
+        stdin: Option<Vec<u8>>,
+    ) -> BoxFuture<'a, Result<SshExecOutput, String>> {
+        Box::pin(async move {
+            if session_id.as_str() == "gone" {
+                return Err("no SSH session for tab gone".into());
+            }
+            Ok(SshExecOutput {
+                stdout: [command.as_bytes(), b"|", &stdin.unwrap_or_default()].concat(),
+                stderr: vec![0xff, b'e'],
+                exit_code: 3,
+            })
+        })
     }
 }
 
@@ -643,6 +665,8 @@ fn connect_call(tab: &str, host: &str) -> RpcCall {
         session_id: tab.into(),
         host_id: host.into(),
         password: Some("hunter2-password".into()),
+        // A pane owns the session: only those are listed by `ListSessions`.
+        pane_tag: Some("pane-1".into()),
         host: SshHostSnapshot {
             hosts: vec![HostRecord {
                 id: host.into(),
@@ -1083,5 +1107,402 @@ async fn concrete_stack_keeps_credentials_in_ram_only() {
             path.display()
         );
     }
+    host.shutdown().await;
+}
+
+// ── App-side proxies over a real client ──────────────────────────────────────
+
+use labonair_ssh::SshHostedAccess;
+use labonair_terminal_host::client::HostClient;
+use labonair_terminal_host::proxy::router::{DaemonAccess, LocalServices, RoutedServices};
+use labonair_terminal_host::proxy::{DaemonServices, ProxyContext};
+
+/// Collects what a connect call's output sink receives.
+#[derive(Default)]
+struct Collect(Mutex<String>);
+
+impl labonair_ssh::SshEventSink for Collect {
+    fn send(&self, event: SshSessionEvent) -> Result<(), String> {
+        let SshSessionEvent::Output { data } = event;
+        self.0.lock().unwrap().push_str(&data);
+        Ok(())
+    }
+}
+
+fn snapshot_for(host: &str) -> SshHostSnapshot {
+    SshHostSnapshot {
+        hosts: vec![HostRecord {
+            id: host.into(),
+            host_address: "127.0.0.1".into(),
+            port: 1,
+            username: "me".into(),
+            auth_method: "password".into(),
+            ..Default::default()
+        }],
+        secrets: vec![SecretEntry {
+            service: "labonair-app".into(),
+            account: host.into(),
+            value: "hunter2-secret".into(),
+        }],
+        ..Default::default()
+    }
+}
+
+/// A proxy on its own client connection to `host`, with a fresh app bus.
+async fn proxy(host: &Harness) -> (DaemonServices, EventBus) {
+    let client = HostClient::new(host.dir.clone(), Hello::current("proxy-test", None));
+    let c = client.clone();
+    tokio::task::spawn_blocking(move || c.reconnect())
+        .await
+        .unwrap()
+        .expect("client connects");
+    let bus = EventBus::new();
+    let ctx = ProxyContext {
+        bus: bus.clone(),
+        hosts: Arc::new(|id| Ok(snapshot_for(id))),
+        transfer_config: Arc::new(|| TransferConfig {
+            max_concurrent: 3,
+            chunk_size: 4096,
+            default_conflict_resolution: "ask".into(),
+            on_folder_file_error: "ask".into(),
+        }),
+        connected: Arc::new(|_| {}),
+    };
+    (DaemonServices::new(client, ctx), bus)
+}
+
+fn request(tab: &str, host: &str) -> SshConnectRequest {
+    SshConnectRequest {
+        session_id: SshSessionId::new(tab),
+        host_id: host.into(),
+        passphrase: None,
+        password: None,
+        initial_cols: Some(80),
+        initial_rows: Some(24),
+        blocks: false,
+        connect_timeout_secs: None,
+        keepalive_interval_secs: None,
+        keepalive_max_failures: None,
+    }
+}
+
+async fn bus_event(
+    rx: &mut tokio::sync::broadcast::Receiver<labonair_events::RawEvent>,
+    name: &str,
+) -> serde_json::Value {
+    timeout(WAIT, async {
+        loop {
+            let event = rx.recv().await.expect("bus open");
+            if event.name == name {
+                return event.payload;
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("no {name} event"))
+}
+
+async fn eventually_text(sink: &Collect, needle: &str) {
+    let result = timeout(WAIT, async {
+        while !sink.0.lock().unwrap().contains(needle) {
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(result.is_ok(), "{needle:?} never arrived");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn proxy_connects_through_the_trust_prompt_streams_output_and_disconnects() {
+    let fake = Fake::new();
+    let host = Harness::start(Some(fake.services())).await;
+    let (daemon, bus) = proxy(&host).await;
+    let mut events = bus.subscribe();
+    let sink = Arc::new(Collect::default());
+
+    // The connect waits for the host-key decision while other calls go on.
+    let connect = {
+        let (daemon, sink) = (daemon.clone(), sink.clone());
+        tokio::spawn(async move { daemon.connect(request("tab-1", "prompt-host"), sink).await })
+    };
+    let warning = bus_event(&mut events, "known_hosts_warning").await;
+    assert_eq!(warning["session_id"], "tab-1");
+    assert_eq!(
+        daemon
+            .calculate_size(SshSessionId::new("tab-1"), "/x".into())
+            .await
+            .unwrap(),
+        "size of /x"
+    );
+    daemon
+        .trust_host(SshSessionId::new("tab-1"), true)
+        .await
+        .unwrap();
+    connect.await.unwrap().expect("connect");
+
+    // Credentials came from the app's snapshot; transfers were configured.
+    assert_eq!(
+        fake.installed.lock().unwrap()[0].secrets[0].value,
+        "hunter2-secret"
+    );
+    assert_eq!(
+        fake.settings
+            .max_concurrent
+            .load(std::sync::atomic::Ordering::SeqCst),
+        3
+    );
+    assert_eq!(
+        bus_event(&mut events, "session_established").await["session_id"],
+        "tab-1"
+    );
+    assert!(daemon.owns("tab-1"));
+
+    // Output (incl. what arrived before the attach) and the input echo.
+    eventually_text(&sink, "ready").await;
+    daemon
+        .write(SshSessionId::new("tab-1"), "abc".into())
+        .await
+        .unwrap();
+    eventually_text(&sink, "abc").await;
+    let tap_session = daemon.agent_tap("tab-1");
+    assert!(tap_session.is_some());
+
+    // Disconnect ends the transport and forgets the session.
+    daemon.disconnect(SshSessionId::new("tab-1")).await.unwrap();
+    assert!(fake
+        .disconnects
+        .lock()
+        .unwrap()
+        .contains(&"tab-1".to_string()));
+    assert!(!daemon.owns("tab-1"));
+    host.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_rejected_host_key_fails_the_connect_with_a_typed_error() {
+    let fake = Fake::new();
+    let host = Harness::start(Some(fake.services())).await;
+    let (daemon, bus) = proxy(&host).await;
+    let mut events = bus.subscribe();
+    let connect = {
+        let daemon = daemon.clone();
+        tokio::spawn(async move {
+            daemon
+                .connect(
+                    request("tab-1", "prompt-host"),
+                    Arc::new(Collect::default()),
+                )
+                .await
+        })
+    };
+    bus_event(&mut events, "known_hosts_warning").await;
+    daemon
+        .trust_host(SshSessionId::new("tab-1"), false)
+        .await
+        .unwrap();
+    let err = connect.await.unwrap().unwrap_err();
+    assert_eq!(
+        err,
+        LabonairError::HostKeyMismatch("User rejected host".into())
+    );
+    assert!(!daemon.owns("tab-1"));
+    host.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn exec_rpc_carries_binary_stdin_and_output() {
+    let fake = Fake::new();
+    let host = Harness::start(Some(fake.services())).await;
+    let (daemon, _bus) = proxy(&host).await;
+    let out = SshHostedAccess::exec(
+        &daemon,
+        SshSessionId::new("tab-1"),
+        "git status".into(),
+        Some(vec![0, 159, 146, 150]),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        out.stdout,
+        [b"git status|".as_slice(), &[0, 159, 146, 150]].concat()
+    );
+    assert_eq!(out.stderr, vec![0xff, b'e']);
+    assert_eq!(out.exit_code, 3);
+    let err = SshHostedAccess::exec(&daemon, SshSessionId::new("gone"), "x".into(), None)
+        .await
+        .unwrap_err();
+    assert!(err.contains("no SSH session"));
+    host.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_transfer_keeps_running_while_the_app_is_away_and_its_conflict_is_replayed() {
+    let fake = Fake::new();
+    let host = Harness::start(Some(fake.services())).await;
+    let (daemon, bus) = proxy(&host).await;
+    let mut events = bus.subscribe();
+    let job = TransferService::enqueue(
+        &daemon,
+        TransferRequest {
+            session_id: "tab-1".into(),
+            src_path: "/tmp/conflict-file".into(),
+            dest_path: "/remote/x".into(),
+            direction: TransferDirection::Upload,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        bus_event(&mut events, "file_conflict").await["job_id"],
+        job.as_str()
+    );
+
+    // The app goes away: the job stays parked in the daemon.
+    daemon.client().disconnect();
+    sleep(Duration::from_millis(200)).await;
+    assert!(fake.resolutions.lock().unwrap().is_empty());
+
+    // A restarted app subscribes and sees the live job and its conflict.
+    let (again, bus2) = proxy(&host).await;
+    let mut events2 = bus2.subscribe();
+    // Subscribed after construction: the replay may already be on the bus,
+    // so ask the daemon's registry as well.
+    let listed = again.client().rpc(RpcCall::ListTransfers).await.unwrap();
+    let RpcValue::Transfers(jobs) = listed else {
+        panic!("jobs")
+    };
+    assert_eq!(jobs[0].job.id, job);
+    assert!(jobs[0].conflict.is_some());
+    let _ = &mut events2;
+
+    TransferService::resolve(&again, job.clone(), TransferResolution::Skip)
+        .await
+        .unwrap();
+    assert_eq!(
+        fake.resolutions.lock().unwrap().as_slice(),
+        &[(job, TransferResolution::Skip)]
+    );
+    fake.finish.notify_waiters();
+    host.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn routed_services_keep_app_and_daemon_sessions_apart_and_fall_back_on_failure() {
+    let remote = Fake::new();
+    let local = Fake::new();
+    local.jobs.store(10, Ordering::SeqCst);
+    let host = Harness::start(Some(remote.services())).await;
+    let (daemon, _bus) = proxy(&host).await;
+
+    let detached = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let daemon_ok = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let fallbacks = Arc::new(Mutex::new(Vec::<String>::new()));
+    let access = {
+        let (d1, d2, ok) = (daemon.clone(), daemon.clone(), daemon_ok.clone());
+        DaemonAccess {
+            peek: Arc::new(move || Some(d1.clone())),
+            connect: Arc::new(move |_| {
+                if ok.load(Ordering::SeqCst) {
+                    Ok(d2.clone())
+                } else {
+                    Err("helper missing".to_string())
+                }
+            }),
+        }
+    };
+    let routed = RoutedServices::new(
+        LocalServices {
+            connection: local.clone(),
+            pty: local.clone(),
+            remote_command: local.clone(),
+            remote_file: local.clone(),
+            tunnels: local.clone(),
+            sftp_session: local.clone(),
+            sftp_browser: local.clone(),
+            transfers: local.clone(),
+        },
+        access,
+        {
+            let detached = detached.clone();
+            Arc::new(move || detached.load(Ordering::SeqCst))
+        },
+        {
+            let fallbacks = fallbacks.clone();
+            Arc::new(move |why| fallbacks.lock().unwrap().push(why))
+        },
+    );
+
+    // App mode: the daemon is never asked.
+    let sink = Arc::new(Collect::default());
+    routed
+        .connect(request("tab-app", "host-1"), sink.clone())
+        .await
+        .unwrap();
+    assert!(local.sinks.lock().unwrap().contains_key("tab-app"));
+    assert!(remote.sinks.lock().unwrap().is_empty());
+
+    // Detached mode: the next connection lives in the daemon; the first
+    // stays where it was created.
+    detached.store(true, Ordering::SeqCst);
+    let sink2 = Arc::new(Collect::default());
+    routed
+        .connect(request("tab-det", "host-2"), sink2.clone())
+        .await
+        .unwrap();
+    assert!(remote.sinks.lock().unwrap().contains_key("tab-det"));
+    assert!(!local.sinks.lock().unwrap().contains_key("tab-det"));
+    eventually_text(&sink2, "ready").await;
+
+    routed
+        .write(SshSessionId::new("tab-app"), "L".into())
+        .await
+        .unwrap();
+    routed
+        .write(SshSessionId::new("tab-det"), "D".into())
+        .await
+        .unwrap();
+    assert_eq!(local.writes.lock().unwrap().concat(), "L");
+    eventually("daemon write", || {
+        remote.writes.lock().unwrap().concat() == "D"
+    })
+    .await;
+    assert!(routed.is_hosted("tab-det") && !routed.is_hosted("tab-app"));
+
+    // Transfer jobs follow the host of their ssh session.
+    let request_for = |tab: &str| TransferRequest {
+        session_id: tab.into(),
+        src_path: "/tmp/a".into(),
+        dest_path: "/remote/a".into(),
+        direction: TransferDirection::Upload,
+    };
+    let app_job = routed.enqueue(request_for("tab-app")).await.unwrap();
+    let det_job = routed.enqueue(request_for("tab-det")).await.unwrap();
+    assert_eq!((app_job.as_str(), det_job.as_str()), ("job-11", "job-1"));
+    routed
+        .resolve(det_job.clone(), TransferResolution::Skip)
+        .await
+        .unwrap();
+    routed
+        .resolve(app_job.clone(), TransferResolution::Overwrite)
+        .await
+        .unwrap();
+    assert_eq!(
+        remote.resolutions.lock().unwrap().as_slice(),
+        &[(det_job, TransferResolution::Skip)]
+    );
+    assert_eq!(
+        local.resolutions.lock().unwrap().as_slice(),
+        &[(app_job, TransferResolution::Overwrite)]
+    );
+
+    // An unusable daemon: reported once, the connection is app-bound.
+    daemon_ok.store(false, Ordering::SeqCst);
+    // `peek` still sees the daemon, but a new session id is not owned by it.
+    routed
+        .connect(request("tab-fb", "host-3"), Arc::new(Collect::default()))
+        .await
+        .unwrap();
+    assert!(local.sinks.lock().unwrap().contains_key("tab-fb"));
+    assert_eq!(fallbacks.lock().unwrap().as_slice(), ["helper missing"]);
     host.shutdown().await;
 }

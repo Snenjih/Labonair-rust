@@ -32,8 +32,9 @@ use std::time::Duration;
 use labonair_events::{EventBus, RawEvent};
 use labonair_sftp::{SftpBrowserService, SftpSessionHandle, SftpSessionService};
 use labonair_ssh::{
-    SharedSshEventSink, SshConnectRequest, SshConnectionService, SshEventSink, SshPtyService,
-    SshRemoteCommandService, SshRemoteFileService, SshSessionEvent, SshSessionId, SshTunnelService,
+    SharedSshEventSink, SshConnectRequest, SshConnectionService, SshEventSink, SshExecService,
+    SshPtyService, SshRemoteCommandService, SshRemoteFileService, SshSessionEvent, SshSessionId,
+    SshTunnelService,
 };
 use labonair_terminal_core::{TermDimensions, TerminalColors, TerminalEmulator};
 use labonair_transfers::{
@@ -82,6 +83,7 @@ pub struct HostServices {
     pub pty: Arc<dyn SshPtyService>,
     pub remote_command: Arc<dyn SshRemoteCommandService>,
     pub remote_file: Arc<dyn SshRemoteFileService>,
+    pub exec: Arc<dyn SshExecService>,
     pub tunnels: Arc<dyn SshTunnelService>,
     pub sftp_session: Arc<dyn SftpSessionService>,
     pub sftp_browser: Arc<dyn SftpBrowserService>,
@@ -762,6 +764,28 @@ async fn dispatch(
             None => unit(services.pty.resize(sid(session_id), cols, rows).await),
         },
 
+        RpcCall::SshExec {
+            session_id,
+            command,
+            stdin,
+        } => {
+            use base64::Engine as _;
+            let b64 = base64::engine::general_purpose::STANDARD;
+            let stdin = stdin
+                .map(|text| b64.decode(text))
+                .transpose()
+                .map_err(|_| invalid("stdin is not valid base64"))?;
+            let out = services
+                .exec
+                .exec(sid(session_id), command, stdin)
+                .await
+                .map_err(WireError::plain)?;
+            Ok(RpcValue::Exec {
+                stdout: b64.encode(out.stdout),
+                stderr: b64.encode(out.stderr),
+                exit_code: out.exit_code,
+            })
+        }
         RpcCall::SshChown {
             session_id,
             path,

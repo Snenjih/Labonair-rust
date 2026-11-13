@@ -854,6 +854,16 @@ pub enum RpcCall {
         rows: u32,
     },
 
+    /// One-shot command on an existing session (`SshExecService`): what remote
+    /// git, snippet runs and the MCP bridge need from the session map the app
+    /// cannot see. `stdin` is base64; written first, then EOF.
+    SshExec {
+        session_id: String,
+        command: String,
+        #[serde(default)]
+        stdin: Option<String>,
+    },
+
     // SshRemoteCommandService
     SshChown {
         session_id: String,
@@ -971,6 +981,12 @@ pub enum RpcValue {
     Tunnels(Vec<labonair_ssh::ActiveTunnel>),
     Transfers(Vec<WireTransferSnapshot>),
     SshSessions(Vec<SshSessionInfo>),
+    /// Reply to `SshExec`; `stdout` / `stderr` are base64.
+    Exec {
+        stdout: String,
+        stderr: String,
+        exit_code: i32,
+    },
 }
 
 /// A failed [`RpcCall`]. `code` is the `LabonairError` variant name when the

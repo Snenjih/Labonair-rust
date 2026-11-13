@@ -192,6 +192,48 @@ pub trait SshRemoteFileService: Send + Sync {
     ) -> BoxFuture<'a, Result<(), String>>;
 }
 
+/// Output of a one-shot remote command (a fresh exec channel; the interactive
+/// PTY is not disturbed).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SshExecOutput {
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    /// `-1` when the server never reported an exit status.
+    pub exit_code: i32,
+}
+
+/// Run a one-shot command on an existing SSH session, optionally feeding
+/// `stdin` first. Implemented in-process by `labonair-ssh-transport` and
+/// served by the detached session host for sessions it owns.
+pub trait SshExecService: Send + Sync {
+    fn exec<'a>(
+        &'a self,
+        session_id: SshSessionId,
+        command: String,
+        stdin: Option<Vec<u8>>,
+    ) -> BoxFuture<'a, Result<SshExecOutput, String>>;
+}
+
+/// Access to SSH sessions that live outside this process (the detached session
+/// host), for consumers that otherwise read the in-process session map:
+/// remote git, snippet runs and the MCP bridge. A consumer asks this first and
+/// falls back to its in-process path when [`Self::is_hosted`] is `false`, so
+/// app-bound sessions behave exactly as before.
+pub trait SshHostedAccess: Send + Sync {
+    /// Whether `session_id` is owned by the detached session host.
+    fn is_hosted(&self, session_id: &str) -> bool;
+
+    fn exec<'a>(
+        &'a self,
+        session_id: SshSessionId,
+        command: String,
+        stdin: Option<Vec<u8>>,
+    ) -> BoxFuture<'a, Result<SshExecOutput, String>>;
+
+    /// Live PTY output of a hosted session (the MCP `agent_tap`).
+    fn agent_tap(&self, session_id: &str) -> Option<tokio::sync::broadcast::Receiver<String>>;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SshTestResult {
     Success,

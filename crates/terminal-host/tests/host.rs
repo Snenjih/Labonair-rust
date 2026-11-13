@@ -285,6 +285,23 @@ async fn create_attach_echo_and_environment_is_exact() {
     host.shutdown().await;
 }
 
+/// A pane restored after its session died: the persisted history reaches the
+/// daemon in `CreateOptions.replay_scrollback` and shows above the new prompt.
+#[tokio::test]
+async fn replayed_scrollback_of_a_restored_pane_is_visible_after_attach() {
+    let host = Harness::start().await;
+    let mut client = host.client().await;
+    let id = client
+        .create(CreateOptions {
+            replay_scrollback: Some("OLD_HISTORY_LINE\r\n".into()),
+            ..sh()
+        })
+        .await;
+    client.attach(id, 80, 24).await;
+    client.wait_text("OLD_HISTORY_LINE").await;
+    host.shutdown().await;
+}
+
 #[tokio::test]
 async fn output_while_detached_shows_up_in_the_next_snapshot() {
     let host = Harness::start().await;

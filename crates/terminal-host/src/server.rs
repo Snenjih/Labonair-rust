@@ -1020,6 +1020,7 @@ impl State {
                 blocks: options.blocks,
                 startup_command: options.startup_command,
                 scrollback: Some(scrollback_lines),
+                replay_scrollback: options.replay_scrollback,
                 ..SessionOptions::default()
             },
             Arc::clone(&notify),
@@ -1213,6 +1214,10 @@ impl Conn {
             },
             Message::ListSessions => {
                 let mut sessions: Vec<_> = lock(&self.state.sessions).values().cloned().collect();
+                // SSH connections no pane owns (SFTP browsers, agent-opened
+                // tabs) are not terminals to offer for recovery; they are
+                // listed by `RpcCall::ListSshSessions`.
+                sessions.retain(|s| !matches!(s.source, Source::Ssh(_)) || s.pane_tag.is_some());
                 sessions.sort_by_key(|s| s.id);
                 self.outbox.push_control(&Message::Sessions {
                     sessions: sessions.iter().map(|s| s.info()).collect(),

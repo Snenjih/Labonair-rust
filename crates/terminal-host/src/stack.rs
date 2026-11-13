@@ -76,9 +76,15 @@ pub fn concrete_services() -> Result<HostServices, String> {
             Arc::clone(&secrets),
             events.clone(),
         )),
-        pty: Arc::new(SshPtyServiceAdapter::new(ssh)),
+        pty: Arc::new(SshPtyServiceAdapter::new(ssh.clone())),
         remote_command: remote.clone(),
         remote_file: remote,
+        exec: Arc::new(
+            labonair_ssh_transport::contract::SshExecServiceAdapter::new(
+                ssh.clone(),
+                events.clone(),
+            ),
+        ),
         tunnels: Arc::new(SshTunnelServiceAdapter::new(
             tunnels,
             db,

@@ -6,8 +6,9 @@ use labonair_events::{EventBus, EventChannel, RawEvent};
 use labonair_ssh::{
     ActiveTunnel, BoxFuture, ImportConflict, SharedSshEventSink, SshConfigEntry, SshConfigService,
     SshConnectRequest, SshConnectionEvent, SshConnectionService, SshConnectionTester,
-    SshEventReceiver, SshEventSource, SshPtyService, SshRemoteCommandService, SshRemoteFileService,
-    SshSessionEvent, SshSessionId, SshTestResult, SshTunnelService,
+    SshEventReceiver, SshEventSource, SshExecOutput, SshExecService, SshPtyService,
+    SshRemoteCommandService, SshRemoteFileService, SshSessionEvent, SshSessionId, SshTestResult,
+    SshTunnelService,
 };
 use serde::Deserialize;
 
@@ -126,6 +127,39 @@ pub struct SshRemoteServiceAdapter {
 impl SshRemoteServiceAdapter {
     pub fn new(state: super::SshState, events: EventBus) -> Self {
         Self { state, events }
+    }
+}
+
+/// One-shot remote command execution over an existing session.
+#[derive(Clone)]
+pub struct SshExecServiceAdapter {
+    state: super::SshState,
+    events: EventBus,
+}
+
+impl SshExecServiceAdapter {
+    pub fn new(state: super::SshState, events: EventBus) -> Self {
+        Self { state, events }
+    }
+}
+
+impl SshExecService for SshExecServiceAdapter {
+    fn exec<'a>(
+        &'a self,
+        session_id: SshSessionId,
+        command: String,
+        stdin: Option<Vec<u8>>,
+    ) -> BoxFuture<'a, Result<SshExecOutput, String>> {
+        Box::pin(async move {
+            super::exec::ssh_exec_raw(
+                &self.state,
+                &self.events,
+                session_id.as_str(),
+                command,
+                stdin,
+            )
+            .await
+        })
     }
 }
 

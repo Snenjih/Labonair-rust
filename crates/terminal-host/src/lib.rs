@@ -5,6 +5,8 @@
 pub mod client;
 pub mod protocol;
 #[cfg(unix)]
+pub mod proxy;
+#[cfg(unix)]
 pub mod server;
 #[cfg(unix)]
 pub mod spawn;

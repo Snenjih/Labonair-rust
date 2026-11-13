@@ -26,6 +26,8 @@ labonair-ssh = { path = "../ssh" }
 labonair-ssh-transport = { path = "../ssh-transport" }
 labonair-transfers = { path = "../transfers" }
 labonair-transfers-ssh = { path = "../transfers-ssh" }
+# `SshExec` carries raw command output / stdin as base64 inside the JSON control frame.
+base64 = "0.22"
 rusqlite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

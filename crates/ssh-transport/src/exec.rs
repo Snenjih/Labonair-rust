@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::sync::Arc;
 
 #[derive(Serialize)]
 pub struct ExecResult {
@@ -65,5 +66,75 @@ pub async fn ssh_exec_command(
         stdout,
         stderr,
         exit_code,
+    })
+}
+
+/// [`ExecResult`] with raw bytes, for the [`labonair_ssh::SshExecService`]
+/// contract: runs `command` on a fresh exec channel, optionally writing
+/// `stdin` first (EOF follows, so e.g. `git apply` sees the end of its patch).
+///
+/// A transport-level failure removes the dead session and reports
+/// `ssh_connection_lost`, like the remote git path does, so every surface
+/// reacts the same way to a dropped connection.
+pub async fn ssh_exec_raw(
+    state: &super::SshState,
+    events: &labonair_events::EventBus,
+    session_id: &str,
+    command: String,
+    stdin: Option<Vec<u8>>,
+) -> Result<labonair_ssh::SshExecOutput, String> {
+    let session = crate::get_session_arc!(state, session_id);
+    let run = async {
+        let mut channel = session
+            .handle
+            .channel_open_session()
+            .await
+            .map_err(|e| e.to_string())?;
+        channel
+            .exec(true, command)
+            .await
+            .map_err(|e| e.to_string())?;
+        if let Some(bytes) = stdin {
+            // Before the read loop: a reader like `git apply` blocks until EOF.
+            channel.data_bytes(bytes).await.map_err(|e| e.to_string())?;
+            channel.eof().await.map_err(|e| e.to_string())?;
+        }
+        let mut out = labonair_ssh::SshExecOutput {
+            exit_code: -1,
+            ..Default::default()
+        };
+        // `ExitStatus` arrives after `Eof`: only `wait() == None` ends the loop.
+        while let Some(msg) = channel.wait().await {
+            match msg {
+                russh::ChannelMsg::Data { data } => out.stdout.extend_from_slice(&data),
+                russh::ChannelMsg::ExtendedData { data, ext: 1 } => {
+                    out.stderr.extend_from_slice(&data)
+                }
+                russh::ChannelMsg::ExitStatus { exit_status } => out.exit_code = exit_status as i32,
+                _ => {}
+            }
+        }
+        Ok::<_, String>(out)
+    };
+    run.await.map_err(|error| {
+        if crate::net_error::is_network_error(&error) {
+            let removed = state.0.lock().is_ok_and(|mut map| {
+                match map.get(session_id) {
+                    // A reconnect may already have installed a fresh session.
+                    Some(current) if Arc::ptr_eq(current, &session) => {
+                        map.remove(session_id);
+                        true
+                    }
+                    _ => false,
+                }
+            });
+            if removed {
+                let _ = events.emit(
+                    "ssh_connection_lost",
+                    serde_json::json!({ "session_id": session_id, "reason": error }),
+                );
+            }
+        }
+        error
     })
 }
