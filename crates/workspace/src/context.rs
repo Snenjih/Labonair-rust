@@ -228,12 +228,21 @@ mod tests {
         assert_eq!(r(None, None, None, Some(t("/a"))), (Some(t("/a")), true));
         assert_eq!(r(None, None, None, None), (Some(t("/home")), true));
         // Project spaces stay on the project root by default.
-        assert_eq!(r(None, proj.clone(), Some(t("/a")), None), (Some(t("/proj")), false));
+        assert_eq!(
+            r(None, proj.clone(), Some(t("/a")), None),
+            (Some(t("/proj")), false)
+        );
         // Opt in to following, and pin at a path.
         let follow = ExplorerMode::Follow;
-        assert_eq!(r(Some(&follow), proj.clone(), Some(t("/a")), None), (Some(t("/a")), true));
+        assert_eq!(
+            r(Some(&follow), proj.clone(), Some(t("/a")), None),
+            (Some(t("/a")), true)
+        );
         let pinned = ExplorerMode::Pinned(Some(t("/pin")));
-        assert_eq!(r(Some(&pinned), None, Some(t("/a")), None), (Some(t("/pin")), false));
+        assert_eq!(
+            r(Some(&pinned), None, Some(t("/a")), None),
+            (Some(t("/pin")), false)
+        );
         // SSH panes follow even inside a project space.
         let ssh = ("/remote".to_string(), Some("s1".to_string()));
         assert_eq!(r(None, proj, Some(ssh.clone()), None), (Some(ssh), true));

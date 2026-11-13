@@ -166,7 +166,7 @@ impl Render for TerminalPreview {
         let settings = TerminalSettings::try_get(cx);
         let opacity_pct = settings.map_or(100, |s| s.terminal_opacity());
         let cursor_style = settings.map_or(CursorStyle::Bar, |s| s.cursor_style());
-        let cursor_blink = settings.map_or(true, |s| s.cursor_blink());
+        let cursor_blink = settings.is_none_or(|s| s.cursor_blink());
 
         let font_id = cx.text_system().resolve_font(&base_font);
         let cell_w = cx
