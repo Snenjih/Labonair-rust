@@ -20,3 +20,4 @@ labonair-command-palette-runtime = { path = "../command-palette-runtime" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
+gpui-component = { workspace = true }

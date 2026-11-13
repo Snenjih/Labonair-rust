@@ -17,8 +17,9 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, AppContext as _, ClickEvent, Context, DismissEvent, Entity, EventEmitter,
-    FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, KeyDownEvent, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
+    FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
+    MouseDownEvent, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
+    Subscription, Window,
 };
 
 use labonair_settings::content::workspace::PaletteSearchMode as ContentSearchMode;
@@ -1520,11 +1521,17 @@ where
             .track_focus(&palette_focus)
             .key_context("CommandPalette")
             .on_key_down(cx.listener(Self::on_key))
-            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                if close_on_overlay {
-                    this.close(cx);
-                }
-            }))
+            // Not `on_click`: the overlay tracks the (focused) input, and GPUI
+            // turns Enter/Space key-up on a focused clickable into a click, so
+            // picking a submenu row with Enter would close the palette again.
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _: &MouseDownEvent, _w, cx| {
+                    if close_on_overlay {
+                        this.close(cx);
+                    }
+                }),
+            )
             .child(
                 div()
                     .id("palette-card")
@@ -1693,5 +1700,92 @@ mod tests {
         ];
         let labels: std::collections::HashSet<_> = pages.iter().map(|p| p.label()).collect();
         assert_eq!(labels.len(), pages.len());
+    }
+
+    struct TestWorkspace;
+    impl PaletteWorkspace for TestWorkspace {
+        fn palette_active_context(&self, _: &App) -> Option<CommandContext> {
+            None
+        }
+        fn palette_tab_rows(&self, _: &App) -> Vec<PaletteTabRow> {
+            Vec::new()
+        }
+    }
+
+    #[gpui::test]
+    fn picking_a_submenu_row_only_navigates(cx: &mut gpui::TestAppContext) {
+        use std::{cell::RefCell, rc::Rc};
+        cx.update(gpui_component::init);
+        let theme = cx.new(|_| labonair_theme::ThemeStore::new(gpui::WindowAppearance::Dark));
+        let workspace = cx.new(|_| TestWorkspace);
+        let palette_cell = Rc::new(RefCell::new(None));
+        let (_root, cx) = cx.add_window_view({
+            let palette_cell = palette_cell.clone();
+            move |window, cx| {
+                let palette = cx.new(|cx| CommandPalette::new(theme, workspace, cx));
+                *palette_cell.borrow_mut() = Some(palette.clone());
+                gpui_component::Root::new(palette, window, cx)
+            }
+        });
+        let palette = palette_cell.borrow().clone().unwrap();
+        let events = Rc::new(RefCell::new(Vec::new()));
+        cx.update(|_, cx| {
+            let events = events.clone();
+            cx.subscribe(&palette, move |_, e: &PaletteEvent, _| {
+                events.borrow_mut().push(format!("{e:?}"))
+            })
+            .detach();
+        });
+        let mut submenus = SubmenuRegistry::default();
+        submenus
+            .register(labonair_command_palette_core::SubmenuSnapshot {
+                descriptor: labonair_command_palette_core::SubmenuDescriptor::new(
+                    "t",
+                    "T",
+                    CommandSubmenu::ColorMode,
+                ),
+                items: vec![SubmenuItem {
+                    id: "dark".into(),
+                    title: "Dark".into(),
+                    subtitle: None,
+                    active: false,
+                    action: SubmenuAction::SetColorMode("dark".into()),
+                    secondary: None,
+                }],
+            })
+            .unwrap();
+        let data = PaletteData {
+            commands: vec![Command::from_descriptor(
+                CommandDescriptor::new(CommandId::NewTerminalTab, "Color Mode", "Theme")
+                    .with_submenu(CommandSubmenu::ColorMode),
+            )],
+            submenus,
+        };
+        palette.update_in(cx, |p, w, cx| {
+            p.set_data(data);
+            p.open(w, cx);
+        });
+        cx.run_until_parked();
+        let is_pick = |e: &String| !e.contains("Preview");
+        palette.update_in(cx, |p, w, cx| p.open(w, cx));
+        cx.run_until_parked();
+        events.borrow_mut().clear();
+        cx.simulate_click(gpui::point(px(900.0), px(160.0)), gpui::Modifiers::none());
+        cx.run_until_parked();
+        let (open, pages) = palette.read_with(cx, |p, _| (p.open, p.pages.clone()));
+        assert!(open && pages == [Page::Root, Page::ColorMode]);
+        assert!(!events.borrow().iter().any(is_pick));
+
+        palette.update_in(cx, |p, w, cx| p.open(w, cx));
+        cx.run_until_parked();
+        events.borrow_mut().clear();
+        cx.simulate_keystrokes("enter");
+        cx.simulate_event(gpui::KeyUpEvent {
+            keystroke: gpui::Keystroke::parse("enter").unwrap(),
+        });
+        cx.run_until_parked();
+        let (open, pages) = palette.read_with(cx, |p, _| (p.open, p.pages.clone()));
+        assert!(open && pages == [Page::Root, Page::ColorMode]);
+        assert!(!events.borrow().iter().any(is_pick));
     }
 }
