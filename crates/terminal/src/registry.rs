@@ -34,7 +34,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use crate::engine::{TermDimensions, TerminalEvent};
-use crate::host::{InProcessHost, SessionHost};
+use crate::host::{HostedLink, HostedSession, InProcessHost, SessionHost};
 use crate::session::{
     ForegroundProcess, RemoteFeed, RemoteResizer, RemoteSession, RemoteWriter, SessionAccess,
     SessionOptions, TerminalSession,
@@ -51,63 +51,81 @@ pub enum SessionBackend {
     /// A session living in the detached session host daemon (ADR 0009). It
     /// reuses the [`RemoteSession`] / [`RemoteFeed`] seam: the host client
     /// pumps daemon output into the feed and forwards writes/resizes.
-    Hosted(RemoteSession),
+    Hosted(HostedSession),
 }
 
 impl SessionBackend {
     fn write(&self, bytes: &[u8]) -> Result<(), String> {
         match self {
             SessionBackend::Local(s) => s.write(bytes),
-            SessionBackend::Remote(s) | SessionBackend::Hosted(s) => s.write(bytes),
+            SessionBackend::Remote(s) => s.write(bytes),
+            SessionBackend::Hosted(s) => s.remote.write(bytes),
         }
     }
 
     fn resize(&mut self, dimensions: TermDimensions) -> Result<(), String> {
         match self {
             SessionBackend::Local(s) => s.resize(dimensions),
-            SessionBackend::Remote(s) | SessionBackend::Hosted(s) => s.resize(dimensions),
+            SessionBackend::Remote(s) => s.resize(dimensions),
+            SessionBackend::Hosted(s) => s.remote.resize(dimensions),
         }
     }
 
     fn set_colors(&self, colors: TerminalColors) -> Result<(), String> {
         match self {
             SessionBackend::Local(s) => s.set_colors(colors),
-            SessionBackend::Remote(s) | SessionBackend::Hosted(s) => s.set_colors(colors),
+            SessionBackend::Remote(s) => s.set_colors(colors),
+            SessionBackend::Hosted(s) => s.remote.set_colors(colors),
         }
     }
 
     fn drain_events(&self) -> Vec<TerminalEvent> {
         match self {
             SessionBackend::Local(s) => s.drain_events(),
-            SessionBackend::Remote(s) | SessionBackend::Hosted(s) => s.drain_events(),
+            SessionBackend::Remote(s) => s.drain_events(),
+            SessionBackend::Hosted(s) => s.remote.drain_events(),
         }
     }
 
     fn has_foreground_job(&self) -> bool {
         match self {
             SessionBackend::Local(s) => s.has_foreground_job(),
-            SessionBackend::Remote(_) | SessionBackend::Hosted(_) => false,
+            SessionBackend::Remote(_) => false,
+            SessionBackend::Hosted(s) => s.control.foreground().is_some(),
         }
     }
 
     fn foreground_process(&self) -> Option<ForegroundProcess> {
         match self {
             SessionBackend::Local(s) => s.foreground_process(),
-            SessionBackend::Remote(_) | SessionBackend::Hosted(_) => None,
+            SessionBackend::Remote(_) => None,
+            SessionBackend::Hosted(s) => s.control.foreground(),
         }
     }
 
+    /// Closing the session's tab: hang up a local shell, stop a hosted one.
     fn terminate(&self) {
         match self {
             SessionBackend::Local(s) => s.terminate(),
-            SessionBackend::Remote(_) | SessionBackend::Hosted(_) => {}
+            SessionBackend::Remote(_) => {}
+            SessionBackend::Hosted(s) => s.control.kill(),
+        }
+    }
+
+    /// The app is going away: hosted sessions keep running in the daemon,
+    /// everything else is terminated as on close.
+    fn release(&self) {
+        match self {
+            SessionBackend::Hosted(s) => s.control.detach(),
+            other => other.terminate(),
         }
     }
 
     fn access(&self) -> &dyn SessionAccess {
         match self {
             SessionBackend::Local(s) => s,
-            SessionBackend::Remote(s) | SessionBackend::Hosted(s) => s,
+            SessionBackend::Remote(s) => s,
+            SessionBackend::Hosted(s) => &s.remote,
         }
     }
 
@@ -117,8 +135,10 @@ impl SessionBackend {
                 .with_emulator(|e| e.serialize_scrollback(max_lines))
                 .ok()
                 .filter(|t| !t.trim().is_empty()),
+            // The hosted pane's local emulator holds the full history.
+            SessionBackend::Hosted(s) => s.remote.serialize_scrollback(max_lines),
             // Remote (SSH) panes are not persisted with scrollback.
-            SessionBackend::Remote(_) | SessionBackend::Hosted(_) => None,
+            SessionBackend::Remote(_) => None,
         }
     }
 
@@ -254,9 +274,44 @@ impl SessionHandle {
     }
 
     /// The foreground job (other than the shell) and its process name, for
-    /// local sessions only — remote and hosted sessions report `None`.
+    /// local and hosted sessions — remote (SSH) sessions report `None`.
     pub fn foreground_process(&self) -> Option<ForegroundProcess> {
         self.slot.session.lock().unwrap().foreground_process()
+    }
+
+    /// The daemon's id of this session, when it is hosted.
+    pub fn host_session_id(&self) -> Option<u64> {
+        match &*self.slot.session.lock().unwrap() {
+            SessionBackend::Hosted(s) => Some(s.control.host_session_id()),
+            _ => None,
+        }
+    }
+
+    /// Whether the session lives in the detached session host.
+    pub fn is_hosted(&self) -> bool {
+        matches!(
+            &*self.slot.session.lock().unwrap(),
+            SessionBackend::Hosted(_)
+        )
+    }
+
+    /// Link state of a hosted session (`None` for every other kind).
+    pub fn hosted_link(&self) -> Option<HostedLink> {
+        match &*self.slot.session.lock().unwrap() {
+            SessionBackend::Hosted(s) => Some(s.control.link()),
+            _ => None,
+        }
+    }
+
+    /// Reattach a hosted session after [`HostedLink::Stolen`] or
+    /// [`HostedLink::HostLost`].
+    pub fn reattach(&self) -> Result<(), String> {
+        let control = match &*self.slot.session.lock().unwrap() {
+            SessionBackend::Hosted(s) => Arc::clone(&s.control),
+            _ => return Err("not a hosted session".to_string()),
+        };
+        // Outside the slot lock: this may wait on the daemon.
+        control.reattach()
     }
 
     /// Respawn the shell in place after it exited, reusing the original options
@@ -417,11 +472,18 @@ impl TerminalRegistry {
         }
     }
 
-    /// Terminate and unregister every session.
+    /// Terminate and unregister every session. Hosted sessions are only
+    /// detached: they keep running in the daemon.
     pub fn close_all(&self) {
-        let ids = self.ids();
-        for id in ids {
-            self.close(id);
+        let slots: Vec<_> = self
+            .sessions
+            .write()
+            .unwrap()
+            .drain()
+            .map(|(_, slot)| slot)
+            .collect();
+        for slot in slots {
+            slot.session.lock().unwrap().release();
         }
     }
 }
@@ -593,6 +655,97 @@ mod tests {
         let text = wait_for(&h, Duration::from_secs(5), |t| t.contains("REBORN"));
         assert!(text.contains("REBORN"), "restarted shell dead:\n{text}");
         reg.close(id);
+    }
+
+    /// A hosted backend with no daemon behind it, counting what the registry
+    /// asks of its control surface.
+    #[derive(Default)]
+    struct CountingControl {
+        kills: std::sync::atomic::AtomicUsize,
+        detaches: std::sync::atomic::AtomicUsize,
+    }
+
+    impl crate::host::HostedControl for CountingControl {
+        fn host_session_id(&self) -> u64 {
+            42
+        }
+        fn link(&self) -> HostedLink {
+            HostedLink::Live
+        }
+        fn reattach(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn foreground(&self) -> Option<ForegroundProcess> {
+            None
+        }
+        fn kill(&self) {
+            self.kills.fetch_add(1, Ordering::SeqCst);
+        }
+        fn detach(&self) {
+            self.detaches.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    struct FakeHostedHost(Arc<CountingControl>);
+
+    impl SessionHost for FakeHostedHost {
+        fn create_session(
+            &self,
+            colors: TerminalColors,
+            dimensions: TermDimensions,
+            _options: SessionOptions,
+            event_notify: Arc<tokio::sync::Notify>,
+        ) -> Result<SessionBackend, String> {
+            let (remote, _feed) = RemoteSession::new_with_notifier(
+                colors,
+                dimensions,
+                Arc::new(|_| {}),
+                Arc::new(|_, _| {}),
+                event_notify,
+            );
+            Ok(SessionBackend::Hosted(HostedSession::new(
+                remote,
+                self.0.clone(),
+            )))
+        }
+    }
+
+    #[test]
+    fn closing_a_tab_kills_a_hosted_session_but_quitting_only_detaches() {
+        use std::sync::atomic::Ordering::SeqCst;
+
+        let control = Arc::new(CountingControl::default());
+        let host = FakeHostedHost(control.clone());
+        let reg = TerminalRegistry::new();
+
+        // Close tab: kill.
+        let id = reg
+            .create_with_host(&host, colors(), dims(), sh(None))
+            .unwrap();
+        let handle = reg.handle(id).unwrap();
+        assert!(handle.is_hosted());
+        assert_eq!(handle.host_session_id(), Some(42));
+        assert_eq!(handle.hosted_link(), Some(HostedLink::Live));
+        reg.close(id);
+        assert_eq!(
+            (control.kills.load(SeqCst), control.detaches.load(SeqCst)),
+            (1, 0)
+        );
+
+        // Quit with a hosted and an app-bound session side by side: the hosted
+        // one detaches, the app-bound one is terminated as before.
+        let hosted = reg
+            .create_with_host(&host, colors(), dims(), sh(None))
+            .unwrap();
+        let local = reg.create(colors(), dims(), sh(None)).unwrap();
+        assert!(!reg.handle(local).unwrap().is_hosted());
+        reg.close_all();
+        assert!(reg.is_empty());
+        assert!(reg.handle(hosted).is_none() && reg.handle(local).is_none());
+        assert_eq!(
+            (control.kills.load(SeqCst), control.detaches.load(SeqCst)),
+            (1, 1)
+        );
     }
 
     #[test]

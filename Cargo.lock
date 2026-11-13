@@ -4843,6 +4843,7 @@ dependencies = [
  "labonair-command-palette-core",
  "labonair-command-palette-runtime",
  "labonair-terminal-core",
+ "labonair-terminal-host",
  "labonair-theme",
  "tokio",
  "uuid",

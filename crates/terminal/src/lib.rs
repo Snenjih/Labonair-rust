@@ -4,6 +4,7 @@
 //! * [`engine`] — render-free VTE emulation core (T03-001).
 //! * [`session`] — local PTY-backed terminal sessions (T03-001).
 //! * [`host`] — session-creation seam ([`SessionHost`]) for the detached host.
+//! * [`daemon_host`] — the [`SessionHost`] that talks to the detached host daemon.
 //! * [`registry`] — multi-session registry + tab-system seam (T03-005).
 //! * [`input`] — keyboard/mouse → terminal byte-sequence mapping (T03-003).
 //! * [`shell_integration`] — OSC 7 / OSC 133 shell-integration rc-file bootstrap
@@ -13,6 +14,7 @@
 //!   renderer (T03-002). The GPUI element itself lives in `labonair-ui`.
 
 pub mod command_provider;
+pub mod daemon_host;
 pub mod host;
 pub mod input;
 pub mod palette;
@@ -25,12 +27,15 @@ pub mod resume;
 // re-exported so every `labonair_terminal::{engine, session, ...}` path holds.
 pub use labonair_terminal_core::{engine, scrollback, session, shell_integration};
 
+pub use daemon_host::{DaemonHost, HostState};
 pub use engine::{
     EmulatorConfig, ModeState, PromptPhase, RenderableCell, RenderableCursor, RenderableScreen,
     SelectionSpan, SessionMetadata, TermDimensions, TerminalEmulator, TerminalEvent,
     DEFAULT_SCROLLBACK_LINES,
 };
-pub use host::{InProcessHost, SessionHost};
+pub use host::{
+    BackgroundSession, HostedControl, HostedLink, HostedSession, InProcessHost, SessionHost,
+};
 pub use input::{
     key_to_bytes, mouse_report, paste_payload, wheel_action, Key, KeyInput, Modifiers, MouseButton,
     MouseEventKind, MouseInput, NamedKey, WheelAction, WheelInput,
