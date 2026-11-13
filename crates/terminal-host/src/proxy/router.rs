@@ -601,6 +601,19 @@ impl SshHostedAccess for RoutedServices {
         })
     }
 
+    fn write_pty<'a>(
+        &'a self,
+        session_id: SshSessionId,
+        data: String,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            match self.route(session_id.as_str()) {
+                Route::Daemon(daemon) => SshPtyService::write(&daemon, session_id, data).await,
+                Route::Local => Err("the session is not hosted by the background host".into()),
+            }
+        })
+    }
+
     fn agent_tap(&self, session_id: &str) -> Option<tokio::sync::broadcast::Receiver<String>> {
         match self.route(session_id) {
             Route::Daemon(daemon) => daemon.agent_tap(session_id),

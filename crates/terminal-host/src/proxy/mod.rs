@@ -790,6 +790,14 @@ impl SshHostedAccess for DaemonServices {
         })
     }
 
+    fn write_pty<'a>(
+        &'a self,
+        session_id: SshSessionId,
+        data: String,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        SshPtyService::write(self, session_id, data)
+    }
+
     fn agent_tap(&self, session_id: &str) -> Option<tokio::sync::broadcast::Receiver<String>> {
         self.session(session_id).map(|s| s.tap.subscribe())
     }

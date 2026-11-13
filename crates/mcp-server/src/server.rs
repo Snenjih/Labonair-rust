@@ -30,6 +30,10 @@ async fn write_to_ssh_session(
     session_id: &str,
     data: String,
 ) -> Result<(), String> {
+    if let Some(result) = labonair_ssh_transport::hosted::try_write(session_id, data.clone()).await
+    {
+        return result;
+    }
     let session = labonair_ssh_transport::get_session_arc!(ssh, session_id);
     let write_half = {
         let guard = session.pty.lock().await;
@@ -222,6 +226,20 @@ impl LabonairMcpServer {
             mcp_state,
         }
     }
+
+    /// The live PTY output of an SSH session: the in-process transport's tap,
+    /// or the client-side stream of a session the detached host owns.
+    fn ssh_tap(
+        &self,
+        session_id: &str,
+    ) -> Result<tokio::sync::broadcast::Receiver<String>, String> {
+        if let Some(tap) = labonair_ssh_transport::hosted::agent_tap(session_id) {
+            return Ok(tap);
+        }
+        let ssh_state = &self.access.ssh;
+        let session = labonair_ssh_transport::get_session_arc!(ssh_state, session_id);
+        Ok(session.agent_tap.subscribe())
+    }
 }
 
 #[tool_router]
@@ -270,10 +288,7 @@ impl LabonairMcpServer {
         let mut local_rx = None;
         match grant.kind {
             SessionKind::Ssh => {
-                let ssh_state = &self.access.ssh;
-                let session =
-                    labonair_ssh_transport::get_session_arc!(ssh_state, &params.session_id);
-                ssh_rx = Some(session.agent_tap.subscribe());
+                ssh_rx = Some(self.ssh_tap(&params.session_id)?);
             }
             SessionKind::Local => {
                 local_rx = Some(self.access.local_terminal.subscribe(&grant.session_id)?);
@@ -367,10 +382,7 @@ impl LabonairMcpServer {
         let mut local_rx = None;
         match grant.kind {
             SessionKind::Ssh => {
-                let ssh_state = &self.access.ssh;
-                let session =
-                    labonair_ssh_transport::get_session_arc!(ssh_state, &params.session_id);
-                ssh_rx = Some(session.agent_tap.subscribe());
+                ssh_rx = Some(self.ssh_tap(&params.session_id)?);
             }
             SessionKind::Local => {
                 local_rx = Some(self.access.local_terminal.subscribe(&grant.session_id)?);

@@ -230,6 +230,13 @@ pub trait SshHostedAccess: Send + Sync {
         stdin: Option<Vec<u8>>,
     ) -> BoxFuture<'a, Result<SshExecOutput, String>>;
 
+    /// Type `data` into the interactive PTY of a hosted session (the MCP bridge).
+    fn write_pty<'a>(
+        &'a self,
+        session_id: SshSessionId,
+        data: String,
+    ) -> BoxFuture<'a, Result<(), String>>;
+
     /// Live PTY output of a hosted session (the MCP `agent_tap`).
     fn agent_tap(&self, session_id: &str) -> Option<tokio::sync::broadcast::Receiver<String>>;
 }

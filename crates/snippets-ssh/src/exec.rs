@@ -20,6 +20,9 @@ use labonair_events::EventBus;
 pub struct SnippetRunState {
     ssh: RwLock<HashMap<String, Arc<russh::ChannelWriteHalf<russh::client::Msg>>>>,
     cancelled: RwLock<HashSet<String>>,
+    /// Runs on sessions owned by the detached session host: one request, the
+    /// output arrives when the command ends, and there is no channel to close.
+    hosted: RwLock<HashSet<String>>,
 }
 
 /// SSH implementation of the snippets capability's execution contract. The
@@ -75,6 +78,12 @@ impl SshCommandExecutor for SshSnippetExecutor {
 /// The standalone local runner owns its process registry and signals the
 /// process directly by PID. This adapter only selects the local or SSH path.
 pub async fn snippet_run_cancel(run_id: String, state: &SnippetRunState) -> Result<(), String> {
+    if state.hosted.read().unwrap().contains(&run_id) {
+        return Err(
+            "This snippet runs on a session in the background host and cannot be cancelled"
+                .to_string(),
+        );
+    }
     let ssh_write_half = state.ssh.read().unwrap().get(&run_id).cloned();
     if let Some(write_half) = ssh_write_half {
         // Same natural-completion race as the local path: only mark
@@ -153,6 +162,9 @@ async fn run_ssh_with_sink(
     run_state: Arc<SnippetRunState>,
     sink: SnippetRunEventSink,
 ) -> Result<(), String> {
+    if labonair_ssh_transport::hosted::for_session(&session_id).is_some() {
+        return run_hosted_with_sink(run_id, session_id, command, run_state, sink).await;
+    }
     let session = labonair_ssh_transport::get_session_arc!(&ssh_state, &session_id);
     let channel = session
         .handle
@@ -198,6 +210,40 @@ async fn run_ssh_with_sink(
         run_id,
         exit_code,
         cancelled,
+    });
+    Ok(())
+}
+
+/// Run on a session the detached host owns: the daemon answers once the
+/// command ended, so stdout and stderr are reported then, not as they arrive.
+async fn run_hosted_with_sink(
+    run_id: String,
+    session_id: String,
+    command: String,
+    run_state: Arc<SnippetRunState>,
+    sink: SnippetRunEventSink,
+) -> Result<(), String> {
+    run_state.hosted.write().unwrap().insert(run_id.clone());
+    let result = labonair_ssh_transport::hosted::try_exec(&session_id, command, None).await;
+    run_state.hosted.write().unwrap().remove(&run_id);
+    let (stdout, stderr, exit_code) =
+        result.ok_or_else(|| "the SSH session is no longer hosted".to_string())??;
+    for (data, stream) in [
+        (stdout, OutputStream::Stdout),
+        (stderr, OutputStream::Stderr),
+    ] {
+        if !data.is_empty() {
+            sink(SnippetRunEvent::Output {
+                run_id: run_id.clone(),
+                data: String::from_utf8_lossy(&data).into_owned(),
+                stream,
+            });
+        }
+    }
+    sink(SnippetRunEvent::Done {
+        run_id,
+        exit_code,
+        cancelled: false,
     });
     Ok(())
 }

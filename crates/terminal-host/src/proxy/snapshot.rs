@@ -115,6 +115,21 @@ pub fn build(
     Ok(snapshot)
 }
 
+/// Record a successful connect in the app's hosts table (the recents order),
+/// which the in-process transport does itself.
+pub fn record_connected(db: &Database, host_id: &str) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    if let Ok(conn) = db.0.lock() {
+        let _ = conn.execute(
+            "UPDATE hosts SET last_connected_at = ?1 WHERE id = ?2",
+            params![now, host_id],
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

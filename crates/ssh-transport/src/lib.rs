@@ -10,6 +10,7 @@ pub mod client;
 pub mod config_parser;
 pub mod contract;
 pub mod exec;
+pub mod hosted;
 pub mod net_error;
 pub mod pty;
 pub mod sftp;

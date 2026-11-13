@@ -448,6 +448,9 @@ async fn run_remote_script(
     session_id: &str,
     script: &str,
 ) -> Result<(Vec<u8>, Vec<u8>, i32), String> {
+    if let Some(result) = run_hosted_script(session_id, script, None).await {
+        return result;
+    }
     let emit_connection_lost = |reason: &str| {
         let _ = events.emit(
             "ssh_connection_lost",
@@ -559,6 +562,9 @@ async fn run_remote_script_with_stdin(
     script: &str,
     stdin_bytes: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>, i32), String> {
+    if let Some(result) = run_hosted_script(session_id, script, Some(stdin_bytes.to_vec())).await {
+        return result;
+    }
     let emit_connection_lost = |reason: &str| {
         let _ = events.emit(
             "ssh_connection_lost",
@@ -654,6 +660,31 @@ async fn run_remote_script_with_stdin(
         return exec_via("sh", "-c").await.map_err(report_and_pass);
     }
     Ok(attempt)
+}
+
+/// A session owned by the detached session host cannot be reached through the
+/// in-process session map: run the script through the host, with the same
+/// `bash -lc` then `sh -c` fallback. `None` = not a hosted session.
+async fn run_hosted_script(
+    session_id: &str,
+    script: &str,
+    stdin: Option<Vec<u8>>,
+) -> Option<Result<(Vec<u8>, Vec<u8>, i32), String>> {
+    let via = |shell: &str, flag: &str| format!("{shell} {flag} {}", shell_quote(script));
+    let attempt = match labonair_ssh_transport::hosted::try_exec(
+        session_id,
+        via("bash", "-lc"),
+        stdin.clone(),
+    )
+    .await?
+    {
+        Ok(attempt) => attempt,
+        Err(error) => return Some(Err(error)),
+    };
+    if attempt.2 == 127 && shell_missing(&attempt.1, "bash") {
+        return labonair_ssh_transport::hosted::try_exec(session_id, via("sh", "-c"), stdin).await;
+    }
+    Some(Ok(attempt))
 }
 
 /// Best-effort heuristic: does stderr look like the *shell itself* (not
