@@ -1003,8 +1003,46 @@ where
         }
     }
 
+    /// The rows as displayed, with an optional "Recently Used" group prepended
+    /// on Root. `selected` indexes into this list, so every consumer of it
+    /// (render, run, key navigation) must use this rather than `rows`.
+    fn visible_rows(&self, cx: &App) -> Vec<PaletteRow> {
+        let mut rows = Vec::new();
+        let show_recent = palette_show_recent(cx);
+        let page = self.page();
+        if page == Page::Root && self.query.is_empty() && show_recent && !self.recent.is_empty() {
+            let ctx = self.active_context(cx);
+            let display = palette_keybind_display(cx);
+            let avail: std::collections::HashSet<CommandId> = available(&self.data.commands, ctx)
+                .into_iter()
+                .map(|c| c.id)
+                .collect();
+            for id in self.recent.iter().copied().filter(|id| avail.contains(id)) {
+                let Some(c) = command(&self.data.commands, id) else {
+                    continue;
+                };
+                rows.push(PaletteRow {
+                    key: c
+                        .sub_page
+                        .map(RowKey::Navigate)
+                        .unwrap_or(RowKey::Command(id)),
+                    secondary: None,
+                    icon: Some(c.icon),
+                    title: c.title.to_string(),
+                    subtitle: None,
+                    section: "Recently Used".to_string(),
+                    keys: command_key_tokens(c, &display),
+                    right_label: None,
+                    has_sub: c.sub_page.is_some(),
+                });
+            }
+        }
+        rows.extend(self.rows(cx));
+        rows
+    }
+
     fn run_selected(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        let rows = self.rows(cx);
+        let rows = self.visible_rows(cx);
         let Some(key) = rows.get(self.selected).map(|r| r.key.clone()) else {
             return;
         };
@@ -1013,7 +1051,7 @@ where
 
     /// `Shift+Enter` — run the selected row's secondary action, if it has one.
     fn run_secondary(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let rows = self.rows(cx);
+        let rows = self.visible_rows(cx);
         let Some(sec) = rows.get(self.selected).and_then(|r| r.secondary.clone()) else {
             return;
         };
@@ -1116,7 +1154,10 @@ where
             return;
         }
         let ks = &ev.keystroke;
-        let len = self.rows(cx).len();
+        let len = self.visible_rows(cx).len();
+        // Only keys the palette consumes stop propagation; everything else must
+        // reach the focused text field's input handler or typing is swallowed.
+        let mut handled = true;
         match ks.key.as_str() {
             "escape" => {
                 if !self.query.is_empty() {
@@ -1145,12 +1186,14 @@ where
             "backspace" if self.query.is_empty() && self.pages.len() > 1 => {
                 self.go_back(window, cx);
             }
-            _ => {}
+            _ => handled = false,
         }
         if self.open {
             self.sync_theme_preview(cx);
         }
-        cx.stop_propagation();
+        if handled {
+            cx.stop_propagation();
+        }
     }
 
     fn cycle_search_mode(&mut self, cx: &mut Context<Self>) {
@@ -1201,7 +1244,6 @@ where
 
         let opacity = (palette_opacity(cx) as f32 / 100.0).clamp(0.35, 1.0);
         let position = palette_position(cx);
-        let show_recent = palette_show_recent(cx);
         let close_on_overlay = palette_close_on_overlay_click(cx);
         let mode = self.search_mode(cx);
 
@@ -1220,38 +1262,7 @@ where
         let sel_fill = t.selected_fill();
         let hover_fill = t.accent();
 
-        let page = self.page();
-
-        // Rows, with an optional "Recently Used" group prepended on Root.
-        let mut rows = Vec::new();
-        if page == Page::Root && self.query.is_empty() && show_recent && !self.recent.is_empty() {
-            let ctx = self.active_context(cx);
-            let display = palette_keybind_display(cx);
-            let avail: std::collections::HashSet<CommandId> = available(&self.data.commands, ctx)
-                .into_iter()
-                .map(|c| c.id)
-                .collect();
-            for id in self.recent.iter().copied().filter(|id| avail.contains(id)) {
-                let Some(c) = command(&self.data.commands, id) else {
-                    continue;
-                };
-                rows.push(PaletteRow {
-                    key: c
-                        .sub_page
-                        .map(RowKey::Navigate)
-                        .unwrap_or(RowKey::Command(id)),
-                    secondary: None,
-                    icon: Some(c.icon),
-                    title: c.title.to_string(),
-                    subtitle: None,
-                    section: "Recently Used".to_string(),
-                    keys: command_key_tokens(c, &display),
-                    right_label: None,
-                    has_sub: c.sub_page.is_some(),
-                });
-            }
-        }
-        rows.extend(self.rows(cx));
+        let rows = self.visible_rows(cx);
         let result_count = rows
             .iter()
             .filter(|r| !matches!(r.key, RowKey::Noop))
