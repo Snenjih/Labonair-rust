@@ -1,6 +1,6 @@
-//! The onboarding page: a scrollable column with one section per registered
-//! step and a Finish / Skip pair in the header, in the shape of Zed's
-//! onboarding page. The shell hosts it as a workspace tab.
+//! The onboarding page: one registered step per page, with Back / Next /
+//! Finish in a footer and Skip in the header, in the shape of Zed's onboarding
+//! page. The shell hosts it as a workspace tab.
 //!
 //! Finishing runs the steps' deferred work (the host import); skipping does
 //! not. Either way every shown step counts as seen and the page asks its host
@@ -44,6 +44,7 @@ pub struct OnboardingView {
     steps: Vec<BuiltStep>,
     progress: OnboardingProgress,
     progress_path: PathBuf,
+    page: usize,
 }
 
 impl OnboardingView {
@@ -76,6 +77,7 @@ impl OnboardingView {
             steps,
             progress,
             progress_path,
+            page: 0,
         }
     }
 
@@ -109,40 +111,66 @@ impl Render for OnboardingView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let c = Palette::from_theme(self.theme.read(cx));
 
+        let last = self.page + 1 >= self.steps.len();
         let skip = button("onboarding-skip", c, ButtonVariant::Subtle, ButtonSize::Sm)
             .child("Skip")
             .on_click(cx.listener(|this, _, _window, cx| this.close(false, cx)));
-        let finish = button(
-            "onboarding-finish",
-            c,
-            ButtonVariant::Action,
-            ButtonSize::Sm,
-        )
-        .child("Finish setup")
-        .on_click(cx.listener(|this, _, _window, cx| this.close(true, cx)));
 
-        let header =
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .gap(c.space(16.0))
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(c.space(4.0))
-                        .child(
-                            div()
-                                .text_size(px(22.0))
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .child("Welcome to Labonair"),
-                        )
-                        .child(div().text_sm().text_color(c.muted).child(
-                            "Set up the basics. You can change all of this later in Settings.",
-                        )),
-                )
-                .child(div().flex().gap(c.space(8.0)).child(skip).child(finish));
+        let header = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(c.space(16.0))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(c.space(4.0))
+                    .child(
+                        div()
+                            .text_size(px(22.0))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("Welcome to Labonair"),
+                    )
+                    .child(div().text_sm().text_color(c.muted).child(
+                        "Set up the basics. You can change all of this later in Settings.",
+                    )),
+            )
+            .child(skip);
+
+        let mut footer = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .child(div().text_sm().text_color(c.muted).child(format!(
+                "Step {} of {}",
+                self.page + 1,
+                self.steps.len()
+            )));
+        let mut nav = div().flex().gap(c.space(8.0));
+        if self.page > 0 {
+            nav = nav.child(
+                button("onboarding-back", c, ButtonVariant::Subtle, ButtonSize::Sm)
+                    .child("Back")
+                    .on_click(cx.listener(|this, _, _window, cx| {
+                        this.page = this.page.saturating_sub(1);
+                        cx.notify();
+                    })),
+            );
+        }
+        nav = nav.child(if last {
+            button("onboarding-finish", c, ButtonVariant::Action, ButtonSize::Sm)
+                .child("Finish setup")
+                .on_click(cx.listener(|this, _, _window, cx| this.close(true, cx)))
+        } else {
+            button("onboarding-next", c, ButtonVariant::Action, ButtonSize::Sm)
+                .child("Next")
+                .on_click(cx.listener(|this, _, _window, cx| {
+                    this.page += 1;
+                    cx.notify();
+                }))
+        });
+        footer = footer.child(nav);
 
         let mut column = div()
             .w_full()
@@ -153,7 +181,7 @@ impl Render for OnboardingView {
             .flex_col()
             .gap(c.space(24.0))
             .child(header);
-        for step in &self.steps {
+        if let Some(step) = self.steps.get(self.page) {
             column = column
                 .child(divider(Axis::Horizontal, c.line_subtle))
                 .child(
@@ -179,6 +207,9 @@ impl Render for OnboardingView {
                         .child(step.view.clone()),
                 );
         }
+        column = column
+            .child(divider(Axis::Horizontal, c.line_subtle))
+            .child(footer);
 
         div()
             .id("onboarding-page")

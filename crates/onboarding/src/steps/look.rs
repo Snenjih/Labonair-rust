@@ -1,4 +1,4 @@
-//! Step 1 — colour scheme, interface material, pane layout. Applied live.
+//! Step 2 — colour scheme, interface material, pane layout. Applied live.
 
 use gpui::{
     div, AnyView, App, AppContext, Context, Entity, IntoElement, ParentElement, Render,
@@ -36,7 +36,7 @@ impl OnboardingStep for LookStep {
     }
 
     fn order(&self) -> u32 {
-        100
+        200
     }
 
     fn title(&self) -> SharedString {

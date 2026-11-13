@@ -1,4 +1,4 @@
-//! Step 2 — what opens on launch. Applied live.
+//! Step 1 — what opens on launch. Applied live.
 
 use gpui::{AnyView, App, AppContext, Context, Entity, IntoElement, Render, SharedString, Window};
 use labonair_settings::content::general::StartupTab;
@@ -27,7 +27,7 @@ impl OnboardingStep for StartStep {
     }
 
     fn order(&self) -> u32 {
-        200
+        100
     }
 
     fn title(&self) -> SharedString {

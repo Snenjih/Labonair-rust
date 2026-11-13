@@ -1,4 +1,4 @@
-//! First-run onboarding: a short, skippable page of registered steps.
+//! First-run onboarding: a short, skippable flow of registered steps, one page each.
 //!
 //! One crate owns the whole capability: the [`OnboardingStep`] contract and
 //! [`OnboardingRegistry`], persisted [`OnboardingProgress`], the
