@@ -53,7 +53,13 @@ fn main() -> std::process::ExitCode {
         }
     };
     runtime.block_on(async move {
-        let server = match Server::bind(ServerConfig::new(data_dir)) {
+        let mut cfg = ServerConfig::new(data_dir);
+        match labonair_terminal_host::stack::concrete_services() {
+            Ok(services) => cfg = cfg.with_services(services),
+            // Terminals keep working; SSH/SFTP/transfer calls are refused.
+            Err(error) => tracing::error!(%error, "SSH services unavailable"),
+        }
+        let server = match Server::bind(cfg) {
             Ok(server) => server,
             Err(ServerError::AlreadyRunning) => return ExitCode::SUCCESS,
             Err(error) => {

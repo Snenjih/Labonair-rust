@@ -18,6 +18,11 @@
 //! session -> emulator -> sink -> outbox. The reader never waits on a client:
 //! when a client's queue is full the live stream is dropped and a fresh
 //! snapshot ([`DataKind::Resync`]) is sent once the client has drained.
+//!
+//! A session's byte source is either a local PTY or an SSH PTY channel
+//! ([`Source`]); both feed the same shadow emulator and client queue, so
+//! attach, snapshot, resync, steal and persistence are shared. The SSH side
+//! (request/response RPC, events, transfers) lives in [`ssh_host`].
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
@@ -31,7 +36,7 @@ use std::time::{Duration, Instant};
 
 use labonair_terminal_core::{
     resize_wiggle_sizes, scrollback, OutputTap, SessionOptions, SnapshotOptions, TermDimensions,
-    TerminalColors, TerminalEvent, TerminalSession,
+    TerminalColors, TerminalEmulator, TerminalEvent, TerminalSession,
 };
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::net::unix::OwnedWriteHalf;
@@ -44,6 +49,9 @@ use crate::protocol::{
     HelloAck, Message, SessionEvent, SessionId, SessionInfo, SessionStatus, WireColors, MIN_COMPAT,
     PROTO_VERSION,
 };
+
+mod ssh_host;
+pub use ssh_host::{HostServices, InstallHost};
 
 /// `sun_path` is 104 bytes on macOS (108 on Linux), including the NUL.
 const SUN_PATH_LIMIT: usize = 100;
@@ -197,9 +205,13 @@ pub struct ServerConfig {
     /// Default scrollback lines (overridden by `Hello`/`CreateOptions`).
     pub scrollback_lines: usize,
     pub build_id: String,
-    /// Hook for the later transfers/SSH work: `true` while a background job
-    /// keeps the daemon alive.
+    /// `true` while a background job keeps the daemon alive. It is ORed with
+    /// the transfer jobs of [`ServerConfig::services`] (queued, running,
+    /// paused or awaiting a conflict decision).
     pub jobs_active: Arc<dyn Fn() -> bool + Send + Sync>,
+    /// The SSH / SFTP / transfer stack. `None` = those calls are refused (a
+    /// terminal-only host).
+    pub services: Option<HostServices>,
 }
 
 impl ServerConfig {
@@ -212,7 +224,14 @@ impl ServerConfig {
             scrollback_lines: DEFAULT_SCROLLBACK_LINES,
             build_id: env!("CARGO_PKG_VERSION").to_string(),
             jobs_active: Arc::new(|| false),
+            services: None,
         }
+    }
+
+    /// Host SSH sessions, SFTP and transfers with `services`.
+    pub fn with_services(mut self, services: HostServices) -> Self {
+        self.services = Some(services);
+        self
     }
 }
 
@@ -432,18 +451,58 @@ enum Status {
     Exited { code: Option<i32>, at: Instant },
 }
 
+/// Where a session's bytes come from. Everything else (shadow emulator
+/// access, client queue, status) is shared.
+enum Source {
+    Local {
+        term: Mutex<TerminalSession>,
+        input: std::sync::mpsc::Sender<Vec<u8>>,
+    },
+    Ssh(Box<SshSource>),
+}
+
+/// Commands for the task that owns the SSH PTY write side.
+enum SshCmd {
+    Write(Vec<u8>),
+    Resize(u16, u16),
+}
+
+/// A hosted SSH shell: the shadow emulator is fed by the transport's output
+/// sink; input and resizes go through [`SshCmd`] to `SshPtyService`.
+struct SshSource {
+    emulator: Mutex<TerminalEmulator>,
+    events: Mutex<std::sync::mpsc::Receiver<TerminalEvent>>,
+    cmd: tokio::sync::mpsc::UnboundedSender<SshCmd>,
+    ssh_id: String,
+    host_id: String,
+    connection: Arc<dyn labonair_ssh::SshConnectionService>,
+    /// Humanized reason once the connection is gone.
+    lost: Mutex<Option<String>>,
+    connected: AtomicBool,
+}
+
 struct Session {
     id: SessionId,
     pane_tag: Option<String>,
     label: Option<String>,
     persist_key: String,
     scrollback_lines: usize,
-    term: Mutex<TerminalSession>,
+    source: Source,
     sink: Arc<Mutex<Sink>>,
-    input: std::sync::mpsc::Sender<Vec<u8>>,
     status: Mutex<Status>,
     killed: AtomicBool,
     notify: Arc<Notify>,
+}
+
+/// Mirror raw output to the attached client's queue. Runs under the emulator
+/// lock, on the thread that feeds the emulator: copy and queue, never wait.
+fn mirror_output(sink: &Mutex<Sink>, id: SessionId, bytes: &[u8]) {
+    let mut sink = lock(sink);
+    let Sink::Live(target) = &*sink else { return };
+    let target = target.clone();
+    if !target.outbox.push_output(id, bytes) {
+        *sink = Sink::Overflowed(target);
+    }
 }
 
 fn persist_key_for(id: SessionId) -> String {
@@ -488,10 +547,9 @@ impl Session {
         rows: u16,
     ) -> Result<(), String> {
         let dims = TermDimensions::new(usize::from(cols.max(1)), usize::from(rows.max(1)));
-        let term = lock(&self.term);
-        term.with_emulator(|emulator| {
+        self.with_emulator(|emulator, resize_pty| {
             emulator.resize(dims);
-            let _ = term.resize_pty(dims);
+            resize_pty(dims);
             let snapshot = emulator.snapshot(&self.snapshot_opts());
             let mut sink = lock(&self.sink);
             if let Some(old) = sink.target() {
@@ -508,7 +566,12 @@ impl Session {
                 rows,
             });
             outbox.push_data(DataKind::Snapshot, self.id, &snapshot);
-            if let Status::Exited { code, .. } = *lock(&self.status) {
+            if let Some(reason) = self.lost_reason() {
+                outbox.push_control(&Message::ConnectionLost {
+                    session: self.id,
+                    reason,
+                });
+            } else if let Status::Exited { code, .. } = *lock(&self.status) {
                 outbox.push_control(&Message::SessionExited {
                     session: self.id,
                     exit_code: code,
@@ -519,7 +582,6 @@ impl Session {
                 outbox: Arc::clone(outbox),
             });
         })?;
-        drop(term);
         if !self.is_exited() {
             self.wiggle(dims);
         }
@@ -530,25 +592,23 @@ impl Session {
     /// emulator) by one row, then restore the real size a moment later.
     fn wiggle(self: &Arc<Self>, dims: TermDimensions) {
         let (small, _) = resize_wiggle_sizes(dims);
-        if lock(&self.term).resize_pty(small).is_err() {
+        if self.resize_pty(small).is_err() {
             return;
         }
         let session = Arc::clone(self);
         tokio::spawn(async move {
             tokio::time::sleep(WIGGLE_PAUSE).await;
-            let term = lock(&session.term);
             // Re-read the size: a Resize may have arrived in the meantime.
-            if let Ok(real) = term.with_emulator(|emulator| emulator.dimensions()) {
-                let _ = term.resize_pty(real);
-            }
+            let _ = session.with_emulator(|emulator, resize_pty| {
+                resize_pty(emulator.dimensions());
+            });
         });
     }
 
     /// Writer-side recovery after an overflow: a fresh snapshot replaces the
     /// dropped live output and the live stream restarts atomically.
     fn resync(&self, outbox: &Arc<Outbox>) {
-        let term = lock(&self.term);
-        let _ = term.with_emulator(|emulator| {
+        let _ = self.with_emulator(|emulator, _| {
             let mut sink = lock(&self.sink);
             let target = match &*sink {
                 Sink::Overflowed(target) if Arc::ptr_eq(&target.outbox, outbox) => target.clone(),
@@ -571,17 +631,130 @@ impl Session {
 
     fn resize(&self, cols: u16, rows: u16) {
         let dims = TermDimensions::new(usize::from(cols.max(1)), usize::from(rows.max(1)));
-        let term = lock(&self.term);
-        let _ = term.with_emulator(|emulator| {
+        let _ = self.with_emulator(|emulator, resize_pty| {
             emulator.resize(dims);
-            let _ = term.resize_pty(dims);
+            resize_pty(dims);
+        });
+    }
+
+    /// Run `f` under the shadow emulator's lock. `resize_pty` resizes the
+    /// byte source (local PTY or SSH channel) without taking any other lock.
+    fn with_emulator<R>(
+        &self,
+        f: impl FnOnce(&mut TerminalEmulator, &dyn Fn(TermDimensions)) -> R,
+    ) -> Result<R, String> {
+        match &self.source {
+            Source::Local { term, .. } => {
+                let term = lock(term);
+                term.with_emulator(|emulator| {
+                    f(emulator, &|dims| {
+                        let _ = term.resize_pty(dims);
+                    })
+                })
+            }
+            Source::Ssh(ssh) => {
+                let mut emulator = ssh.emulator.lock().map_err(|_| "emulator poisoned")?;
+                Ok(f(&mut emulator, &|dims| {
+                    let _ = ssh.cmd.send(SshCmd::Resize(
+                        dims.columns as u16,
+                        dims.screen_lines as u16,
+                    ));
+                }))
+            }
+        }
+    }
+
+    /// Resize only the byte source (not the emulator).
+    fn resize_pty(&self, dims: TermDimensions) -> Result<(), String> {
+        match &self.source {
+            Source::Local { term, .. } => lock(term).resize_pty(dims),
+            Source::Ssh(ssh) => ssh
+                .cmd
+                .send(SshCmd::Resize(
+                    dims.columns as u16,
+                    dims.screen_lines as u16,
+                ))
+                .map_err(|e| e.to_string()),
+        }
+    }
+
+    /// Queue user input for the byte source.
+    fn send_input(&self, data: Vec<u8>) {
+        match &self.source {
+            Source::Local { input, .. } => {
+                let _ = input.send(data);
+            }
+            Source::Ssh(ssh) => {
+                let _ = ssh.cmd.send(SshCmd::Write(data));
+            }
+        }
+    }
+
+    /// Why the SSH connection behind this session is gone, if it is.
+    fn lost_reason(&self) -> Option<String> {
+        match &self.source {
+            Source::Ssh(ssh) => lock(&ssh.lost).clone(),
+            Source::Local { .. } => None,
+        }
+    }
+
+    /// SSH output arrived: parse it into the shadow emulator and mirror it to
+    /// the attached client, exactly like the local PTY reader does.
+    fn feed_ssh(&self, bytes: &[u8]) {
+        let Source::Ssh(ssh) = &self.source else {
+            return;
+        };
+        let mut emulator = lock(&ssh.emulator);
+        let mut events = emulator.feed(bytes);
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            mirror_output(&self.sink, self.id, bytes)
+        }));
+        // DA/DSR answers of the shadow emulator go back to the remote shell.
+        let replies = emulator.take_pty_output();
+        drop(emulator);
+        if !replies.is_empty() {
+            let _ = ssh.cmd.send(SshCmd::Write(replies));
+        }
+        // Drained right here: nothing else reads this channel, and a full one
+        // would block the emulator (see `send_event`).
+        events.extend(lock(&ssh.events).try_iter());
+        for event in events {
+            if let Some(event) = map_event(event) {
+                self.send_control(&Message::Event {
+                    session: self.id,
+                    event,
+                });
+            }
+        }
+    }
+
+    /// The SSH connection is gone: the session becomes `Exited`-like until a
+    /// client acks it. Never reconnects.
+    fn mark_ssh_lost(&self, reason: String) {
+        let Source::Ssh(ssh) = &self.source else {
+            return;
+        };
+        {
+            let mut lost = lock(&ssh.lost);
+            if lost.is_some() {
+                return;
+            }
+            *lost = Some(reason.clone());
+        }
+        ssh.connected.store(false, Ordering::SeqCst);
+        *lock(&self.status) = Status::Exited {
+            code: None,
+            at: Instant::now(),
+        };
+        self.send_control(&Message::ConnectionLost {
+            session: self.id,
+            reason,
         });
     }
 
     fn info(&self) -> SessionInfo {
-        let term = lock(&self.term);
-        let (cols, rows, cwd, title) = term
-            .with_emulator(|emulator| {
+        let (cols, rows, cwd, title) = self
+            .with_emulator(|emulator, _| {
                 let dims = emulator.dimensions();
                 let meta = emulator.metadata();
                 (
@@ -593,12 +766,12 @@ impl Session {
             })
             .unwrap_or((0, 0, None, None));
         let exited = self.is_exited();
-        let foreground = if exited {
-            None
-        } else {
-            term.foreground_process().map(|process| process.name)
+        let foreground = match &self.source {
+            Source::Local { term, .. } if !exited => {
+                lock(term).foreground_process().map(|process| process.name)
+            }
+            _ => None,
         };
-        drop(term);
         let (status, exit_code) = match *lock(&self.status) {
             Status::Running => (SessionStatus::Running, None),
             Status::Exited { code, .. } => (SessionStatus::Exited, code),
@@ -621,8 +794,8 @@ impl Session {
 
     /// Persist the scrollback so a reboot/logout falls back to replay.
     fn persist_scrollback(&self, data_dir: &Path) {
-        let ansi = lock(&self.term)
-            .with_emulator(|emulator| emulator.serialize_scrollback(Some(self.scrollback_lines)))
+        let ansi = self
+            .with_emulator(|emulator, _| emulator.serialize_scrollback(Some(self.scrollback_lines)))
             .unwrap_or_default();
         if let Err(error) = scrollback::save(data_dir, &self.persist_key, &ansi, None) {
             tracing::warn!(session = self.id, %error, "persisting scrollback failed");
@@ -635,16 +808,29 @@ impl Session {
 fn retire(session: Arc<Session>) {
     session.killed.store(true, Ordering::SeqCst);
     session.notify.notify_one();
+    if let Source::Ssh(ssh) = &session.source {
+        // Closing the connection ends the remote shell; the session and its
+        // emulator are dropped with the last reference.
+        let connection = Arc::clone(&ssh.connection);
+        let ssh_id = labonair_ssh::SshSessionId::new(ssh.ssh_id.clone());
+        tokio::spawn(async move {
+            let _ = connection.disconnect(ssh_id).await;
+        });
+        return;
+    }
     tokio::task::spawn_blocking(move || {
+        let Source::Local { term, .. } = &session.source else {
+            return;
+        };
         let pid = {
-            let term = lock(&session.term);
+            let term = lock(term);
             term.terminate(); // SIGHUP, like closing a terminal window
             term.shell_pid()
         };
         // Grace period for the shell to hang up, then SIGKILL its group.
         let mut gone = false;
         for _ in 0..40 {
-            if lock(&session.term).try_exit_code().is_some() {
+            if lock(term).try_exit_code().is_some() {
                 gone = true;
                 break;
             }
@@ -677,12 +863,15 @@ fn map_event(event: TerminalEvent) -> Option<SessionEvent> {
 /// Per-session task: drains the emulator's event channel (the reader blocks on
 /// a full channel) and turns the end of the PTY into `Exited`.
 async fn session_task(state: Arc<State>, session: Arc<Session>) {
+    let Source::Local { term, .. } = &session.source else {
+        return;
+    };
     loop {
         session.notify.notified().await;
         if session.killed.load(Ordering::SeqCst) {
             return;
         }
-        let events = lock(&session.term).drain_events();
+        let events = lock(term).drain_events();
         let mut exited = false;
         for event in events {
             if matches!(event, TerminalEvent::Exit | TerminalEvent::ChildExit(_)) {
@@ -700,7 +889,7 @@ async fn session_task(state: Arc<State>, session: Arc<Session>) {
         // EOF can arrive a moment before the child is reapable.
         let mut code = None;
         for _ in 0..40 {
-            code = lock(&session.term).try_exit_code();
+            code = lock(term).try_exit_code();
             if code.is_some() {
                 break;
             }
@@ -756,6 +945,10 @@ struct State {
     next_conn: AtomicU64,
     conns: AtomicUsize,
     scrollback_lines: AtomicUsize,
+    /// The SSH / SFTP / transfer stack, when the host was configured with one.
+    ssh: Option<Arc<ssh_host::SshRuntime>>,
+    /// SSH session id (the app's tab id) -> wire id of its hosted session.
+    ssh_index: Mutex<HashMap<String, SessionId>>,
     /// Pokes the idle/expiry loop when sessions, clients or jobs change.
     changed: Notify,
     stop_tx: watch::Sender<Option<ExitReason>>,
@@ -812,14 +1005,7 @@ impl State {
         let tap: OutputTap = Box::new(move |_emulator, bytes| {
             // Runs on the PTY reader thread under the emulator lock: copy and
             // queue, never wait. A panic here must not kill the reader.
-            let _ = catch_unwind(AssertUnwindSafe(|| {
-                let mut sink = lock(&tap_sink);
-                let Sink::Live(target) = &*sink else { return };
-                let target = target.clone();
-                if !target.outbox.push_output(id, bytes) {
-                    *sink = Sink::Overflowed(target);
-                }
-            }));
+            let _ = catch_unwind(AssertUnwindSafe(|| mirror_output(&tap_sink, id, bytes)));
         });
         let notify = Arc::new(Notify::new());
         let term = TerminalSession::spawn_with_tap(
@@ -846,9 +1032,11 @@ impl State {
             label: options.label,
             persist_key,
             scrollback_lines,
-            term: Mutex::new(term),
+            source: Source::Local {
+                term: Mutex::new(term),
+                input,
+            },
             sink,
-            input,
             status: Mutex::new(Status::Running),
             killed: AtomicBool::new(false),
             notify,
@@ -861,12 +1049,27 @@ impl State {
 
     fn remove_session(&self, id: SessionId) -> Option<Arc<Session>> {
         let session = lock(&self.sessions).remove(&id);
+        if let Some(Source::Ssh(ssh)) = session.as_ref().map(|s| &s.source) {
+            let mut index = lock(&self.ssh_index);
+            if index.get(&ssh.ssh_id) == Some(&id) {
+                index.remove(&ssh.ssh_id);
+            }
+            if let Some(runtime) = &self.ssh {
+                runtime.forget_session(&ssh.ssh_id);
+            }
+        }
         self.changed.notify_one();
         session
     }
 
+    /// `true` while a background job (including transfers) keeps us alive.
+    fn jobs_active(&self) -> bool {
+        (self.cfg.jobs_active)() || self.ssh.as_ref().is_some_and(|ssh| ssh.jobs_active())
+    }
+
     /// Stop everything: tell attached clients, kill the sessions.
     fn kill_all(&self, reason: DetachReason) {
+        lock(&self.ssh_index).clear();
         let sessions: Vec<_> = lock(&self.sessions).drain().map(|(_, s)| s).collect();
         for session in sessions {
             session.send_control(&Message::Detached {
@@ -930,7 +1133,7 @@ impl Conn {
                     .session(session)
                     .filter(|s| s.attached_to(self.id))
                 {
-                    let _ = s.input.send(data);
+                    s.send_input(data);
                 }
             }
             Frame::Data { .. } => {}
@@ -1021,6 +1224,9 @@ impl Conn {
                 }
                 .stop(ExitReason::Shutdown);
             }
+            Message::Rpc { req_id, call } => {
+                ssh_host::spawn_rpc(&self.state, self.id, &self.outbox, req_id, call)
+            }
             Message::Hello(_) => self.error(None, None, "duplicate hello"),
             // Daemon -> client messages and future variants: not ours to act on.
             _ => {}
@@ -1078,6 +1284,9 @@ async fn serve_connection(state: Arc<State>, stream: UnixStream) {
             session.detach(conn.id);
         }
     }
+    if let Some(ssh) = &state.ssh {
+        ssh.unsubscribe(conn.id);
+    }
     outbox.close();
     let _ = writer.await;
 }
@@ -1107,8 +1316,12 @@ pub struct Server {
 impl Server {
     /// Take the single-instance lock, clean a stale socket and listen. Must be
     /// called inside a tokio runtime.
-    pub fn bind(cfg: ServerConfig) -> Result<Self, ServerError> {
+    pub fn bind(mut cfg: ServerConfig) -> Result<Self, ServerError> {
         let paths = HostPaths::new(&cfg.data_dir);
+        let ssh = cfg
+            .services
+            .take()
+            .map(|services| Arc::new(ssh_host::SshRuntime::new(services)));
         ensure_private_dir(&paths.dir)?;
         let lock = InstanceLock::acquire(&paths.lock)?;
         // We hold the lock, so any socket file left behind is stale.
@@ -1126,6 +1339,8 @@ impl Server {
         let (closing_tx, _) = watch::channel(false);
         let state = Arc::new(State {
             scrollback_lines: AtomicUsize::new(cfg.scrollback_lines),
+            ssh,
+            ssh_index: Mutex::new(HashMap::new()),
             cfg,
             paths,
             sessions: Mutex::new(HashMap::new()),
@@ -1136,6 +1351,9 @@ impl Server {
             stop_tx,
             closing_tx,
         });
+        if let Some(ssh) = &state.ssh {
+            ssh.start(Arc::downgrade(&state));
+        }
         Ok(Self {
             state,
             listener,
@@ -1230,7 +1448,7 @@ async fn idle_loop(state: Arc<State>) {
             }
         }
 
-        let jobs = (state.cfg.jobs_active)();
+        let jobs = state.jobs_active();
         let busy =
             !lock(&state.sessions).is_empty() || state.conns.load(Ordering::SeqCst) > 0 || jobs;
         if busy {
