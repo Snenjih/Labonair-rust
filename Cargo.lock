@@ -4866,8 +4866,19 @@ dependencies = [
 name = "labonair-terminal-host"
 version = "0.1.0"
 dependencies = [
+ "labonair-errors",
+ "labonair-events",
+ "labonair-persistence",
+ "labonair-secrets",
+ "labonair-sftp",
+ "labonair-sftp-ssh",
+ "labonair-ssh",
+ "labonair-ssh-transport",
  "labonair-terminal-core",
+ "labonair-transfers",
+ "labonair-transfers-ssh",
  "libc",
+ "rusqlite",
  "serde",
  "serde_json",
  "tokio",
