@@ -512,6 +512,7 @@ fn default_terminal() -> PaneSessionSnapshot {
         cwd: None,
         host_id: None,
         scrollback_id: None,
+        resume_command: None,
     }
 }
 
@@ -727,6 +728,7 @@ mod tests {
             cwd: Some(cwd.into()),
             host_id: None,
             scrollback_id: sb.map(Into::into),
+            resume_command: None,
         }
     }
 
@@ -951,6 +953,7 @@ mod tests {
                 cwd: Some("/srv".into()),
                 host_id: Some("host-1".into()),
                 scrollback_id: None,
+                resume_command: None,
             }],
         });
         let g = migrate_tab(&ssh).unwrap();

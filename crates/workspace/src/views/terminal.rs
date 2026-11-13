@@ -27,10 +27,11 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    canvas, div, px, App, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla,
-    InteractiveElement, IntoElement, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollDelta,
-    ScrollWheelEvent, SharedString, Size, Styled, Task, Window,
+    canvas, div, px, App, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable,
+    FontWeight, Hsla, InteractiveElement, IntoElement, KeyDownEvent, Keystroke, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
+    ScrollDelta, ScrollWheelEvent, SharedString, Size, StatefulInteractiveElement, Styled, Task,
+    Window,
 };
 use labonair_terminal::{
     batch_runs, grid_size, key_to_bytes, mouse_report, paste_payload, wheel_action, CursorShape,
@@ -43,7 +44,9 @@ use crate::theme::ThemeStore;
 use labonair_background_host::{BackgroundHost, LayerScope};
 use labonair_explorer_host::{quote_paths, DraggedPaths};
 use labonair_settings::Settings as _;
-use labonair_ui_kit::{context_menu, IconName, MenuItem, Palette};
+use labonair_ui_kit::{
+    banner, button, context_menu, ButtonSize, ButtonVariant, IconName, MenuItem, Palette, Severity,
+};
 
 /// `keymap.json`: `["terminal::SendText", "..."]` — writes `text` straight to
 /// the focused terminal's PTY, bypassing key parsing, mode-aware encoding and
@@ -105,6 +108,9 @@ pub struct TerminalView {
     /// Last time the terminal produced output or received input — the cursor is
     /// held solid for one blink interval afterwards so it never blinks mid-type.
     activity_at: Instant,
+    /// Command offered by the restore-time "Resume ...?" banner, until the user
+    /// resumes or dismisses it.
+    resume_offer: Option<String>,
     _poll: Task<()>,
     _blink: Task<()>,
 }
@@ -204,9 +210,84 @@ impl TerminalView {
             blink_on: true,
             focused: false,
             activity_at: Instant::now(),
+            resume_offer: None,
             _poll: poll,
             _blink: blink,
         }
+    }
+
+    /// The pending resume offer, if the user has not answered it yet.
+    pub fn resume_offer(&self) -> Option<&str> {
+        self.resume_offer.as_deref()
+    }
+
+    /// Show the one-click "Resume `command`?" banner (session restore).
+    pub fn offer_resume(&mut self, command: String, cx: &mut Context<Self>) {
+        self.resume_offer = Some(command);
+        cx.notify();
+    }
+
+    /// Resume button: type the offered command into the shell like the user.
+    fn accept_resume(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(command) = self.resume_offer.take() {
+            self.send_text(&format!("{command}\r"), cx);
+        }
+        window.focus(&self.focus_handle);
+    }
+
+    fn dismiss_resume(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.resume_offer = None;
+        window.focus(&self.focus_handle);
+        cx.notify();
+    }
+
+    fn render_resume_banner(&self, command: &str, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let palette = Palette::from_theme(self.theme.read(cx));
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .right_0()
+            .p(palette.space(8.0))
+            // Keep clicks on the banner from starting a terminal selection.
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .child(
+                banner(Severity::Info, palette)
+                    .child(
+                        div()
+                            .flex_1()
+                            .child(SharedString::from(format!("Resume `{command}`?"))),
+                    )
+                    .child(
+                        button(
+                            "term-resume",
+                            palette,
+                            ButtonVariant::Filled,
+                            ButtonSize::Xs,
+                        )
+                        .child("Resume")
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, window, cx| {
+                                this.accept_resume(window, cx);
+                            },
+                        )),
+                    )
+                    .child(
+                        button(
+                            "term-resume-dismiss",
+                            palette,
+                            ButtonVariant::Subtle,
+                            ButtonSize::Xs,
+                        )
+                        .child("Dismiss")
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, window, cx| {
+                                this.dismiss_resume(window, cx);
+                            },
+                        )),
+                    ),
+            )
+            .into_any_element()
     }
 
     /// The session this view renders.
@@ -789,6 +870,11 @@ impl Render for TerminalView {
                         ))),
                 )
             })
+            .children(
+                self.resume_offer
+                    .clone()
+                    .map(|command| self.render_resume_banner(&command, cx)),
+            )
             .children(self.menu.map(|pos| self.render_menu(pos, cx)))
             .into_any_element()
     }

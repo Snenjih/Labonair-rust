@@ -54,6 +54,7 @@ pub mod pane_view;
 pub mod project_multibuffer;
 pub mod project_search;
 pub mod recent_projects;
+mod resume;
 pub mod search_overlay;
 pub mod session;
 pub mod session_io;
@@ -3802,6 +3803,18 @@ impl Workspace {
         replay_scrollback_id: Option<&str>,
         cx: &App,
     ) -> Option<(SessionId, SessionHandle, String)> {
+        self.spawn_session_with(cwd, replay_scrollback_id, None, cx)
+    }
+
+    /// [`Self::spawn_session`] that also types `startup_command` into the new
+    /// shell (session-restore resume).
+    fn spawn_session_with(
+        &self,
+        cwd: Option<String>,
+        replay_scrollback_id: Option<&str>,
+        startup_command: Option<String>,
+        cx: &App,
+    ) -> Option<(SessionId, SessionHandle, String)> {
         let ts = terminal_settings(cx);
         let shell = (!ts.shell().trim().is_empty()).then(|| ts.shell().to_string());
         let cursor_shape = Some(match ts.cursor_style() {
@@ -3829,6 +3842,7 @@ impl Workspace {
             cursor_shape,
             cursor_blink: Some(ts.cursor_blink()),
             word_separators: Some(ts.word_separator().to_string()),
+            startup_command,
             ..SessionOptions::default()
         };
         let session_id =

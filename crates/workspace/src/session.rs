@@ -292,6 +292,11 @@ pub struct PaneSessionSnapshot {
     /// `None` for older snapshots / panes with no captured scrollback.
     #[serde(default)]
     pub scrollback_id: Option<String>,
+    /// Command that re-opens the pane's former foreground program (e.g.
+    /// `claude --continue`), resolved at snapshot time. Whether it is offered
+    /// or run is decided at restore time. Never set for SSH panes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume_command: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -610,18 +615,21 @@ mod tests {
                             cwd: Some("/a".into()),
                             host_id: None,
                             scrollback_id: Some("sb-a".into()),
+                            resume_command: None,
                         },
                         PaneSessionSnapshot {
                             kind: PaneSessionKind::Local,
                             cwd: Some("/b".into()),
                             host_id: None,
                             scrollback_id: None,
+                            resume_command: None,
                         },
                         PaneSessionSnapshot {
                             kind: PaneSessionKind::Local,
                             cwd: None,
                             host_id: None,
                             scrollback_id: None,
+                            resume_command: None,
                         },
                     ],
                 }),
@@ -633,6 +641,7 @@ mod tests {
                         cwd: Some("/srv".into()),
                         host_id: Some("host-1".into()),
                         scrollback_id: None,
+                        resume_command: None,
                     }],
                 }),
                 TabSnapshot::Editor(EditorTabSnapshot {
@@ -799,6 +808,26 @@ mod tests {
         let p: PaneSessionSnapshot = serde_json::from_str(json).unwrap();
         assert_eq!(p.scrollback_id, None);
         assert_eq!(p.cwd.as_deref(), Some("/x"));
+    }
+
+    #[test]
+    fn pane_snapshot_resume_command_is_optional_on_the_wire() {
+        let old = r#"{"kind":"local","cwd":"/x","hostId":null}"#;
+        let p: PaneSessionSnapshot = serde_json::from_str(old).unwrap();
+        assert_eq!(p.resume_command, None);
+        // `None` is not written, so old readers and files stay unchanged.
+        assert!(!serde_json::to_string(&p).unwrap().contains("resumeCommand"));
+
+        let with = PaneSessionSnapshot {
+            resume_command: Some("claude --continue".into()),
+            ..p
+        };
+        let json = serde_json::to_string(&with).unwrap();
+        assert!(json.contains(r#""resumeCommand":"claude --continue""#));
+        assert_eq!(
+            serde_json::from_str::<PaneSessionSnapshot>(&json).unwrap(),
+            with
+        );
     }
 
     #[test]

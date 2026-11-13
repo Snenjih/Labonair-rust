@@ -22,6 +22,7 @@ use gpui::{AppContext, Context, Window};
 
 use crate::pane::{PaneId, WorkspaceLayout};
 use crate::pane_kind::PaneKind;
+use crate::resume::{self, Resume};
 use crate::session::{PaneSessionKind, PaneSessionSnapshot, RestoreResult};
 use crate::session_v3::{
     restore_tree, EditorPaneState, PaneGroupSnapshot, PaneState, PreviewPaneState, SerializedTree,
@@ -120,15 +121,29 @@ impl Workspace {
                     }
                     entry.scrollback_id.clone()
                 });
+                let view = entry.view.read(cx);
+                let cwd = view.cwd();
+                // An offer the user has not answered yet is kept, so a second
+                // quit/crash before they decide does not lose it.
+                let resume_command = view.resume_offer().map(str::to_string).or_else(|| {
+                    let foreground = view.handle().foreground_process();
+                    resume::snapshot_command(
+                        ssh.is_some(),
+                        cwd.as_deref(),
+                        foreground.as_ref().map(|f| f.name.as_str()),
+                        &ts.resume_commands(),
+                    )
+                });
                 Some(PaneState::Terminal(PaneSessionSnapshot {
                     kind: if ssh.is_none() {
                         PaneSessionKind::Local
                     } else {
                         PaneSessionKind::Ssh
                     },
-                    cwd: entry.view.read(cx).cwd(),
+                    cwd,
                     host_id: ssh.map(|s| s.host_id.clone()),
                     scrollback_id,
+                    resume_command,
                 }))
             }
             PaneKind::Editor => {
@@ -314,10 +329,30 @@ impl Workspace {
                     }
                 }
                 _ => {
-                    if let Some((session_id, handle, scrollback_id)) =
-                        self.spawn_session(t.cwd.clone(), t.scrollback_id.as_deref(), cx)
-                    {
+                    // Evaluated now, not at save time: the setting may have
+                    // changed since. A pane without cwd never resumes.
+                    let resume = if t.kind == PaneSessionKind::Local && t.cwd.is_some() {
+                        resume::decide(
+                            terminal_settings(cx).resume_on_restore(),
+                            t.resume_command.as_deref(),
+                        )
+                    } else {
+                        Resume::None
+                    };
+                    let startup = match &resume {
+                        Resume::Run(command) => Some(command.clone()),
+                        _ => None,
+                    };
+                    if let Some((session_id, handle, scrollback_id)) = self.spawn_session_with(
+                        t.cwd.clone(),
+                        t.scrollback_id.as_deref(),
+                        startup,
+                        cx,
+                    ) {
                         let view = self.new_terminal_view(handle, window, cx);
+                        if let Resume::Offer(command) = resume {
+                            view.update(cx, |v, cx| v.offer_resume(command, cx));
+                        }
                         self.panes.insert(
                             pane,
                             PaneEntry {
