@@ -1,14 +1,13 @@
 //! Step — should terminals and connections outlive the app? Unix only.
 
-use gpui::px;
 use gpui::{
-    div, prelude::*, AnyView, App, AppContext, ClickEvent, Context, Entity, FontWeight,
-    IntoElement, Render, SharedString, Window,
+    div, prelude::*, AnyView, App, AppContext, ClickEvent, Context, Entity, IntoElement, Render,
+    SharedString, Window,
 };
 use labonair_settings::content::terminal::SessionHostMode;
 use labonair_settings::{Settings, TerminalSettings};
 use labonair_theme::store::ThemeStore;
-use labonair_ui_kit::Palette;
+use labonair_ui_kit::{option_card, Palette};
 
 use crate::services::{write_user_setting, OnboardingServices};
 use crate::step::{OnboardingStep, StepInstance};
@@ -82,36 +81,18 @@ impl Render for SessionsView {
         let c = Palette::from_theme(self.theme.read(cx));
         let tiles = OPTIONS.into_iter().map(|(mode, title, description)| {
             let on = self.selected == mode;
-            div()
-                .id(SharedString::from(format!("onboarding-sessions-{title}")))
-                .flex_1()
-                .flex()
-                .flex_col()
-                .gap(c.space(4.0))
-                .p(c.space(12.0))
-                .rounded(px(c.radius.lg))
-                .border_2()
-                .border_color(if on { c.primary } else { c.line_subtle })
-                .bg(if on { c.selected_fill } else { c.card })
-                .cursor_pointer()
-                .hover(|tile| tile.bg(c.hover))
-                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                    this.selected = mode;
-                    write_user_setting(cx, move |s| s.terminal.session_host = Some(mode));
-                    cx.notify();
-                }))
-                .child(
-                    div()
-                        .text_color(c.fg)
-                        .when(on, |t| t.font_weight(FontWeight::BOLD))
-                        .child(title),
-                )
-                .child(
-                    div()
-                        .text_size(c.control_space(12.0))
-                        .text_color(c.muted)
-                        .child(description),
-                )
+            option_card(
+                SharedString::from(format!("onboarding-sessions-{title}")),
+                c,
+                title,
+                description,
+                on,
+            )
+            .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                this.selected = mode;
+                write_user_setting(cx, move |s| s.terminal.session_host = Some(mode));
+                cx.notify();
+            }))
         });
         div()
             .flex()

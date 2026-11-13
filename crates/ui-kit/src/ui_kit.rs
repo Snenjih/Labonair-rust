@@ -61,6 +61,7 @@ mod indicator;
 mod kbd;
 mod list;
 mod number_field;
+mod option_card;
 mod palette;
 mod pane_bar;
 mod popover;
@@ -110,6 +111,7 @@ pub use indicator::{indicator, IndicatorSize};
 pub use kbd::{kbd, kbd_row, keybinding_hint};
 pub use list::{list_header, list_separator, ListItem};
 pub use number_field::{number_field, step_value, NumberField};
+pub use option_card::option_card;
 pub use palette::Palette;
 pub use pane_bar::{
     canvas_backdrop, pane_bar, pane_frame, PaneAction, PaneBar, PaneLayoutStyle, PANE_GAP,
