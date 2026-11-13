@@ -125,7 +125,8 @@ use labonair_ssh::{
 };
 use labonair_terminal::{
     DaemonHost, RemoteFeed, RemoteResizer, RemoteWriter, Scroll, SessionHandle, SessionId,
-    SessionOptions, TermDimensions, TerminalColors, TerminalColorsExt, TerminalRegistry,
+    SessionOptions, SshHostedHost, TermDimensions, TerminalColors, TerminalColorsExt,
+    TerminalRegistry,
 };
 use labonair_transfers::{TransferDirection, TransferRequest, TransferService};
 use tokio::runtime::Handle as TokioHandle;
@@ -5769,6 +5770,18 @@ impl Workspace {
         let colors = self.theme_colors(cx);
         let dims = TermDimensions::new(80, 24);
 
+        // The host is chosen now and stays fixed for the session (ADR 0009).
+        // `detached`: the pane is a hosted session whose SSH connection lives
+        // in the background host; if that cannot be used the pane stays
+        // app-bound and the problem is reported.
+        let ts = terminal_settings(cx);
+        if ts.session_host() == SessionHostMode::Detached {
+            match self.new_hosted_ssh_session(&ssh_id, &ts, colors) {
+                Ok((session_id, feed, handle)) => return Some((ssh_id, session_id, feed, handle)),
+                Err(err) => self.report_session_host_unavailable(err, cx),
+            }
+        }
+
         let writer: RemoteWriter = {
             let (id, service, tk) = (ssh_id.clone(), self.ssh_pty.clone(), self.tokio.clone());
             Arc::new(move |bytes: Vec<u8>| {
@@ -5800,6 +5813,61 @@ impl Workspace {
         Some((ssh_id, session_id, feed, handle))
     }
 
+    /// A registry session for the SSH pane `ssh_id` whose connection will live
+    /// in the background host. The pane tag is the SSH session id: it is how a
+    /// restart finds the session again.
+    fn new_hosted_ssh_session(
+        &self,
+        ssh_id: &str,
+        ts: &TerminalSettings,
+        colors: TerminalColors,
+    ) -> Result<(SessionId, RemoteFeed, SessionHandle), String> {
+        let host = SshHostedHost::connect(
+            &labonair_filesystem::paths::data_dir(),
+            ts.detached_scrollback_lines(),
+            true,
+            ssh_id,
+            ssh_id,
+        )?;
+        self.registry_hosted_ssh(&host, colors)
+    }
+
+    fn registry_hosted_ssh(
+        &self,
+        host: &SshHostedHost,
+        colors: TerminalColors,
+    ) -> Result<(SessionId, RemoteFeed, SessionHandle), String> {
+        let session_id = self.registry.create_with_host(
+            host,
+            colors,
+            TermDimensions::new(80, 24),
+            SessionOptions::default(),
+        )?;
+        let handle = self
+            .registry
+            .handle(session_id)
+            .ok_or_else(|| "session vanished".to_string())?;
+        let feed = host
+            .feed()
+            .ok_or_else(|| "hosted session has no feed".to_string())?;
+        Ok((session_id, feed, handle))
+    }
+
+    fn report_session_host_unavailable(&self, err: String, cx: &mut App) {
+        labonair_notifications::notification_center(cx).update(cx, |center, cx| {
+            center.push(
+                labonair_notifications::Notification::error(
+                    "Background session host unavailable",
+                    "The SSH session runs inside the app and ends when the app quits.",
+                )
+                .source("ssh")
+                .details(err)
+                .dedupe_key("terminal:session-host-unavailable"),
+                cx,
+            );
+        });
+    }
+
     /// Show `session_id` in terminal pane `pane_id` of `tab_id` and start the
     /// connection (loading screen, prompts and tunnels follow from there).
     #[allow(clippy::too_many_arguments)]
@@ -5812,6 +5880,28 @@ impl Workspace {
         handle: SessionHandle,
         pane_id: PaneId,
         tab_id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.attach_ssh_terminal_with(
+            host_id, ssh_id, session_id, feed, handle, pane_id, tab_id, None, window, cx,
+        );
+    }
+
+    /// [`Self::attach_ssh_terminal`]. `adopted` = the SSH session is already
+    /// alive in the background host (restore): `Some(connected)` shows it as
+    /// connected (or lost) instead of connecting again.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn attach_ssh_terminal_with(
+        &mut self,
+        host_id: String,
+        ssh_id: String,
+        session_id: SessionId,
+        feed: RemoteFeed,
+        handle: SessionHandle,
+        pane_id: PaneId,
+        tab_id: u64,
+        adopted: Option<bool>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -5841,7 +5931,6 @@ impl Workspace {
                 pane_id,
             },
         );
-        self.set_host_status(&host_id, HostStatus::Connecting, cx);
         self.ssh_connection.update(cx, |s, cx| {
             s.begin(
                 ssh_id.clone(),
@@ -5852,7 +5941,26 @@ impl Workspace {
                 cx,
             );
         });
-        self.spawn_ssh_connect(ssh_id, host_id, None, None, feed, cx);
+        match adopted {
+            None => {
+                self.set_host_status(&host_id, HostStatus::Connecting, cx);
+                self.spawn_ssh_connect(ssh_id, host_id, None, None, feed, cx);
+            }
+            // Alive in the background host: no connect, the same state change
+            // the host's `session_established` / `ssh_connection_lost` replay
+            // would cause (it may have arrived before this pane existed).
+            Some(true) => self.handle_ssh_event(
+                SshConnectionEvent::SessionEstablished {
+                    session_id: ssh_id,
+                    default_path: None,
+                },
+                cx,
+            ),
+            Some(false) => self.handle_ssh_event(
+                SshConnectionEvent::ConnectionLost { session_id: ssh_id },
+                cx,
+            ),
+        }
         self.focus_active(window, cx);
         cx.notify();
     }

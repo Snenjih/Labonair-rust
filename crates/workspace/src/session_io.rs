@@ -19,7 +19,7 @@
 use std::cell::RefCell;
 
 use gpui::{AppContext, Context, Window};
-use labonair_terminal::DaemonHost;
+use labonair_terminal::{DaemonHost, SshHostedHost};
 
 use crate::host_restore::{self, HostRestore};
 use crate::pane::{PaneId, WorkspaceLayout};
@@ -108,21 +108,31 @@ impl Workspace {
                 let entry = self.panes.get(&pane)?;
                 let ts = terminal_settings(cx);
                 let ssh = self.ssh_tabs.get(&entry.session_id);
-                let scrollback_id = ssh.is_none().then(|| {
-                    if let Some(ansi) = entry
+                let scrollback_id = match ssh {
+                    None => {
+                        if let Some(ansi) = entry
+                            .view
+                            .read(cx)
+                            .handle()
+                            .serialize_scrollback(ts.session_scrollback_lines())
+                        {
+                            scrollbacks.borrow_mut().push(ScrollbackCapture {
+                                session_id: entry.scrollback_id.clone(),
+                                ansi,
+                                max_bytes: Some(ts.scrollback_max_bytes()),
+                            });
+                        }
+                        Some(entry.scrollback_id.clone())
+                    }
+                    // A hosted SSH pane is found again by its tag: the SSH
+                    // session id. App-bound SSH panes persist nothing.
+                    Some(ssh) => entry
                         .view
                         .read(cx)
                         .handle()
-                        .serialize_scrollback(ts.session_scrollback_lines())
-                    {
-                        scrollbacks.borrow_mut().push(ScrollbackCapture {
-                            session_id: entry.scrollback_id.clone(),
-                            ansi,
-                            max_bytes: Some(ts.scrollback_max_bytes()),
-                        });
-                    }
-                    entry.scrollback_id.clone()
-                });
+                        .is_hosted()
+                        .then(|| ssh.ssh_id.clone()),
+                };
                 let view = entry.view.read(cx);
                 let cwd = view.cwd();
                 // An offer the user has not answered yet is kept, so a second
@@ -369,6 +379,64 @@ impl Workspace {
         true
     }
 
+    /// Restore an SSH pane by attaching its still-living background-host
+    /// session (found by the pane tag, which is the SSH session id). `false` =
+    /// not applicable or not alive: the normal reconnect flow applies.
+    fn restore_hosted_ssh_pane(
+        &mut self,
+        tab_id: u64,
+        pane: PaneId,
+        host_id: &str,
+        t: &PaneSessionSnapshot,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let (HostKind::Detached, Some(wire_id), Some(tag)) =
+            (t.host_kind, t.host_session_id, t.scrollback_id.clone())
+        else {
+            return false;
+        };
+        let ts = terminal_settings(cx);
+        // Never starts a daemon: a session can only be alive in a running one.
+        let Ok(host) = SshHostedHost::connect(
+            &labonair_filesystem::paths::data_dir(),
+            ts.detached_scrollback_lines(),
+            false,
+            tag.clone(),
+            tag.clone(),
+        ) else {
+            return false;
+        };
+        let Some(alive) = host.list_sessions().ok().and_then(|sessions| {
+            sessions.into_iter().find(|s| {
+                s.wire_id == wire_id
+                    && s.pane_tag.as_deref() == Some(tag.as_str())
+                    && s.ssh_id == tag
+                    && s.host_id == host_id
+            })
+        }) else {
+            return false;
+        };
+        let Ok((session_id, feed, handle)) =
+            self.registry_hosted_ssh(&host.adopting(wire_id), self.theme_colors(cx))
+        else {
+            return false;
+        };
+        self.attach_ssh_terminal_with(
+            host_id.to_string(),
+            alive.ssh_id,
+            session_id,
+            feed,
+            handle,
+            pane,
+            tab_id,
+            Some(alive.connected),
+            window,
+            cx,
+        );
+        true
+    }
+
     fn pane_has_resources(&self, pane: PaneId) -> bool {
         self.panes.contains_key(&pane)
             || self.editors.contains_key(&pane)
@@ -389,6 +457,10 @@ impl Workspace {
         match state {
             PaneState::Terminal(t) => match (t.kind, t.host_id.clone()) {
                 (PaneSessionKind::Ssh, Some(host_id)) => {
+                    // Alive in the background host: show it, do not reconnect.
+                    if self.restore_hosted_ssh_pane(tab_id, pane, &host_id, &t, window, cx) {
+                        return;
+                    }
                     if let Some((ssh_id, session_id, feed, handle)) =
                         self.new_ssh_session(&host_id, cx)
                     {
