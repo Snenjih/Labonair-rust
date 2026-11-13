@@ -145,7 +145,8 @@ impl SessionBackend {
     fn subscribe_agent_output(&self) -> Result<tokio::sync::broadcast::Receiver<Vec<u8>>, String> {
         match self {
             SessionBackend::Local(session) => Ok(session.subscribe_agent_output()),
-            SessionBackend::Remote(_) | SessionBackend::Hosted(_) => {
+            SessionBackend::Hosted(s) => Ok(s.remote.subscribe_agent_output()),
+            SessionBackend::Remote(_) => {
                 Err("agent output subscription is only available for local sessions".to_string())
             }
         }

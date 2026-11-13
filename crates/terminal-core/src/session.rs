@@ -60,6 +60,28 @@ pub struct SessionOptions {
     pub word_separators: Option<String>,
 }
 
+impl SessionOptions {
+    /// The emulator settings these options ask for (scrollback depth, cursor,
+    /// word separators); shared by local and hosted panes so both honour the
+    /// same terminal settings.
+    pub fn emulator_config(&self) -> crate::EmulatorConfig {
+        let mut cfg = crate::EmulatorConfig::default();
+        if let Some(sb) = self.scrollback {
+            cfg.scrollback = sb;
+        }
+        if let Some(shape) = self.cursor_shape {
+            cfg.cursor_shape = shape;
+        }
+        if let Some(blink) = self.cursor_blink {
+            cfg.cursor_blink = blink;
+        }
+        if let Some(seps) = self.word_separators.clone() {
+            cfg.word_separators = seps;
+        }
+        cfg
+    }
+}
+
 /// A read of the active terminal for the AI companion: working directory,
 /// process title and the tail of the visible buffer (T03-004, consumed in
 /// Phase 10).
@@ -215,19 +237,7 @@ impl TerminalSession {
 
         let (event_tx, events): (SyncSender<TerminalEvent>, Receiver<TerminalEvent>) =
             sync_channel(256);
-        let mut emu_cfg = crate::EmulatorConfig::default();
-        if let Some(sb) = options.scrollback {
-            emu_cfg.scrollback = sb;
-        }
-        if let Some(shape) = options.cursor_shape {
-            emu_cfg.cursor_shape = shape;
-        }
-        if let Some(blink) = options.cursor_blink {
-            emu_cfg.cursor_blink = blink;
-        }
-        if let Some(seps) = options.word_separators.clone() {
-            emu_cfg.word_separators = seps;
-        }
+        let emu_cfg = options.emulator_config();
         let emulator = Arc::new(Mutex::new(TerminalEmulator::new_with(
             colors,
             dimensions,
@@ -693,6 +703,7 @@ pub struct RemoteSession {
     dimensions: TermDimensions,
     writer: RemoteWriter,
     resizer: RemoteResizer,
+    agent_tap: tokio::sync::broadcast::Sender<Vec<u8>>,
 }
 
 /// Cheap, `Clone`able handle the transport reader uses to push remote output
@@ -704,6 +715,8 @@ pub struct RemoteFeed {
     events: SyncSender<TerminalEvent>,
     writer: RemoteWriter,
     event_notify: Arc<Notify>,
+    /// Live hosted output for agent terminal tools (never snapshot bytes).
+    agent_tap: tokio::sync::broadcast::Sender<Vec<u8>>,
 }
 
 impl RemoteFeed {
@@ -744,6 +757,11 @@ impl RemoteFeed {
         let extra = guard.feed(bytes);
         let _ = guard.take_pty_output();
         drop(guard);
+        // A snapshot or resync is history, not new output: keep it out of the
+        // agent tap.
+        if !replay && self.agent_tap.receiver_count() > 0 {
+            let _ = self.agent_tap.send(bytes.to_vec());
+        }
         for ev in extra {
             if !replay || matches!(ev, TerminalEvent::Wakeup) {
                 send_event(&self.events, ev);
@@ -791,17 +809,40 @@ impl RemoteSession {
         resizer: RemoteResizer,
         event_notify: Arc<Notify>,
     ) -> (Self, RemoteFeed) {
+        Self::new_with_config(
+            colors,
+            dimensions,
+            writer,
+            resizer,
+            event_notify,
+            crate::EmulatorConfig::default(),
+        )
+    }
+
+    /// Like [`Self::new_with_notifier`] with explicit emulator settings (the
+    /// hosted pane uses the same ones as a local pane).
+    pub fn new_with_config(
+        colors: TerminalColors,
+        dimensions: TermDimensions,
+        writer: RemoteWriter,
+        resizer: RemoteResizer,
+        event_notify: Arc<Notify>,
+        config: crate::EmulatorConfig,
+    ) -> (Self, RemoteFeed) {
         let (tx, rx): (SyncSender<TerminalEvent>, Receiver<TerminalEvent>) = sync_channel(256);
-        let emulator = Arc::new(Mutex::new(TerminalEmulator::new(
+        let emulator = Arc::new(Mutex::new(TerminalEmulator::new_with(
             colors,
             dimensions,
             tx.clone(),
+            config,
         )));
+        let (agent_tap, _) = tokio::sync::broadcast::channel(256);
         let feed = RemoteFeed {
             emulator: Arc::clone(&emulator),
             events: tx,
             writer: Arc::clone(&writer),
             event_notify,
+            agent_tap: agent_tap.clone(),
         };
         (
             Self {
@@ -810,9 +851,15 @@ impl RemoteSession {
                 dimensions,
                 writer,
                 resizer,
+                agent_tap,
             },
             feed,
         )
+    }
+
+    /// Live output of a hosted session, for agent terminal tools.
+    pub fn subscribe_agent_output(&self) -> tokio::sync::broadcast::Receiver<Vec<u8>> {
+        self.agent_tap.subscribe()
     }
 
     pub fn dimensions(&self) -> TermDimensions {
@@ -933,6 +980,30 @@ mod tests {
 
     fn dark_colors() -> TerminalColors {
         TerminalColors::xterm_default()
+    }
+
+    #[test]
+    fn hosted_agent_tap_gets_live_output_but_not_snapshots() {
+        let (remote, feed) = RemoteSession::new_with_config(
+            dark_colors(),
+            TermDimensions::new(80, 24),
+            Arc::new(|_| {}),
+            Arc::new(|_, _| {}),
+            Arc::new(Notify::new()),
+            SessionOptions {
+                scrollback: Some(7),
+                ..Default::default()
+            }
+            .emulator_config(),
+        );
+        let mut tap = remote.subscribe_agent_output();
+        feed.feed_hosted(b"history\r\n", true);
+        assert!(tap.try_recv().is_err(), "snapshot bytes are not output");
+        feed.feed_hosted(b"live", false);
+        assert_eq!(tap.try_recv().unwrap(), b"live".to_vec());
+        // The emulator still saw both.
+        let text = remote.serialize_scrollback(None).unwrap();
+        assert!(text.contains("history") && text.contains("live"));
     }
 
     /// Pump events until `pred` sees the rendered screen text, or we time out.

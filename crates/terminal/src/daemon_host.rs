@@ -23,7 +23,7 @@ mod imp {
     use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex, MutexGuard};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use labonair_terminal_host::client::{HostClient, HostStatus, SessionSink};
     use labonair_terminal_host::protocol::{
@@ -38,8 +38,36 @@ mod imp {
     use crate::session::{ForegroundProcess, RemoteFeed, RemoteSession};
     use crate::{SessionOptions, TermDimensions, TerminalColors};
 
-    /// How long the foreground job of a hosted pane may be stale.
-    const FOREGROUND_TTL: Duration = Duration::from_secs(1);
+    /// How long the foreground job of a hosted pane may be stale before a
+    /// background refresh is started.
+    const FOREGROUND_TTL: Duration = Duration::from_secs(3);
+
+    /// Cache of a hosted pane's foreground job. Reads never wait on the
+    /// daemon: they return the cached name and say when to refresh it in the
+    /// background.
+    #[derive(Default)]
+    pub(super) struct ForegroundCache {
+        name: Option<String>,
+        at: Option<Instant>,
+        refreshing: bool,
+    }
+
+    impl ForegroundCache {
+        /// The cached name, and whether the caller must start a refresh now
+        /// (stale and none in flight).
+        pub(super) fn read(&mut self, now: Instant, ttl: Duration) -> (Option<String>, bool) {
+            let stale = self.at.is_none_or(|at| now.duration_since(at) >= ttl);
+            let start = stale && !self.refreshing;
+            self.refreshing |= start;
+            (self.name.clone(), start)
+        }
+
+        pub(super) fn store(&mut self, name: Option<String>, now: Instant) {
+            self.name = name;
+            self.at = Some(now);
+            self.refreshing = false;
+        }
+    }
 
     fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         mutex
@@ -185,6 +213,7 @@ mod imp {
             event_notify: Arc<Notify>,
         ) -> Result<SessionBackend, String> {
             let (cols, rows) = grid(dimensions);
+            let emulator_config = options.emulator_config();
             let id = match self.adopt {
                 Some(id) => id,
                 None => {
@@ -229,8 +258,14 @@ mod imp {
                     }
                 })
             };
-            let (remote, feed) =
-                RemoteSession::new_with_notifier(colors, dimensions, writer, resizer, event_notify);
+            let (remote, feed) = RemoteSession::new_with_config(
+                colors,
+                dimensions,
+                writer,
+                resizer,
+                event_notify,
+                emulator_config,
+            );
             let shared = Arc::new(Shared {
                 client: self.client.clone(),
                 id,
@@ -238,6 +273,7 @@ mod imp {
                 link: Mutex::new(HostedLink::Live),
                 dims: Mutex::new((cols, rows)),
                 attach_dims: Mutex::new((cols, rows)),
+                foreground: Mutex::new(ForegroundCache::default()),
                 exited: AtomicBool::new(false),
                 finished: AtomicBool::new(false),
             });
@@ -270,6 +306,7 @@ mod imp {
         dims: Mutex<(u16, u16)>,
         /// Size the daemon attached us at (what the snapshot was rendered for).
         attach_dims: Mutex<(u16, u16)>,
+        foreground: Mutex<ForegroundCache>,
         exited: AtomicBool,
         /// Killed or detached: nothing more to tell the daemon.
         finished: AtomicBool,
@@ -368,13 +405,27 @@ mod imp {
             if shared.exited.load(Ordering::SeqCst) || self.link() != HostedLink::Live {
                 return None;
             }
-            shared
-                .client
-                .list_sessions_cached(FOREGROUND_TTL)
-                .into_iter()
-                .find(|info| info.id == shared.id)
-                .and_then(|info| info.foreground)
-                .map(|name| ForegroundProcess { name, pid: 0 })
+            let (name, refresh) = lock(&shared.foreground).read(Instant::now(), FOREGROUND_TTL);
+            if refresh {
+                // A hung daemon must not stall the UI: ask on a thread and
+                // keep answering from the cache meanwhile.
+                let worker = Arc::clone(shared);
+                let spawned = std::thread::Builder::new()
+                    .name("labonair-host-foreground".into())
+                    .spawn(move || {
+                        let name = worker
+                            .client
+                            .list_sessions_cached(Duration::from_secs(1))
+                            .into_iter()
+                            .find(|info| info.id == worker.id)
+                            .and_then(|info| info.foreground);
+                        lock(&worker.foreground).store(name, Instant::now());
+                    });
+                if spawned.is_err() {
+                    lock(&shared.foreground).store(name.clone(), Instant::now());
+                }
+            }
+            name.map(|name| ForegroundProcess { name, pid: 0 })
         }
 
         fn kill(&self) {
@@ -397,6 +448,33 @@ mod imp {
             }
             shared.client.unregister(shared.id);
             shared.client.detach(shared.id);
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn foreground_cache_refreshes_in_the_background_and_never_waits() {
+            let t0 = Instant::now();
+            let ttl = Duration::from_secs(3);
+            let mut cache = ForegroundCache::default();
+            // Cold: nothing cached, a refresh is requested once.
+            assert_eq!(cache.read(t0, ttl), (None, true));
+            assert_eq!(cache.read(t0, ttl), (None, false));
+            cache.store(Some("claude".into()), t0);
+            // Fresh: served from the cache, no refresh.
+            assert_eq!(
+                cache.read(t0 + Duration::from_secs(1), ttl),
+                (Some("claude".into()), false)
+            );
+            // Stale: still served, one refresh requested.
+            let late = t0 + Duration::from_secs(4);
+            assert_eq!(cache.read(late, ttl), (Some("claude".into()), true));
+            assert_eq!(cache.read(late, ttl), (Some("claude".into()), false));
+            cache.store(None, late);
+            assert_eq!(cache.read(late, ttl), (None, false));
         }
     }
 
