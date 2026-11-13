@@ -451,6 +451,13 @@ mod imp {
         }
     }
 
+    impl Drop for Control {
+        /// Dropping a handle without closing the tab (app quit) only detaches.
+        fn drop(&mut self) {
+            self.detach();
+        }
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -475,13 +482,6 @@ mod imp {
             assert_eq!(cache.read(late, ttl), (Some("claude".into()), false));
             cache.store(None, late);
             assert_eq!(cache.read(late, ttl), (None, false));
-        }
-    }
-
-    impl Drop for Control {
-        /// Dropping a handle without closing the tab (app quit) only detaches.
-        fn drop(&mut self) {
-            self.detach();
         }
     }
 }
