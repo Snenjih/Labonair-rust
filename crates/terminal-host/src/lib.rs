@@ -4,3 +4,7 @@
 pub mod protocol;
 #[cfg(unix)]
 pub mod server;
+#[cfg(unix)]
+pub mod client;
+#[cfg(unix)]
+pub mod spawn;
