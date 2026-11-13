@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use alacritty_terminal::grid::Scroll;
-use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{native_pty_system, Child, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::Notify;
 
 use crate::engine::{
@@ -34,6 +34,10 @@ pub struct SessionOptions {
     pub working_directory: Option<String>,
     /// Extra environment variables.
     pub env: Vec<(String, String)>,
+    /// Start from an empty environment instead of inheriting this process's
+    /// (the detached host never passes its own environment on; `env` is then
+    /// the complete environment). Default `false` = inherit, as before.
+    pub clear_env: bool,
     /// Start the shell in block-terminal mode (`LABONAIR_BLOCKS=1`). Fixed for
     /// the shell's lifetime.
     pub blocks: bool,
@@ -114,8 +118,15 @@ fn process_name(pid: u32) -> Option<String> {
     (!comm.is_empty()).then(|| comm.to_string())
 }
 
+/// Hook run by the PTY reader thread after every chunk was parsed, **while the
+/// emulator lock is held**. It lets the detached session host mirror the byte
+/// stream atomically with emulator state (snapshot + live stream never gap or
+/// overlap). It must be fast and must never block.
+pub type OutputTap = Box<dyn FnMut(&mut TerminalEmulator, &[u8]) + Send>;
+
 /// A running local terminal session.
 pub struct TerminalSession {
+    child: Box<dyn Child + Send>,
     emulator: Arc<Mutex<TerminalEmulator>>,
     master: Box<dyn MasterPty + Send>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
@@ -148,6 +159,17 @@ impl TerminalSession {
         options: SessionOptions,
         event_notify: Arc<Notify>,
     ) -> Result<Self, String> {
+        Self::spawn_with_tap(colors, dimensions, options, event_notify, None)
+    }
+
+    /// [`Self::spawn_with_notifier`] plus an optional [`OutputTap`].
+    pub fn spawn_with_tap(
+        colors: TerminalColors,
+        dimensions: TermDimensions,
+        options: SessionOptions,
+        event_notify: Arc<Notify>,
+        mut tap: Option<OutputTap>,
+    ) -> Result<Self, String> {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -160,6 +182,9 @@ impl TerminalSession {
 
         let shell = options.shell.clone().unwrap_or_else(default_shell);
         let mut cmd = CommandBuilder::new(&shell);
+        if options.clear_env {
+            cmd.env_clear();
+        }
         cmd.args(&options.args);
         // Load Labonair shell integration (OSC 7 + OSC 133 emitters, env).
         crate::shell_integration::configure(&mut cmd, &shell, options.blocks);
@@ -261,6 +286,9 @@ impl TerminalSession {
                                     Err(_) => break,
                                 };
                                 let extra = guard.feed(&buf[..n]);
+                                if let Some(tap) = tap.as_mut() {
+                                    tap(&mut guard, &buf[..n]);
+                                }
                                 let replies = guard.take_pty_output();
                                 drop(guard);
                                 for ev in extra {
@@ -299,6 +327,7 @@ impl TerminalSession {
         }
 
         Ok(Self {
+            child,
             emulator,
             master: pair.master,
             writer,
@@ -382,6 +411,37 @@ impl TerminalSession {
         self.dimensions
     }
 
+    /// Exit code of the child if it has already terminated (reaps it). Does not
+    /// block; `None` while it is still running.
+    pub fn try_exit_code(&mut self) -> Option<i32> {
+        let status = self.child.try_wait().ok().flatten()?;
+        Some(status.exit_code() as i32)
+    }
+
+    /// Resize only the kernel PTY (no emulator, no stored dimensions). Used for
+    /// the SIGWINCH "wiggle" and by the detached host, which resizes its
+    /// emulator itself under the emulator lock.
+    pub fn resize_pty(&self, dimensions: TermDimensions) -> Result<(), String> {
+        self.master
+            .resize(PtySize {
+                rows: dimensions.screen_lines as u16,
+                cols: dimensions.columns as u16,
+                pixel_width: dimensions
+                    .cell_width
+                    .saturating_mul(dimensions.columns as u16),
+                pixel_height: dimensions
+                    .cell_height
+                    .saturating_mul(dimensions.screen_lines as u16),
+            })
+            .map_err(|e| format!("pty resize failed: {e}"))
+    }
+
+    /// Shared handle to the PTY input writer, for a caller that wants to write
+    /// from its own thread without holding the session.
+    pub fn writer(&self) -> Arc<Mutex<Box<dyn Write + Send>>> {
+        Arc::clone(&self.writer)
+    }
+
     /// Write user input bytes to the shell.
     pub fn write(&self, bytes: &[u8]) -> Result<(), String> {
         let mut writer = self.writer.lock().map_err(|_| "pty writer poisoned")?;
@@ -398,18 +458,7 @@ impl TerminalSession {
     /// Resize both the emulator grid and the underlying PTY.
     pub fn resize(&mut self, dimensions: TermDimensions) -> Result<(), String> {
         self.dimensions = dimensions;
-        self.master
-            .resize(PtySize {
-                rows: dimensions.screen_lines as u16,
-                cols: dimensions.columns as u16,
-                pixel_width: dimensions
-                    .cell_width
-                    .saturating_mul(dimensions.columns as u16),
-                pixel_height: dimensions
-                    .cell_height
-                    .saturating_mul(dimensions.screen_lines as u16),
-            })
-            .map_err(|e| format!("pty resize failed: {e}"))?;
+        self.resize_pty(dimensions)?;
         self.emulator
             .lock()
             .map_err(|_| "emulator poisoned")?
@@ -546,6 +595,8 @@ impl Drop for TerminalSession {
         if let Some(handle) = self.reader_thread.take() {
             let _ = handle.join();
         }
+        // Reap the child so a long-lived host does not accumulate zombies.
+        let _ = self.child.wait();
     }
 }
 

@@ -14,6 +14,9 @@ tokio = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
+# alacritty_terminal's rustix 0.38 needs `std` for its fd traits; only gpui
+# enables it otherwise, so a gpui-free build (labonair-host) fails without this.
+rustix = { version = "0.38", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 uuid = { workspace = true }

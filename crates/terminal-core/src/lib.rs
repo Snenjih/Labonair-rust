@@ -19,13 +19,13 @@ pub mod shell_integration;
 pub use alacritty_terminal::grid::Scroll;
 pub use alacritty_terminal::vte::ansi::{CursorShape, Rgb};
 pub use engine::{
-    EmulatorConfig, ModeState, PromptPhase, RenderableCell, RenderableCursor, RenderableScreen,
-    SelectionSpan, SessionMetadata, TermDimensions, TerminalEmulator, TerminalEvent,
-    DEFAULT_SCROLLBACK_LINES,
+    resize_wiggle_sizes, EmulatorConfig, ModeState, PromptPhase, RenderableCell, RenderableCursor,
+    RenderableScreen, SelectionSpan, SessionMetadata, SnapshotOptions, TermDimensions,
+    TerminalEmulator, TerminalEvent, DEFAULT_SCROLLBACK_LINES,
 };
 pub use palette::{ansi_self_test, TerminalColors};
 pub use session::{
-    ForegroundProcess, RemoteFeed, RemoteResizer, RemoteSession, RemoteWriter, SessionAccess,
-    SessionOptions, TerminalContext, TerminalSession,
+    ForegroundProcess, OutputTap, RemoteFeed, RemoteResizer, RemoteSession, RemoteWriter,
+    SessionAccess, SessionOptions, TerminalContext, TerminalSession,
 };
 pub use shell_integration::Shell;
