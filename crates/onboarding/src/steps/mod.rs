@@ -2,6 +2,7 @@
 
 mod hosts;
 mod look;
+mod sessions;
 mod start;
 
 use crate::services::OnboardingServices;
@@ -13,6 +14,7 @@ pub fn register_builtin_steps(
 ) -> Result<(), DuplicateStepId> {
     registry.register(look::LookStep::new(services))?;
     registry.register(start::StartStep::new(services))?;
+    registry.register(sessions::SessionsStep::new(services))?;
     registry.register(hosts::HostsStep::new(services))?;
     Ok(())
 }

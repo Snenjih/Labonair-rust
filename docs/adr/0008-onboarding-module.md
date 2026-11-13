@@ -35,14 +35,17 @@ page in the workspace's centre pane, not as a popup.
    `OnboardingStep` (stable namespaced `id`, `order`, `title`, `hint`,
    `is_applicable`, async `prepare`, `build`). A built step returns its view
    plus an optional `on_finish` for deferred work. Duplicate IDs are an error.
-   The crate registers three built-in steps through `register_builtin_steps`
-   (`onboarding.look` 100, `onboarding.start` 200, `onboarding.hosts` 300);
+   The crate registers four built-in steps through `register_builtin_steps`
+   (`onboarding.start` 100, `onboarding.look` 200, `onboarding.sessions` 250,
+   `onboarding.hosts` 300; `sessions` is unix-only and writes
+   `terminal.sessionHost`);
    other modules may register more through the same typed API. The shell never
    keeps a step list.
 4. **Onboarding writes through existing owners, it does not own their data.**
-   Look and Start write ordinary settings values (`general.theme`,
+   Look, Start and Sessions write ordinary settings values (`general.theme`,
    `appearance.translucentSurfaces`, `appearance.paneLayout`,
-   `general.defaultStartupTab`, `general.sessionRestore`) through
+   `general.defaultStartupTab`, `general.sessionRestore`,
+   `terminal.sessionHost`) through
    `SettingsStore::update_user_settings_deferred`, the route the Settings
    window uses. The composition root injects `OnboardingServices`, including an
    `apply_appearance` callback that re-derives the theme store, so the crate
