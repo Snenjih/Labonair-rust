@@ -7004,7 +7004,9 @@ impl Workspace {
             .when(!zoomed && !is_bottom, |d| d.w(px(size)))
             .when(!zoomed && is_bottom, |d| d.h(px(size)))
             .when(zoomed, |d| d.flex_1())
-            .when(!is_bottom, |d| d.h_full())
+            // Framed docks stretch inside the row instead: `h_full` plus the
+            // vertical gap margin would overflow into the statusbar.
+            .when(!is_bottom && !framed, |d| d.h_full())
             .when(is_bottom, |d| d.w_full())
             .bg(sidebar_bg)
             .text_color(sidebar_fg)
