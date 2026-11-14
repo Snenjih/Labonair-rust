@@ -6820,12 +6820,15 @@ impl Workspace {
     /// The empty-workspace surface, shown when no tabs are open. Double-click
     /// opens a local terminal; dropping files opens an editor tab for each.
     fn render_empty_surface(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let bg = self.theme.read(cx).background();
+        let theme = self.theme.read(cx);
+        let bg = theme.background();
+        // Floating layout: let the window canvas show through, no card.
+        let floating = theme.metrics().pane_layout == labonair_theme::PaneLayout::Comfortable;
 
         div()
             .id("empty-workspace")
             .size_full()
-            .bg(bg)
+            .when(!floating, |d| d.bg(bg))
             .on_click(cx.listener(|this, ev: &ClickEvent, window, cx| {
                 if ev.click_count() >= 2 {
                     this.new_terminal_tab(window, cx);

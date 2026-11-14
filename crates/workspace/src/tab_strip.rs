@@ -524,6 +524,13 @@ impl Workspace {
                     .flex_shrink()
                     .min_w_0()
                     .when(fill_tabs, |strip| strip.flex_1())
+                    // No tabs: keep the (empty) strip for layout so "+" stays
+                    // right-aligned, but drop the track fill and rim.
+                    .when(tabs.is_empty(), |strip| {
+                        strip
+                            .bg(gpui::transparent_black())
+                            .border_color(gpui::transparent_black())
+                    })
                     .overflow_x_scroll()
                     .track_scroll(&self.tab_strip.scroll_h)
                     .on_drag_move(cx.listener(
