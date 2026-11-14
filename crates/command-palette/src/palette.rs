@@ -202,6 +202,7 @@ pub enum Page {
     UiDensity,
     TerminalCursorStyle,
     EditorLanguage,
+    Terminals,
 }
 
 impl Page {
@@ -223,6 +224,7 @@ impl Page {
             Page::UiDensity => "Search densities\u{2026}",
             Page::TerminalCursorStyle => "Search cursor styles\u{2026}",
             Page::EditorLanguage => "Search languages\u{2026}",
+            Page::Terminals => "Search terminals\u{2026}",
         }
     }
 
@@ -244,6 +246,7 @@ impl Page {
             Page::UiDensity => "UI Density",
             Page::TerminalCursorStyle => "Cursor Style",
             Page::EditorLanguage => "Language",
+            Page::Terminals => "Terminals",
         }
     }
 }
@@ -337,6 +340,7 @@ fn page_for(page: CommandSubmenu) -> Page {
         CommandSubmenu::UiDensity => Page::UiDensity,
         CommandSubmenu::TerminalCursorStyle => Page::TerminalCursorStyle,
         CommandSubmenu::EditorLanguage => Page::EditorLanguage,
+        CommandSubmenu::Terminals => Page::Terminals,
     }
 }
 
@@ -499,6 +503,10 @@ enum RowKey {
     },
     /// Switch the active editor's language mode.
     SetEditorLanguage(String),
+    /// Attach a background-host terminal as a new tab.
+    OpenBackgroundTerminal(u64),
+    /// Close a background-host terminal.
+    KillBackgroundTerminal(u64),
     /// Non-actionable (empty-state placeholder line).
     Noop,
 }
@@ -555,6 +563,8 @@ fn row_key_for_action(action: &SubmenuAction) -> RowKey {
             value: value.clone(),
         },
         SubmenuAction::SetEditorLanguage(id) => RowKey::SetEditorLanguage(id.clone()),
+        SubmenuAction::OpenBackgroundTerminal(id) => RowKey::OpenBackgroundTerminal(*id),
+        SubmenuAction::KillBackgroundTerminal(id) => RowKey::KillBackgroundTerminal(*id),
     }
 }
 
@@ -959,6 +969,13 @@ where
                 mode,
                 "No repository detected",
             ),
+            Page::Terminals => self.submenu_rows(
+                CommandSubmenu::Terminals,
+                "Terminals",
+                IconName::Terminal,
+                mode,
+                "No terminals in the background host",
+            ),
             Page::StatusBarHidden => self.submenu_rows(
                 CommandSubmenu::StatusBarHidden,
                 "Hidden Status Bar Items",
@@ -1145,6 +1162,18 @@ where
                 self.close(cx);
                 cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
                     SubmenuAction::SetEditorLanguage(id),
+                )));
+            }
+            RowKey::OpenBackgroundTerminal(id) => {
+                self.close(cx);
+                cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
+                    SubmenuAction::OpenBackgroundTerminal(id),
+                )));
+            }
+            RowKey::KillBackgroundTerminal(id) => {
+                self.close(cx);
+                cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
+                    SubmenuAction::KillBackgroundTerminal(id),
                 )));
             }
         }
@@ -1697,6 +1726,7 @@ mod tests {
             Page::UiDensity,
             Page::TerminalCursorStyle,
             Page::EditorLanguage,
+            Page::Terminals,
         ];
         let labels: std::collections::HashSet<_> = pages.iter().map(|p| p.label()).collect();
         assert_eq!(labels.len(), pages.len());

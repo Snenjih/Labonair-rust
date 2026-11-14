@@ -3,8 +3,8 @@
 //! every session stopped.
 
 use gpui::{App, Context, Window};
-use labonair_settings::{GeneralSettings, Settings as _};
 use labonair_notifications::{notification_center, Notification};
+use labonair_settings::{GeneralSettings, Settings as _};
 use labonair_terminal::{BackgroundSession, DaemonHost};
 
 use crate::host_restore;
@@ -25,7 +25,84 @@ fn running_host(cx: &App) -> Option<DaemonHost> {
     .ok()
 }
 
+/// Every session of the running background host, empty when there is none.
+/// Blocking socket I/O: call it off the UI thread.
+pub fn list_background_sessions(scrollback_lines: u32) -> Vec<BackgroundSession> {
+    DaemonHost::connect(
+        &labonair_filesystem::paths::data_dir(),
+        scrollback_lines,
+        false,
+    )
+    .and_then(|host| host.list_sessions())
+    .unwrap_or_default()
+}
+
 impl Workspace {
+    /// Pair each background session with the tab of this window that shows it
+    /// (`See / Manage Terminals`).
+    pub fn background_terminal_rows(
+        &self,
+        sessions: &[BackgroundSession],
+        cx: &App,
+    ) -> Vec<(BackgroundSession, Option<u64>)> {
+        sessions
+            .iter()
+            .map(|session| {
+                let tab = self
+                    .panes
+                    .iter()
+                    .find(|(_, entry)| {
+                        entry.view.read(cx).handle().host_session_id() == Some(session.id)
+                    })
+                    .and_then(|(pane, _)| self.tab_of_pane(*pane));
+                (session.clone(), tab)
+            })
+            .collect()
+    }
+
+    /// Attach background session `id` as a new tab.
+    pub fn open_background_terminal(
+        &mut self,
+        id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match running_host(cx)
+            .and_then(|host| host.list_sessions().ok())
+            .and_then(|sessions| sessions.into_iter().find(|s| s.id == id))
+        {
+            Some(session) => self.open_adopted_tab(&session, window, cx),
+            None => notification_center(cx).update(cx, |center, cx| {
+                center.push(
+                    Notification::info("Terminal is gone", "It ended in the background host.")
+                        .source("terminal")
+                        .dedupe_key("terminal:background-terminal-gone"),
+                    cx,
+                );
+            }),
+        }
+    }
+
+    /// Close background session `id`: through its pane when this window shows
+    /// it (the pane ends with it), else directly in the host.
+    pub fn kill_background_terminal(
+        &mut self,
+        id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let pane = self
+            .panes
+            .iter()
+            .find(|(_, entry)| entry.view.read(cx).handle().host_session_id() == Some(id))
+            .map(|(pane, _)| *pane);
+        match (pane, running_host(cx)) {
+            (Some(pane), _) => self.close_pane_id(pane, window, cx),
+            (None, Some(host)) => host.kill_session(id),
+            (None, None) => {}
+        }
+    }
+
     /// Daemon sessions no open pane holds: what a crash or a closed window left
     /// behind.
     fn recoverable_sessions(&self, cx: &App) -> Vec<BackgroundSession> {
@@ -37,7 +114,7 @@ impl Workspace {
             .values()
             .filter_map(|entry| entry.view.read(cx).handle().host_session_id())
             .collect();
-        host_restore::orphans(&alive, &self.known_scrollback_ids(), &adopted)
+        host_restore::orphans(&alive, &adopted)
             .into_iter()
             .cloned()
             .collect()
@@ -127,6 +204,7 @@ impl Workspace {
         self.register_pane(pane_id, PaneKind::Terminal);
         self.layouts.insert(tab_id, WorkspaceLayout::new(pane_id));
         self.focus_active(window, cx);
+        self.save_session_soon(cx);
     }
 }
 

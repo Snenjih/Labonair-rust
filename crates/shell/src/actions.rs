@@ -93,6 +93,7 @@ impl AppShell {
         let data = self.build_palette_data(cx);
         let palette = self.panels.command_palette.clone();
         palette.update(cx, |p, _| p.set_data(data));
+        self.refresh_background_sessions(cx);
         self.modal_layer.update(cx, |layer, cx| {
             layer.open_modal(window, cx, move |window, cx| {
                 palette.update(cx, |p, cx| match page {
@@ -102,6 +103,34 @@ impl AppShell {
                 CommandPaletteModal::new(palette.clone(), cx)
             });
         });
+    }
+
+    /// Ask the background host for its sessions without blocking the UI, then
+    /// republish the palette data. The host list is socket I/O, so it never
+    /// runs inside `build_palette_data`.
+    fn refresh_background_sessions(&mut self, cx: &mut Context<Self>) {
+        let lines = TerminalSettings::try_get(cx)
+            .map(|s| s.detached_scrollback_lines())
+            .unwrap_or_default();
+        cx.spawn(async move |this, cx| {
+            let sessions = cx
+                .background_executor()
+                .spawn(async move { labonair_workspace::list_background_sessions(lines) })
+                .await;
+            this.update(cx, |this, cx| {
+                if sessions == this.background_sessions {
+                    return;
+                }
+                this.background_sessions = sessions;
+                let data = this.build_palette_data(cx);
+                this.panels.command_palette.update(cx, |p, cx| {
+                    p.set_data(data);
+                    cx.notify();
+                });
+            })
+            .ok();
+        })
+        .detach();
     }
 
     /// `Cmd+F` — toggle the workspace's transient search overlay (T18-002).
@@ -219,6 +248,15 @@ impl AppShell {
             self.panels.snippets.read(cx).snippet_choices(),
         );
         register_snapshot(&mut submenus, snippets);
+
+        register_snapshot(
+            &mut submenus,
+            labonair_terminal::command_provider::terminals_submenu(
+                self.workspace
+                    .read(cx)
+                    .background_terminal_rows(&self.background_sessions, cx),
+            ),
+        );
 
         let git_branches = labonair_git::command_provider::branches_submenu(
             self.panels.git_panel.read(cx).branch_choices(),

@@ -19,6 +19,7 @@
 use std::cell::RefCell;
 
 use gpui::{AppContext, Context, Window};
+use labonair_settings::content::terminal::SessionHostMode;
 use labonair_terminal::{DaemonHost, SshHostedHost};
 
 use crate::host_restore::{self, HostRestore};
@@ -329,10 +330,12 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if t.host_kind != HostKind::Detached || t.host_session_id.is_none() {
+        let ts = terminal_settings(cx);
+        // A snapshot the app saved before it created the session knows nothing
+        // of the host: the setting decides then, the pane tag finds the session.
+        if t.host_kind != HostKind::Detached && ts.session_host() != SessionHostMode::Detached {
             return false;
         }
-        let ts = terminal_settings(cx);
         let alive = DaemonHost::connect(
             &labonair_filesystem::paths::data_dir(),
             ts.detached_scrollback_lines(),
@@ -342,12 +345,9 @@ impl Workspace {
         let Ok(alive) = alive else {
             return false;
         };
-        let HostRestore::Attach(host_session_id) = host_restore::decide(
-            t.host_kind,
-            t.host_session_id,
-            t.scrollback_id.as_deref(),
-            &alive,
-        ) else {
+        let HostRestore::Attach(host_session_id) =
+            host_restore::decide(t.host_session_id, t.scrollback_id.as_deref(), &alive)
+        else {
             return false;
         };
         let scrollback_id = t.scrollback_id.clone().unwrap_or_default();

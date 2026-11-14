@@ -111,6 +111,7 @@ impl Workspace {
                 scrollback_id,
             },
         );
+        self.save_session_soon(cx);
         Ok(())
     }
 

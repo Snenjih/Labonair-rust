@@ -88,6 +88,9 @@ pub struct AppShell {
     /// (T17-006), command queue drained by [`Self`]'s background task.
     pub(crate) live_bridge: WorkspaceLiveBridge,
     _live_drain: Task<()>,
+    /// Sessions of the background host as of the last palette open (refreshed
+    /// off the UI thread), for `See / Manage Terminals`.
+    pub(crate) background_sessions: Vec<labonair_terminal::BackgroundSession>,
     focus_handle: FocusHandle,
     last_saved: Option<(Bounds<Pixels>, Instant)>,
 }
@@ -164,6 +167,7 @@ impl AppShell {
             onboarding,
             live_bridge,
             _live_drain: live_drain,
+            background_sessions: Vec::new(),
             focus_handle: cx.focus_handle(),
             last_saved: None,
         }

@@ -8,8 +8,6 @@
 
 use labonair_terminal::BackgroundSession;
 
-use crate::session::HostKind;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HostRestore {
     /// The session is alive in the daemon: attach it (no resume banner, the
@@ -21,44 +19,37 @@ pub(crate) enum HostRestore {
 
 /// Decide how a pane restores. `alive` is the daemon's session list.
 ///
-/// The stored id only counts when the daemon's session carries the pane's tag
-/// (its scrollback uuid): ids restart with every daemon lifetime, so a bare id
-/// could name somebody else's session after the daemon was restarted.
+/// A session counts when it carries the pane's tag (its scrollback uuid, unique
+/// per pane); the stored id is only a tie-breaker, because ids restart with
+/// every daemon lifetime and the snapshot may be older than the session (the
+/// app was killed before it saved). Replaying while a session with the tag is
+/// alive would leave that session running unseen.
 pub(crate) fn decide(
-    kind: HostKind,
     host_session_id: Option<u64>,
     scrollback_id: Option<&str>,
     alive: &[BackgroundSession],
 ) -> HostRestore {
-    let (HostKind::Detached, Some(id), Some(tag)) = (kind, host_session_id, scrollback_id) else {
+    let Some(tag) = scrollback_id else {
         return HostRestore::Replay;
     };
-    if alive
+    alive
         .iter()
-        .any(|s| s.id == id && s.pane_tag.as_deref() == Some(tag))
-    {
-        HostRestore::Attach(id)
-    } else {
-        HostRestore::Replay
-    }
+        .filter(|s| s.pane_tag.as_deref() == Some(tag))
+        .max_by_key(|s| (Some(s.id) == host_session_id, !s.attached, s.id))
+        .map_or(HostRestore::Replay, |s| HostRestore::Attach(s.id))
 }
 
 /// Sessions to offer as "recovered": nobody holds them (`attached` would mean
-/// another window or instance does), no open pane carries their tag and this
-/// app has not adopted them already.
+/// another window or instance does) and this app has not adopted them. A
+/// session whose tag an open pane carries still counts: restore adopts at most
+/// one session per tag, any twin is a leftover.
 pub(crate) fn orphans<'a>(
     alive: &'a [BackgroundSession],
-    known_tags: &[String],
     adopted_ids: &[u64],
 ) -> Vec<&'a BackgroundSession> {
     alive
         .iter()
         .filter(|s| !s.attached && !adopted_ids.contains(&s.id))
-        .filter(|s| {
-            s.pane_tag
-                .as_ref()
-                .is_none_or(|tag| !known_tags.contains(tag))
-        })
         .collect()
 }
 
@@ -88,52 +79,51 @@ mod tests {
     }
 
     #[test]
-    fn attaches_only_a_live_session_with_the_panes_tag() {
+    fn attaches_the_live_session_carrying_the_panes_tag() {
         let alive = [session(4, Some("sb-a"), false)];
-        let d = HostKind::Detached;
         assert_eq!(
-            decide(d, Some(4), Some("sb-a"), &alive),
+            decide(Some(4), Some("sb-a"), &alive),
             HostRestore::Attach(4)
         );
-        // Gone, or the id now belongs to another pane's session.
+        // A stale snapshot (id gone or missing) still finds the session by tag.
         assert_eq!(
-            decide(d, Some(5), Some("sb-a"), &alive),
-            HostRestore::Replay
+            decide(Some(5), Some("sb-a"), &alive),
+            HostRestore::Attach(4)
         );
-        assert_eq!(
-            decide(d, Some(4), Some("sb-b"), &alive),
-            HostRestore::Replay
-        );
-        // Nothing to verify against.
-        assert_eq!(decide(d, Some(4), None, &alive), HostRestore::Replay);
-        assert_eq!(decide(d, None, Some("sb-a"), &alive), HostRestore::Replay);
+        assert_eq!(decide(None, Some("sb-a"), &alive), HostRestore::Attach(4));
+        // Another pane's tag, no tag, or an empty daemon: replay.
+        assert_eq!(decide(Some(4), Some("sb-b"), &alive), HostRestore::Replay);
+        assert_eq!(decide(Some(4), None, &alive), HostRestore::Replay);
+        assert_eq!(decide(Some(4), Some("sb-a"), &[]), HostRestore::Replay);
     }
 
     #[test]
-    fn app_panes_and_an_empty_daemon_always_replay() {
-        let alive = [session(4, Some("sb-a"), false)];
+    fn twins_prefer_the_stored_id_then_a_free_then_the_newest_session() {
+        let alive = [
+            session(3, Some("sb-a"), false),
+            session(6, Some("sb-a"), true),
+            session(7, Some("sb-a"), false),
+        ];
         assert_eq!(
-            decide(HostKind::App, Some(4), Some("sb-a"), &alive),
-            HostRestore::Replay
+            decide(Some(3), Some("sb-a"), &alive),
+            HostRestore::Attach(3)
         );
-        assert_eq!(
-            decide(HostKind::Detached, Some(4), Some("sb-a"), &[]),
-            HostRestore::Replay
-        );
+        assert_eq!(decide(None, Some("sb-a"), &alive), HostRestore::Attach(7));
     }
 
     #[test]
-    fn orphans_skip_claimed_adopted_and_foreign_sessions() {
+    fn orphans_skip_adopted_and_foreign_sessions_but_keep_twins() {
         let alive = [
             session(1, Some("open-pane"), false),
             session(2, Some("lost-pane"), false),
             session(3, None, false),
             session(4, Some("other-window"), true),
-            session(5, Some("adopted"), false),
+            session(5, Some("open-pane"), false),
         ];
-        let found = orphans(&alive, &["open-pane".to_string()], &[5]);
+        // 5 was adopted by the pane tagged "open-pane": its twin 1 is a leftover.
+        let found = orphans(&alive, &[5]);
         let ids: Vec<u64> = found.iter().map(|s| s.id).collect();
-        assert_eq!(ids, vec![2, 3]);
+        assert_eq!(ids, vec![1, 2, 3]);
     }
 
     #[test]

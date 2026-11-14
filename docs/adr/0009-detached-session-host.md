@@ -140,11 +140,22 @@ the daemon, and Windows.
   (acknowledges it when it already exited); `close_all` and dropping a handle only
   detach. `has_running_shells` ignores hosted sessions.
 * **Restore.** Pane snapshots carry `hostSessionId` and `hostKind` (`app` is the
-  default and is not written). A `detached` pane attaches only when the daemon's
-  session carries the pane's scrollback uuid as `pane_tag` (ids restart with every
-  daemon lifetime); otherwise the scrollback replay and resume hook apply.
-  Unattached sessions matching no open pane are offered once at startup
+  default and is not written). A pane attaches the daemon session that carries
+  its scrollback uuid as `pane_tag` (unique per pane; ids restart with every
+  daemon lifetime, so the stored id is only a tie-breaker). The tag is enough on
+  purpose: an app killed before it saved leaves a snapshot without the ids, and
+  replaying then would start a second shell next to the live one. Only when no
+  session carries the tag do the scrollback replay and resume hook apply.
+  Sessions nobody holds and no restored pane adopted are offered once at startup
   ("N background sessions found") and by `Terminal: Recover Background Sessions`.
+  In detached mode the snapshot is also saved right after a pane or tab is
+  created, not only on the 30 s timer and at window close.
+* **See / Manage Terminals.** The palette command `terminal::Manage` opens a
+  `Terminals` page listing every session of the host (`cwd . foreground job .
+  state`). Enter switches to the tab that shows the session, or attaches a
+  detached one as a new tab; Shift+Enter closes it (through its pane when this
+  window shows it, else in the host). The list is fetched off the UI thread
+  when the palette opens.
 * **Settings status block.** Settings > Terminal > "Background host" shows the
   host state, its sessions (Kill each), "Stop all sessions" and, for an
   incompatible host, "Restart host (N sessions end)". `labonair-settings-ui`

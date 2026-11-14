@@ -274,6 +274,8 @@ pub enum CommandId {
     // Detached session host (ADR 0009).
     TerminalRecoverBackgroundSessions,
     TerminalQuitAndStopAllSessions,
+    /// Submenu listing every terminal in the background host.
+    TerminalManage,
 }
 
 /// A visual hint that the GPUI adapter maps to its icon set.
@@ -325,6 +327,7 @@ pub enum CommandSubmenu {
     UiDensity,
     TerminalCursorStyle,
     EditorLanguage,
+    Terminals,
 }
 
 /// Stable identity and presentation metadata for a dynamic submenu.
@@ -376,6 +379,12 @@ pub enum SubmenuAction {
     },
     /// Switch the active editor's language mode (`Language::id`).
     SetEditorLanguage(String),
+    /// Attach a background-host terminal as a new tab (detached or held by
+    /// another window).
+    OpenBackgroundTerminal(u64),
+    /// Close a background-host terminal: its pane when this window shows it,
+    /// else the session in the host.
+    KillBackgroundTerminal(u64),
 }
 
 /// A user action emitted by a dynamic palette surface.
@@ -922,6 +931,7 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
         CommandId::TerminalQuitAndStopAllSessions,
         "terminal::QuitAndStopAllSessions",
     ),
+    (CommandId::TerminalManage, "terminal::Manage"),
 ];
 
 impl CommandId {

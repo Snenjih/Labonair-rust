@@ -36,6 +36,7 @@ pub mod editor_git_bridge;
 pub mod file_finder;
 mod host_restore;
 mod host_sessions;
+pub use host_sessions::list_background_sessions;
 pub mod layout;
 pub mod live_bridge;
 pub mod markdown;
@@ -1252,6 +1253,7 @@ impl Workspace {
         // exist plus anything past the retention window. Runs once on startup,
         // after restore has re-registered the panes it could bring back.
         this.cleanup_scrollback(cx);
+        this.save_session_soon(cx);
         // Detached session host (ADR 0009): offer sessions no pane claimed.
         this.announce_background_sessions(cx);
         cx.subscribe_in(
@@ -1302,6 +1304,19 @@ impl Workspace {
             &self.known_scrollback_ids(),
             retention,
         );
+    }
+
+    /// Persist the snapshot once the current update is done, when new panes
+    /// may live in the background host: their ids must reach disk before the
+    /// next periodic save, or an app killed right after start loses them.
+    pub(crate) fn save_session_soon(&self, cx: &mut Context<Self>) {
+        if terminal_settings(cx).session_host() != SessionHostMode::Detached {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            this.update(cx, |this, cx| this.maybe_save_session(cx)).ok();
+        })
+        .detach();
     }
 
     /// Persist the snapshot now if the `sessionRestore` preference is on;
@@ -2501,6 +2516,7 @@ impl Workspace {
         );
         self.layouts.insert(tab_id, WorkspaceLayout::new(pane_id));
         self.focus_active(window, cx);
+        self.save_session_soon(cx);
     }
 
     // ── Snippets (T12-001) ────────────────────────────────────────────────
@@ -2580,6 +2596,7 @@ impl Workspace {
         );
         self.layouts.insert(tab_id, WorkspaceLayout::new(pane_id));
         self.focus_active(window, cx);
+        self.save_session_soon(cx);
         let _ = handle.write(format!("{}\n", command.trim_end()).as_bytes());
         cx.notify();
     }
@@ -3985,6 +4002,7 @@ impl Workspace {
         self.register_pane(pane_id, crate::pane_kind::PaneKind::Terminal);
         self.layouts.insert(tab_id, WorkspaceLayout::new(pane_id));
         self.focus_active(window, cx);
+        self.save_session_soon(cx);
     }
 
     /// `Cmd-W`: close the focused pane if the tab is split, otherwise close

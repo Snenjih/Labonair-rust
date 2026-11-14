@@ -5,7 +5,8 @@ use std::rc::Rc;
 use gpui::App;
 
 use labonair_command_palette_core::{
-    CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider,
+    CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider, CommandSubmenu,
+    SubmenuAction, SubmenuDescriptor, SubmenuItem, SubmenuSecondary, SubmenuSnapshot,
 };
 use labonair_command_palette_runtime::CommandHandlerRegistry;
 
@@ -119,8 +120,72 @@ impl CommandProvider for TerminalCommandProvider {
                 "Terminal",
             )
             .with_icon(CommandIcon::Terminal),
+            CommandDescriptor::new(
+                CommandId::TerminalManage,
+                "See / Manage Terminals",
+                "Terminal",
+            )
+            .with_icon(CommandIcon::Terminal)
+            .with_submenu(CommandSubmenu::Terminals),
         ]
     }
+}
+
+/// Palette rows for the terminals of the background host. `tab` is the tab of
+/// this window that shows the session, if any.
+pub fn terminals_submenu(
+    rows: impl IntoIterator<Item = (crate::BackgroundSession, Option<u64>)>,
+) -> SubmenuSnapshot {
+    SubmenuSnapshot {
+        descriptor: SubmenuDescriptor::new("terminals", "Terminals", CommandSubmenu::Terminals),
+        items: rows
+            .into_iter()
+            .map(|(session, tab)| {
+                let title = session
+                    .label
+                    .clone()
+                    .or_else(|| session.title.clone())
+                    .unwrap_or_else(|| format!("Terminal {}", session.id));
+                let action = match tab {
+                    Some(tab) => SubmenuAction::SwitchToTab(tab),
+                    None => SubmenuAction::OpenBackgroundTerminal(session.id),
+                };
+                SubmenuItem {
+                    id: session.id.to_string(),
+                    title,
+                    subtitle: Some(terminal_subtitle(&session, tab.is_some())),
+                    active: false,
+                    action,
+                    secondary: Some(SubmenuSecondary {
+                        label: "Close".to_string(),
+                        action: SubmenuAction::KillBackgroundTerminal(session.id),
+                    }),
+                }
+            })
+            .collect(),
+    }
+}
+
+/// `cwd · foreground job · state` of one background terminal.
+fn terminal_subtitle(session: &crate::BackgroundSession, open_here: bool) -> String {
+    let state = if session.exited {
+        "exited"
+    } else if open_here {
+        "open in a tab"
+    } else if session.attached {
+        "open in another window"
+    } else {
+        "detached"
+    };
+    [
+        session.cwd.as_deref(),
+        session.foreground.as_deref(),
+        Some(state),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" \u{b7} ")
 }
 
 /// Register executable handlers owned by the terminal capability.
@@ -172,4 +237,52 @@ pub fn register_handlers(
             rename_target.rename(window, cx)
         })
         .expect("terminal command handler must have a unique id");
+}
+
+#[cfg(test)]
+mod terminals_submenu_tests {
+    use super::*;
+    use crate::BackgroundSession;
+
+    fn session(id: u64, attached: bool, exited: bool) -> BackgroundSession {
+        BackgroundSession {
+            id,
+            pane_tag: None,
+            label: Some("Ciel".to_string()),
+            cwd: Some("/work/Ciel".to_string()),
+            title: None,
+            exited,
+            attached,
+            foreground: Some("sleep".to_string()),
+        }
+    }
+
+    #[test]
+    fn open_here_switches_tab_and_detached_opens_a_tab() {
+        let snapshot = terminals_submenu([
+            (session(1, true, false), Some(7)),
+            (session(2, false, false), None),
+        ]);
+        assert_eq!(snapshot.items[0].action, SubmenuAction::SwitchToTab(7));
+        assert_eq!(
+            snapshot.items[0].subtitle.as_deref(),
+            Some("/work/Ciel \u{b7} sleep \u{b7} open in a tab")
+        );
+        assert_eq!(
+            snapshot.items[1].action,
+            SubmenuAction::OpenBackgroundTerminal(2)
+        );
+        assert_eq!(
+            snapshot.items[1].secondary.as_ref().map(|s| &s.action),
+            Some(&SubmenuAction::KillBackgroundTerminal(2))
+        );
+    }
+
+    #[test]
+    fn states_are_distinguishable() {
+        let sub = |attached, exited, here| terminal_subtitle(&session(1, attached, exited), here);
+        assert!(sub(false, true, false).ends_with("exited"));
+        assert!(sub(true, false, false).ends_with("open in another window"));
+        assert!(sub(false, false, false).ends_with("detached"));
+    }
 }

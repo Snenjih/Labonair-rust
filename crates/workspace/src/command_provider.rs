@@ -588,6 +588,18 @@ pub fn register_palette_action_handlers(
                         .update(cx, |workspace, cx| workspace.reveal_tab(*id, window, cx));
                     true
                 }
+                SubmenuAction::OpenBackgroundTerminal(id) => {
+                    workspace_handle.update(cx, |workspace, cx| {
+                        workspace.open_background_terminal(*id, window, cx)
+                    });
+                    true
+                }
+                SubmenuAction::KillBackgroundTerminal(id) => {
+                    workspace_handle.update(cx, |workspace, cx| {
+                        workspace.kill_background_terminal(*id, window, cx)
+                    });
+                    true
+                }
                 SubmenuAction::GoToEditorLine { tab_id, line } => {
                     workspace_handle.update(cx, |workspace, cx| {
                         workspace.goto_editor_line(*tab_id, *line, window, cx)
