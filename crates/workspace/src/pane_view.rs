@@ -9,6 +9,8 @@
 //! [`pane_frame`] and a [`pane_bar`]. Zoom paints only the zoomed pane; the
 //! rest of the tree keeps its layout state but is not rendered until zoom ends.
 
+use std::time::Instant;
+
 use gpui::prelude::FluentBuilder;
 use gpui::{
     canvas, div, px, AnyElement, AppContext, ClickEvent, Context, DragMoveEvent,
@@ -17,11 +19,12 @@ use gpui::{
 };
 use labonair_settings::Settings as _;
 use labonair_ui_kit::{
-    pane_bar, pane_frame, IconName, MotionExt, Palette, PaneAction, PaneLayoutStyle,
+    pane_bar, pane_frame, IconName, MotionExt, MotionLevel, Palette, PaneAction, PaneLayoutStyle,
 };
 
 use crate::pane::{Member, PaneId, SplitAxis, SplitDirection};
-use crate::tiling;
+use crate::pane_motion::Placed;
+use crate::tiling::{self, PxRect};
 use crate::{DragGhost, PaneResize, Workspace};
 
 /// Value carried while a pane is dragged by its bar. Wave 3 (drop zones,
@@ -138,6 +141,38 @@ impl Workspace {
             .zoom
             .zoomed(tab_id)
             .filter(|z| layout.group.find_pane(*z));
+        let mut fresh = self.fresh_pane;
+        if zoomed.is_some() {
+            self.pane_motion.remove(&tab_id);
+        } else {
+            let solved = tiling::solve(&layout.group, self.pane_container_px(), metrics.gap);
+            let step = self.pane_motion.entry(tab_id).or_default().step(
+                crate::pane_motion::shape(&layout.group),
+                &solved.panes,
+                metrics.gap,
+                Instant::now(),
+                &c.motion,
+            );
+            if c.motion.level == MotionLevel::Full {
+                // The transition replaces the single-pane fade-in; clearing it
+                // keeps the flex tree from fading the pane in a second time.
+                self.fresh_pane = None;
+                fresh = None;
+            }
+            if let Some(placed) = step {
+                window.request_animation_frame();
+                return self.render_pane_transition(
+                    tab_id,
+                    placed,
+                    probe,
+                    c,
+                    style,
+                    metrics.gap,
+                    window,
+                    cx,
+                );
+            }
+        }
         if !multi {
             let pane = root.first_leaf();
             let body = self.pane_body(pane, window, cx);
@@ -178,7 +213,7 @@ impl Workspace {
             gap: metrics.gap,
             active: layout.active,
             zoomed,
-            fresh: self.fresh_pane,
+            fresh,
             dim_inactive: labonair_settings::ThemeSettings::try_get(cx)
                 .is_some_and(|settings| settings.dim_inactive_panes()),
             highlight: self.theme.read(cx).metrics().pane_highlight,
@@ -218,6 +253,75 @@ impl Workspace {
         // Comfortable panes float: the whole area keeps a gap margin so the
         // outer frames do not touch the dock or titlebar.
         let margin = if style.is_framed() { metrics.gap } else { 0.0 };
+        div()
+            .size_full()
+            .p(px(margin))
+            .child(inner)
+            .into_any_element()
+    }
+
+    /// One frame of a pane open/move/close transition (see
+    /// [`crate::pane_motion`]): every element placed absolutely at its
+    /// interpolated rectangle, ghosts of closed panes underneath.
+    #[allow(clippy::too_many_arguments)]
+    fn render_pane_transition(
+        &mut self,
+        tab_id: u64,
+        placed: Vec<Placed>,
+        probe: impl IntoElement,
+        c: Palette,
+        style: PaneLayoutStyle,
+        gap: f32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let origin = self.pane_container_px();
+        let ctx = TreeCtx {
+            tab_id,
+            c,
+            style,
+            gap,
+            active: self.layouts.get(&tab_id).and_then(|l| l.active),
+            zoomed: None,
+            fresh: None,
+            dim_inactive: labonair_settings::ThemeSettings::try_get(cx)
+                .is_some_and(|settings| settings.dim_inactive_panes()),
+            highlight: self.theme.read(cx).metrics().pane_highlight,
+        };
+        let radius = if style.is_framed() { c.radius.lg } else { 0.0 };
+        let slot = |rect: PxRect, opacity: f32| {
+            div()
+                .absolute()
+                .left(px(rect.x - origin.x))
+                .top(px(rect.y - origin.y))
+                .w(px(rect.w))
+                .h(px(rect.h))
+                .overflow_hidden()
+                .opacity(opacity)
+        };
+        let mut inner = div()
+            .relative()
+            .size_full()
+            .min_w_0()
+            .min_h_0()
+            .child(probe);
+        for item in placed {
+            inner = inner.child(match item {
+                Placed::Ghost { rect, opacity } => slot(rect, opacity).child(
+                    div()
+                        .size_full()
+                        .rounded(px(radius))
+                        .bg(c.pane)
+                        .border_1()
+                        .border_color(c.pane_line),
+                ),
+                Placed::Pane { id, rect, opacity } => {
+                    slot(rect, opacity).child(self.render_pane_frame(id, &ctx, window, cx))
+                }
+            });
+        }
+        let inner = self.with_pane_dnd(inner, tab_id, cx);
+        let margin = if style.is_framed() { gap } else { 0.0 };
         div()
             .size_full()
             .p(px(margin))

@@ -52,6 +52,7 @@ pub mod pane_group_naming;
 pub mod pane_items;
 pub mod pane_kind;
 pub(crate) mod pane_menu;
+pub mod pane_motion;
 pub mod pane_ops;
 pub mod pane_view;
 pub mod project_multibuffer;
@@ -851,6 +852,8 @@ pub struct Workspace {
     pub(crate) tab_strip: crate::tab_strip::TabStripState,
     /// Open/close reveal state of the left, right and bottom docks.
     pub(crate) dock_reveal: [crate::dock_reveal::DockReveal; 3],
+    /// Open/move/close transition state of each tab's panes.
+    pub(crate) pane_motion: HashMap<u64, crate::pane_motion::PaneMotion>,
     /// Which of the new-tab dropdown's `SSH ▸` / `SFTP ▸` submenus is open.
     /// Held here (not as pure `:hover` state) so the two flyouts are mutually
     /// exclusive and can't overlap. Only meaningful while `new_tab_menu`.
@@ -1149,6 +1152,7 @@ impl Workspace {
             new_tab_menu: MenuSlot::new(),
             tab_strip: Default::default(),
             dock_reveal: Default::default(),
+            pane_motion: Default::default(),
             new_tab_submenu: None,
             rename_tab: None,
             rename_focus,
